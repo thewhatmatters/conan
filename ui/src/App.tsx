@@ -9,6 +9,8 @@ import Dock from "./components/Dock.tsx";
 import SessionGrid from "./components/SessionGrid.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
+import PulseChart from "./components/PulseChart.tsx";
+import { usePulse } from "./hooks/usePulse.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
 import { useTranscript } from "./hooks/useTranscript.ts";
@@ -58,6 +60,9 @@ export default function App() {
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
+  // US-020: time-series throughput across sessions for the Pulse chart.
+  const [pulseMinutes, setPulseMinutes] = useState(60);
+  const pulse = usePulse(wsTrigger, pulseMinutes);
 
   // Route an approve/deny choice to a session via the US-012 decision route,
   // then refresh the cross-session pending list. Shared by the inline timeline
@@ -141,6 +146,14 @@ export default function App() {
 
           <div className="mt-4">
             <PendingApprovals pending={pending} onDecide={postDecision} />
+          </div>
+
+          <div className="mt-4">
+            <PulseChart
+              series={pulse}
+              minutes={pulseMinutes}
+              onRange={setPulseMinutes}
+            />
           </div>
 
           <SessionGrid

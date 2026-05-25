@@ -9,6 +9,7 @@ import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
+import { pulseSeries } from "../pulse/index.js";
 import {
   startSession,
   sendPrompt,
@@ -161,6 +162,19 @@ app.get("/api/claude/sessions/:id/transcript", (req, res) => {
     .prepare("SELECT cwd FROM session WHERE id = ?")
     .get(req.params.id) as { cwd?: string } | undefined;
   res.json(readTranscript(req.params.id, row?.cwd ?? null));
+});
+
+// Time-series throughput for the Pulse chart (US-020): events-per-minute,
+// token/cost burn, and api_retry markers bucketed across all sessions over a
+// configurable window (?minutes=, default 60, clamped 5..1440). Read-only; the
+// chart refetches as events arrive over /ws. Distinct from the snapshot hero
+// cards (US-010) — this is history, not "now".
+app.get("/api/claude/pulse", (req, res) => {
+  const raw = Number(req.query.minutes);
+  const minutes = Number.isFinite(raw)
+    ? Math.min(1440, Math.max(5, Math.round(raw)))
+    : 60;
+  res.json(pulseSeries(minutes * 60_000));
 });
 
 // Every permission prompt awaiting a decision across all live sessions, for the

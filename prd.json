@@ -321,8 +321,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: src/pulse/index.ts pulseSeries(windowMs) buckets the event table across ALL sessions into ~60 minute-aligned slices: events-per-bucket (stream_event token-deltas excluded so the rate reflects real steps), api_retry count (system/api_retry + PostToolUseFailure), and token/cost from result rows (output_tokens per-turn; cost = per-session delta of cumulative total_cost_usd, walked across all-time result rows so the baseline is correct even when the prior result fell outside the window). Gateway GET /api/claude/pulse?minutes= (read-only, clamped 5..1440, default 60). UI: hooks/usePulse.ts (refetch on each app-WS event seq + a 20s interval so the trailing edge advances during a lull), components/PulseChart.tsx wired into App.tsx below pending-approvals — a measured-width SVG (ResizeObserver, crisp at any width): events bars + a token/cost overlay line (Tokens|Cost toggle), a red api_retry rail under retried buckets, a 15m/1h/6h/24h window selector, and an events/tokens|cost/retries legend; semantic tokens only. Distinct from the snapshot hero cards (US-010) — this is time-series. Verified via automate-browser (scripts/verify-pulse.mjs boots the gateway on :3768 with an hour of seeded activity — 162 events, 59.3k tokens, $1.20, 2 retries): bars + rising token line + 2 red retry ticks render in light AND dark; Cost toggle flips the legend to $1.20; 24h range re-renders. typecheck + ui build clean."
     },
     {
       "id": "US-021",
