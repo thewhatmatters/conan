@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$comment": "Conan dashboard hooks (US-004). Forwards Claude Code lifecycle events to the local gateway so the dashboard timeline/widgets light up. OPT-IN: merge the `hooks` block below into THIS repo's .claude/settings.json (or .claude/settings.local.json). It only affects claude sessions run inside this repo, and is fire-and-forget (safe when the gateway is down). The send-event script lives at scripts/hooks/send-event.mjs.",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
+    ]
+  }
+}

@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { getDb } from "../db/index.js";
 import { PACKAGE_ROOT } from "../paths.js";
+import {
+  parseStreamMessage,
+  type NormalizedEvent,
+  type UsageUpdate,
+} from "./parser.js";
 
 /** The `claude` binary to launch headless; override with CONAN_CLAUDE_BIN. */
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
@@ -92,20 +97,49 @@ function sessionEnv(): Record<string, string> {
   return env;
 }
 
-/** Try to read a Claude Code session_id out of one parsed stream-json line. */
-function initSessionId(line: string): string | null {
-  let msg: unknown;
-  try {
-    msg = JSON.parse(line);
-  } catch {
-    return null;
+/** Insert one normalized stream-json event for a known session_id (US-007). */
+function persistEvent(sessionId: string, ev: NormalizedEvent): number {
+  const info = getDb()
+    .prepare(
+      `INSERT INTO event
+         (session_id, parent_tool_use_id, hook_event_name, stream_type, tool_name, payload, ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      sessionId,
+      ev.parentToolUseId,
+      ev.hookEventName,
+      ev.streamType,
+      ev.toolName,
+      JSON.stringify(ev.payload ?? null),
+      Date.now(),
+    );
+  return Number(info.lastInsertRowid);
+}
+
+/** Fold token/cost figures from a parsed message onto the session row. */
+function applyUsage(sessionId: string, u: UsageUpdate): void {
+  const sets: string[] = ["last_activity = @now"];
+  const params: Record<string, unknown> = { id: sessionId, now: Date.now() };
+  const col: Record<keyof UsageUpdate, string> = {
+    inputTokens: "input_tokens",
+    outputTokens: "output_tokens",
+    cacheReadInputTokens: "cache_read_input_tokens",
+    cacheCreationInputTokens: "cache_creation_input_tokens",
+    contextTokens: "context_tokens",
+    totalCostUsd: "total_cost_usd",
+  };
+  for (const key of Object.keys(col) as Array<keyof UsageUpdate>) {
+    const value = u[key];
+    if (value !== undefined) {
+      sets.push(`${col[key]} = @${key}`);
+      params[key] = value;
+    }
   }
-  if (!msg || typeof msg !== "object") return null;
-  const m = msg as Record<string, unknown>;
-  if (m.type === "system" && m.subtype === "init" && typeof m.session_id === "string") {
-    return m.session_id;
-  }
-  return null;
+  if (sets.length === 1) return; // only last_activity — nothing useful to write
+  getDb()
+    .prepare(`UPDATE session SET ${sets.join(", ")} WHERE id = @id`)
+    .run(params);
 }
 
 /** Upsert the session row once we know its real session_id. */
@@ -177,25 +211,50 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
   // Don't leave an unhandled rejection if no caller awaits the id.
   sessionId.catch(() => {});
 
-  // Minimal line scan for system/init; the full normalizer is US-007.
+  // Normalize every stream-json line (US-007): capture the session_id from
+  // system/init, persist each event, and fold token/cost usage onto the row.
+  // Events that arrive before the session_id is known can't satisfy the event
+  // table's FK, so they're held until init lands (init is always first in
+  // practice, so this queue is normally empty).
+  const pending: NormalizedEvent[] = [];
+  const handleLine = (raw: string): void => {
+    const parsed = parseStreamMessage(raw);
+    if (!parsed) return;
+
+    if (parsed.sessionId && !session.sessionId) {
+      session.sessionId = parsed.sessionId;
+      if (parsed.model && !session.model) session.model = parsed.model;
+      bySessionId.set(parsed.sessionId, session);
+      persistSession(session);
+      resolveId(parsed.sessionId);
+    }
+
+    const sid = session.sessionId;
+    if (!sid) {
+      if (parsed.event) pending.push(parsed.event);
+      return;
+    }
+    while (pending.length) persistEvent(sid, pending.shift() as NormalizedEvent);
+    if (parsed.event) persistEvent(sid, parsed.event);
+    if (parsed.usage) applyUsage(sid, parsed.usage);
+  };
+
   let buffer = "";
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
-    if (session.sessionId) return; // already captured
     buffer += chunk;
     let nl: number;
     while ((nl = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, nl).trim();
+      const line = buffer.slice(0, nl);
       buffer = buffer.slice(nl + 1);
-      if (!line) continue;
-      const id = initSessionId(line);
-      if (id) {
-        session.sessionId = id;
-        bySessionId.set(id, session);
-        persistSession(session);
-        resolveId(id);
-        return;
-      }
+      handleLine(line);
+    }
+  });
+  // Flush a trailing line that wasn't newline-terminated before EOF.
+  child.stdout.on("end", () => {
+    if (buffer.length) {
+      handleLine(buffer);
+      buffer = "";
     }
   });
 
@@ -209,6 +268,8 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
   });
   child.on("exit", () => {
     cleanup();
+    // If init never arrived the id promise is still pending; reject it. After
+    // a normal run the promise already resolved, so this reject is a no-op.
     rejectId(new Error("session exited before system/init"));
   });
 

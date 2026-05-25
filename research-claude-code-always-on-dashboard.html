@@ -1,0 +1,151 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>An Always-On Web Dashboard as a UI Layer for Claude Code — deep-research</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #111; --muted: #555; --line: #ddd; --bg: #fff;
+    --code-bg: #f4f4f5; --link: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e7e7e7; --muted: #9aa0a6; --line: #2a2a2a; --bg: #161616;
+      --code-bg: #1f1f1f; --link: #79a8ff;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 800px; margin: 2rem auto; padding: 0 1rem;
+  }
+  h1 { margin: 0 0 .25rem; font-size: 1.85rem; }
+  h2 {
+    margin: 2rem 0 .5rem; padding-bottom: .2rem;
+    border-bottom: 1px solid var(--line); font-size: 1.2rem;
+  }
+  h3 { margin: 1.25rem 0 .35rem; font-size: 1.0rem; color: var(--muted); }
+  a { color: var(--link); }
+  .meta { color: var(--muted); font-size: .9rem; margin: 0 0 1.25rem; }
+  .question {
+    border-left: 3px solid var(--line); padding: .35rem .75rem;
+    color: var(--muted); margin: 0 0 1rem; font-style: italic;
+  }
+  .summary { margin: 0 0 2rem; }
+  section p { white-space: pre-wrap; margin: .25rem 0 0; }
+  pre, code {
+    background: var(--code-bg); border-radius: 4px;
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre { padding: .75rem; overflow-x: auto; }
+  code { padding: 0 .25rem; }
+  ol.sources li { margin: .25rem 0; }
+  .provider-tag {
+    display: inline-block; padding: 0 .35rem; margin-left: .35rem;
+    font-size: .75rem; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 3px; vertical-align: 1px;
+  }
+  footer {
+    margin-top: 3rem; padding-top: .75rem; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: .85rem;
+  }
+</style>
+
+<h1>An Always-On Web Dashboard as a UI Layer for Claude Code</h1>
+<p class="meta">feature research &middot; depth: standard &middot; 2026-05-25</p>
+<p class="question">Build an always-on web dashboard that acts as a UI layer for Claude Code (à la OpenClaw, Hermes Agent), using xterm.js for a live terminal and shadcn/Tailwind for UI. Is it feasible, and what should a PRD cover?</p>
+<p class="summary">Feasible and well-trodden. Every required component exists in shipping open-source projects, and Claude Code exposes first-class programmatic surfaces: non-interactive `-p` mode with stream-json output, session resumption via --resume, the Agent SDK with partial-message streaming, and ~19 lifecycle hooks built for observability. The live-terminal piece (xterm.js ⇆ WebSocket ⇆ node-pty) is a solved pattern, already shipped in siteboon/claudecodeui. The hard parts are security (a browser-reachable shell is an RCE surface — Claude Code itself shipped CVE-2025-52882, a WebSocket auth bypass), always-on process supervision, and the architectural choice between a raw terminal and a structured stream UI. Strongest products do both. Maps cleanly onto the existing Conan stack (Vite+React SPA, Express+WS gateway, shadcn/Tailwind v4) as an additive feature.</p>
+
+<section id="state_of_the_art"><h2>State of the art</h2><p>Claude Code is designed to be driven programmatically — no TUI screen-scraping required. The space of projects doing this splits into four buckets.
+
+**A. Always-on agent harnesses (OpenClaw / Hermes).** These are autonomous daemons that *delegate to* Claude Code. OpenClaw (MIT core) runs an always-on gateway daemon + scheduler/cron + persistent memory, interfacing via messaging apps, so agents act on schedules/events rather than only user prompts [14][15]. Hermes Agent delegates coding to the Claude Code CLI as a bundled skill and has a community web UI [16]. Lesson: &#x27;always-on&#x27; = supervised gateway + scheduler + memory, with Claude Code invoked underneath.
+
+**B. Web UIs directly over the Claude Code CLI (closest to the goal).** siteboon/claudecodeui — React+Vite+Tailwind + Node server, reads/writes the same `~/.claude` config, auto-discovers sessions, and ships an **xterm.js Web Terminal with multi-tab support**; hosted tier keeps agents running offline, self-hosted &#x27;requires your machine to stay on&#x27; [5]. sugyan/claude-code-webui wraps the CLI as a subprocess and streams into a **custom chat UI** (no pty) [6]. slopus/happy adds remote mobile/web control via a CLI wrapper + agent + **encrypted sync server**, with one-keypress device handoff [7].
+
+**C. Observability dashboards.** disler/claude-code-hooks-multi-agent-observability is the canonical pattern: 12 hooks POST events → Bun+TS server → SQLite(WAL) → WebSocket → Vue+Vite+Tailwind client, rendering a real-time timeline, pulse chart, and transcript viewer [8].
+
+**D. Native multi-session orchestration.** Anthropic now ships agent teams for orchestrating multiple Claude Code sessions [4] — relevant because the dashboard may *visualize* teams rather than reinvent orchestration.</p></section>
+
+<section id="options"><h2>Options</h2><p>**Claude Code programmatic surfaces to build against:**
+
+*Headless `claude -p`* — all CLI flags work; `--output-format` is `text`|`json`|`stream-json` (newline-delimited events); real-time streaming via `--output-format stream-json --verbose --include-partial-messages`; **session resumption** via `--continue` / `--resume &lt;session_id&gt;` (capture id from `--output-format json | jq -r &#x27;.session_id&#x27;`) — the key to always-on continuity; `--bare` for fast reproducible scripted calls (needs ANTHROPIC_API_KEY, not OAuth) [2].
+
+*Stream events to parse:* `system/init` (model/tools/MCP/plugins), `system/api_retry` (attempt/max_retries/error category), and `stream_event` wrapping `message_start`, `content_block_start` (text|tool_use), `content_block_delta` (`text_delta`|`input_json_delta`), `content_block_stop`, `message_delta`, `message_stop`; then complete `AssistantMessage` and final `ResultMessage` with `total_cost_usd` [1][2].
+
+*Agent SDK (TS/Python):* `includePartialMessages: true` yields `SDKPartialAssistantMessage`/`StreamEvent` with `{{uuid, session_id, event, parent_tool_use_id}}` — `parent_tool_use_id` attributes output to subagents for a tree view. Setting `maxThinkingTokens` disables partial streaming [1].
+
+*Hooks (~19 events) — the observability backbone:* SessionStart/End, UserPromptSubmit, PreToolUse (deny/ask/allow/defer gating), PostToolUse/PostToolUseFailure, Notification (permission_prompt/idle_prompt/auth_success), SubagentStart/Stop (agent_id, transcript path), PreCompact, Stop, plus TeammateIdle/TaskCompleted/WorktreeCreate-Remove/ConfigChange/Setup. Every input carries session_id, cwd, hook_event_name. Async output (`{{async:true}}`) enables fire-and-forget POST to your gateway without blocking the agent [3].
+
+**Live terminal — xterm.js ⇆ WebSocket ⇆ node-pty:** backend `pty.spawn(shell,[],{{cols,rows,cwd,env}})`; PTY→browser `ptyProcess.on(&#x27;data&#x27;, d=&gt;ws.send(d))` → `term.write(d)`; browser→PTY `term.onData(d=&gt;ws.send(d))` → `ptyProcess.write(d)`; **resize** via FitAddon → send {{cols,rows}} → `ptyProcess.resize()` (the #1 gotcha, omitted by basic tutorials). Addons: addon-fit, addon-webgl (perf), addon-search/web-links [9][10].
+
+**Always-on supervision:** PM2/systemd to restart on crash/reboot. Two session models — (1) *stateless + resume* (recommended default): persist session_ids, spin up `claude -p --resume &lt;id&gt;` on demand — crash-resilient, scales; (2) *persistent ptys* optionally in tmux/screen for raw-terminal continuity across restarts [17]. WebSockets drop → heartbeat + backoff reconnect + server-side ring-buffer replay (xterm has no built-in replay).</p></section>
+
+<section id="build_vs_buy"><h2>Build vs buy</h2><p>**Fork an existing UI** (siteboon, sugyan): fastest demo, but neither matches a shadcn/React/Tailwind-v4 + Conan-gateway stack — strong as reference, weak as a base to inherit [5][6].
+
+**Adopt an observability repo** (disler): excellent *pattern* (hooks→server→WS→dashboard) to copy; Vue/Bun implementation — port the concept, not the code [8].
+
+**Build on the existing Conan gateway (recommended):** Express+WS on :3747, React/shadcn SPA, ActivityTimeline, tool-call indicators, and an always-on Mac Mini already exist. Adding hooks→gateway event ingest, a `claude -p stream-json` session manager, and an xterm/node-pty pane is additive and on-brand.
+
+**Buy/host** (siteboon Cloud, Happy): offloads always-on + remote + security, but conflicts with a self-hosted dashboard goal [7].</p></section>
+
+<section id="gotchas"><h2>Gotchas</h2><p>- **Raw terminal ≠ structured data.** Running only the TUI in xterm blocks cards/charts/permission controls — make the parsed stream-json/SDK path the primary surface from day one.
+
+- **Terminal resize** is the classic xterm bug — wire FitAddon + `pty.resize` early [9].
+
+- **Output volume.** Claude Code is verbose — use a perf renderer addon + server-side buffering/rate-limiting or the tab janks.
+
+- **Reconnection replay** is yours to build — xterm won&#x27;t restore scrollback after a WS drop.
+
+- **OAuth vs API key.** `--bare` and an always-on headless fleet need ANTHROPIC_API_KEY, not Claude Code OAuth (which is blocked for third-party API calls) [2].
+
+- **Cost model.** From June 15 2026, Agent SDK / `claude -p` usage draws from a separate monthly credit — a frequently-firing always-on system can burn it fast [2].
+
+- **`maxThinkingTokens` kills streaming** — don&#x27;t set it if you want live token streaming [1].
+
+- **Security is not optional** — see the dedicated section; this is the one place &#x27;ship and harden later&#x27; is wrong.</p></section>
+
+<section id="security"><h2>Security</h2><p>A browser-reachable terminal/agent is a remote-code-execution surface; treat it as hostile-by-default.
+
+**Learn from Claude Code&#x27;s own CVE.** CVE-2025-52882 (CVSS 8.8): Claude Code IDE extensions ran a **WebSocket server with no client authentication**, bound to localhost. Because **browsers do not apply same-origin policy to WebSockets**, any malicious site could probe localhost ports, connect, and send JSON-RPC to read files / execute code — no interaction beyond visiting the page. Fix (v1.0.24+): an **auth token in a local lock file** validated on every connection. Lesson: localhost binding + port obscurity is NOT security [11].
+
+**Must-dos** [12][13]: authenticate every WS connection with a token (and re-validate, not only on Open); validate the `Origin` header server-side to block CSWSH; bind to loopback by default, require explicit opt-in + TLS (wss://) + reverse proxy for remote; for remote access copy Happy&#x27;s authenticated **end-to-end-encrypted relay** rather than exposing the raw shell port [7]; scope the agent via PreToolUse hooks / `--permission-mode` / `--allowedTools` and consider containers/restricted file roots; audit-log every command (free from PreToolUse/PostToolUse hooks).</p></section>
+
+<section id="recommendation"><h2>Recommendation</h2><p>**Build it, on the Conan gateway, with a structured-stream-first + terminal-as-escape-hatch architecture.** Feasibility is high; nothing is unproven.
+
+1. **Event ingest:** install the ~19 hooks (async POST to `/api/claude/events` on :3747) → persist → broadcast over the existing WS (pattern: disler [8]).
+
+2. **Session manager:** gateway module launches/`--resume`s `claude -p --output-format stream-json`, tracks session_ids, multiplexes events. Default to stateless+resume; add tmux-backed ptys only for raw-terminal continuity [2][17].
+
+3. **UI:** new shadcn/React views — session grid (StatCard/AgentCard), live ActivityTimeline from events, pulse chart, permission-approval controls, transcript viewer.
+
+4. **Terminal pane:** xterm.js + addon-fit (+ webgl) in a resizable panel over an **authenticated** WS; multi-tab per session [9][10].
+
+5. **Always-on:** PM2/systemd supervision; ring-buffer + backoff reconnect.
+
+6. **Security first:** WS auth token + Origin validation + loopback default; encrypted relay for remote (Happy model); gate destructive tools via PreToolUse [11][12][7].
+
+This is a clean PRD — proceed to /generate-prd using the surfaces, architecture, security, and phasing above.</p></section>
+
+<h2>Open questions</h2><ul><li>Single-user or multi-user/multi-tenant? Changes auth, session isolation, and supervision dramatically.</li><li>Local-only or remote access? If remote, adopt Happy&#x27;s encrypted-relay model or self-host TLS+auth?</li><li>Visualize Anthropic&#x27;s native agent teams, or build own multi-session orchestration?</li><li>Persistent ptys vs. stateless --resume as the default session model — depends on whether raw-terminal continuity across reconnects is required.</li><li>Cost ceiling for always-on headless usage after the June-15-2026 Agent SDK credit split?</li><li>Extend the current Conan &#x27;dashboard over Claude Desktop&#x27; (read-only) or stand alone? This proposal adds write/drive capability — a scope expansion to confirm.</li></ul>
+
+<h2>Sources</h2>
+<ol class="sources">
+<li><a href="https://code.claude.com/docs/en/agent-sdk/streaming-output" rel="noopener" target="_blank">Claude Agent SDK — Stream responses in real-time</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://code.claude.com/docs/en/headless" rel="noopener" target="_blank">Claude Code — Run programmatically (headless)</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://code.claude.com/docs/en/agent-sdk/hooks" rel="noopener" target="_blank">Claude Agent SDK — Hooks</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://code.claude.com/docs/en/agent-teams" rel="noopener" target="_blank">Orchestrate teams of Claude Code sessions</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/siteboon/claudecodeui" rel="noopener" target="_blank">siteboon/claudecodeui — React/Vite/Tailwind + xterm.js web UI</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/sugyan/claude-code-webui" rel="noopener" target="_blank">sugyan/claude-code-webui — CLI-subprocess streaming chat UI</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/slopus/happy" rel="noopener" target="_blank">slopus/happy — mobile/web client, encrypted relay</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/disler/claude-code-hooks-multi-agent-observability" rel="noopener" target="_blank">disler — hooks→Bun→SQLite→WS→Vue observability dashboard</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://ashishpoudel.substack.com/p/web-terminal-with-xtermjs-node-pty" rel="noopener" target="_blank">Web Terminal with xterm.js, node-pty &amp; WebSockets</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/xtermjs/xterm.js" rel="noopener" target="_blank">xtermjs/xterm.js</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://securitylabs.datadoghq.com/articles/claude-mcp-cve-2025-52882" rel="noopener" target="_blank">CVE-2025-52882: WebSocket auth bypass in Claude Code</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html" rel="noopener" target="_blank">OWASP WebSocket Security Cheat Sheet</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://ably.com/topic/websocket-security" rel="noopener" target="_blank">Ably — WebSocket security</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://milvus.io/blog/openclaw-formerly-clawdbot-moltbot-explained-a-complete-guide-to-the-autonomous-ai-agent.md" rel="noopener" target="_blank">What Is OpenClaw? Complete Guide</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://dustindavis.me/blog/one-week-with-openclaw" rel="noopener" target="_blank">One Week with OpenClaw</a><span class="provider-tag">WebFetch (full page)</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://github.com/nesquena/hermes-webui" rel="noopener" target="_blank">Hermes community web UI / delegate to Claude Code</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+<li><a href="https://oneuptime.com/blog/post/2026-03-02-how-to-use-screen-and-tmux-for-persistent-terminal-sessions-on-ubuntu/view" rel="noopener" target="_blank">tmux/screen for persistent terminal sessions</a><span class="provider-tag">Tavily</span><span class="meta"> &middot; accessed 2026-05-25</span></li>
+</ol>
+
+<footer>Generated by deep-research.</footer>

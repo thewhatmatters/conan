@@ -1,7 +1,7 @@
 {
   "project": "Conan",
   "branchName": "loop/claude-code-dashboard",
-  "description": "Conan — an always-on web UI/control layer that observes AND drives Claude Code, built on the existing gateway (Express+WS :3747, Vite+React SPA, shadcn base-nova, Tailwind v4, SQLite). Structured-stream-first with a hero metrics-widget grid in the main content area and an integrated xterm.js+node-pty terminal docked to the right.",
+  "description": "Conan \u2014 an always-on web UI/control layer that observes AND drives Claude Code, built on the existing gateway (Express+WS :3747, Vite+React SPA, shadcn base-nova, Tailwind v4, SQLite). Structured-stream-first with a hero metrics-widget grid in the main content area and an integrated xterm.js+node-pty terminal docked to the right.",
   "generatedAt": "2026-05-25",
   "sourcePrd": "/Users/digitalalchemist/Development/conan/prd-claude-code-dashboard.md",
   "userStories": [
@@ -66,7 +66,7 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Done 2026-05-25. scripts/hooks/send-event.mjs (fire-and-forget, 1s timeout) registered in .claude/settings.json (9 events) — installed after the user granted Write permission. Verified end-to-end: a real `claude -p` session produced SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SessionEnd rows with the real session_id + cwd, session status->idle on Stop. conan-hooks.example.json kept as the shareable template."
+      "notes": "Done 2026-05-25. scripts/hooks/send-event.mjs (fire-and-forget, 1s timeout) registered in .claude/settings.json (9 events) \u2014 installed after the user granted Write permission. Verified end-to-end: a real `claude -p` session produced SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SessionEnd rows with the real session_id + cwd, session status->idle on Stop. conan-hooks.example.json kept as the shareable template."
     },
     {
       "id": "US-005",
@@ -97,7 +97,7 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Done 2026-05-25. src/session/index.ts: startSession() spawns `claude -p --output-format stream-json --verbose --include-partial-messages` (+ --input-format stream-json so the process stays driveable for US-008), with --model/--permission-mode/--bare options. Minimal stdout line-scan captures session_id from system/init and upserts the session row (status=running, model, permission_mode, cwd); full normalizer is US-007. Child tracked in byLaunchId + bySessionId (getManagedSession/listManagedSessions). sessionEnv() strips OAuth tokens (sk-ant-oat*/CLAUDE_CODE_OAUTH_TOKEN) so only ANTHROPIC_API_KEY auths the headless path. CONAN_CLAUDE_BIN override. Verified: `npm test` (scripts/test-session.mjs) runs against a fake claude stub emitting a real system/init line — 17/17 checks pass (id capture, child tracking, all required flags, persisted row); typecheck clean. No API key in this env, so the stub stands in for a live launch."
+      "notes": "Done 2026-05-25. src/session/index.ts: startSession() spawns `claude -p --output-format stream-json --verbose --include-partial-messages` (+ --input-format stream-json so the process stays driveable for US-008), with --model/--permission-mode/--bare options. Minimal stdout line-scan captures session_id from system/init and upserts the session row (status=running, model, permission_mode, cwd); full normalizer is US-007. Child tracked in byLaunchId + bySessionId (getManagedSession/listManagedSessions). sessionEnv() strips OAuth tokens (sk-ant-oat*/CLAUDE_CODE_OAUTH_TOKEN) so only ANTHROPIC_API_KEY auths the headless path. CONAN_CLAUDE_BIN override. Verified: `npm test` (scripts/test-session.mjs) runs against a fake claude stub emitting a real system/init line \u2014 17/17 checks pass (id capture, child tracking, all required flags, persisted row); typecheck clean. No API key in this env, so the stub stands in for a live launch."
     },
     {
       "id": "US-007",
@@ -112,7 +112,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Ref: Claude Agent SDK streaming-output docs. Feeds the context gauge and cost widgets."
     },
     {
@@ -276,7 +276,7 @@
       ],
       "priority": 17,
       "passes": false,
-      "notes": "xterm has no built-in scrollback restore — this is custom."
+      "notes": "xterm has no built-in scrollback restore \u2014 this is custom."
     },
     {
       "id": "US-018",
@@ -414,7 +414,7 @@
       ],
       "priority": 26,
       "passes": false,
-      "notes": "Suggested skills: automate-browser. Split from US-016, which delivered the single-terminal pane. Tab framework now exists (US-027) — this is specifically multiple terminal tabs."
+      "notes": "Suggested skills: automate-browser. Split from US-016, which delivered the single-terminal pane. Tab framework now exists (US-027) \u2014 this is specifically multiple terminal tabs."
     },
     {
       "id": "US-027",
@@ -438,7 +438,7 @@
       "title": "Dock resize handle + working folder in toolbar",
       "description": "As a user, I want to resize the dock and see the current working folder, so the workspace fits my screen and I know where the session runs.",
       "acceptanceCriteria": [
-        "Drag handle on the dock's left edge resizes its width (clamped 320–900px), persisted to localStorage",
+        "Drag handle on the dock's left edge resizes its width (clamped 320\u2013900px), persisted to localStorage",
         "Resizing refits the terminal (FitAddon -> pty.resize)",
         "Top toolbar shows the working folder (from /api/config cwd), ~-abbreviated, full path on hover",
         "Typecheck passes",
@@ -456,7 +456,7 @@
         "A story flipping to passes:true raises a success toast (id + title)",
         "Curated lifecycle events (Notification, SessionStart/End, PreCompact, SubagentStop, PostToolUseFailure) raise info/error toasts; routine PreToolUse/PostToolUse do not (no spam)",
         "Toasts auto-dismiss (~5s) and dismiss on click; theme-aware",
-        "Driven by the single app WS (useGateway) — tasks diff + event stream",
+        "Driven by the single app WS (useGateway) \u2014 tasks diff + event stream",
         "Typecheck passes",
         "Verify in browser using automate-browser skill"
       ],
@@ -469,9 +469,9 @@
       "title": "Usage monitor widget (used % + resets-in countdown)",
       "description": "As a user, I want to see Claude usage and when it resets, so I know capacity during autonomous runs and can resume after a reset.",
       "acceptanceCriteria": [
-        "A hero widget shows current usage (tokens/% or cost) and a 'resets in …' countdown when a reset time is known",
+        "A hero widget shows current usage (tokens/% or cost) and a 'resets in \u2026' countdown when a reset time is known",
         "Detects a rate-limited state from session api_retry (rate_limit) / ResultMessage usage and surfaces it distinctly",
-        "Degrades gracefully to '—' when usage/reset data is unavailable",
+        "Degrades gracefully to '\u2014' when usage/reset data is unavailable",
         "Typecheck passes",
         "Verify in browser using automate-browser skill"
       ],

@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: toggling `.dark` on <html> flips the tokens below. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Map semantic tokens to Tailwind color utilities (bg-background, text-foreground,
+   border-border, bg-card, text-muted-foreground, bg-term-bg, text-term-fg, ...).
+   shadcn-compatible naming so the component library slots in at US-009. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-term-bg: var(--term-bg);
+  --color-term-fg: var(--term-fg);
+}
+
+/* Light (default) */
+:root {
+  color-scheme: light;
+  --background: #fafafa;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --border: #e5e5e5;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --primary: #059669;
+  --term-bg: #ffffff;
+  --term-fg: #1f2937;
+}
+
+/* Dark */
+.dark {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #171717;
+  --card-foreground: #ededed;
+  --border: #262626;
+  --muted: #1f1f1f;
+  --muted-foreground: #9aa0a6;
+  --primary: #34d399;
+  --term-bg: #0a0a0a;
+  --term-fg: #ededed;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+}
