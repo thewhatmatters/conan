@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
-import { useGateway } from "./hooks/useTasks.ts";
+import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useSessionEvents } from "./hooks/useSessionEvents.ts";
@@ -36,22 +36,28 @@ export default function App() {
     "activity",
   );
   const { theme, toggle } = useTheme();
-  const { tasks, lastEvent } = useGateway(config?.token ?? null);
-  const { sessions, refresh } = useSessions(lastEvent?.seq ?? null);
+  // Re-subscribe to whichever session's timeline is open so its events replay
+  // after a reconnect (US-018).
+  const { tasks, lastEvent, status, reconnectSeq } = useGateway(
+    config?.token ?? null,
+    selectedId ? [selectedId] : [],
+  );
+  // A trigger that advances on each live event *and* each reconnect, so the
+  // REST-backed hooks re-pull their snapshots after a connection gap.
+  const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
+  const { sessions, refresh } = useSessions(wsTrigger);
   // The Context/Skills widgets describe the active session: a running one if
   // present, otherwise the most-recently-active (sessions are sorted DESC).
   const activeSession =
     sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
-  const skills = useSkills(activeSession?.id ?? null, lastEvent?.seq ?? null);
+  const skills = useSkills(activeSession?.id ?? null, wsTrigger);
   // Timeline (US-011): events for the selected session — history + live WS.
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
   // Transcript (US-014): fetched lazily, only while its tab is open.
   const transcript = useTranscript(selectedId, detailTab === "transcript");
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
-  const { pending, refresh: refreshPending } = usePendingPermissions(
-    lastEvent?.seq ?? null,
-  );
+  const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
 
   // Route an approve/deny choice to a session via the US-012 decision route,
   // then refresh the cross-session pending list. Shared by the inline timeline
@@ -108,20 +114,7 @@ export default function App() {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
-          <span
-            className={
-              "inline-flex items-center gap-1.5 " +
-              (health ? "text-primary" : "text-muted-foreground")
-            }
-          >
-            <span
-              className={
-                "size-2 rounded-full " +
-                (health ? "bg-primary" : "bg-muted-foreground/40")
-              }
-            />
-            {health ? `gateway :${health.port}` : "gateway offline"}
-          </span>
+          <ConnectionStatus status={status} port={health?.port ?? config?.port} />
           <button
             onClick={toggle}
             title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
@@ -211,6 +204,52 @@ export default function App() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Live WebSocket connection indicator (US-018). Reflects the self-healing app
+ * socket: connected (green), connecting/reconnecting (amber, pulsing), or
+ * offline (red) after backoff has given up reaching the gateway.
+ */
+function ConnectionStatus({
+  status,
+  port,
+}: {
+  status: ConnStatus;
+  port?: number;
+}) {
+  const meta: Record<ConnStatus, { dot: string; text: string; label: string }> = {
+    connected: {
+      dot: "bg-primary",
+      text: "text-primary",
+      label: port ? `gateway :${port}` : "connected",
+    },
+    connecting: {
+      dot: "bg-amber-500 animate-pulse",
+      text: "text-muted-foreground",
+      label: "connecting…",
+    },
+    reconnecting: {
+      dot: "bg-amber-500 animate-pulse",
+      text: "text-muted-foreground",
+      label: "reconnecting…",
+    },
+    offline: {
+      dot: "bg-red-500",
+      text: "text-red-500",
+      label: "offline",
+    },
+  };
+  const m = meta[status];
+  return (
+    <span
+      title={`Gateway connection: ${status}`}
+      className={"inline-flex items-center gap-1.5 " + m.text}
+    >
+      <span className={"size-2 rounded-full " + m.dot} />
+      {m.label}
+    </span>
   );
 }
 

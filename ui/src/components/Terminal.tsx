@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { getTerminalTheme } from "../lib/terminalTheme.ts";
+import { ResilientSocket } from "../lib/resilientSocket.ts";
 import type { Theme } from "../hooks/useTheme.ts";
 
 interface TerminalProps {
@@ -48,40 +49,59 @@ export default function Terminal({ token, theme }: TerminalProps) {
     fit.fit();
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    // Stable per-tab terminal id so a reload/HMR re-attaches to the surviving
-    // pty and replays the missed backlog instead of spawning a fresh one (US-017).
+    // Stable per-tab terminal id so a reload/HMR/dropped socket re-attaches to
+    // the surviving pty and replays the missed backlog instead of spawning a
+    // fresh one (US-017). On reconnect the same `tid` is what triggers that
+    // ring-buffer replay (US-018).
     let tid = sessionStorage.getItem("conan.tid");
     if (!tid) {
       tid = crypto.randomUUID();
       sessionStorage.setItem("conan.tid", tid);
     }
-    const params = new URLSearchParams({
-      token,
-      tid,
-      cols: String(term.cols),
-      rows: String(term.rows),
-    });
-    const ws = new WebSocket(`${proto}://${location.host}/ws/terminal?${params}`);
 
-    ws.onmessage = (ev) => term.write(ev.data as string);
-    ws.onclose = () => term.write("\r\n[conan] disconnected\r\n");
+    // Self-healing socket: backoff reconnect on drop, re-attaching the same tid
+    // so the server replays the ring buffer (US-018). No app-level heartbeat —
+    // pty output frames are raw, so a JSON pong can't be mixed into the stream;
+    // we rely on the WS close event, which fires for the reload/dock-hide and
+    // gateway-restart cases this targets (footgun #2).
+    let firstOpen = true;
+    const sock = new ResilientSocket({
+      url: () => {
+        const params = new URLSearchParams({
+          token,
+          tid: tid!,
+          cols: String(term.cols),
+          rows: String(term.rows),
+        });
+        return `${proto}://${location.host}/ws/terminal?${params}`;
+      },
+      onMessage: (ev) => term.write(ev.data as string),
+      onStatus: (status) => {
+        if (status === "reconnecting") term.write("\r\n[conan] reconnecting…\r\n");
+      },
+      onOpen: () => {
+        if (!firstOpen) term.write("\r\n[conan] reconnected\r\n");
+        firstOpen = false;
+        fit.fit();
+        sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      },
+    });
 
     const onData = term.onData((data) =>
-      send(ws, { type: "input", data }),
+      sock.send(JSON.stringify({ type: "input", data })),
     );
 
     const sendResize = () => {
       fit.fit();
-      send(ws, { type: "resize", cols: term.cols, rows: term.rows });
+      sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     };
     const ro = new ResizeObserver(() => sendResize());
     ro.observe(host);
-    ws.addEventListener("open", sendResize);
 
     return () => {
       ro.disconnect();
       onData.dispose();
-      ws.close();
+      sock.close();
       term.dispose();
       xtermRef.current = null;
     };
@@ -98,8 +118,4 @@ export default function Terminal({ token, theme }: TerminalProps) {
   }, [theme]);
 
   return <div ref={hostRef} className="h-full w-full" />;
-}
-
-function send(ws: WebSocket, msg: Record<string, unknown>): void {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }

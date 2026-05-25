@@ -28,7 +28,7 @@ export default function Toaster({
   lastEvent,
 }: {
   tasks: TasksState | null;
-  lastEvent: (GatewayEvent & { seq: number }) | null;
+  lastEvent: (GatewayEvent & { seq: number; replay?: boolean }) | null;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(0);
@@ -55,8 +55,10 @@ export default function Toaster({
     prevPasses.current = next;
   }, [tasks]);
 
-  // System events.
+  // System events. Skip events the server re-sent after a reconnect (US-018) so
+  // a recovery doesn't replay a burst of stale toasts.
   useEffect(() => {
+    if (lastEvent?.replay) return;
     if (!lastEvent?.hook_event_name) return;
     const meta = NOTABLE[lastEvent.hook_event_name];
     if (!meta) return;

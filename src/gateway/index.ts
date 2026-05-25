@@ -260,6 +260,35 @@ eventsWss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "hello", ts: Date.now() }));
   // Send the current task snapshot immediately so the Tasks tab fills on open.
   socket.send(JSON.stringify({ type: "tasks", payload: readTasks() }));
+
+  // Client control frames (US-018):
+  //  - {type:'ping'}      -> {type:'pong'}; the client's heartbeat declares the
+  //    socket dead and reconnects if a pong doesn't come back in time.
+  //  - {type:'subscribe', sessions:[…]} -> ack, then replay each session's
+  //    recent events so a reconnecting client re-syncs the timeline across the
+  //    gap (the app WS broadcast is global, so this is purely catch-up).
+  socket.on("message", (raw) => {
+    let msg: Record<string, unknown>;
+    try {
+      msg = JSON.parse(raw.toString()) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (msg.type === "ping") {
+      socket.send(JSON.stringify({ type: "pong", ts: Date.now() }));
+    } else if (msg.type === "subscribe") {
+      const ids = Array.isArray(msg.sessions)
+        ? msg.sessions.filter((x): x is string => typeof x === "string").slice(0, 20)
+        : [];
+      socket.send(JSON.stringify({ type: "subscribed", sessions: ids }));
+      for (const id of ids) {
+        // De-duped client-side by event id, so re-sending recent history is safe.
+        for (const ev of listEvents(id).slice(-30)) {
+          socket.send(JSON.stringify({ type: "replay", payload: ev }));
+        }
+      }
+    }
+  });
 });
 terminalWss.on("connection", (socket, req) => {
   attachTerminal(socket, req);
