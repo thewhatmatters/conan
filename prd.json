@@ -305,8 +305,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": "Mac Mini is always-on production."
+      "passes": true,
+      "notes": "Done 2026-05-25. ecosystem.config.cjs (CommonJS since pkg is ESM): app 'conan-gateway' runs src/gateway/index.ts via the local tsx interpreter (same as `npm start`, no watch), instances:1/fork (single-instance on :3747), autorestart:true with restart_delay 2s + max_restarts 10 + min_uptime 10s so a hard-failing boot (e.g. EADDRINUSE) doesn't spin forever; logs -> .data/pm2-gateway.{out,err}.log. npm convenience scripts ops:start/stop/restart/status/logs wrap pm2. docs/ops.md documents install, start/stop/status, crash-restart, and boot persistence (pm2 startup + pm2 save -> launchd on macOS / systemd on Linux). Verified live: pm2 start on a spare CONAN_PORT=3760 (so the running :3747 gateway was untouched) -> online + /api/health ok; kill -9 the pid -> pm2 relaunched a NEW pid serving health again with restart count incrementing; then pm2 deleted. Boot persistence is the documented pm2 startup/save mechanism (not enabled here — requires sudo/launchd registration on the target host). pm2 installed globally (not a project dep) so the resurrection daemon has a stable path. typecheck clean. Mac Mini is always-on production."
     },
     {
       "id": "US-020",

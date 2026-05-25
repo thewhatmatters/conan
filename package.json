@@ -14,7 +14,12 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test-session.mjs && tsx scripts/test-parser.mjs && tsx scripts/test-drive.mjs && tsx scripts/test-terminal.mjs",
     "build:ui": "npm --prefix ui run build",
-    "build": "npm run typecheck && npm run build:ui"
+    "build": "npm run typecheck && npm run build:ui",
+    "ops:start": "pm2 start ecosystem.config.cjs",
+    "ops:stop": "pm2 stop conan-gateway",
+    "ops:restart": "pm2 restart conan-gateway",
+    "ops:status": "pm2 status",
+    "ops:logs": "pm2 logs conan-gateway"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
