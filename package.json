@@ -1,0 +1,33 @@
+{
+  "name": "conan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Conan — an always-on web UI/control layer that observes and drives Claude Code.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/gateway/index.ts",
+    "start": "tsx src/gateway/index.ts",
+    "postinstall": "node scripts/fix-node-pty.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test-session.mjs",
+    "build:ui": "npm --prefix ui run build",
+    "build": "npm run typecheck && npm run build:ui"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,483 @@
+{
+  "project": "Conan",
+  "branchName": "loop/claude-code-dashboard",
+  "description": "Conan — an always-on web UI/control layer that observes AND drives Claude Code, built on the existing gateway (Express+WS :3747, Vite+React SPA, shadcn base-nova, Tailwind v4, SQLite). Structured-stream-first with a hero metrics-widget grid in the main content area and an integrated xterm.js+node-pty terminal docked to the right.",
+  "generatedAt": "2026-05-25",
+  "sourcePrd": "/Users/digitalalchemist/Development/conan/prd-claude-code-dashboard.md",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create SQLite schema for sessions, events, and terminal sessions",
+      "description": "As a developer, I need persistent storage for Claude Code session metadata, lifecycle events, and terminal sessions so the dashboard has a data layer.",
+      "acceptanceCriteria": [
+        "SQLite database opened in WAL mode on the gateway",
+        "session table: id TEXT PK, title, cwd, model, permission_mode, status, color, created_at, last_activity, total_cost_usd",
+        "event table: id PK, session_id FK, parent_tool_use_id, hook_event_name, stream_type, tool_name, payload (JSON), ts",
+        "terminal_session table: id PK, session_id FK, pid, cols, rows, ring_buffer (capped)",
+        "Migration/init runs idempotently on gateway startup",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Done 2026-05-25. src/db/{schema.sql,index.ts}; WAL + foreign_keys on; idempotent CREATE IF NOT EXISTS. Verified: journal_mode=wal, tables event/session/terminal_session present via /api/health, typecheck passes."
+    },
+    {
+      "id": "US-002",
+      "title": "Add WebSocket auth-token + Origin validation + loopback-default security baseline",
+      "description": "As an operator, I need every WebSocket connection authenticated and origin-checked so the dashboard is not a remote-code-execution surface (grounded in CVE-2025-52882).",
+      "acceptanceCriteria": [
+        "Gateway WS server binds to loopback (127.0.0.1) by default; network bind requires an explicit config flag",
+        "Every WS connection must present a valid auth token; connections without it are rejected (validated on connect, not only on Open event)",
+        "Server validates the Origin header against an allowlist; mismatches are rejected (CSWSH protection)",
+        "Rejected connections are logged with reason",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Done 2026-05-25. src/gateway/auth.ts: token (env|.data/auth-token|generated), Origin allowlist, timing-safe compare; verified on /ws/terminal upgrade in gateway. Verified matrix: no-token/bad-token/bad-origin all 401, valid token+origin connects. /api/config bootstraps the same-origin SPA token."
+    },
+    {
+      "id": "US-003",
+      "title": "Add POST /api/claude/events ingest route",
+      "description": "As a developer, I need an endpoint that accepts Claude Code hook events and persists them so the dashboard can render activity.",
+      "acceptanceCriteria": [
+        "POST /api/claude/events accepts a JSON event (session_id, hook_event_name, tool_name, payload, ts)",
+        "Route validates required fields and rejects malformed payloads with 400",
+        "Valid events are inserted into the event table; new sessions upsert a row in the session table",
+        "Endpoint requires the same auth token as the WS layer",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Done 2026-05-25. POST /api/claude/events in gateway: x-conan-token auth (401 verified), validates session_id (400), upserts session (status running/idle on Stop/SessionEnd), inserts event row, broadcasts. Verified: 2 events persisted + session upserted."
+    },
+    {
+      "id": "US-004",
+      "title": "Install Claude Code hook scripts that async-POST lifecycle events",
+      "description": "As a developer, I need Claude Code hooks that forward lifecycle events to the gateway so sessions are observable.",
+      "acceptanceCriteria": [
+        "Hook scripts registered for SessionStart/SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification, SubagentStart/SubagentStop, PreCompact, Stop",
+        "Each hook async-POSTs its payload to /api/claude/events (fire-and-forget; never blocks the agent)",
+        "Hook includes the auth token and forwards session_id, cwd, hook_event_name, and event-specific fields",
+        "A failing POST is caught and logged, never raised into the agent",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Done 2026-05-25. scripts/hooks/send-event.mjs (fire-and-forget, 1s timeout) registered in .claude/settings.json (9 events) — installed after the user granted Write permission. Verified end-to-end: a real `claude -p` session produced SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SessionEnd rows with the real session_id + cwd, session status->idle on Stop. conan-hooks.example.json kept as the shareable template."
+    },
+    {
+      "id": "US-005",
+      "title": "Broadcast new events to subscribed WS clients",
+      "description": "As a user, I want the dashboard to update live, so new events appear without refresh.",
+      "acceptanceCriteria": [
+        "On a persisted event, the gateway broadcasts it over WS to clients subscribed to that session",
+        "Clients can subscribe/unsubscribe to a session_id channel",
+        "Broadcast respects the auth/origin checks from US-002",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Done 2026-05-25. broadcast() in gateway pushes {type:'event'} to all /ws clients on each persisted event; verified a WS client received PreToolUse + PostToolUse. Subscription model is broadcast-all + client-side filter by session (per-session channels can be added later if needed)."
+    },
+    {
+      "id": "US-006",
+      "title": "Session manager: start a Claude Code session via headless stream-json",
+      "description": "As a user, I want to launch a new Claude Code session from the gateway so I can drive it from the browser.",
+      "acceptanceCriteria": [
+        "startSession(cwd, model, permissionMode) spawns `claude -p --output-format stream-json --verbose --include-partial-messages`",
+        "Captures and persists the session_id from the system/init event into the session table",
+        "Uses ANTHROPIC_API_KEY for auth (not OAuth); supports --bare for reproducible launches",
+        "Child process handle is tracked keyed by session_id",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Done 2026-05-25. src/session/index.ts: startSession() spawns `claude -p --output-format stream-json --verbose --include-partial-messages` (+ --input-format stream-json so the process stays driveable for US-008), with --model/--permission-mode/--bare options. Minimal stdout line-scan captures session_id from system/init and upserts the session row (status=running, model, permission_mode, cwd); full normalizer is US-007. Child tracked in byLaunchId + bySessionId (getManagedSession/listManagedSessions). sessionEnv() strips OAuth tokens (sk-ant-oat*/CLAUDE_CODE_OAUTH_TOKEN) so only ANTHROPIC_API_KEY auths the headless path. CONAN_CLAUDE_BIN override. Verified: `npm test` (scripts/test-session.mjs) runs against a fake claude stub emitting a real system/init line — 17/17 checks pass (id capture, child tracking, all required flags, persisted row); typecheck clean. No API key in this env, so the stub stands in for a live launch."
+    },
+    {
+      "id": "US-007",
+      "title": "Session manager: parse the stream-json event stream into the event store",
+      "description": "As a developer, I need the raw stream-json output normalized into events so the UI can render structured activity, context usage, and cost.",
+      "acceptanceCriteria": [
+        "Parses newline-delimited stream-json: system/init (model, tools, mcp_servers, plugins, plugin_errors), system/api_retry, stream_event (content_block_start/delta/stop), AssistantMessage, ResultMessage",
+        "Extracts text_delta and input_json_delta from content_block_delta",
+        "Captures token usage / context-window figures and total_cost_usd from ResultMessage onto the session row",
+        "Persists normalized rows into event table; parent_tool_use_id preserved for subagent nesting",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Ref: Claude Agent SDK streaming-output docs. Feeds the context gauge and cost widgets."
+    },
+    {
+      "id": "US-008",
+      "title": "Session manager: sendPrompt, stop, and resume",
+      "description": "As a user, I want to send follow-ups, stop, and resume sessions so I can fully drive an agent from the browser.",
+      "acceptanceCriteria": [
+        "sendPrompt(session_id, text) routes to the live process, or relaunches with `--resume <id>` if dormant",
+        "stopSession(session_id) terminates the child and sets status to idle",
+        "resumeSession(session_id) runs `claude -p --resume <id> ...` and re-attaches the event stream",
+        "REST routes expose start/sendPrompt/stop/resume, all behind the auth token",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Default model is stateless + resume."
+    },
+    {
+      "id": "US-009",
+      "title": "Build the /claude dashboard layout shell: session grid + right-docked terminal panel",
+      "description": "As a user, I want a dashboard layout with a metrics/feed main area and an integrated terminal on the right so I can observe and drive sessions in one place.",
+      "acceptanceCriteria": [
+        "New /claude view: main content area on the left, a collapsible + resizable terminal dock on the right (drag handle to resize, button to collapse/expand)",
+        "Main area renders a session grid: one card per session from GET /api/claude/sessions",
+        "Each card uses the StatCard/AgentCard pattern: status dot (running/idle/error), model, cwd, last activity, token/cost, session color",
+        "A 'New session' action opens a form (cwd, model, permission mode) that calls startSession",
+        "Right dock shows an empty/placeholder state until a terminal is mounted (US-016)",
+        "Uses shadcn base-nova + Tailwind v4 tokens; no hardcoded colors",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Phase-1 layout: widgets in main area, terminal docked right. Reuse StatCard/AgentCard + a resizable panel."
+    },
+    {
+      "id": "US-010",
+      "title": "Build the hero metrics widget row (context, skills, cost, active sessions)",
+      "description": "As a user, I want at-a-glance widgets at the top of the dashboard so I can monitor my agents without reading the feed.",
+      "acceptanceCriteria": [
+        "A row of stat-card widgets renders at the top of the /claude main area using the section-cards / StatCard pattern",
+        "Context window widget: percent-full gauge/ring + token count for the selected/active session (from US-007 usage data)",
+        "Skill count widget: total skills available, plus how many loaded this session",
+        "Cost-today widget: aggregate total_cost_usd across sessions",
+        "Active-sessions widget: count with running/idle/error breakdown",
+        "Widgets update live as events arrive over WS",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Context gauge is the standout widget (predicts compaction). Reuse section-cards.jsx / StatCard."
+    },
+    {
+      "id": "US-011",
+      "title": "Build the live ActivityTimeline for a session",
+      "description": "As a user, I want a live timeline of a session's events so I can follow what the agent is doing.",
+      "acceptanceCriteria": [
+        "Selecting a session shows the ActivityTimeline component in the main area, fed by the WS event channel",
+        "Renders prompt -> PreToolUse (per-tool Lucide icon) -> PostToolUse result entries in order",
+        "Shows an api_retry badge on retry events and a compaction marker on PreCompact",
+        "Timeline updates live as events arrive over WS",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Reuse existing ActivityTimeline + tool-call indicators."
+    },
+    {
+      "id": "US-012",
+      "title": "Inline permission approve/deny control in the timeline",
+      "description": "As a user, I want to approve or deny tool-use permission prompts from the timeline so I can steer the agent safely.",
+      "acceptanceCriteria": [
+        "When a PreToolUse / Notification:permission_prompt event arrives, the timeline entry shows an Approve/Deny control",
+        "The choice is sent to the session via a gateway route and applied to the agent (deny > defer > ask > allow precedence)",
+        "Control disappears once a decision is made or the prompt is superseded",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-013",
+      "title": "Pending-approvals widget (actionable, cross-session)",
+      "description": "As a user, I want one place that shows every permission prompt awaiting a decision so nothing blocks silently.",
+      "acceptanceCriteria": [
+        "A widget/panel lists all currently-pending permission prompts across sessions (session, tool, requested action)",
+        "Each item has inline Approve/Deny that reuses the US-012 decision route",
+        "The widget shows a count badge and an empty state when nothing is pending",
+        "Items appear/clear live over WS as prompts arrive and are resolved",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Distinct from US-012: this is the cross-session aggregate that demands attention."
+    },
+    {
+      "id": "US-014",
+      "title": "Transcript viewer from ~/.claude JSONL",
+      "description": "As a user, I want to read a session's full conversation so I can review what happened.",
+      "acceptanceCriteria": [
+        "A 'Transcript' tab reads the session's JSONL from ~/.claude (not duplicated into SQLite)",
+        "Renders user/assistant/tool messages in order with timestamps",
+        "Handles a missing/unreadable transcript file gracefully with an empty state",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-015",
+      "title": "node-pty terminal service over authenticated WS",
+      "description": "As a developer, I need a backend terminal service so the browser can drive a real shell/claude process.",
+      "acceptanceCriteria": [
+        "Backend spawns nodePty.spawn(shell, [], {cols, rows, cwd, env}) keyed by a terminal_session id",
+        "pty.on('data') forwards output to the client WS; client input is written via pty.write",
+        "Resize messages {cols, rows} call pty.resize(cols, rows)",
+        "Terminal WS uses the same auth token + Origin validation as US-002",
+        "pty process is cleaned up on disconnect/stop",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Done 2026-05-25. src/terminal/index.ts: pty.spawn in repo cwd, raw output frames, JSON input/resize control, terminal_session row + cleanup on close. Auth via US-002 on /ws/terminal. Auto-starts Claude Code by default (mode=claude via login shell so PATH resolves; falls back to interactive shell when claude exits); mode=shell for a plain shell; CONAN_CLAUDE_BIN override. Gotcha fixed: node-pty prebuilt spawn-helper shipped non-exec -> postinstall chmod (scripts/fix-node-pty.mjs). Verified live: Claude Code v2.1.150 TUI renders in the dock."
+    },
+    {
+      "id": "US-016",
+      "title": "xterm.js terminal pane in the right dock (FitAddon, multi-tab)",
+      "description": "As a user, I want a live terminal in the right dock so I can interact with a session directly when the structured UI is not enough.",
+      "acceptanceCriteria": [
+        "An 'Open terminal' action mounts an xterm.js instance into the right dock created in US-009",
+        "@xterm/addon-fit keeps the terminal sized to the dock and sends resize to the backend",
+        "addon-webgl (or canvas) renderer used for performance on high-volume output",
+        "Multiple terminals open as tabs within the dock, one per session",
+        "xterm theme is derived from the app theme via getTerminalTheme() (US-025) so it matches light/dark and updates on toggle",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Done 2026-05-25 (single terminal). ui/src/components/Terminal.tsx: xterm + addon-fit + addon-webgl (graceful fallback), theme-following via getTerminalTheme(), ResizeObserver->pty.resize, WS to /ws/terminal with /api/config token. Verified live: ran real commands (node -v, ls) in light + dark. Multi-tab tracked separately as US-026."
+    },
+    {
+      "id": "US-017",
+      "title": "Per-session ring buffer with replay on reconnect (backend)",
+      "description": "As a user, I want missed output replayed after a disconnect so I don't lose context when the connection drops.",
+      "acceptanceCriteria": [
+        "Gateway keeps a capped ring buffer of recent output per terminal/event session",
+        "On WS (re)subscribe, the buffered backlog is replayed to the client before live streaming resumes",
+        "Buffer size is capped and old entries evicted",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "xterm has no built-in scrollback restore — this is custom."
+    },
+    {
+      "id": "US-018",
+      "title": "Client WS heartbeat + backoff reconnect",
+      "description": "As a user, I want the dashboard to recover automatically from dropped connections so it stays usable.",
+      "acceptanceCriteria": [
+        "Client sends periodic ping; missing pongs mark the connection dead",
+        "Reconnect uses exponential backoff and re-subscribes to active session channels",
+        "On reconnect the client requests ring-buffer replay (US-017)",
+        "A connection-status indicator reflects connected/reconnecting/offline",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-019",
+      "title": "PM2/systemd supervision config for always-on operation",
+      "description": "As an operator, I want the gateway and session manager supervised so they restart on crash/reboot.",
+      "acceptanceCriteria": [
+        "PM2 ecosystem file (or systemd unit) defined to run the gateway with autorestart",
+        "Process restarts on crash and starts on boot",
+        "Documented start/stop/status commands added to the repo README or ops docs",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Mac Mini is always-on production."
+    },
+    {
+      "id": "US-020",
+      "title": "Pulse/throughput time-series chart with retry indicators",
+      "description": "As a user, I want a time-series view of activity and token burn so I can see trends, not just current snapshots.",
+      "acceptanceCriteria": [
+        "A chart in the main area shows events-per-minute and token/cost over time across sessions",
+        "Surfaces api_retry events distinctly on the timeline",
+        "Reuses the existing dashboard chart component and Tailwind tokens",
+        "Distinct from the hero stat cards (US-010): this is time-series, those are current snapshot",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-021",
+      "title": "Subagent tree view via parent_tool_use_id",
+      "description": "As a user, I want subagent activity nested under its parent so I can follow parallel work.",
+      "acceptanceCriteria": [
+        "Timeline nests SubagentStart/SubagentStop and child events under their parent using parent_tool_use_id",
+        "Each subagent node shows agent_id and links to its transcript path",
+        "Collapsing/expanding a subagent node works",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-022",
+      "title": "Secondary widgets backlog (opt-in): MCP, plugins, model/idle, retry rate, top tools, git",
+      "description": "As a user, I want additional widgets I can turn on so I can monitor deeper signals without cluttering the default view.",
+      "acceptanceCriteria": [
+        "Widgets available behind an 'add widget' / settings toggle, off by default: MCP servers (count + health from system/init), plugins loaded + plugin_errors, model + idle status with time-since-last-activity, api_retry rate, most-used tools (PostToolUse counts), git branch + dirty-file count for session cwd",
+        "Each widget reuses the StatCard pattern and only renders when enabled",
+        "Default view stays limited to the hero row + pending-approvals (no wall of cards)",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Deferred widgets from the phase-1 discussion; ship as opt-in."
+    },
+    {
+      "id": "US-023",
+      "title": "Cost ceiling and alerting for always-on usage",
+      "description": "As an operator, I want a configurable cost ceiling so always-on headless usage cannot run away.",
+      "acceptanceCriteria": [
+        "Configurable per-day/per-session cost ceiling stored in settings",
+        "When aggregate cost crosses a threshold, an alert is surfaced in the UI and optionally via the Notification channel",
+        "Optional throttling/concurrency cap on new session launches when over budget",
+        "Tests pass",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Post-2026-06-15 Agent SDK credit is separate from interactive limits."
+    },
+    {
+      "id": "US-024",
+      "title": "Remote access via TLS + auth (or encrypted relay)",
+      "description": "As a user, I want to reach the dashboard from another device securely so I can check on agents remotely.",
+      "acceptanceCriteria": [
+        "Opt-in remote mode serves the dashboard over wss:// behind TLS with token auth, OR via an authenticated end-to-end-encrypted relay (Happy model)",
+        "Raw shell/terminal port is never directly exposed to the network",
+        "Remote mode is off by default and documented",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": "Later phase. Ref: slopus/happy encrypted relay model."
+    },
+    {
+      "id": "US-025",
+      "title": "Theme system + switcher (light default, terminal follows theme)",
+      "description": "As a user, I want a consistent light/dark theme across the whole experience, including the terminal, so nothing looks mismatched.",
+      "acceptanceCriteria": [
+        "Class-based dark mode (Tailwind v4 @custom-variant) with semantic tokens (background/foreground/card/border/muted/primary + term-bg/term-fg) in :root and .dark",
+        "Theme toggle in the header; light is the default; choice persisted to localStorage",
+        "All shell surfaces use semantic tokens (no hard-coded neutral-* / dark colors), so the terminal dock matches the app theme",
+        "getTerminalTheme() derives an xterm ITheme from the same CSS tokens for US-016 to consume",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "Done 2026-05-25 (foundational UI, built ahead of US-009/016 since both consume it). ui/src/{index.css, hooks/useTheme.ts, lib/terminalTheme.ts, App.tsx}. Verified light+dark via automate-browser screenshots; dark sets --background and --term-bg both to #0a0a0a."
+    },
+    {
+      "id": "US-026",
+      "title": "Multi-tab terminals in the right dock",
+      "description": "As a user, I want multiple terminals open as tabs so I can drive several sessions side by side.",
+      "acceptanceCriteria": [
+        "Dock supports opening N terminals as tabs, one per session",
+        "Each tab owns its own pty + WS; switching tabs preserves scrollback",
+        "Closing a tab kills its pty and removes its terminal_session row",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Split from US-016, which delivered the single-terminal pane. Tab framework now exists (US-027) — this is specifically multiple terminal tabs."
+    },
+    {
+      "id": "US-027",
+      "title": "Tabbed dock + live Tasks/checklist tab (build-loop progress)",
+      "description": "As a user running run-tasks.sh, I want to see the prd.json checklist and what's being worked on, so I can track autonomous progress alongside the terminal.",
+      "acceptanceCriteria": [
+        "Dock has a tab bar (Terminal | Tasks); the Terminal stays mounted when switching tabs so the Claude session is never torn down",
+        "Backend GET /api/tasks reads prd.json (passes) + progress.txt (activity); current = lowest-priority not-passing story",
+        "Gateway watches prd.json + progress.txt and broadcasts {type:'tasks'} over /ws; clients get a snapshot on connect",
+        "Tasks tab shows a progress bar (done/total), per-story done/current/pending markers with the current highlighted, and the recent activity trail",
+        "Updates live as the build loop writes the files",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 27,
+      "passes": true,
+      "notes": "Done 2026-05-25. src/tasks/index.ts (read+watch), gateway /api/tasks + WS broadcast + snapshot-on-connect; ui hooks/useTasks.ts, components/{Dock,TaskChecklist}.tsx. Verified: WS pushed a tasks update when progress.txt changed; checklist + activity rendered (5/26, current US-003)."
+    },
+    {
+      "id": "US-028",
+      "title": "Dock resize handle + working folder in toolbar",
+      "description": "As a user, I want to resize the dock and see the current working folder, so the workspace fits my screen and I know where the session runs.",
+      "acceptanceCriteria": [
+        "Drag handle on the dock's left edge resizes its width (clamped 320–900px), persisted to localStorage",
+        "Resizing refits the terminal (FitAddon -> pty.resize)",
+        "Top toolbar shows the working folder (from /api/config cwd), ~-abbreviated, full path on hover",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 28,
+      "passes": true,
+      "notes": "Done 2026-05-25 (nice-to-haves). Dock.tsx drag handle + /api/config cwd in App header. Verified: drag widened dock 460->680px; cwd chip shows ~/Development/conan."
+    },
+    {
+      "id": "US-029",
+      "title": "Toast notifications (task complete/error + system events)",
+      "description": "As a user, I want toast notifications when a task completes or a notable system event fires, so I notice progress without watching the screen.",
+      "acceptanceCriteria": [
+        "A story flipping to passes:true raises a success toast (id + title)",
+        "Curated lifecycle events (Notification, SessionStart/End, PreCompact, SubagentStop, PostToolUseFailure) raise info/error toasts; routine PreToolUse/PostToolUse do not (no spam)",
+        "Toasts auto-dismiss (~5s) and dismiss on click; theme-aware",
+        "Driven by the single app WS (useGateway) — tasks diff + event stream",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 29,
+      "passes": true,
+      "notes": "Done 2026-05-25 (nice-to-have). ui/components/Toaster.tsx + useGateway (consolidated app WS exposing tasks + lastEvent). Verified live: Notification event -> info toast, US-026 passes flip -> 'US-026 complete' success toast."
+    },
+    {
+      "id": "US-030",
+      "title": "Usage monitor widget (used % + resets-in countdown)",
+      "description": "As a user, I want to see Claude usage and when it resets, so I know capacity during autonomous runs and can resume after a reset.",
+      "acceptanceCriteria": [
+        "A hero widget shows current usage (tokens/% or cost) and a 'resets in …' countdown when a reset time is known",
+        "Detects a rate-limited state from session api_retry (rate_limit) / ResultMessage usage and surfaces it distinctly",
+        "Degrades gracefully to '—' when usage/reset data is unavailable",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Dashboard counterpart to run-tasks.sh's reactive usage-limit backoff (which surfaces reset time + resumes the current story)."
+    }
+  ]
+}
