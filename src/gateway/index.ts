@@ -10,6 +10,7 @@ import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
 import { pulseSeries } from "../pulse/index.js";
+import { readWidgets } from "../widgets/index.js";
 import {
   startSession,
   sendPrompt,
@@ -175,6 +176,14 @@ app.get("/api/claude/pulse", (req, res) => {
     ? Math.min(1440, Math.max(5, Math.round(raw)))
     : 60;
   res.json(pulseSeries(minutes * 60_000));
+});
+
+// Opt-in secondary widgets for one session (US-022): MCP servers + health,
+// plugins + plugin_errors, most-used tools, api_retry rate, and git branch +
+// dirty-file count for the session cwd. Read-only; the UI fetches this only for
+// widgets the user has enabled, so the default view stays lean.
+app.get("/api/claude/sessions/:id/widgets", async (req, res) => {
+  res.json(await readWidgets(req.params.id));
 });
 
 // Every permission prompt awaiting a decision across all live sessions, for the

@@ -11,6 +11,9 @@ import HeroWidgets from "./components/HeroWidgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
 import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
+import SecondaryWidgets from "./components/SecondaryWidgets.tsx";
+import { useWidgets } from "./hooks/useWidgets.ts";
+import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
 import { useTranscript } from "./hooks/useTranscript.ts";
@@ -63,6 +66,14 @@ export default function App() {
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
+  // US-022: opt-in secondary widgets. Data is fetched for the active session
+  // only when at least one widget is enabled, keeping the default view lean.
+  const widgetPrefs = useWidgetPrefs();
+  const widgetData = useWidgets(
+    activeSession?.id ?? null,
+    wsTrigger,
+    widgetPrefs.anyEnabled,
+  );
 
   // Route an approve/deny choice to a session via the US-012 decision route,
   // then refresh the cross-session pending list. Shared by the inline timeline
@@ -146,6 +157,15 @@ export default function App() {
 
           <div className="mt-4">
             <PendingApprovals pending={pending} onDecide={postDecision} />
+          </div>
+
+          <div className="mt-4">
+            <SecondaryWidgets
+              enabled={widgetPrefs.enabled}
+              toggle={widgetPrefs.toggle}
+              data={widgetData}
+              activeSession={activeSession}
+            />
           </div>
 
           <div className="mt-4">
