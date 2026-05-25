@@ -14,6 +14,8 @@ import {
   stopSession,
   resumeSession,
   listSessions,
+  listEvents,
+  onSessionEvent,
 } from "../session/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
@@ -117,7 +119,9 @@ app.post("/api/claude/events", (req, res) => {
     session_id: sessionId,
     parent_tool_use_id: typeof b.parent_tool_use_id === "string" ? b.parent_tool_use_id : null,
     hook_event_name: hookEvent,
+    stream_type: "hook",
     tool_name: typeof b.tool_name === "string" ? b.tool_name : null,
+    payload: JSON.stringify(b.payload ?? b),
     ts: now,
   };
   broadcast({ type: "event", payload: event });
@@ -137,6 +141,12 @@ app.get("/api/claude/skills", (req, res) => {
 // Read-only, like /api/tasks — the mutating routes below stay token-gated.
 app.get("/api/claude/sessions", (_req, res) => {
   res.json(listSessions());
+});
+
+// A session's event history for the ActivityTimeline (US-011). Read-only; live
+// updates arrive over /ws as {type:'event'}. Newest activity is appended there.
+app.get("/api/claude/sessions/:id/events", (req, res) => {
+  res.json(listEvents(req.params.id));
 });
 
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.
@@ -222,6 +232,10 @@ function broadcast(message: unknown): void {
   }
 }
 const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: state }));
+
+// Live-stream parser-persisted events (US-007) to app clients so headless
+// sessions surface in the timeline (US-011) the same way hook events do.
+onSessionEvent((row) => broadcast({ type: "event", payload: row }));
 
 server.on("upgrade", (req, socket, head) => {
   const auth = verifyUpgrade(req);

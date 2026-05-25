@@ -131,8 +131,54 @@ function sessionEnv(): Record<string, string> {
   return env;
 }
 
+/** One persisted event row as exposed to the dashboard timeline (US-011). */
+export interface EventRow {
+  id: number;
+  session_id: string;
+  parent_tool_use_id: string | null;
+  hook_event_name: string | null;
+  stream_type: string | null;
+  tool_name: string | null;
+  payload: string | null;
+  ts: number;
+}
+
+// Listeners notified whenever the parser persists a stream-json event, so the
+// gateway can broadcast headless-session activity live over /ws (US-011). The
+// hook-ingest path broadcasts from the route directly; this covers the parser.
+type EventListener = (ev: EventRow) => void;
+const eventListeners = new Set<EventListener>();
+
+/** Subscribe to persisted stream-json events; returns an unsubscribe fn. */
+export function onSessionEvent(cb: EventListener): () => void {
+  eventListeners.add(cb);
+  return () => {
+    eventListeners.delete(cb);
+  };
+}
+
+/**
+ * A session's persisted events, oldest first, for the ActivityTimeline
+ * (US-011). Includes the raw payload so the UI can render prompt text, tool
+ * inputs, and retry/compaction detail.
+ */
+export function listEvents(sessionId: string, limit = 1000): EventRow[] {
+  return getDb()
+    .prepare(
+      `SELECT id, session_id, parent_tool_use_id, hook_event_name,
+              stream_type, tool_name, payload, ts
+         FROM event
+         WHERE session_id = ?
+         ORDER BY ts ASC, id ASC
+         LIMIT ?`,
+    )
+    .all(sessionId, limit) as EventRow[];
+}
+
 /** Insert one normalized stream-json event for a known session_id (US-007). */
 function persistEvent(sessionId: string, ev: NormalizedEvent): number {
+  const ts = Date.now();
+  const payload = JSON.stringify(ev.payload ?? null);
   const info = getDb()
     .prepare(
       `INSERT INTO event
@@ -145,10 +191,24 @@ function persistEvent(sessionId: string, ev: NormalizedEvent): number {
       ev.hookEventName,
       ev.streamType,
       ev.toolName,
-      JSON.stringify(ev.payload ?? null),
-      Date.now(),
+      payload,
+      ts,
     );
-  return Number(info.lastInsertRowid);
+  const id = Number(info.lastInsertRowid);
+  if (eventListeners.size) {
+    const row: EventRow = {
+      id,
+      session_id: sessionId,
+      parent_tool_use_id: ev.parentToolUseId,
+      hook_event_name: ev.hookEventName,
+      stream_type: ev.streamType,
+      tool_name: ev.toolName,
+      payload,
+      ts,
+    };
+    for (const cb of eventListeners) cb(row);
+  }
+  return id;
 }
 
 /** Fold token/cost figures from a parsed message onto the session row. */

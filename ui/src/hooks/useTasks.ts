@@ -22,8 +22,11 @@ export interface GatewayEvent {
   id: number;
   session_id: string;
   hook_event_name: string | null;
+  stream_type: string | null;
   tool_name: string | null;
   parent_tool_use_id: string | null;
+  /** Raw event payload as a JSON string (prompt text, tool input, etc.). */
+  payload: string | null;
   ts: number;
 }
 

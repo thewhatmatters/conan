@@ -180,8 +180,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Reuse existing ActivityTimeline + tool-call indicators."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: src/session/index.ts adds listEvents(sessionId) + an onSessionEvent(cb) listener (parser events now broadcast live, like hooks); gateway GET /api/claude/sessions/:id/events (read-only) + enriched hook broadcast (stream_type, payload) + onSessionEvent->broadcast wiring. UI: hooks/useSessionEvents.ts (history fetch + de-duped live WS append), components/ActivityTimeline.tsx (filters noisy stream deltas; renders prompt -> PreToolUse -> PostToolUse with per-tool inline Lucide-path icons: terminal/file/pencil/search/globe/bot/list/wrench; api_retry badge on system/api_retry; compaction marker on PreCompact; failed tool in destructive red; SessionStart/Stop/Subagent). SessionGrid cards now selectable (primary ring); App.tsx renders the timeline for the selected session. Verified via automate-browser in light+dark: seeded a 14-event session, confirmed ordering/icons/api_retry+compaction badges, then POSTed a live PreToolUse and saw it append over WS with no reload (before:0->after:1). typecheck (gateway+ui) + ui build clean."
     },
     {
       "id": "US-012",

@@ -6,6 +6,10 @@ interface SessionGridProps {
   token: string | null;
   defaultCwd: string;
   onRefresh: () => void;
+  /** Currently-selected session id (drives the ActivityTimeline, US-011). */
+  selectedId: string | null;
+  /** Select/deselect a session card. */
+  onSelect: (id: string) => void;
 }
 
 /**
@@ -19,6 +23,8 @@ export default function SessionGrid({
   token,
   defaultCwd,
   onRefresh,
+  selectedId,
+  onSelect,
 }: SessionGridProps) {
   const [showForm, setShowForm] = useState(false);
 
@@ -58,7 +64,12 @@ export default function SessionGrid({
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sessions.map((s) => (
-            <SessionCard key={s.id} session={s} />
+            <SessionCard
+              key={s.id}
+              session={s}
+              selected={s.id === selectedId}
+              onSelect={() => onSelect(s.id)}
+            />
           ))}
         </div>
       )}
@@ -67,10 +78,26 @@ export default function SessionGrid({
 }
 
 /** A single session card: status dot, model, cwd, last activity, token/cost. */
-function SessionCard({ session: s }: { session: Session }) {
+function SessionCard({
+  session: s,
+  selected,
+  onSelect,
+}: {
+  session: Session;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const tokens = s.context_tokens ?? s.input_tokens ?? null;
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card p-3.5">
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={
+        "relative w-full overflow-hidden rounded-xl border bg-card p-3.5 text-left transition-colors hover:bg-muted/40 " +
+        (selected ? "border-primary ring-1 ring-primary" : "border-border")
+      }
+    >
       {/* session color stripe down the left edge */}
       <span
         aria-hidden
@@ -108,7 +135,7 @@ function SessionCard({ session: s }: { session: Session }) {
       <div className="mt-2 text-[11px] text-muted-foreground">
         {s.status} · {timeAgo(s.last_activity)}
       </div>
-    </div>
+    </button>
   );
 }
 

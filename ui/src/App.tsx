@@ -3,9 +3,11 @@ import { useTheme } from "./hooks/useTheme.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
+import { useSessionEvents } from "./hooks/useSessionEvents.ts";
 import Dock from "./components/Dock.tsx";
 import SessionGrid from "./components/SessionGrid.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
+import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -24,6 +26,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [dockOpen, setDockOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent } = useGateway(config?.token ?? null);
   const { sessions, refresh } = useSessions(lastEvent?.seq ?? null);
@@ -32,6 +35,9 @@ export default function App() {
   const activeSession =
     sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
   const skills = useSkills(activeSession?.id ?? null, lastEvent?.seq ?? null);
+  // Timeline (US-011): events for the selected session — history + live WS.
+  const timelineEvents = useSessionEvents(selectedId, lastEvent);
+  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
 
   useEffect(() => {
     fetch("/api/health")
@@ -104,7 +110,33 @@ export default function App() {
             token={config?.token ?? null}
             defaultCwd={config?.cwd ?? ""}
             onRefresh={refresh}
+            selectedId={selectedId}
+            onSelect={(id) =>
+              setSelectedId((cur) => (cur === id ? null : id))
+            }
           />
+
+          {selectedId && (
+            <section className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                  Activity
+                  <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+                    {selectedSession?.title ??
+                      selectedSession?.model ??
+                      selectedId.slice(0, 8)}
+                  </span>
+                </h2>
+                <button
+                  onClick={() => setSelectedId(null)}
+                  className="rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  Close
+                </button>
+              </div>
+              <ActivityTimeline events={timelineEvents} />
+            </section>
+          )}
         </main>
 
         {dockOpen && (
