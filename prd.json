@@ -195,8 +195,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: parser.ts normalizes control_request{subtype:can_use_tool} -> stream_type 'control_request:can_use_tool' (request_id/tool_name/input in payload) + control_cancel_request; session/index.ts tracks open prompts per live child (pending map) and decidePermission(sessionId, requestId, {decision,message}) writes a stream-json control_response {subtype:success, response:{behavior:allow|deny,...}} to the child's stdin (the mechanism the headless CLI blocks on); requestId optional when one prompt is open; listPendingPermissions() exported for US-013. Gateway: POST /api/claude/sessions/:id/permission behind x-conan-token (400 on bad decision). UI: ActivityTimeline renders inline Approve(primary)/Deny(destructive) on can_use_tool + permission Notifications; collapses to Approved/Denied/Superseded badge once decided locally or when a later control_response/control_cancel_request resolves the request_id (criterion 3). App.tsx onDecide POSTs the choice. Verified: scripts/test-drive.mjs round-trips a stub control_request -> POST allow -> control_response{behavior:allow} reaches stdin (auth 401 + bad-decision 400 too); test-parser.mjs covers can_use_tool/cancel parsing. Browser (automate-browser, light+dark): 2 seeded prompts show Approve/Deny, clicking POSTs {request_id,decision} to the route, controls collapse to green Approved + red Denied. typecheck + ui build + npm test all clean."
     },
     {
       "id": "US-013",

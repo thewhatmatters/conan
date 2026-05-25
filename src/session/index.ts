@@ -37,6 +37,20 @@ export interface ManagedSession {
   model?: string;
   permissionMode?: string;
   startedAt: number;
+  /**
+   * Open tool-permission prompts keyed by control_request id (US-012). The CLI
+   * blocks on stdin until we send a matching control_response, so we track the
+   * original input to echo back when allowing and to resolve an omitted id.
+   */
+  pending: Map<string, PendingPermission>;
+}
+
+/** A tool-permission prompt awaiting an operator decision (US-012). */
+export interface PendingPermission {
+  requestId: string;
+  toolName: string | null;
+  input: unknown;
+  ts: number;
 }
 
 // Two views of the same set of live children. We can't key by session_id at
@@ -304,6 +318,7 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     model: cfg.model,
     permissionMode: cfg.permissionMode,
     startedAt: Date.now(),
+    pending: new Map(),
   };
   byLaunchId.set(launchId, session);
 
@@ -348,7 +363,10 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
       return;
     }
     while (pending.length) persistEvent(sid, pending.shift() as NormalizedEvent);
-    if (parsed.event) persistEvent(sid, parsed.event);
+    if (parsed.event) {
+      trackPermission(session, parsed.event);
+      persistEvent(sid, parsed.event);
+    }
     if (parsed.usage) applyUsage(sid, parsed.usage);
   };
 
@@ -515,4 +533,94 @@ export function stopSession(sessionId: string): boolean {
     .prepare("UPDATE session SET status = 'idle', last_activity = ? WHERE id = ?")
     .run(Date.now(), sessionId);
   return Boolean(live);
+}
+
+/**
+ * Fold a parsed control event into the session's pending-permission map: a
+ * can_use_tool request opens a prompt; a cancel request closes one (US-012).
+ */
+function trackPermission(session: ManagedSession, ev: NormalizedEvent): void {
+  const p = (ev.payload ?? null) as Record<string, unknown> | null;
+  const requestId = p && typeof p.request_id === "string" ? p.request_id : null;
+  if (ev.streamType === "control_request:can_use_tool" && requestId) {
+    session.pending.set(requestId, {
+      requestId,
+      toolName: ev.toolName,
+      input: p?.input,
+      ts: Date.now(),
+    });
+  } else if (ev.streamType === "control_cancel_request" && requestId) {
+    session.pending.delete(requestId);
+  }
+}
+
+/** Every open permission prompt across live sessions (US-012; feeds US-013). */
+export interface SessionPermission extends PendingPermission {
+  sessionId: string;
+}
+export function listPendingPermissions(): SessionPermission[] {
+  const out: SessionPermission[] = [];
+  for (const s of byLaunchId.values()) {
+    if (!s.sessionId) continue;
+    for (const p of s.pending.values()) out.push({ sessionId: s.sessionId, ...p });
+  }
+  return out;
+}
+
+export interface PermissionDecision {
+  decision: "allow" | "deny";
+  /** Replacement tool input applied when allowing; defaults to the original. */
+  updatedInput?: Record<string, unknown>;
+  /** Reason surfaced to the agent when denying. */
+  message?: string;
+}
+
+/**
+ * Answer a tool-permission prompt (US-012) by writing a stream-json
+ * control_response to the live child's stdin — the mechanism the headless CLI
+ * blocks on. `requestId` matches the control_request; when omitted and exactly
+ * one prompt is open, that one is used. Returns whether a live child received
+ * the response and the request id that was resolved.
+ */
+export function decidePermission(
+  sessionId: string,
+  requestId: string | null,
+  decision: PermissionDecision,
+): { delivered: boolean; requestId: string | null } {
+  const live = bySessionId.get(sessionId);
+
+  // Resolve the target request: explicit id, else the only open prompt.
+  let rid = requestId;
+  if (!rid && live && live.pending.size === 1) {
+    rid = [...live.pending.keys()][0] ?? null;
+  }
+  const open = rid && live ? live.pending.get(rid) : undefined;
+
+  const result =
+    decision.decision === "allow"
+      ? {
+          behavior: "allow" as const,
+          updatedInput: decision.updatedInput ?? (open?.input as object) ?? {},
+        }
+      : {
+          behavior: "deny" as const,
+          message: decision.message ?? "Denied by operator",
+        };
+
+  if (!live || live.child.killed || !live.child.stdin.writable) {
+    if (rid && live) live.pending.delete(rid);
+    return { delivered: false, requestId: rid };
+  }
+
+  live.child.stdin.write(
+    JSON.stringify({
+      type: "control_response",
+      response: { subtype: "success", request_id: rid, response: result },
+    }) + "\n",
+  );
+  if (rid) live.pending.delete(rid);
+  getDb()
+    .prepare("UPDATE session SET last_activity = ?, status = 'running' WHERE id = ?")
+    .run(Date.now(), sessionId);
+  return { delivered: true, requestId: rid };
 }

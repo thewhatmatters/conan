@@ -207,6 +207,62 @@ export function parseStreamMessage(raw: string): ParsedMessage | null {
     };
   }
 
+  // --- control protocol (headless permission prompts, US-012) -------------
+  // In stream-json mode Claude Code asks for tool permission by emitting a
+  // control_request{subtype:"can_use_tool"} and blocking on stdin for our
+  // control_response. We surface it as an event so the timeline can render an
+  // inline Approve/Deny control; control_cancel_request supersedes a prompt.
+  if (type === "control_request") {
+    const request = (m.request ?? {}) as Record<string, unknown>;
+    const subtype = asString(request.subtype) ?? "unknown";
+    const requestId = asString(m.request_id) ?? asString(request.request_id);
+    if (subtype === "can_use_tool") {
+      return {
+        sessionId: null,
+        model: null,
+        event: {
+          streamType: "control_request:can_use_tool",
+          hookEventName: null,
+          toolName: asString(request.tool_name),
+          parentToolUseId,
+          payload: {
+            request_id: requestId,
+            tool_name: request.tool_name,
+            input: request.input,
+            permission_suggestions: request.permission_suggestions,
+          },
+        },
+        usage: null,
+      };
+    }
+    return {
+      sessionId: null,
+      model: null,
+      event: {
+        streamType: `control_request:${subtype}`,
+        hookEventName: null,
+        toolName: null,
+        parentToolUseId,
+        payload: { request_id: requestId, ...request },
+      },
+      usage: null,
+    };
+  }
+  if (type === "control_cancel_request") {
+    return {
+      sessionId: null,
+      model: null,
+      event: {
+        streamType: "control_cancel_request",
+        hookEventName: null,
+        toolName: null,
+        parentToolUseId,
+        payload: { request_id: asString(m.request_id) },
+      },
+      usage: null,
+    };
+  }
+
   // --- result (final message) ---------------------------------------------
   if (type === "result") {
     const usage = extractUsage(m.usage) ?? {};

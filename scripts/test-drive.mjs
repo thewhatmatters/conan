@@ -33,6 +33,11 @@ const ri = argv.indexOf("--resume");
 const sid = ri !== -1 && argv[ri + 1] ? argv[ri + 1] : ${JSON.stringify(FIXED_ID)};
 const init = { type: "system", subtype: "init", session_id: sid, model: "claude-sonnet-4-6", tools: [], cwd: process.cwd() };
 process.stdout.write(JSON.stringify(init) + "\\n");
+// Emit a tool-permission control_request so the driver can answer it (US-012).
+setTimeout(() => {
+  const req = { type: "control_request", request_id: "perm-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } } };
+  process.stdout.write(JSON.stringify(req) + "\\n");
+}, 80);
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
@@ -128,6 +133,20 @@ try {
 
   const stdinText = await waitFor(stdinLog, (t) => t.includes("hello loop"));
   check("prompt was written to the live stdin as stream-json", /"type":"user"/.test(stdinText) && stdinText.includes("hello loop"));
+
+  // --- permission decision (US-012) -------------------------------------
+  check("permission rejects missing token (401)", (await post(`/api/claude/sessions/${FIXED_ID}/permission`, { request_id: "perm-1", decision: "allow" }, null)).status === 401);
+  check("permission rejects bad decision (400)", (await post(`/api/claude/sessions/${FIXED_ID}/permission`, { request_id: "perm-1", decision: "maybe" })).status === 400);
+
+  const permRes = await post(`/api/claude/sessions/${FIXED_ID}/permission`, { request_id: "perm-1", decision: "allow" });
+  const permBody = await permRes.json();
+  check("permission returns 200", permRes.status === 200);
+  check("permission delivered to live child", permBody.delivered === true);
+  check("permission resolved the request id", permBody.requestId === "perm-1");
+
+  const permStdin = await waitFor(stdinLog, (t) => t.includes("control_response"));
+  check("control_response written to stdin as stream-json", /"type":"control_response"/.test(permStdin));
+  check("control_response carries the request id + allow behavior", permStdin.includes("perm-1") && /"behavior":"allow"/.test(permStdin));
 
   // --- stop -------------------------------------------------------------
   const stopRes = await post(`/api/claude/sessions/${FIXED_ID}/stop`, {});

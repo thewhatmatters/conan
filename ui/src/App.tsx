@@ -39,6 +39,22 @@ export default function App() {
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
 
+  // US-012: route an inline approve/deny choice to the selected session.
+  const decidePermission = (
+    requestId: string | null,
+    choice: "allow" | "deny",
+  ) => {
+    if (!selectedId || !config?.token) return;
+    fetch(`/api/claude/sessions/${encodeURIComponent(selectedId)}/permission`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-conan-token": config.token,
+      },
+      body: JSON.stringify({ request_id: requestId, decision: choice }),
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -134,7 +150,10 @@ export default function App() {
                   Close
                 </button>
               </div>
-              <ActivityTimeline events={timelineEvents} />
+              <ActivityTimeline
+                events={timelineEvents}
+                onDecide={decidePermission}
+              />
             </section>
           )}
         </main>

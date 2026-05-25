@@ -122,6 +122,30 @@ check("garbage line → null", parseStreamMessage("not json") === null);
   check("content_block_stop streamType", p?.event?.streamType === "stream_event:content_block_stop");
 }
 
+// control_request: can_use_tool permission prompt (US-012)
+{
+  const p = parseStreamMessage(
+    JSON.stringify({
+      type: "control_request",
+      request_id: "req-1",
+      request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } },
+    }),
+  );
+  check("can_use_tool streamType", p?.event?.streamType === "control_request:can_use_tool");
+  check("can_use_tool records tool_name", p?.event?.toolName === "Bash");
+  check("can_use_tool payload carries request_id", p?.event?.payload?.request_id === "req-1");
+  check("can_use_tool payload carries input", p?.event?.payload?.input?.command === "ls");
+}
+
+// control_cancel_request supersedes a prompt (US-012)
+{
+  const p = parseStreamMessage(
+    JSON.stringify({ type: "control_cancel_request", request_id: "req-1" }),
+  );
+  check("control_cancel_request streamType", p?.event?.streamType === "control_cancel_request");
+  check("control_cancel_request carries request_id", p?.event?.payload?.request_id === "req-1");
+}
+
 // stream_event: message_delta carries usage (context-window figures)
 {
   const p = parseStreamMessage(

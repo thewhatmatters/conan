@@ -13,6 +13,7 @@ import {
   sendPrompt,
   stopSession,
   resumeSession,
+  decidePermission,
   listSessions,
   listEvents,
   onSessionEvent,
@@ -179,6 +180,26 @@ app.post("/api/claude/sessions/:id/prompt", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+// Answer a tool-permission prompt from the timeline (US-012). Routes the
+// allow/deny choice to the live session via the stream-json control protocol.
+app.post("/api/claude/sessions/:id/permission", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  if (b.decision !== "allow" && b.decision !== "deny") {
+    res.status(400).json({ error: "decision must be 'allow' or 'deny'" });
+    return;
+  }
+  const result = decidePermission(
+    req.params.id,
+    typeof b.request_id === "string" ? b.request_id : null,
+    {
+      decision: b.decision,
+      message: typeof b.message === "string" ? b.message : undefined,
+    },
+  );
+  res.json({ ok: true, ...result });
 });
 
 app.post("/api/claude/sessions/:id/stop", (req, res) => {

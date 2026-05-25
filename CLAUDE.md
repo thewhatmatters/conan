@@ -62,6 +62,11 @@ npm run typecheck           # tsc --noEmit (gateway)
   The terminal theme derives from the same tokens (`getTerminalTheme()`).
 - shadcn-compatible token names so the component lib slots in later.
 - Auth/Origin checks apply to **every** new WS endpoint.
+- **Gateway is single-instance on :3747.** On startup, if the port is already
+  bound, exit immediately with a clear message (e.g. "Conan gateway already
+  running on :3747 — stop it first, or set CONAN_PORT") — never crash with a raw
+  `EADDRINUSE` stack. This stops a human-run dashboard and the build loop's UI
+  verification (which boots its own gateway on :3747) from clobbering each other.
 - **The main-area timeline (US-009–US-013, esp. US-011) must auto-surface
   activity so nobody needs a terminal `tail`.** It should render, live over the
   app WS: (a) Claude Code hook events (`{type:'event'}`), and (b) the build-loop

@@ -1,7 +1,13 @@
+import { useState } from "react";
 import type { TimelineEvent } from "../hooks/useSessionEvents.ts";
+
+/** Operator choice for a tool-permission prompt (US-012). */
+export type PermissionChoice = "allow" | "deny";
 
 interface ActivityTimelineProps {
   events: TimelineEvent[];
+  /** Send an approve/deny decision for a prompt to the gateway (US-012). */
+  onDecide?: (requestId: string | null, choice: PermissionChoice) => void;
 }
 
 /**
@@ -11,7 +17,13 @@ interface ActivityTimelineProps {
  * useSessionEvents (history + live WS appends). Noisy partial-message stream
  * deltas are filtered out so the timeline reads as discrete actions.
  */
-export default function ActivityTimeline({ events }: ActivityTimelineProps) {
+export default function ActivityTimeline({
+  events,
+  onDecide,
+}: ActivityTimelineProps) {
+  // Locally-recorded decisions (request id or `event-<id>` key → choice) so the
+  // control disappears the instant a choice is made, before the WS round-trip.
+  const [decided, setDecided] = useState<Record<string, PermissionChoice>>({});
   const entries = events.filter(isTimelineEntry);
 
   if (entries.length === 0) {
@@ -23,6 +35,23 @@ export default function ActivityTimeline({ events }: ActivityTimelineProps) {
     );
   }
 
+  // A prompt is superseded once a later event cancels/answers its request id.
+  const resolvedIds = new Set<string>();
+  for (const e of events) {
+    if (
+      e.stream_type === "control_cancel_request" ||
+      e.stream_type === "control_response"
+    ) {
+      const rid = str(parsePayload(e.payload)?.request_id);
+      if (rid) resolvedIds.add(rid);
+    }
+  }
+
+  const decide = (key: string, requestId: string | null, choice: PermissionChoice) => {
+    setDecided((d) => ({ ...d, [key]: choice }));
+    onDecide?.(requestId, choice);
+  };
+
   return (
     <ol className="relative space-y-1">
       {/* the vertical rail */}
@@ -30,22 +59,71 @@ export default function ActivityTimeline({ events }: ActivityTimelineProps) {
         aria-hidden
         className="absolute left-[15px] top-2 bottom-2 w-px bg-border"
       />
-      {entries.map((e) => (
-        <TimelineRow key={e.id} event={e} />
-      ))}
+      {entries.map((e) => {
+        const prompt = permissionPrompt(e);
+        const key = prompt?.requestId ?? `event-${e.id}`;
+        return (
+          <TimelineRow
+            key={e.id}
+            event={e}
+            prompt={prompt}
+            decision={decided[key]}
+            superseded={Boolean(prompt?.requestId && resolvedIds.has(prompt.requestId))}
+            onDecide={(choice) => decide(key, prompt?.requestId ?? null, choice)}
+          />
+        );
+      })}
     </ol>
   );
+}
+
+/**
+ * A permission decision point (US-012). Surfaces on the headless control
+ * protocol's can_use_tool request and on permission-prompt Notifications.
+ * Returns the request id (null when none is carried) or null when the event is
+ * not a decision point.
+ */
+function permissionPrompt(e: TimelineEvent): { requestId: string | null } | null {
+  if (e.stream_type === "control_request:can_use_tool") {
+    return { requestId: str(parsePayload(e.payload)?.request_id) ?? null };
+  }
+  if (e.hook_event_name === "Notification") {
+    const p = parsePayload(e.payload);
+    const msg = (str(p?.message) ?? "").toLowerCase();
+    if (msg.includes("permission") || p?.permission_decision || p?.permission_mode) {
+      return { requestId: str(p?.request_id) ?? null };
+    }
+  }
+  return null;
 }
 
 /** Which events earn a timeline row — lifecycle hooks + api_retry markers. */
 function isTimelineEntry(e: TimelineEvent): boolean {
   if (e.hook_event_name) return true;
   if (e.stream_type === "system/api_retry") return true;
+  if (e.stream_type === "control_request:can_use_tool") return true;
   return false;
 }
 
-function TimelineRow({ event: e }: { event: TimelineEvent }) {
+interface TimelineRowProps {
+  event: TimelineEvent;
+  prompt: { requestId: string | null } | null;
+  decision?: PermissionChoice;
+  superseded: boolean;
+  onDecide: (choice: PermissionChoice) => void;
+}
+
+function TimelineRow({
+  event: e,
+  prompt,
+  decision,
+  superseded,
+  onDecide,
+}: TimelineRowProps) {
   const meta = describe(e);
+  // Show the live control only while the prompt is open: not yet decided and
+  // not superseded by a later cancel/response (criterion 3).
+  const showControl = Boolean(prompt) && !decision && !superseded;
   return (
     <li className="relative flex items-start gap-3 py-1.5 pl-0">
       <span
@@ -76,8 +154,80 @@ function TimelineRow({ event: e }: { event: TimelineEvent }) {
             {meta.detail}
           </div>
         )}
+        {prompt && (
+          <PermissionControl
+            show={showControl}
+            decision={decision}
+            superseded={superseded}
+            onDecide={onDecide}
+          />
+        )}
       </div>
     </li>
+  );
+}
+
+/**
+ * Inline Approve/Deny control for a permission prompt (US-012). Renders the
+ * two buttons while the prompt is open, then collapses to a resolved badge once
+ * a decision is made or the prompt is superseded.
+ */
+function PermissionControl({
+  show,
+  decision,
+  superseded,
+  onDecide,
+}: {
+  show: boolean;
+  decision?: PermissionChoice;
+  superseded: boolean;
+  onDecide: (choice: PermissionChoice) => void;
+}) {
+  if (show) {
+    return (
+      <div className="mt-1.5 flex items-center gap-2">
+        <button
+          onClick={() => onDecide("allow")}
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+        >
+          <Glyph name="check" size={12} /> Approve
+        </button>
+        <button
+          onClick={() => onDecide("deny")}
+          className="inline-flex items-center gap-1 rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/20"
+        >
+          <Glyph name="x" size={12} /> Deny
+        </button>
+        <span className="text-[11px] text-muted-foreground/70">
+          Permission requested
+        </span>
+      </div>
+    );
+  }
+  let label = "Resolved";
+  let cls = "border-border bg-muted text-muted-foreground";
+  if (decision === "allow") {
+    label = "Approved";
+    cls = "border-primary/40 bg-primary/10 text-primary";
+  } else if (decision === "deny") {
+    label = "Denied";
+    cls = "border-destructive/40 bg-destructive/10 text-destructive";
+  } else if (superseded) {
+    label = "Superseded";
+  }
+  return (
+    <div className="mt-1.5">
+      <span
+        className={
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium " +
+          cls
+        }
+      >
+        {decision === "allow" && <Glyph name="check" size={11} />}
+        {decision === "deny" && <Glyph name="x" size={11} />}
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -108,6 +258,17 @@ function describe(e: TimelineEvent): EntryMeta {
   const neutral = "border-border bg-card text-muted-foreground";
   const primary = "border-primary/40 bg-primary/10 text-primary";
   const danger = "border-destructive/40 bg-destructive/10 text-destructive";
+
+  // can_use_tool permission request from the headless control protocol (US-012).
+  if (e.stream_type === "control_request:can_use_tool") {
+    return {
+      title: e.tool_name ?? "Tool",
+      kind: "permission",
+      detail: toolDetail(e.tool_name, payload?.input),
+      icon: <Glyph name="shield" />,
+      dotClass: primary,
+    };
+  }
 
   // api_retry from the stream-json parser.
   if (e.stream_type === "system/api_retry") {
@@ -287,6 +448,9 @@ type GlyphName =
   | "retry"
   | "play"
   | "stop"
+  | "shield"
+  | "check"
+  | "x"
   | "dot";
 
 const PATHS: Record<GlyphName, React.ReactNode> = {
@@ -379,6 +543,16 @@ const PATHS: Record<GlyphName, React.ReactNode> = {
   ),
   play: <polygon points="6 3 20 12 6 21 6 3" />,
   stop: <rect width="14" height="14" x="5" y="5" rx="2" />,
+  shield: (
+    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+  ),
+  check: <polyline points="20 6 9 17 4 12" />,
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   dot: <circle cx="12" cy="12" r="4" />,
 };
 
