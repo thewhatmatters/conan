@@ -413,8 +413,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 26,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Split from US-016, which delivered the single-terminal pane. Tab framework now exists (US-027) \u2014 this is specifically multiple terminal tabs."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend already spawned an independent pty + ring buffer + terminal_session row per stable `tid` (US-017); added a {type:'close'} control frame -> destroySession so an explicit tab close kills the pty + drops its DB row NOW (not after the detach grace window) \u2014 plus a `sessions.has` guard in the ws close handler so the two paths don't double-fire. UI: Terminal.tsx now takes a `tid` prop (instead of one global sessionStorage tid) + a `closeOnUnmount` ref that, when set, makes its cleanup send the close frame. Dock.tsx manages N terminal tabs (Term 1..N with a +/x and a positional label) alongside the Tasks tab; every terminal stays mounted (stacked absolute inset-0, active z-10, hidden ones invisible) so switching tabs never tears down a pty and scrollback is preserved; the tab list (tids) persists to sessionStorage (conan.terms, migrates legacy conan.tid) so a reload re-attaches to the surviving ptys. Verified: scripts/test-terminal.mjs gains Flow C (explicit close -> reconnect gets a FRESH pty, no backlog) \u2014 13/13 checks; full npm test + typecheck + ui build clean. Browser (automate-browser, light+dark, gateway on :3771 w/ CONAN_CLAUDE_BIN=true so tabs drop to a shell): created 3 tabs -> 3 distinct terminal_session rows; typed MARKER_ONE/TWO/THREE, confirmed each tab isolated + scrollback survived switching away and back; closed Term 2 -> its exact tid row removed (DB 3->2) while the other two ptys survived."
     },
     {
       "id": "US-027",

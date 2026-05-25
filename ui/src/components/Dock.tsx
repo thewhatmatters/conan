@@ -4,8 +4,6 @@ import TaskChecklist from "./TaskChecklist.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
 
-type Tab = "terminal" | "tasks";
-
 interface DockProps {
   token: string | null;
   theme: Theme;
@@ -14,18 +12,103 @@ interface DockProps {
 
 const MIN_W = 320;
 const MAX_W = 900;
+const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
+
+/** A single terminal tab — its `tid` keys an independent pty on the backend. */
+interface TermTab {
+  tid: string;
+}
+
+/** The active dock surface: a specific terminal tab (by tid) or the Tasks tab. */
+type Active = { kind: "term"; tid: string } | { kind: "tasks" };
 
 /**
- * The right-hand dock: a draggable-width panel with a tabbed surface. The
- * Terminal stays mounted (and sized) at all times so switching to Tasks never
- * tears down the Claude session — the Tasks checklist simply overlays it.
+ * Restore the terminal tab list from sessionStorage so a reload re-attaches to
+ * the surviving ptys (US-017). Falls back to a single fresh tab, migrating the
+ * legacy single-terminal `conan.tid` if present.
+ */
+function loadTerms(): TermTab[] {
+  try {
+    const raw = sessionStorage.getItem(TERMS_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw) as string[];
+      if (Array.isArray(ids) && ids.length) return ids.map((tid) => ({ tid }));
+    }
+  } catch {
+    /* corrupt entry — fall through to a fresh tab */
+  }
+  const legacy = sessionStorage.getItem("conan.tid");
+  const fresh = [{ tid: legacy ?? crypto.randomUUID() }];
+  persistTerms(fresh); // persist immediately so a reload re-attaches to this pty
+  return fresh;
+}
+
+function persistTerms(terms: TermTab[]): void {
+  sessionStorage.setItem(TERMS_KEY, JSON.stringify(terms.map((t) => t.tid)));
+}
+
+/**
+ * The right-hand dock: a draggable-width panel with a tabbed surface. It holds N
+ * terminal tabs (US-026) plus a Tasks tab. Every terminal stays mounted at all
+ * times (stacked, only the active one on top) so switching tabs never tears down
+ * a pty and scrollback is preserved; the Tasks checklist overlays them. Each
+ * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
+ * that pty (and its terminal_session row) via an explicit close frame.
  */
 export default function Dock({ token, theme, tasks }: DockProps) {
-  const [tab, setTab] = useState<Tab>("terminal");
+  const [terms, setTerms] = useState<TermTab[]>(loadTerms);
+  const [active, setActive] = useState<Active>(() => ({
+    kind: "term",
+    tid: terms[0]!.tid, // loadTerms() always returns ≥1 tab
+  }));
   const [width, setWidth] = useState<number>(
     () => Number(localStorage.getItem("conan-dock-w")) || 460,
   );
   const widthRef = useRef(width);
+  // Per-tab "destroy on unmount" flags. Set just before removing a tab so the
+  // Terminal's cleanup sends the backend close frame (US-026 criterion 3).
+  const closeFlags = useRef(new Map<string, { current: boolean }>());
+  const flagFor = (tid: string) => {
+    let f = closeFlags.current.get(tid);
+    if (!f) {
+      f = { current: false };
+      closeFlags.current.set(tid, f);
+    }
+    return f;
+  };
+
+  const isTermActive = active.kind === "term";
+
+  const addTerm = useCallback(() => {
+    const tid = crypto.randomUUID();
+    setTerms((prev) => {
+      const next = [...prev, { tid }];
+      persistTerms(next);
+      return next;
+    });
+    setActive({ kind: "term", tid });
+  }, []);
+
+  const closeTerm = useCallback(
+    (tid: string) => {
+      // Tell that Terminal's cleanup to kill the pty, then drop the tab.
+      flagFor(tid).current = true;
+      setTerms((prev) => {
+        const next = prev.filter((t) => t.tid !== tid);
+        // Never leave the dock with zero terminals — spawn a fresh one.
+        const ensured = next.length ? next : [{ tid: crypto.randomUUID() }];
+        persistTerms(ensured);
+        // If the closed tab was active, fall back to the last remaining terminal.
+        setActive((cur) =>
+          cur.kind === "term" && cur.tid === tid
+            ? { kind: "term", tid: ensured[ensured.length - 1]!.tid }
+            : cur,
+        );
+        return ensured;
+      });
+    },
+    [],
+  );
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -57,35 +140,91 @@ export default function Dock({ token, theme, tasks }: DockProps) {
         className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
       />
 
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <TabButton active={tab === "terminal"} onClick={() => setTab("terminal")}>
-          Terminal
-        </TabButton>
-        <TabButton active={tab === "tasks"} onClick={() => setTab("tasks")}>
-          Tasks
-          {tasks?.exists && (
-            <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {tasks.done}/{tasks.total}
-            </span>
-          )}
-        </TabButton>
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5">
+        {terms.map((t, i) => {
+          const on = isTermActive && active.tid === t.tid;
+          return (
+            <div
+              key={t.tid}
+              className={
+                "group flex items-center rounded-md text-xs " +
+                (on
+                  ? "bg-muted font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-muted/60")
+              }
+            >
+              <button
+                onClick={() => setActive({ kind: "term", tid: t.tid })}
+                className="py-1 pl-2.5 pr-1"
+                title={`Terminal ${i + 1}`}
+              >
+                Term {i + 1}
+              </button>
+              <button
+                onClick={() => closeTerm(t.tid)}
+                title="Close terminal"
+                className="mr-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-background/60 hover:text-foreground group-hover:opacity-100"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          onClick={addTerm}
+          title="New terminal"
+          className="rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60"
+        >
+          +
+        </button>
+
+        <div className="ml-auto">
+          <TabButton
+            active={active.kind === "tasks"}
+            onClick={() => setActive({ kind: "tasks" })}
+          >
+            Tasks
+            {tasks?.exists && (
+              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {tasks.done}/{tasks.total}
+              </span>
+            )}
+          </TabButton>
+        </div>
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {/* Terminal: always mounted + visible (sized), Tasks overlays it.
-            bg-term-bg + 1rem padding gives the terminal internal breathing room
-            that matches its own background in either theme. */}
-        <div className="absolute inset-0 bg-term-bg p-4">
-          {token ? (
-            <Terminal token={token} theme={theme} />
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              connecting…
-            </div>
-          )}
-        </div>
-        {tab === "tasks" && (
-          <div className="absolute inset-0 z-10 bg-card">
+        {/* Every terminal stays mounted and sized (stacked, absolute inset-0) so
+            switching tabs preserves scrollback and never tears down a pty. Only
+            the active one sits on top + is interactive; the rest are hidden
+            behind it. bg-term-bg + padding matches the terminal's own bg. */}
+        {token ? (
+          terms.map((t) => {
+            const on = isTermActive && active.tid === t.tid;
+            return (
+              <div
+                key={t.tid}
+                className={
+                  "absolute inset-0 bg-term-bg p-4 " +
+                  (on ? "z-10" : "z-0 invisible")
+                }
+              >
+                <Terminal
+                  token={token}
+                  theme={theme}
+                  tid={t.tid}
+                  closeOnUnmount={flagFor(t.tid)}
+                />
+              </div>
+            );
+          })
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-term-bg text-xs text-muted-foreground">
+            connecting…
+          </div>
+        )}
+        {active.kind === "tasks" && (
+          <div className="absolute inset-0 z-20 bg-card">
             <TaskChecklist tasks={tasks} />
           </div>
         )}
@@ -115,5 +254,23 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
   );
 }

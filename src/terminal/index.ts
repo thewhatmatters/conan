@@ -52,7 +52,7 @@ function ptyEnv(): Record<string, string> {
 }
 
 interface ClientMessage {
-  type: "input" | "resize";
+  type: "input" | "resize" | "close";
   data?: string;
   cols?: number;
   rows?: number;
@@ -220,6 +220,11 @@ function attach(session: TermSession, ws: WebSocket): void {
         msg.rows,
         session.id,
       );
+    } else if (msg.type === "close") {
+      // Explicit tab close (US-026): kill the pty + drop its DB row now, even for
+      // a persistent (tid) session — this is a user action, not a dropped socket,
+      // so it must not survive the detach grace window.
+      destroySession(session);
     }
   });
 
@@ -227,6 +232,7 @@ function attach(session: TermSession, ws: WebSocket): void {
     if (session.ws !== ws) return; // a newer socket already took over
     session.ws = null;
     if (session.exited) return; // onExit already cleaned up (or will)
+    if (!sessions.has(session.id)) return; // already destroyed (explicit close)
     if (!session.persistent) {
       destroySession(session);
       return;

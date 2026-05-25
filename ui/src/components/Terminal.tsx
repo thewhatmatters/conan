@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -12,6 +12,19 @@ interface TerminalProps {
   token: string;
   /** Current app theme; the xterm theme re-derives from CSS tokens on change. */
   theme: Theme;
+  /**
+   * Stable per-tab terminal id (US-026). Each tab passes its own, so each owns a
+   * distinct pty + WS + ring buffer; a reload/HMR re-attaches to the surviving
+   * pty and replays the backlog (US-017/US-018).
+   */
+  tid: string;
+  /**
+   * Set true (by the Dock) right before unmounting a tab the user closed, so the
+   * cleanup tells the backend to kill the pty now instead of letting it survive
+   * the detach grace window (US-026 criterion 3). A reload leaves this false, so
+   * the pty survives and re-attaches.
+   */
+  closeOnUnmount?: MutableRefObject<boolean>;
 }
 
 /**
@@ -19,7 +32,7 @@ interface TerminalProps {
  * rendered via WebGL when available, themed from the app's CSS tokens, and
  * bridged to the node-pty service over the authenticated /ws/terminal socket.
  */
-export default function Terminal({ token, theme }: TerminalProps) {
+export default function Terminal({ token, theme, tid, closeOnUnmount }: TerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Xterm | null>(null);
 
@@ -49,15 +62,9 @@ export default function Terminal({ token, theme }: TerminalProps) {
     fit.fit();
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    // Stable per-tab terminal id so a reload/HMR/dropped socket re-attaches to
-    // the surviving pty and replays the missed backlog instead of spawning a
-    // fresh one (US-017). On reconnect the same `tid` is what triggers that
-    // ring-buffer replay (US-018).
-    let tid = sessionStorage.getItem("conan.tid");
-    if (!tid) {
-      tid = crypto.randomUUID();
-      sessionStorage.setItem("conan.tid", tid);
-    }
+    // `tid` is the stable per-tab id supplied by the Dock (US-026). Re-using it
+    // across a reload/HMR/dropped socket re-attaches to the surviving pty and
+    // replays the missed backlog instead of spawning a fresh one (US-017/US-018).
 
     // Self-healing socket: backoff reconnect on drop, re-attaching the same tid
     // so the server replays the ring buffer (US-018). No app-level heartbeat —
@@ -69,7 +76,7 @@ export default function Terminal({ token, theme }: TerminalProps) {
       url: () => {
         const params = new URLSearchParams({
           token,
-          tid: tid!,
+          tid,
           cols: String(term.cols),
           rows: String(term.rows),
         });
@@ -101,11 +108,16 @@ export default function Terminal({ token, theme }: TerminalProps) {
     return () => {
       ro.disconnect();
       onData.dispose();
+      // If the Dock is closing this tab (not just a reload), tell the backend to
+      // kill the pty + drop its terminal_session row now (US-026 criterion 3).
+      if (closeOnUnmount?.current) {
+        sock.send(JSON.stringify({ type: "close" }));
+      }
       sock.close();
       term.dispose();
       xtermRef.current = null;
     };
-  }, [token]);
+  }, [token, tid]);
 
   // Re-apply the theme when the app theme toggles. Setting options.theme is the
   // supported path; refresh() forces a redraw so the WebGL renderer's glyph

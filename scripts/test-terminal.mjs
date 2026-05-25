@@ -133,6 +133,27 @@ try {
   check("most-recent output (OUT:L40) was retained", replayB.includes("OUT:L40"));
   c4.close();
 
+  // ===== Flow C: an explicit {type:'close'} kills the pty now (US-026) ========
+  // A closed tab must NOT survive the grace window: reconnecting with the same
+  // tid spawns a FRESH pty (a new START, none of the prior CCC backlog).
+  const T3 = "term-C-" + Math.random().toString(36).slice(2, 8);
+  const c5 = connect(T3);
+  await c5.ready;
+  c5.input("CCC");
+  check("flow-C live output arrives", await waitFor(() => c5.text().includes("OUT:CCC")));
+  c5.send({ type: "close" }); // explicit tab close → destroy pty + DB row
+  c5.close();
+  await sleep(300);
+
+  const c6 = connect(T3);
+  await c6.ready;
+  await sleep(200);
+  const afterClose = c6.text();
+  check("after explicit close, a reconnect gets a FRESH pty (no CCC backlog)", !afterClose.includes("OUT:CCC"));
+  check("the fresh pty started cleanly (new START)", afterClose.includes("START"));
+  c6.send({ type: "close" });
+  c6.close();
+
   await sleep(100);
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
