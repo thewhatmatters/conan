@@ -35,7 +35,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "stats-cache.json keys: version, lastComputedDate, dailyActivity[] (SPARSE — only active days, must zero-fill), dailyModelTokens[], modelUsage (costUSD is 0 — ignore for $), totalSessions, totalMessages, longestSession, hourCounts, firstSessionDate. Cost must come from DB total_cost_usd, not this file."
     },
     {

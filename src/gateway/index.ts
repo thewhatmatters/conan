@@ -15,6 +15,7 @@ import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { budgetStatus, canLaunchSession } from "../budget/index.js";
 import { usageStatus } from "../usage/index.js";
+import { readStats } from "../stats/index.js";
 import { updateBudgetSettings } from "../settings/index.js";
 import {
   startSession,
@@ -223,6 +224,16 @@ app.get("/api/claude/budget", (_req, res) => {
 // countdown client-side. The dashboard counterpart to run-tasks.sh's backoff.
 app.get("/api/claude/usage", (_req, res) => {
   res.json(usageStatus());
+});
+
+// Claude Code's own usage rollup for the Stats / contribution-heatmap widget
+// (US-002 → US-015): a normalized read of ~/.claude/stats-cache.json — a
+// contiguous (zero-filled) day calendar plus computed headline stats (streaks,
+// favorite model/hour, total tokens). Read-only and access-modeled like the
+// other /api/claude/* GET routes (loopback-only; the SPA reads it same-origin);
+// returns a safe empty shape when stats-cache.json is absent.
+app.get("/api/claude/stats", (_req, res) => {
+  res.json(readStats());
 });
 
 // Update the cost ceilings (US-023). Token-gated like the other mutations.
