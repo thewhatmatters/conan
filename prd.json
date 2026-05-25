@@ -164,8 +164,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Context gauge is the standout widget (predicts compaction). Reuse section-cards.jsx / StatCard."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: src/skills/index.ts (countAvailableSkills scans ~/.claude/skills + project .claude/skills for SKILL.md; countLoadedForSession reads slash_commands from the session's latest system/init event) + GET /api/claude/skills?session_id=. UI: hooks/useSkills.ts, components/HeroWidgets.tsx (two-tier StatCard row) replacing App.tsx placeholder. Context widget: SVG ring + token/window count for the active session (running>newest), window 200k (1M when model slug carries '1m'), ring goes stroke-destructive >=80%. Skills: available · N loaded. Cost today: sum of total_cost_usd across sessions active today. Active sessions: count + running/idle/error pips. All widgets recompute on the lastEvent.seq-driven refetch (same live path as the US-009 grid). Verified via automate-browser in light+dark: Context 64% (128k/200k), Skills 13·18 loaded, Cost today $1.68, Active 13 (7·6·0). typecheck + ui build clean."
     },
     {
       "id": "US-011",

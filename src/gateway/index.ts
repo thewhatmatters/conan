@@ -7,6 +7,7 @@ import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { attachTerminal } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
+import { readSkills } from "../skills/index.js";
 import {
   startSession,
   sendPrompt,
@@ -121,6 +122,15 @@ app.post("/api/claude/events", (req, res) => {
   };
   broadcast({ type: "event", payload: event });
   res.json({ ok: true, id: event.id });
+});
+
+// Skills hero widget data (US-010): total skills available on this machine,
+// plus how many the given session loaded (from its system/init event).
+// Read-only, like /api/tasks.
+app.get("/api/claude/skills", (req, res) => {
+  const sessionId =
+    typeof req.query.session_id === "string" ? req.query.session_id : undefined;
+  res.json(readSkills(sessionId));
 });
 
 // Session grid data (US-009): every persisted session, newest activity first.

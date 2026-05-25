@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
+import { useSkills } from "./hooks/useSkills.ts";
 import Dock from "./components/Dock.tsx";
 import SessionGrid from "./components/SessionGrid.tsx";
+import HeroWidgets from "./components/HeroWidgets.tsx";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -25,6 +27,11 @@ export default function App() {
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent } = useGateway(config?.token ?? null);
   const { sessions, refresh } = useSessions(lastEvent?.seq ?? null);
+  // The Context/Skills widgets describe the active session: a running one if
+  // present, otherwise the most-recently-active (sessions are sorted DESC).
+  const activeSession =
+    sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
+  const skills = useSkills(activeSession?.id ?? null, lastEvent?.seq ?? null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -86,21 +93,11 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <main className="min-w-0 flex-1 overflow-auto p-6">
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {["Context", "Skills", "Cost today", "Active sessions"].map(
-              (label) => (
-                <div
-                  key={label}
-                  className="rounded-xl border border-border bg-card p-3"
-                >
-                  <div className="text-xs text-muted-foreground">{label}</div>
-                  <div className="mt-1 text-xl font-semibold text-muted-foreground">
-                    —
-                  </div>
-                </div>
-              ),
-            )}
-          </section>
+          <HeroWidgets
+            sessions={sessions}
+            activeSession={activeSession}
+            skills={skills}
+          />
 
           <SessionGrid
             sessions={sessions}
