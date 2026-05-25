@@ -275,8 +275,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": "xterm has no built-in scrollback restore \u2014 this is custom."
+      "passes": true,
+      "notes": "Done 2026-05-25. Refactored src/terminal/index.ts into a persistent pty-session registry (Map<id,TermSession>): pty + onData/onExit wired once and outlive any single WS. Each session keeps a ring buffer of recent output capped to RING_MAX_BYTES (default 256KB, override CONAN_TERM_RING_BYTES) with oldest chunks evicted. A client opts into survival by passing a stable ?tid=; on reconnect the buffered backlog is replayed as one frame BEFORE session.ws is reassigned (synchronous, so no live chunk interleaves), then live output resumes on the SAME pty. On WS close a persistent session survives a grace window (DETACH_GRACE_MS default 30s, override CONAN_TERM_GRACE_MS) then is killed; anonymous (no-tid) sessions die on close as before. closeAllTerminals() wired into gateway shutdown. Client (ui/Terminal.tsx) now generates+persists a per-tab tid in sessionStorage so a reload/HMR re-attaches+replays instead of spawning fresh (bonus: mitigates dogfooding footgun #2). Verified: scripts/test-terminal.mjs (in npm test) boots the real gateway against a fake $SHELL \u2014 10/10 checks: pty survives disconnect, reconnect replays backlog as first frame (incl. earlier START) before live OUT:BBB resumes, ring stays within the byte cap with OUT:L0 evicted + OUT:L40 retained. typecheck + full npm test + ui build all clean."
     },
     {
       "id": "US-018",

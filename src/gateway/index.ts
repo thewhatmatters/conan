@@ -5,7 +5,7 @@ import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
 import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
-import { attachTerminal } from "../terminal/index.js";
+import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
@@ -307,6 +307,7 @@ server.listen(PORT, HOST, () => {
 
 function shutdown(): void {
   stopWatching();
+  closeAllTerminals();
   server.close();
   eventsWss.close();
   terminalWss.close();

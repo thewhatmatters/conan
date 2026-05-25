@@ -48,8 +48,16 @@ export default function Terminal({ token, theme }: TerminalProps) {
     fit.fit();
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
+    // Stable per-tab terminal id so a reload/HMR re-attaches to the surviving
+    // pty and replays the missed backlog instead of spawning a fresh one (US-017).
+    let tid = sessionStorage.getItem("conan.tid");
+    if (!tid) {
+      tid = crypto.randomUUID();
+      sessionStorage.setItem("conan.tid", tid);
+    }
     const params = new URLSearchParams({
       token,
+      tid,
       cols: String(term.cols),
       rows: String(term.rows),
     });
