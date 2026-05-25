@@ -7,6 +7,12 @@ import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { attachTerminal } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
+import {
+  startSession,
+  sendPrompt,
+  stopSession,
+  resumeSession,
+} from "../session/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback by default — network exposure is opt-in (CONAN_HOST) and still
@@ -40,14 +46,30 @@ app.get("/api/tasks", (_req, res) => {
   res.json(readTasks());
 });
 
+// Shared bearer check for the control-plane routes: the same auth token the WS
+// layer uses (US-002), presented as the x-conan-token header.
+function authed(req: express.Request, res: express.Response): boolean {
+  if (req.header("x-conan-token") !== AUTH_TOKEN) {
+    res.status(401).json({ error: "unauthorized" });
+    return false;
+  }
+  return true;
+}
+
+// Await a session_id without blocking the response forever: resolves with the
+// captured id, or null if the stream doesn't surface system/init in time.
+function awaitSessionId(p: Promise<string>, ms: number): Promise<string | null> {
+  return Promise.race([
+    p.catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 // Ingest a Claude Code lifecycle event (US-003). Posted by the hook scripts in
 // .claude/hooks; persisted to SQLite and broadcast over /ws (US-005).
 const IDLE_EVENTS = new Set(["Stop", "SessionEnd"]);
 app.post("/api/claude/events", (req, res) => {
-  if (req.header("x-conan-token") !== AUTH_TOKEN) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
+  if (!authed(req, res)) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
   const sessionId = b.session_id;
   if (typeof sessionId !== "string" || sessionId.length === 0) {
@@ -98,6 +120,56 @@ app.post("/api/claude/events", (req, res) => {
   };
   broadcast({ type: "event", payload: event });
   res.json({ ok: true, id: event.id });
+});
+
+// --- Session control plane (US-008): start / sendPrompt / stop / resume.
+// All behind the same auth token as the WS layer.
+
+app.post("/api/claude/sessions", async (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = startSession({
+    cwd: typeof b.cwd === "string" ? b.cwd : undefined,
+    model: typeof b.model === "string" ? b.model : undefined,
+    permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
+    bare: b.bare === true,
+    prompt: typeof b.prompt === "string" ? b.prompt : undefined,
+  });
+  const sessionId = await awaitSessionId(result.sessionId, 3000);
+  res.json({ ok: true, launchId: result.launchId, sessionId });
+});
+
+app.post("/api/claude/sessions/:id/prompt", async (req, res) => {
+  if (!authed(req, res)) return;
+  const text = (req.body ?? {}).text;
+  if (typeof text !== "string" || text.length === 0) {
+    res.status(400).json({ error: "text required" });
+    return;
+  }
+  try {
+    const result = await sendPrompt(req.params.id, text);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post("/api/claude/sessions/:id/stop", (req, res) => {
+  if (!authed(req, res)) return;
+  const stopped = stopSession(req.params.id);
+  res.json({ ok: true, stopped });
+});
+
+app.post("/api/claude/sessions/:id/resume", async (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = resumeSession(req.params.id, {
+    model: typeof b.model === "string" ? b.model : undefined,
+    permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
+    prompt: typeof b.prompt === "string" ? b.prompt : undefined,
+  });
+  const sessionId = await awaitSessionId(result.sessionId, 3000);
+  res.json({ ok: true, launchId: result.launchId, sessionId });
 });
 
 // Serve the built UI in production; in dev the Vite server runs separately.

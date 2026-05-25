@@ -174,36 +174,48 @@ export interface StartSessionResult {
   sessionId: Promise<string>;
 }
 
+/** Internal launch config shared by start (US-006) and resume (US-008). */
+interface LaunchConfig {
+  cwd: string;
+  model?: string;
+  permissionMode?: string;
+  /**
+   * Known session_id, set when resuming. Lets us register the child in
+   * `bySessionId` and resolve the id promise immediately so a follow-up
+   * sendPrompt can find the live process before system/init echoes back.
+   */
+  knownSessionId?: string;
+}
+
 /**
- * Start a headless Claude Code session (US-006). Spawns the stream-json CLI,
- * tracks the child handle, captures the session_id from system/init, and
- * upserts the session row. Returns immediately with a promise for the id so
- * callers don't block; full stream parsing is US-007, drive/stop is US-008.
+ * Spawn the stream-json CLI, track the child handle, and wire up the US-007
+ * stream parser (capture session_id from system/init, persist each event,
+ * fold token/cost usage onto the row). Shared by startSession and
+ * resumeSession; returns immediately with a promise for the id.
  */
-export function startSession(opts: StartSessionOptions = {}): StartSessionResult {
-  const cwd = opts.cwd ?? PACKAGE_ROOT;
+function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
   const launchId = crypto.randomUUID();
-  const args = buildArgs(opts);
 
   const child = spawn(CLAUDE_BIN, args, {
-    cwd,
+    cwd: cfg.cwd,
     env: sessionEnv(),
     stdio: ["pipe", "pipe", "pipe"],
   }) as ChildProcessWithoutNullStreams;
 
   const session: ManagedSession = {
     launchId,
-    sessionId: null,
+    sessionId: cfg.knownSessionId ?? null,
     child,
-    cwd,
-    model: opts.model,
-    permissionMode: opts.permissionMode,
+    cwd: cfg.cwd,
+    model: cfg.model,
+    permissionMode: cfg.permissionMode,
     startedAt: Date.now(),
   };
   byLaunchId.set(launchId, session);
 
-  let resolveId: (id: string) => void;
-  let rejectId: (err: Error) => void;
+  // Assigned synchronously by the Promise executor below.
+  let resolveId!: (id: string) => void;
+  let rejectId!: (err: Error) => void;
   const sessionId = new Promise<string>((resolve, reject) => {
     resolveId = resolve;
     rejectId = reject;
@@ -211,11 +223,18 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
   // Don't leave an unhandled rejection if no caller awaits the id.
   sessionId.catch(() => {});
 
-  // Normalize every stream-json line (US-007): capture the session_id from
-  // system/init, persist each event, and fold token/cost usage onto the row.
-  // Events that arrive before the session_id is known can't satisfy the event
-  // table's FK, so they're held until init lands (init is always first in
-  // practice, so this queue is normally empty).
+  // Resume: the id is known up front, so register + persist (status->running)
+  // and resolve now. A concurrent sendPrompt then finds the live child at once.
+  if (cfg.knownSessionId) {
+    bySessionId.set(cfg.knownSessionId, session);
+    persistSession(session);
+    resolveId(cfg.knownSessionId);
+  }
+
+  // Normalize every stream-json line (US-007). Events that arrive before the
+  // session_id is known can't satisfy the event table's FK, so they're held
+  // until init lands (init is always first in practice, so this is normally
+  // empty; for resume the id is already set so nothing queues).
   const pending: NormalizedEvent[] = [];
   const handleLine = (raw: string): void => {
     const parsed = parseStreamMessage(raw);
@@ -260,7 +279,11 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
 
   const cleanup = () => {
     byLaunchId.delete(launchId);
-    if (session.sessionId) bySessionId.delete(session.sessionId);
+    // Only drop the bySessionId entry if it still points at *this* child; a
+    // resume may have replaced it with a fresh process for the same id.
+    if (session.sessionId && bySessionId.get(session.sessionId) === session) {
+      bySessionId.delete(session.sessionId);
+    }
   };
   child.on("error", (err) => {
     cleanup();
@@ -269,9 +292,133 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
   child.on("exit", () => {
     cleanup();
     // If init never arrived the id promise is still pending; reject it. After
-    // a normal run the promise already resolved, so this reject is a no-op.
+    // a normal run (or a resume) the promise already resolved, so this is a
+    // no-op.
     rejectId(new Error("session exited before system/init"));
   });
 
   return { launchId, child, sessionId };
+}
+
+/**
+ * Start a headless Claude Code session (US-006). Spawns the stream-json CLI,
+ * tracks the child handle, captures the session_id from system/init, and
+ * upserts the session row. Returns immediately with a promise for the id.
+ */
+export function startSession(opts: StartSessionOptions = {}): StartSessionResult {
+  const cwd = opts.cwd ?? PACKAGE_ROOT;
+  return launch(buildArgs(opts), {
+    cwd,
+    model: opts.model,
+    permissionMode: opts.permissionMode,
+  });
+}
+
+/** Encode one user turn as a stream-json input line and write it to stdin. */
+function writeUserMessage(child: ChildProcessWithoutNullStreams, text: string): void {
+  const msg = {
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text }] },
+  };
+  child.stdin.write(JSON.stringify(msg) + "\n");
+}
+
+export interface ResumeSessionOptions {
+  cwd?: string;
+  model?: string;
+  permissionMode?: string;
+  bare?: boolean;
+  /** Optional prompt to deliver over stdin right after relaunch. */
+  prompt?: string;
+}
+
+/**
+ * Resume a dormant session (US-008): relaunch `claude -p --resume <id>` with
+ * the same stream-json input/output contract as a fresh start and re-attach
+ * the event stream. The cwd is reused from the stored session row unless
+ * overridden. Any `prompt` is delivered over stdin once the child is up.
+ */
+export function resumeSession(
+  sessionId: string,
+  opts: ResumeSessionOptions = {},
+): StartSessionResult {
+  let cwd = opts.cwd;
+  if (!cwd) {
+    const row = getDb()
+      .prepare("SELECT cwd FROM session WHERE id = ?")
+      .get(sessionId) as { cwd?: string } | undefined;
+    cwd = row?.cwd ?? PACKAGE_ROOT;
+  }
+
+  const args = [
+    "-p",
+    "--resume",
+    sessionId,
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--input-format",
+    "stream-json",
+  ];
+  if (opts.model) args.push("--model", opts.model);
+  if (opts.permissionMode) args.push("--permission-mode", opts.permissionMode);
+  if (opts.bare) args.push("--bare");
+
+  const result = launch(args, {
+    cwd,
+    model: opts.model,
+    permissionMode: opts.permissionMode,
+    knownSessionId: sessionId,
+  });
+  if (opts.prompt !== undefined) writeUserMessage(result.child, opts.prompt);
+  return result;
+}
+
+export interface SendPromptResult {
+  sessionId: string;
+  /** true when the session was dormant and had to be relaunched with --resume. */
+  resumed: boolean;
+}
+
+/**
+ * Send a follow-up prompt to a session (US-008). Routes to the live process's
+ * stdin when one is tracked; otherwise relaunches the session with --resume and
+ * delivers the prompt over the fresh stream.
+ */
+export async function sendPrompt(
+  sessionId: string,
+  text: string,
+): Promise<SendPromptResult> {
+  const live = bySessionId.get(sessionId);
+  if (live && !live.child.killed && live.child.stdin.writable) {
+    writeUserMessage(live.child, text);
+    getDb()
+      .prepare("UPDATE session SET last_activity = ?, status = 'running' WHERE id = ?")
+      .run(Date.now(), sessionId);
+    return { sessionId, resumed: false };
+  }
+  const result = resumeSession(sessionId, { prompt: text });
+  const sid = await result.sessionId;
+  return { sessionId: sid, resumed: true };
+}
+
+/**
+ * Stop a session (US-008): terminate the tracked child (if any) and mark the
+ * session row idle. Returns whether a live child was found. Map cleanup is
+ * handled by the child's exit handler.
+ */
+export function stopSession(sessionId: string): boolean {
+  const live = bySessionId.get(sessionId);
+  if (live) {
+    try {
+      live.child.kill();
+    } catch {
+      // Already gone — the exit handler will reconcile the maps.
+    }
+  }
+  getDb()
+    .prepare("UPDATE session SET status = 'idle', last_activity = ? WHERE id = ?")
+    .run(Date.now(), sessionId);
+  return Boolean(live);
 }

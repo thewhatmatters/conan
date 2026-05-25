@@ -128,8 +128,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "Default model is stateless + resume."
+      "passes": true,
+      "notes": "Done 2026-05-25. src/session/index.ts: extracted a shared launch() (used by start + resume); sendPrompt() writes a stream-json user line to the live child's stdin or relaunches via resumeSession when dormant (resumed flag); stopSession() kills the child + sets status idle; resumeSession() spawns `claude -p --resume <id> --output-format stream-json --verbose --include-partial-messages --input-format stream-json` (cwd reused from the row), re-attaches the parser, and delivers any prompt over stdin. Gateway: POST /api/claude/sessions{,/:id/prompt,/:id/stop,/:id/resume}, all behind x-conan-token (shared authed() helper). Verified: scripts/test-drive.mjs boots the real gateway against a fake claude stub — 21/21 checks (auth 401s, start captures id + running, prompt written to live stdin, stop->idle, resume relaunches with --resume <id> + same id -> running). typecheck + ui build clean."
     },
     {
       "id": "US-009",
