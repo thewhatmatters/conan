@@ -8,6 +8,7 @@ import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { attachTerminal } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
+import { readTranscript } from "../transcript/index.js";
 import {
   startSession,
   sendPrompt,
@@ -149,6 +150,17 @@ app.get("/api/claude/sessions", (_req, res) => {
 // updates arrive over /ws as {type:'event'}. Newest activity is appended there.
 app.get("/api/claude/sessions/:id/events", (req, res) => {
   res.json(listEvents(req.params.id));
+});
+
+// A session's full conversation transcript (US-014), read straight from the
+// Claude Code JSONL under ~/.claude (not duplicated into SQLite). The cwd lets
+// us resolve the per-project transcript folder; a missing file degrades to
+// { found:false, messages:[] }. Read-only.
+app.get("/api/claude/sessions/:id/transcript", (req, res) => {
+  const row = db
+    .prepare("SELECT cwd FROM session WHERE id = ?")
+    .get(req.params.id) as { cwd?: string } | undefined;
+  res.json(readTranscript(req.params.id, row?.cwd ?? null));
 });
 
 // Every permission prompt awaiting a decision across all live sessions, for the

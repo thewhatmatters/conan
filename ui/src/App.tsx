@@ -10,6 +10,8 @@ import SessionGrid from "./components/SessionGrid.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
+import TranscriptViewer from "./components/TranscriptViewer.tsx";
+import { useTranscript } from "./hooks/useTranscript.ts";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -29,6 +31,10 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [dockOpen, setDockOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Which tab the selected-session detail shows (US-011 vs US-014).
+  const [detailTab, setDetailTab] = useState<"activity" | "transcript">(
+    "activity",
+  );
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent } = useGateway(config?.token ?? null);
   const { sessions, refresh } = useSessions(lastEvent?.seq ?? null);
@@ -39,6 +45,8 @@ export default function App() {
   const skills = useSkills(activeSession?.id ?? null, lastEvent?.seq ?? null);
   // Timeline (US-011): events for the selected session — history + live WS.
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
+  // Transcript (US-014): fetched lazily, only while its tab is open.
+  const transcript = useTranscript(selectedId, detailTab === "transcript");
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(
@@ -155,26 +163,45 @@ export default function App() {
 
           {selectedId && (
             <section className="mt-6">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-                  Activity
-                  <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex rounded-md border border-border bg-card p-0.5 text-xs">
+                    {(["activity", "transcript"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setDetailTab(tab)}
+                        className={
+                          "rounded px-2.5 py-1 capitalize " +
+                          (detailTab === tab
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted")
+                        }
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
                     {selectedSession?.title ??
                       selectedSession?.model ??
                       selectedId.slice(0, 8)}
                   </span>
-                </h2>
+                </div>
                 <button
                   onClick={() => setSelectedId(null)}
-                  className="rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
                 >
                   Close
                 </button>
               </div>
-              <ActivityTimeline
-                events={timelineEvents}
-                onDecide={decidePermission}
-              />
+              {detailTab === "activity" ? (
+                <ActivityTimeline
+                  events={timelineEvents}
+                  onDecide={decidePermission}
+                />
+              ) : (
+                <TranscriptViewer state={transcript} />
+              )}
             </section>
           )}
         </main>

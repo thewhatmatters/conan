@@ -226,8 +226,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: src/transcript/index.ts reads the session's JSONL straight from ~/.claude/projects/<encoded-cwd>/<id>.jsonl (cwd encoded by replacing / and . with -; falls back to scanning every project folder for <id>.jsonl). readTranscript() normalizes user/assistant/tool messages (text/thinking/tool_use/tool_result, flattening list-form tool_result content + marking images) in order with timestamps; skips non-message lines (queue-operation/attachment/file-history-snapshot/last-prompt) and malformed JSON; missing/unreadable file -> {found:false,messages:[]}. Gateway GET /api/claude/sessions/:id/transcript (read-only; resolves cwd from the session row, not duplicated into SQLite). UI: hooks/useTranscript.ts (lazy fetch only while the tab is open), components/TranscriptViewer.tsx (per-message cards, role badge, ts, styled thinking/tool_use/tool_result blocks, truncation), App.tsx adds an Activity|Transcript tab toggle on the selected-session detail. Verified via automate-browser (scripts/verify-transcript.mjs boots the gateway on :3767, seeds a real on-disk transcript session + a no-transcript session via the events route): real session -> 701 messages render in order with timestamps + tool_use(→)/result blocks; missing -> 'No transcript on disk' empty state; both light + dark. typecheck + ui build + npm test all clean."
     },
     {
       "id": "US-015",
