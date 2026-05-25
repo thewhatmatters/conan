@@ -15,6 +15,8 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
   --color-term-bg: var(--term-bg);
   --color-term-fg: var(--term-fg);
 }
@@ -30,6 +32,8 @@
   --muted: #f5f5f5;
   --muted-foreground: #737373;
   --primary: #059669;
+  --primary-foreground: #ffffff;
+  --destructive: #dc2626;
   --term-bg: #ffffff;
   --term-fg: #1f2937;
 }
@@ -45,6 +49,8 @@
   --muted: #1f1f1f;
   --muted-foreground: #9aa0a6;
   --primary: #34d399;
+  --primary-foreground: #0a0a0a;
+  --destructive: #f87171;
   --term-bg: #0a0a0a;
   --term-fg: #ededed;
 }

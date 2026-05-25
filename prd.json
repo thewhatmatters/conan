@@ -146,8 +146,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Phase-1 layout: widgets in main area, terminal docked right. Reuse StatCard/AgentCard + a resizable panel."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: listSessions() in src/session/index.ts + GET /api/claude/sessions (read-only, like /api/tasks; mutations stay token-gated). UI: hooks/useSessions.ts (fetches the grid, refetches on each app-WS event seq so it stays live), components/SessionGrid.tsx wired into App.tsx main area (replaces the placeholder). Each card: pulsing status dot (running/idle/error), model, ~-abbreviated cwd, tokens, cost, session-color left stripe, id chip, status + time-ago. 'New session' toggles an inline form (cwd prefilled from /api/config, model + permission-mode selects) that POSTs to startSession with x-conan-token. Added --primary-foreground + --destructive semantic tokens to index.css (shadcn-compatible, additive). Resizable+collapsible terminal dock already in place (US-027/028, Show terminal toggle). Verified via automate-browser: grid + enriched demo cards (opus 96.3k/$1.27, sonnet 25.4k/$0.41 w/ indigo stripe) + form render in light AND dark; typecheck + ui build clean."
     },
     {
       "id": "US-010",

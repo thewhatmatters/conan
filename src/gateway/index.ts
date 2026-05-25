@@ -12,6 +12,7 @@ import {
   sendPrompt,
   stopSession,
   resumeSession,
+  listSessions,
 } from "../session/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
@@ -120,6 +121,12 @@ app.post("/api/claude/events", (req, res) => {
   };
   broadcast({ type: "event", payload: event });
   res.json({ ok: true, id: event.id });
+});
+
+// Session grid data (US-009): every persisted session, newest activity first.
+// Read-only, like /api/tasks — the mutating routes below stay token-gated.
+app.get("/api/claude/sessions", (_req, res) => {
+  res.json(listSessions());
 });
 
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.

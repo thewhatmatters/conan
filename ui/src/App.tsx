@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
 import { useGateway } from "./hooks/useTasks.ts";
+import { useSessions } from "./hooks/useSessions.ts";
 import Dock from "./components/Dock.tsx";
+import SessionGrid from "./components/SessionGrid.tsx";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -22,6 +24,7 @@ export default function App() {
   const [dockOpen, setDockOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent } = useGateway(config?.token ?? null);
+  const { sessions, refresh } = useSessions(lastEvent?.seq ?? null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -99,14 +102,12 @@ export default function App() {
             )}
           </section>
 
-          <section className="mt-6 rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
-            Session grid &amp; live activity timeline land here (US-009 – US-013).
-            {health && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                db tables: {health.tables.join(", ")}
-              </div>
-            )}
-          </section>
+          <SessionGrid
+            sessions={sessions}
+            token={config?.token ?? null}
+            defaultCwd={config?.cwd ?? ""}
+            onRefresh={refresh}
+          />
         </main>
 
         {dockOpen && (

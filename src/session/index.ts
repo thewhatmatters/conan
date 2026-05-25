@@ -55,6 +55,40 @@ export function listManagedSessions(): ManagedSession[] {
   return [...byLaunchId.values()];
 }
 
+/** A session row as exposed to the dashboard (US-009 session grid). */
+export interface SessionRow {
+  id: string;
+  title: string | null;
+  cwd: string | null;
+  model: string | null;
+  permission_mode: string | null;
+  status: string;
+  color: string | null;
+  created_at: number;
+  last_activity: number;
+  total_cost_usd: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  context_tokens: number | null;
+}
+
+/**
+ * All persisted sessions, newest activity first, for the dashboard grid
+ * (US-009). Backed by the session table written by the hook ingest (US-003)
+ * and the stream-json parser (US-007).
+ */
+export function listSessions(): SessionRow[] {
+  return getDb()
+    .prepare(
+      `SELECT id, title, cwd, model, permission_mode, status, color,
+              created_at, last_activity, total_cost_usd,
+              input_tokens, output_tokens, context_tokens
+         FROM session
+         ORDER BY last_activity DESC`,
+    )
+    .all() as SessionRow[];
+}
+
 /**
  * Build the headless argv. Per US-006 the core invocation is
  *   claude -p --output-format stream-json --verbose --include-partial-messages
