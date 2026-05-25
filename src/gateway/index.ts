@@ -27,6 +27,7 @@ import {
   listPendingPermissions,
   onSessionEvent,
 } from "../session/index.js";
+import { startReaper } from "../session/reaper.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback by default — network exposure is opt-in (CONAN_HOST) and still
@@ -381,6 +382,13 @@ function broadcast(message: unknown): void {
 }
 const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: state }));
 
+// Session-liveness reaper (US-001): reconcile the session table against process
+// ground truth at boot and on an interval, so the Active Sessions count reflects
+// only sessions that are actually alive — not killed headless runs frozen at
+// status='running'. The session grid (GET /api/claude/sessions) reads the table,
+// so its reconciled status flows to the UI on the next refetch.
+const stopReaper = startReaper();
+
 // Live-stream parser-persisted events (US-007) to app clients so headless
 // sessions surface in the timeline (US-011) the same way hook events do. After
 // each event (cost is folded onto the session row here), re-check the budget;
@@ -443,6 +451,7 @@ server.listen(PORT, HOST, () => {
 
 function shutdown(): void {
   stopWatching();
+  stopReaper();
   closeAllTerminals();
   server.close();
   eventsWss.close();

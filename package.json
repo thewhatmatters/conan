@@ -12,7 +12,7 @@
     "start": "tsx src/gateway/index.ts",
     "postinstall": "node scripts/fix-node-pty.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-session.mjs && tsx scripts/test-parser.mjs && tsx scripts/test-drive.mjs && tsx scripts/test-terminal.mjs && tsx scripts/test-budget.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-tls.mjs",
+    "test": "tsx scripts/test-session.mjs && tsx scripts/test-parser.mjs && tsx scripts/test-drive.mjs && tsx scripts/test-terminal.mjs && tsx scripts/test-budget.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-tls.mjs && tsx scripts/test-reaper.mjs",
     "build:ui": "npm --prefix ui run build",
     "build": "npm run typecheck && npm run build:ui",
     "ops:start": "pm2 start ecosystem.config.cjs",
