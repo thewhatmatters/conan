@@ -51,6 +51,11 @@ npm run typecheck           # tsc --noEmit (gateway)
   generated) + **Origin allowlist** — required because browsers don't apply
   same-origin policy to WebSockets (CVE-2025-52882). The SPA reads the token
   from same-origin `/api/config`.
+- Remote access (`src/gateway/tls.ts`, US-024): **opt-in, off by default.** Set
+  `CONAN_TLS_CERT` + `CONAN_TLS_KEY` to run as HTTPS — all WS (app + terminal)
+  then serve over `wss://` behind the same token/Origin checks. Binding a
+  non-loopback `CONAN_HOST` without TLS is refused (no cleartext exposure, no raw
+  shell port). See `docs/remote-access.md`.
 - Terminal (`src/terminal/index.ts`): pty auto-launches `claude` (`mode=claude`,
   default) in the repo cwd via a login shell; `mode=shell` for a plain shell.
 - DB (`src/db/`): SQLite WAL at `.data/conan.db`; tables `session`, `event`,

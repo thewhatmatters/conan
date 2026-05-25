@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import express from "express";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
 import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
+import { resolveTlsConfig, assertRemoteSafe } from "./tls.js";
 import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
@@ -29,6 +31,15 @@ const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback by default — network exposure is opt-in (CONAN_HOST) and still
 // gated by the WS auth token + Origin validation in auth.ts (US-002).
 const HOST = process.env.CONAN_HOST ?? "127.0.0.1";
+
+// Opt-in remote access over TLS (US-024). Off unless CONAN_TLS_CERT +
+// CONAN_TLS_KEY are set; when on, the gateway runs as HTTPS and all WebSockets
+// (app + terminal) are served over wss:// behind the same token/Origin checks.
+const TLS = resolveTlsConfig();
+// Binding to a non-loopback interface without TLS is refused outright, so the
+// dashboard (and the pty terminal behind it) can never be exposed in cleartext.
+assertRemoteSafe(HOST, TLS);
+const SCHEME = TLS.enabled ? "https" : "http";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -304,7 +315,9 @@ if (fs.existsSync(UI_DIST)) {
   });
 }
 
-const server = http.createServer(app);
+const server = TLS.enabled
+  ? https.createServer(TLS.options!, app)
+  : http.createServer(app);
 
 // Two WS endpoints, both authenticated (token + Origin) on upgrade.
 // `noServer` lets us run the auth check before accepting the socket.
@@ -411,7 +424,12 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[conan] gateway listening on http://${HOST}:${PORT}`);
+  console.log(`[conan] gateway listening on ${SCHEME}://${HOST}:${PORT}`);
+  if (TLS.enabled) {
+    console.log(
+      `[conan] remote TLS mode ON (cert ${TLS.certPath}) — WebSockets served over wss://`,
+    );
+  }
 });
 
 function shutdown(): void {
