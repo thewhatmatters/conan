@@ -13,11 +13,9 @@ import { readSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
-import { budgetStatus, canLaunchSession } from "../budget/index.js";
 import { usageStatus } from "../usage/index.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
-import { updateBudgetSettings } from "../settings/index.js";
 import {
   startSession,
   sendPrompt,
@@ -211,18 +209,12 @@ app.get("/api/claude/permissions", (_req, res) => {
   res.json(listPendingPermissions());
 });
 
-// Cost-ceiling status for the always-on budget guard (US-023): the configured
-// per-day / per-session ceilings plus the cost recorded against them, and
-// whether anything is over budget. Read-only; the widget refetches as events
-// arrive over /ws (cost is folded onto sessions by the US-007 parser).
-app.get("/api/claude/budget", (_req, res) => {
-  res.json(budgetStatus());
-});
-
-// Usage monitor for the hero widget (US-030): cost + tokens recorded today,
-// plus a rate-limited state and reset time parsed from recent api_retry events.
-// Read-only; the widget refetches as events arrive over /ws and ticks the
-// countdown client-side. The dashboard counterpart to run-tasks.sh's backoff.
+// Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for
+// a token-based Claude Max plan — a rate-limited state + reset time parsed from
+// recent api_retry events, plus token consumption over rolling windows (5h/7d).
+// Cost-today is reported as informational only, NOT a ceiling. Read-only; the
+// widget refetches as events arrive over /ws and ticks the countdown
+// client-side. The dashboard counterpart to run-tasks.sh's backoff.
 app.get("/api/claude/usage", (_req, res) => {
   res.json(usageStatus());
 });
@@ -248,33 +240,11 @@ app.get("/api/claude/mcp", (_req, res) => {
   res.json(readMcpStatus({ sessionMcp: liveSessionMcp() }));
 });
 
-// Update the cost ceilings (US-023). Token-gated like the other mutations.
-// Accepts any subset of { daily_cost_ceiling_usd, per_session_cost_ceiling_usd,
-// throttle_over_budget }; a null/0/absent ceiling means "no limit".
-app.put("/api/claude/settings/budget", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const patch: Record<string, unknown> = {};
-  if ("daily_cost_ceiling_usd" in b) patch.dailyCostCeilingUsd = b.daily_cost_ceiling_usd;
-  if ("per_session_cost_ceiling_usd" in b)
-    patch.perSessionCostCeilingUsd = b.per_session_cost_ceiling_usd;
-  if ("throttle_over_budget" in b) patch.throttleOverBudget = b.throttle_over_budget;
-  const settings = updateBudgetSettings(patch);
-  res.json({ ok: true, settings });
-});
-
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.
 // All behind the same auth token as the WS layer.
 
 app.post("/api/claude/sessions", async (req, res) => {
   if (!authed(req, res)) return;
-  // Throttling cap (US-023): refuse a new launch while over the daily ceiling
-  // and throttling is enabled. No-op unless the operator opted in.
-  const gate = canLaunchSession();
-  if (!gate.allowed) {
-    res.status(429).json({ error: "over_budget", reason: gate.reason });
-    return;
-  }
   const b = (req.body ?? {}) as Record<string, unknown>;
   const result = startSession({
     cwd: typeof b.cwd === "string" ? b.cwd : undefined,
@@ -413,32 +383,11 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 const stopReaper = startReaper();
 
 // Live-stream parser-persisted events (US-007) to app clients so headless
-// sessions surface in the timeline (US-011) the same way hook events do. After
-// each event (cost is folded onto the session row here), re-check the budget;
-// when it newly crosses a ceiling, surface it on the Notification channel as a
-// synthetic event so the toast fires and the budget widget refetches (US-023).
-let wasOverBudget = budgetStatus().overBudget;
+// sessions surface in the timeline (US-011) the same way hook events do. Cost is
+// folded onto the session row by the parser; usage is now framed around plan
+// limits + token consumption (US-004), not a dollar ceiling.
 onSessionEvent((row) => {
   broadcast({ type: "event", payload: row });
-  const status = budgetStatus();
-  if (status.overBudget && !wasOverBudget) {
-    broadcast({
-      type: "event",
-      payload: {
-        id: -1,
-        session_id: row.session_id,
-        hook_event_name: "Notification",
-        stream_type: "budget_alert",
-        tool_name: status.dailyOver
-          ? `Daily cost ceiling reached ($${status.costToday.toFixed(2)})`
-          : `Session cost ceiling reached`,
-        parent_tool_use_id: null,
-        payload: JSON.stringify(status),
-        ts: Date.now(),
-      },
-    });
-  }
-  wasOverBudget = status.overBudget;
 });
 
 server.on("upgrade", (req, socket, head) => {

@@ -13,13 +13,11 @@ import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "conan-usage-test-"));
 const dataDir = path.join(tmp, "data");
-const settingsPath = path.join(tmp, "settings.json");
 const TOKEN = "test-token-" + Math.random().toString(36).slice(2, 10);
 const PORT = 3700 + Math.floor(Math.random() * 200);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 process.env.CONAN_DATA_DIR = dataDir;
-process.env.CONAN_SETTINGS_PATH = settingsPath;
 process.env.CONAN_AUTH_TOKEN = TOKEN;
 process.env.CONAN_PORT = String(PORT);
 
@@ -91,15 +89,21 @@ try {
   const db = getDb();
   const now = Date.now();
 
-  // Two sessions active today with known cost.
+  // Sessions across the rolling windows, with known cost + output_tokens on the
+  // session row (the plan-usage token trend reads the session columns):
+  //   sess-a, sess-b: active now -> in 5h AND 7d, and count toward costToday
+  //   sess-c: active 3 days ago -> in 7d only, NOT today (excluded from cost)
   const upSession = db.prepare(
-    `INSERT INTO session (id, model, status, created_at, last_activity, total_cost_usd)
-       VALUES (?, 'claude-opus-4-7', 'running', ?, ?, ?)
+    `INSERT INTO session (id, model, status, created_at, last_activity, total_cost_usd, output_tokens)
+       VALUES (?, 'claude-opus-4-7', 'running', ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET total_cost_usd = excluded.total_cost_usd,
-                                   last_activity = excluded.last_activity`,
+                                   last_activity = excluded.last_activity,
+                                   output_tokens = excluded.output_tokens`,
   );
-  upSession.run("sess-a", now - 3_600_000, now, 1.25);
-  upSession.run("sess-b", now - 3_600_000, now, 0.75); // costToday = 2.00
+  const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+  upSession.run("sess-a", now - 3_600_000, now, 1.25, 800);
+  upSession.run("sess-b", now - 3_600_000, now, 0.75, 400); // costToday = 2.00
+  upSession.run("sess-c", now - THREE_DAYS, now - THREE_DAYS, 5.0, 5000);
 
   const insEvent = db.prepare(
     `INSERT INTO event (session_id, hook_event_name, stream_type, tool_name, payload, ts)
@@ -110,8 +114,11 @@ try {
   insEvent.run("sess-b", null, "result", null, JSON.stringify({ type: "result", usage: { output_tokens: 400 } }), now - 50_000);
 
   let usage = await (await fetch(`${BASE}/api/claude/usage`)).json();
-  check("costToday aggregates session cost", Math.abs(usage.costToday - 2.0) < 1e-6);
+  check("costToday aggregates today's session cost (informational)", Math.abs(usage.costToday - 2.0) < 1e-6);
   check("tokensToday sums result output tokens", usage.tokensToday === 1200);
+  check("tokensRecent.last5h sums recent session tokens", usage.tokensRecent?.last5h === 1200);
+  check("tokensRecent.last7d includes older sessions", usage.tokensRecent?.last7d === 6200);
+  check("no dollar ceiling/pct in response", !("dailyCeilingUsd" in usage) && !("pct" in usage));
   check("not rate-limited with no retry events", usage.rateLimited === false);
   check("hasData true once usage recorded", usage.hasData === true);
 

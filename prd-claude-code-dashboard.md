@@ -216,6 +216,85 @@ Internal/self-hosted tool — no end-user pricing. The relevant cost is **Anthro
 
 - **Agent SDK (TS) vs raw `claude -p` subprocess** as the session-manager implementation — SDK gives typed events + callbacks; subprocess is simpler to start.
 
+## v2 — IA rework + real Claude Code data (2026-05-25)
+
+v1 shipped all 30 stories (US-001→030). v2 is a **deliberate simplification + a push
+to surface real out-of-the-box Claude Code data** instead of placeholders/estimates.
+Decomposed into a fresh `prd.json` (v1 stories archived, not carried). Source backlog:
+`docs/v2-backlog.md`.
+
+### What Claude Code exposes, and how we consume it (research verdicts)
+
+`/usage`, `/stats`, `/context` are **interactive TUI slash commands — there is no
+`claude usage`/`claude stats` CLI subcommand** (confirmed: `claude --help` Commands =
+agents, auth, auto-mode, doctor, install, mcp, plugin, project, setup-token,
+ultrareview, update). So each is consumed by reading where it *sources* data:
+
+- **`/stats` → `~/.claude/stats-cache.json`** ✅ on-disk, static read, no auth. Keys:
+  `dailyActivity[]` (`{date, messageCount, sessionCount, toolCallCount}` — **sparse,
+  only active days; zero-fill for a heatmap**), `dailyModelTokens[]`
+  (`{date, tokensByModel}`), `modelUsage` (lifetime per-model tokens — favorite model;
+  **`costUSD` is 0, plan has no per-token billing → use Conan's DB `total_cost_usd`
+  for cost, not this**), `totalSessions`, `totalMessages`, `longestSession`,
+  `hourCounts` (hour→count, "favorite hour"), `firstSessionDate`. Range here:
+  2025-12-31 → present. → **Stats / heatmap widget** (GitHub-style contribution grid,
+  total tokens, active days, streaks, favorite model/hour).
+- **`/context` → reconstructable from transcript JSONL** ✅ the latest assistant
+  message's `usage` block (`input_tokens + cache_read_input_tokens +
+  cache_creation_input_tokens`) = current context size; the message's `model` gives
+  the window (e.g. Opus 4.7 = 1M). Context % = used / window. → **Context widget**
+  wired to real per-session usage (replaces the placeholder gauge).
+- **`/usage` (live limit % + reset) → NOT obtainable headlessly.** It's parsed from
+  `anthropic-ratelimit-unified-*` HTTP response headers **in the `claude` process's
+  memory** — Conan only shells out to `claude` (stream-json), never calls the API, so
+  the headers are invisible. → **Usage widget stays an honest approximation**:
+  rate-limited state + best-effort reset countdown from `system/api_retry` stream
+  events (current behavior), **reframed around plan usage** + a token-consumption
+  trend Conan *can* compute from its own DB. **Dollar cost-ceiling (US-023) is
+  removed** — the plan is token/subscription-based (Claude Max), not $-metered, so a
+  dollar budget is the wrong model. (A real % would require an opt-in
+  `ANTHROPIC_API_KEY` probe whose headers reflect that key's limits, not the login
+  session's — explicitly out of scope.)
+- **Session liveness → `~/.claude/sessions/<pid>.json`** ✅ Claude Code writes one
+  file per live process (`{pid, sessionId, cwd, status, updatedAt, kind, entrypoint,
+  version}`). **Ground truth for "active" is: file exists AND `pid` is alive** —
+  `updatedAt` *freezes* when a session goes idle (it's last-state-change, not a
+  heartbeat), and a killed headless `claude -p` never fires its `Stop`/`SessionEnd`
+  hook, which is why our DB shows ~53 stale `running` rows with 0 actually active.
+  → **Stale-session fix**: reaper derives active from pid-liveness + recent
+  `last_activity`; GC dead test/verification rows.
+- **MCP status → inferred, no live registry on disk.** File-configured servers live in
+  `~/.claude/settings.json` `mcpServers`; `~/.claude/mcp-needs-auth-cache.json` is the
+  negative signal (servers needing (re)auth). The only true connected/failed state is
+  the per-run `system/init` event's `mcp_servers` array, which Conan already captures
+  for sessions it launches. → **MCP widget**: connected count + tooltip of names,
+  inferred (configured − needs-auth), enriched by `system/init` when a live session
+  exists.
+
+### IA rework (confirms `project_conan_layout_ia`)
+
+- **Collapsible sidebar, two items only: Overview + Settings** (pushState routing, no
+  react-router). Terminal + Tasks stay in the right dock (not nav items).
+- **Overview = timeline-primary.** The activity log is the home surface, driven by a
+  **`session ▾` dropdown** (whose events to view) + **activity-type filters**
+  (All/Bash/Read/Edit/Write/Skill/…). **The per-session card grid is removed** — the
+  5 lifecycle actions (stop/resume/send/open/new) become inline controls on the
+  dropdown. **Transcript view (US-014) is kept** as the paired Activity↔Transcript
+  toggle off the dropdown.
+- **Hero-widget overhaul** (top section, behind a dropdown showing ~5 at a time so it
+  can't overflow): **remove** Plugins, API-retry-rate, Top-tools; **wire** MCP
+  (count + connected tooltip), Model & idle, Git status; **add** Stats/heatmap,
+  Context (real), Usage (plan-framed). **Pending Approvals renders only when a
+  decision is waiting.**
+- **Pulse/throughput viz** — replace the bar graph with a hand-rolled SVG
+  **stacked-area / streamgraph** time-series (rejected Sankey: no time axis, wrong for
+  a small hero tile; reserve Sankey for a future full-width flow panel). Charting:
+  **zero new deps** — hand-rolled SVG + a CSS-grid heatmap, themed via new
+  `--color-chart-1..5` semantic tokens in `index.css`.
+- **Dock: Term tabs → `Term ▾` dropdown** with "+ New terminal" inside it (the
+  horizontal strip overflows past ~4 tabs). **Toolbar cwd → directory picker** to
+  change the active working directory.
+
 ## Sources
 
 1. [Claude Agent SDK — Stream responses in real-time](https://code.claude.com/docs/en/agent-sdk/streaming-output) — Anthropic docs

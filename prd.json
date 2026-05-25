@@ -1,13 +1,13 @@
 {
   "project": "Conan",
   "branchName": "loop/conan-v2-ia",
-  "description": "Conan v2 — IA rework + real Claude Code data. Simplify the dashboard to a collapsible Overview+Settings sidebar with a timeline-primary Overview (session ▾ dropdown + activity-type filters, session cards removed, Transcript kept). Surface real out-of-the-box Claude Code data: stats-cache.json (heatmap/stats), transcript usage (context %), sessions/<pid>.json (live session liveness), inferred MCP status. Overhaul hero widgets (remove Plugins/API-retry/Top-tools; wire MCP/Model/Git; add Stats/Context/Usage). Replace cost-ceiling with plan-usage framing. Rework Pulse viz (hand-rolled stacked-area, no Sankey). Term tabs → dropdown; toolbar cwd → directory picker. Zero new charting deps. Builds on v1 (Express+WS :3747, Vite+React 19 SPA, shadcn base-nova, Tailwind v4, SQLite).",
+  "description": "Conan v2 \u2014 IA rework + real Claude Code data. Simplify the dashboard to a collapsible Overview+Settings sidebar with a timeline-primary Overview (session \u25be dropdown + activity-type filters, session cards removed, Transcript kept). Surface real out-of-the-box Claude Code data: stats-cache.json (heatmap/stats), transcript usage (context %), sessions/<pid>.json (live session liveness), inferred MCP status. Overhaul hero widgets (remove Plugins/API-retry/Top-tools; wire MCP/Model/Git; add Stats/Context/Usage). Replace cost-ceiling with plan-usage framing. Rework Pulse viz (hand-rolled stacked-area, no Sankey). Term tabs \u2192 dropdown; toolbar cwd \u2192 directory picker. Zero new charting deps. Builds on v1 (Express+WS :3747, Vite+React 19 SPA, shadcn base-nova, Tailwind v4, SQLite).",
   "generatedAt": "2026-05-25",
   "sourcePrd": "/Users/digitalalchemist/Development/conan/prd-claude-code-dashboard.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Session liveness reaper — derive active from pid + last_activity; GC stale rows",
+      "title": "Session liveness reaper \u2014 derive active from pid + last_activity; GC stale rows",
       "description": "As an operator, I need the Active Sessions count to reflect sessions that are actually alive, not killed headless runs frozen at status='running'.",
       "acceptanceCriteria": [
         "Add a reaper (interval on the gateway) that reconciles the session table against ground truth: a session is 'active' only if its pid is alive (process exists) OR last_activity is within a recent window (default 5 min)",
@@ -20,11 +20,11 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Research: ~/.claude/sessions/<pid>.json is per-live-process; updatedAt FREEZES when idle (not a heartbeat), so liveness = file exists AND pid alive (kill -0 / ps), not updatedAt. A killed claude -p never fires Stop/SessionEnd → stale 'running'. Confirmed 53 rows, 0 active. See docs/v2-backlog.md + project_conan_layout_ia memory."
+      "notes": "Research: ~/.claude/sessions/<pid>.json is per-live-process; updatedAt FREEZES when idle (not a heartbeat), so liveness = file exists AND pid alive (kill -0 / ps), not updatedAt. A killed claude -p never fires Stop/SessionEnd \u2192 stale 'running'. Confirmed 53 rows, 0 active. See docs/v2-backlog.md + project_conan_layout_ia memory."
     },
     {
       "id": "US-002",
-      "title": "GET /api/claude/stats — read stats-cache.json for heatmap + stats",
+      "title": "GET /api/claude/stats \u2014 read stats-cache.json for heatmap + stats",
       "description": "As a developer, I need a backend endpoint that exposes Claude Code's own usage stats so the UI can render a contribution heatmap and summary stats.",
       "acceptanceCriteria": [
         "GET /api/claude/stats reads ~/.claude/stats-cache.json and returns a normalized JSON payload",
@@ -36,11 +36,11 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "stats-cache.json keys: version, lastComputedDate, dailyActivity[] (SPARSE — only active days, must zero-fill), dailyModelTokens[], modelUsage (costUSD is 0 — ignore for $), totalSessions, totalMessages, longestSession, hourCounts, firstSessionDate. Cost must come from DB total_cost_usd, not this file."
+      "notes": "stats-cache.json keys: version, lastComputedDate, dailyActivity[] (SPARSE \u2014 only active days, must zero-fill), dailyModelTokens[], modelUsage (costUSD is 0 \u2014 ignore for $), totalSessions, totalMessages, longestSession, hourCounts, firstSessionDate. Cost must come from DB total_cost_usd, not this file."
     },
     {
       "id": "US-003",
-      "title": "MCP status data — inferred connected count + names + needs-auth",
+      "title": "MCP status data \u2014 inferred connected count + names + needs-auth",
       "description": "As a user, I need to know how many MCP servers are connected and which, since Claude Code keeps no live MCP registry on disk.",
       "acceptanceCriteria": [
         "Backend exposes MCP status (new field on GET /api/claude/sessions/:id/widgets or a small GET /api/claude/mcp): list of server names with a status of connected | needs-auth",
@@ -68,7 +68,7 @@
       ],
       "priority": 4,
       "passes": false,
-      "notes": "Real live /usage % needs anthropic-ratelimit-unified-* response headers, which live in the claude process memory — Conan only shells out (stream-json), so it can't read them. Honest ceiling = api_retry-derived rateLimited+reset + our own token-consumption trend. User: 'fuck off with Cost Ceiling'."
+      "notes": "Real live /usage % needs anthropic-ratelimit-unified-* response headers, which live in the claude process memory \u2014 Conan only shells out (stream-json), so it can't read them. Honest ceiling = api_retry-derived rateLimited+reset + our own token-consumption trend. User: 'fuck off with Cost Ceiling'."
     },
     {
       "id": "US-005",
@@ -76,7 +76,7 @@
       "description": "As a developer, I need shared chart color tokens so the new Pulse and heatmap widgets theme correctly in light and dark without hard-coded colors.",
       "acceptanceCriteria": [
         "Add --color-chart-1..5 to ui/src/index.css in both the @theme inline block and the light (:root) + .dark blocks (shadcn naming), with sensible light/dark values",
-        "Add heatmap intensity tokens (e.g. --color-heat-0..4 or reuse chart-1 at opacity steps) for the contribution grid's 0–4 levels",
+        "Add heatmap intensity tokens (e.g. --color-heat-0..4 or reuse chart-1 at opacity steps) for the contribution grid's 0\u20134 levels",
         "Tokens are referenceable as Tailwind classes (bg-chart-1, etc.) and/or var(--color-chart-1) in SVG",
         "No component hard-codes hex/neutral-*; existing semantic-token convention preserved",
         "Typecheck passes",
@@ -84,11 +84,11 @@
       ],
       "priority": 5,
       "passes": false,
-      "notes": "Charting decision: ZERO new deps — hand-rolled SVG (Pulse) + CSS-grid (heatmap), themed via these tokens. Suggested skills: tailwind-design-system if present."
+      "notes": "Charting decision: ZERO new deps \u2014 hand-rolled SVG (Pulse) + CSS-grid (heatmap), themed via these tokens. Suggested skills: tailwind-design-system if present."
     },
     {
       "id": "US-006",
-      "title": "App shell — collapsible sidebar (Overview + Settings) + pushState routing",
+      "title": "App shell \u2014 collapsible sidebar (Overview + Settings) + pushState routing",
       "description": "As a user, I want a simple two-item nav and real routing so the dashboard has an Overview and a Settings view.",
       "acceptanceCriteria": [
         "Add a collapsible sidebar with exactly two nav items: Overview (/) and Settings (/settings); Terminal + Tasks stay in the right dock (NOT nav items)",
@@ -105,11 +105,11 @@
     },
     {
       "id": "US-007",
-      "title": "Timeline-primary Overview — session ▾ dropdown, remove session card grid",
+      "title": "Timeline-primary Overview \u2014 session \u25be dropdown, remove session card grid",
       "description": "As a user, I want the activity timeline to be the home surface with a session picker, not a grid of session cards that hides timelines beneath each tile.",
       "acceptanceCriteria": [
         "Remove the SessionGrid card grid from the Overview entirely",
-        "Add a 'session ▾' dropdown that selects which session's events the timeline shows; defaults to the most-recent active session (per US-001 liveness) and includes an 'All sessions' option",
+        "Add a 'session \u25be' dropdown that selects which session's events the timeline shows; defaults to the most-recent active session (per US-001 liveness) and includes an 'All sessions' option",
         "The 5 session lifecycle actions (stop / resume / send-prompt / open / new) ride as inline controls on/near the dropdown (not per-card)",
         "The timeline renders the selected session's events full-width as the primary content",
         "Typecheck passes",
@@ -126,7 +126,7 @@
       "description": "As a user, I want to filter the activity log by event/tool type so I can scope it to what I care about.",
       "acceptanceCriteria": [
         "Add a type filter control to the timeline: 'All' plus tool/event types (e.g. Bash, Read, Edit, Write, Skill, and other observed types) derived from the events present",
-        "Selecting a type filters the visible timeline entries; 'All' shows everything; combines with the session ▾ selection from US-007",
+        "Selecting a type filters the visible timeline entries; 'All' shows everything; combines with the session \u25be selection from US-007",
         "Filter state is reflected in the UI and does not lose the live-append behavior (new matching events still stream in)",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -134,11 +134,11 @@
       ],
       "priority": 8,
       "passes": false,
-      "notes": "Pairs with US-007's session ▾. Suggested skills: automate-browser."
+      "notes": "Pairs with US-007's session \u25be. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
-      "title": "Activity ↔ Transcript toggle off the session dropdown",
+      "title": "Activity \u2194 Transcript toggle off the session dropdown",
       "description": "As a user, I want to switch the selected session between its structured Activity timeline and its full Transcript.",
       "acceptanceCriteria": [
         "Add an Activity | Transcript toggle bound to the selected session (from US-007's dropdown)",
@@ -154,7 +154,7 @@
     },
     {
       "id": "US-010",
-      "title": "Hero-widget restructure — dropdown picker + remove dead widgets",
+      "title": "Hero-widget restructure \u2014 dropdown picker + remove dead widgets",
       "description": "As a user, I want the top widget area to not overflow and to drop widgets that add no value.",
       "acceptanceCriteria": [
         "Widgets live in the top section fronted by a dropdown/picker that shows ~5 at a time (no ever-growing row that overflows)",
@@ -171,7 +171,7 @@
     },
     {
       "id": "US-011",
-      "title": "Wire MCP servers widget — connected count + tooltip of names",
+      "title": "Wire MCP servers widget \u2014 connected count + tooltip of names",
       "description": "As a user, I want the MCP widget to show how many servers are connected and which.",
       "acceptanceCriteria": [
         "MCP widget shows the connected count from US-003 data (inferred + live enrichment)",
@@ -203,7 +203,7 @@
     },
     {
       "id": "US-013",
-      "title": "Context widget — real per-session context %",
+      "title": "Context widget \u2014 real per-session context %",
       "description": "As a user, I want the Context widget to reflect the selected session's actual context-window usage.",
       "acceptanceCriteria": [
         "Context widget computes used / window where used = latest assistant message usage (input_tokens + cache_read_input_tokens + cache_creation_input_tokens) and window is derived from the message's model (e.g. Opus 4.7 = 1M, default 200k)",
@@ -238,7 +238,7 @@
       "title": "Stats / contribution-heatmap widget",
       "description": "As a user, I want a GitHub-style activity heatmap plus headline stats from Claude Code's own usage data.",
       "acceptanceCriteria": [
-        "New widget renders a contribution heatmap: a CSS/SVG grid of day cells (weeks x 7) colored by intensity (0–4 levels) from US-002 dailyActivity, using the heat tokens from US-005; hovering a cell shows date + count (title attr or tooltip)",
+        "New widget renders a contribution heatmap: a CSS/SVG grid of day cells (weeks x 7) colored by intensity (0\u20134 levels) from US-002 dailyActivity, using the heat tokens from US-005; hovering a cell shows date + count (title attr or tooltip)",
         "Shows summary stats: total tokens, active days, current/longest streak, favorite model, favorite hour (from US-002)",
         "Zero new dependencies (hand-rolled grid); semantic tokens; light+dark correct",
         "Handles empty/missing stats gracefully",
@@ -252,7 +252,7 @@
     },
     {
       "id": "US-016",
-      "title": "Rework Pulse/throughput viz — hand-rolled stacked-area time-series",
+      "title": "Rework Pulse/throughput viz \u2014 hand-rolled stacked-area time-series",
       "description": "As a user, I want the throughput widget to actually convey activity over time, not a weak bar graph.",
       "acceptanceCriteria": [
         "Replace the bar graph in the Pulse widget with a hand-rolled SVG stacked-area / streamgraph time-series (events bucketed over the selected window, optionally stacked by type), using chart tokens from US-005",
@@ -268,7 +268,7 @@
     },
     {
       "id": "US-017",
-      "title": "Pending Approvals — render only when a decision is waiting",
+      "title": "Pending Approvals \u2014 render only when a decision is waiting",
       "description": "As a user, I don't want an empty Pending Approvals panel taking up space when nothing needs a decision.",
       "acceptanceCriteria": [
         "The Pending Approvals panel renders only when there is at least one pending permission; it is fully hidden (no empty-state card) when the queue is empty",
@@ -283,10 +283,10 @@
     },
     {
       "id": "US-018",
-      "title": "Dock — Term tabs become a 'Term ▾' dropdown with inline + New",
+      "title": "Dock \u2014 Term tabs become a 'Term \u25be' dropdown with inline + New",
       "description": "As a user, I want a terminal dropdown instead of a horizontal tab strip that overflows once several terminals are open.",
       "acceptanceCriteria": [
-        "Replace the horizontal Term tab strip with a 'Term ▾' dropdown listing open terminals (Term 1..N), with a '+ New terminal' action inside the dropdown",
+        "Replace the horizontal Term tab strip with a 'Term \u25be' dropdown listing open terminals (Term 1..N), with a '+ New terminal' action inside the dropdown",
         "Selecting an item activates that terminal; each terminal still owns its own pty/WS keyed by tid and stays mounted (scrollback preserved); closing a terminal is available from the dropdown and kills its pty",
         "Tasks remains its own separate tab/control; the dock no longer overflows with many terminals",
         "Typecheck passes",
@@ -295,11 +295,11 @@
       ],
       "priority": 18,
       "passes": false,
-      "notes": "Current Dock.tsx renders a tab per terminal (overflows at ~4–5). Keep the stacked-mounted pty model + sessionStorage tid persistence. Suggested skills: automate-browser, shadcn."
+      "notes": "Current Dock.tsx renders a tab per terminal (overflows at ~4\u20135). Keep the stacked-mounted pty model + sessionStorage tid persistence. Suggested skills: automate-browser, shadcn."
     },
     {
       "id": "US-019",
-      "title": "Toolbar cwd → directory picker",
+      "title": "Toolbar cwd \u2192 directory picker",
       "description": "As a user, I want to change the active working directory from the toolbar instead of it being a static label.",
       "acceptanceCriteria": [
         "The toolbar cwd label becomes a clickable directory picker that lets the user change the active working directory",
@@ -317,10 +317,10 @@
     },
     {
       "id": "US-020",
-      "title": "Settings view — hooks, remote, theme, usage prefs; Sessions glossary tooltip",
+      "title": "Settings view \u2014 hooks, remote, theme, usage prefs; Sessions glossary tooltip",
       "description": "As a user, I want a Settings view that consolidates configuration, without the removed cost-ceiling.",
       "acceptanceCriteria": [
-        "The /settings route (US-006) renders a Settings view consolidating: hooks status/info, remote-access (TLS) info, theme toggle, and any usage/plan preferences — NO cost-ceiling/budget section (removed in US-004/US-014)",
+        "The /settings route (US-006) renders a Settings view consolidating: hooks status/info, remote-access (TLS) info, theme toggle, and any usage/plan preferences \u2014 NO cost-ceiling/budget section (removed in US-004/US-014)",
         "Add the 'Session' glossary info tooltip (one-liner: a Session = one Claude Code run, observed or driven) where sessions are surfaced",
         "Uses semantic tokens; light+dark; sidebar nav highlights Settings when active",
         "Typecheck passes",

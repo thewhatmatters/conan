@@ -10,8 +10,6 @@ import Dock from "./components/Dock.tsx";
 import SessionGrid from "./components/SessionGrid.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
-import BudgetPanel from "./components/BudgetPanel.tsx";
-import { useBudget } from "./hooks/useBudget.ts";
 import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import SecondaryWidgets from "./components/SecondaryWidgets.tsx";
@@ -68,8 +66,6 @@ export default function App() {
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
-  // US-023: cost-ceiling status + alert, kept live by WS; ceilings saved by PUT.
-  const budget = useBudget(wsTrigger, config?.token ?? null);
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
@@ -165,10 +161,6 @@ export default function App() {
 
           <div className="mt-4">
             <PendingApprovals pending={pending} onDecide={postDecision} />
-          </div>
-
-          <div className="mt-4">
-            <BudgetPanel status={budget.status} onSave={budget.save} />
           </div>
 
           <div className="mt-4">

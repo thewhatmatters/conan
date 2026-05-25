@@ -98,10 +98,10 @@ export default function HeroWidgets({
 }
 
 /**
- * Usage monitor (US-030): current usage today (cost / % of the daily ceiling)
- * plus a "resets in …" countdown, and a distinct rate-limited state derived
- * from api_retry events. Ticks the countdown client-side off `resetAt` and
- * degrades to "—" when no usage/reset data is available.
+ * Usage monitor (US-004): plan-usage framing for a token-based plan — recent
+ * token consumption (last 5h) plus a "resets in …" countdown, and a distinct
+ * rate-limited state derived from api_retry events. Ticks the countdown
+ * client-side off `resetAt` and degrades to "—" when no usage data is available.
  */
 function UsageWidget({ usage }: { usage: UsageState }) {
   // Tick once a second so the countdown advances without a refetch.
@@ -120,18 +120,19 @@ function UsageWidget({ usage }: { usage: UsageState }) {
         : "reset due"
       : null;
 
-  // The headline value: percent of the daily ceiling when one is set, else the
-  // dollar cost, else a dash when we have nothing to show.
+  // The headline value: recent token consumption (last 5h) — the plan-usage
+  // trend — else a dash when we have nothing to show.
   let headline: string;
   if (!usage.hasData) headline = "—";
-  else if (usage.pct != null) headline = `${Math.round(usage.pct)}%`;
-  else if (usage.costToday > 0) headline = `$${usage.costToday.toFixed(2)}`;
+  else if (usage.tokensRecent.last5h > 0)
+    headline = `${fmtTokens(usage.tokensRecent.last5h)} tok`;
+  else if (usage.tokensToday > 0) headline = `${fmtTokens(usage.tokensToday)} tok`;
   else headline = "—";
 
   return (
     <StatCard
       label="Usage"
-      sub={usage.rateLimited ? "rate limited" : "today"}
+      sub={usage.rateLimited ? "rate limited" : "last 5h"}
     >
       <div className="flex items-center gap-2">
         <span
@@ -152,9 +153,11 @@ function UsageWidget({ usage }: { usage: UsageState }) {
         {resetLabel
           ? resetLabel
           : usage.hasData
-            ? usage.tokensToday > 0
-              ? `${fmtTokens(usage.tokensToday)} tok · $${usage.costToday.toFixed(2)}`
-              : `$${usage.costToday.toFixed(2)} today`
+            ? usage.tokensRecent.last7d > 0
+              ? `${fmtTokens(usage.tokensRecent.last7d)} tok · 7d`
+              : usage.costToday > 0
+                ? `$${usage.costToday.toFixed(2)} today`
+                : "active"
             : "no usage data"}
       </div>
     </StatCard>

@@ -105,15 +105,25 @@ npm run typecheck           # tsc --noEmit (gateway)
    Conan instance on another port) and use this dashboard to **observe**.
 
 ## Status (2026-05-25)
-11/29 stories pass: US-001 (schema), US-002 (WS auth), US-003 (events ingest),
-US-004 (hooks), US-005 (event broadcast), US-015 (pty service), US-016 (xterm pane),
-US-025 (theme), US-027 (tabbed dock + Tasks tab), US-028 (resize + cwd), US-029 (toasts).
-- **Hooks are installed** in `.claude/settings.json` (9 lifecycle events ->
-  `scripts/hooks/send-event.mjs` -> `/api/claude/events`). Verified end-to-end with
-  a real `claude -p` session. `conan-hooks.example.json` is the shareable template.
-- App WS is consolidated in `ui/src/hooks/useTasks.ts` (`useGateway`) exposing
-  `{tasks, lastEvent}`; powers Tasks tab + toasts, and will power the timeline.
-- **Next: US-009/US-010/US-011** — session grid, hero widgets (Context/Skills/Cost/
-  Active from event+session data), and the live ActivityTimeline. Then US-006/007/008
-  (headless session manager) for autonomous sessions.
-- Not committed to git yet.
+**v1 done (30/30), v2 backlog decomposed and active.** v1 (US-001→030, branch
+`loop/claude-code-dashboard`) shipped via `run-tasks.sh`; archived to
+`archive/2026-05-25-claude-code-dashboard/`.
+- Hooks installed in `.claude/settings.json` (9 events -> `scripts/hooks/send-event.mjs`
+  -> `/api/claude/events`); `conan-hooks.example.json` is the shareable template.
+- **`prd.json` is now the v2 backlog** (`loop/conan-v2-ia`, 20 stories US-001→020,
+  all `passes:false`) — IA rework + real Claude Code data. Source: `docs/v2-backlog.md`;
+  PRD v2 section in `prd-claude-code-dashboard.md`; plan in memory
+  `project_conan_layout_ia`. Highlights: session-liveness reaper (fix stale `running`
+  via `~/.claude/sessions/<pid>.json` pid-liveness, not hooks); `/api/claude/stats`
+  from `stats-cache.json` → contribution-heatmap widget; Context widget from transcript
+  `usage`; **cost-ceiling removed** (Claude Max is token-based) → Usage reframed to
+  plan-usage; collapsible Overview+Settings sidebar + pushState; timeline-primary
+  Overview (`session ▾` + type filters, **session cards removed**, Transcript kept);
+  hero-widget overhaul (drop Plugins/API-retry/Top-tools; wire MCP/Model/Git);
+  Pulse → hand-rolled stacked-area (no Sankey); Term tabs → dropdown; cwd picker.
+  Charting = **zero new deps** (hand-rolled SVG + CSS grid, `--color-chart-*` tokens).
+- **Data-source verdicts** (research 2026-05-25): `/usage`,`/stats`,`/context` are
+  TUI-only slash commands (no `claude usage` CLI). Live `/usage` % is unreadable
+  headlessly (it's in `anthropic-ratelimit-unified-*` response headers, in the claude
+  process memory; Conan only shells out) → Usage stays an honest approximation.
+- v1 commits in git; v2 doc/prd.json changes uncommitted.

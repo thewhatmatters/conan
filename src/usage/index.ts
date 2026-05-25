@@ -1,32 +1,44 @@
-// US-030: data source for the "Usage" hero widget — the dashboard counterpart
-// to run-tasks.sh's reactive usage-limit backoff (which surfaces a reset time
-// and resumes the current story after a Claude usage/rate limit).
+// US-004 (was US-030): data source for the "Usage" hero widget — the dashboard
+// counterpart to run-tasks.sh's reactive usage-limit backoff (which surfaces a
+// reset time and resumes the current story after a Claude usage/rate limit).
+//
+// Claude Max is subscription/token-based, not dollar-metered, so usage is framed
+// around plan limits + token consumption rather than a cost ceiling. The live
+// plan-usage % lives only in the claude process's `anthropic-ratelimit-unified-*`
+// response headers (Conan only shells out stream-json, so it can't read them) —
+// so the honest signal is an api_retry-derived rate-limited flag + reset time
+// plus our own token-consumption trend over recent rolling windows.
 //
 // Three things power the widget:
-//   - current usage: cost + output-tokens recorded *today* across all sessions
-//     (and a percent against the daily cost ceiling when one is configured);
 //   - a rate-limited state, detected from recent `system/api_retry` events that
 //     look like a rate-limit (and ResultMessage rows carrying rate-limit info);
-//   - a reset time parsed from that retry's payload, so the UI can count down.
+//   - a reset time parsed from that retry's payload, so the UI can count down;
+//   - token consumption over rolling windows (last 5h / 7d) from the session
+//     token columns, with cost-today retained only as informational.
 //
 // The parsing helpers are pure and exported so they can be unit-tested against
 // the various shapes a retry/limit payload can take (the headless rate-limit
 // path can't be exercised live without an API key + a real 429).
 
 import { getDb } from "../db/index.js";
-import { readBudgetSettings } from "../settings/index.js";
+
+/** Output-token consumption over recent rolling windows (plan-usage trend). */
+export interface TokensRecent {
+  /** Output tokens across sessions active in the last 5 hours. */
+  last5h: number;
+  /** Output tokens across sessions active in the last 7 days. */
+  last7d: number;
+}
 
 export interface UsageStatus {
   /** Server clock at query time, epoch ms — the basis for the countdown. */
   now: number;
-  /** Cost recorded today across sessions (USD), mirrors the Cost-today widget. */
+  /** Cost recorded today across sessions (USD) — informational, NOT a ceiling. */
   costToday: number;
   /** Output tokens produced today (sum of per-turn ResultMessage usage). */
   tokensToday: number;
-  /** Configured daily cost ceiling (USD), or null when none is set. */
-  dailyCeilingUsd: number | null;
-  /** costToday / ceiling as a percent, or null when no ceiling is set. */
-  pct: number | null;
+  /** Token consumption over rolling windows — the plan-usage trend. */
+  tokensRecent: TokensRecent;
   /** True when a recent retry looks like an unresolved rate limit. */
   rateLimited: boolean;
   /** When the limit is expected to reset (epoch ms), or null when unknown. */
@@ -34,6 +46,9 @@ export interface UsageStatus {
   /** True when we have any usage figure to show (else the widget shows "—"). */
   hasData: boolean;
 }
+
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Start of the local day in epoch ms — the window for "today". */
 function startOfToday(): number {
@@ -185,26 +200,46 @@ export function parseResetAt(payload: unknown, eventTs: number): number | null {
 }
 
 /**
- * Evaluate current usage + rate-limit state across all sessions. "Today"
- * mirrors the Cost-today / budget windows; the rate-limited flag is set when
- * the most recent rate-limit retry hasn't been followed by a successful
- * (non-retry) event, i.e. the agent is still blocked.
+ * Evaluate current usage + rate-limit state across all sessions. "Today" is the
+ * informational cost window; the rolling 5h/7d windows are the plan-usage token
+ * trend; the rate-limited flag is set when the most recent rate-limit retry
+ * hasn't been followed by a successful (non-retry) event, i.e. the agent is
+ * still blocked.
  */
 export function usageStatus(): UsageStatus {
   const now = Date.now();
   const today = startOfToday();
   const db = getDb();
 
-  // Cost today, from the session rows (total_cost_usd folded in by the parser).
+  // Session token + cost rows, scoped to the widest window we care about (7d),
+  // so we can derive both the today cost and the rolling token windows.
   const sessionRows = db
     .prepare(
-      `SELECT total_cost_usd, last_activity FROM session WHERE last_activity >= ?`,
+      `SELECT total_cost_usd, output_tokens, last_activity
+         FROM session
+        WHERE last_activity >= ?`,
     )
-    .all(today) as { total_cost_usd: number; last_activity: number }[];
-  const costToday = sessionRows.reduce(
-    (sum, r) => sum + (r.total_cost_usd || 0),
-    0,
-  );
+    .all(now - SEVEN_DAYS_MS) as {
+    total_cost_usd: number | null;
+    output_tokens: number | null;
+    last_activity: number;
+  }[];
+
+  // Cost today (informational only, NOT a ceiling): sessions active today.
+  const costToday = sessionRows
+    .filter((r) => r.last_activity >= today)
+    .reduce((sum, r) => sum + (r.total_cost_usd || 0), 0);
+
+  // Token consumption over rolling windows, from the session token columns.
+  const fiveHoursAgo = now - FIVE_HOURS_MS;
+  let recent5h = 0;
+  let recent7d = 0;
+  for (const r of sessionRows) {
+    const out = r.output_tokens || 0;
+    recent7d += out;
+    if (r.last_activity >= fiveHoursAgo) recent5h += out;
+  }
+  const tokensRecent: TokensRecent = { last5h: recent5h, last7d: recent7d };
 
   // Output tokens today, summed from result rows (per-turn usage).
   const resultRows = db
@@ -255,18 +290,17 @@ export function usageStatus(): UsageStatus {
     break;
   }
 
-  const ceiling = readBudgetSettings().dailyCostCeilingUsd;
-  const dailyCeilingUsd = ceiling && ceiling > 0 ? ceiling : null;
-  const pct = dailyCeilingUsd ? (costToday / dailyCeilingUsd) * 100 : null;
-
   return {
     now,
     costToday,
     tokensToday,
-    dailyCeilingUsd,
-    pct,
+    tokensRecent,
     rateLimited,
     resetAt,
-    hasData: costToday > 0 || tokensToday > 0 || rateLimited,
+    hasData:
+      costToday > 0 ||
+      tokensToday > 0 ||
+      tokensRecent.last7d > 0 ||
+      rateLimited,
   };
 }

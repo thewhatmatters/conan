@@ -10,13 +10,11 @@ import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "conan-usage-"));
 const dataDir = path.join(tmp, "data");
-const settingsPath = path.join(tmp, "settings.json");
 const TOKEN = "verify-token";
 const PORT = 3772;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 process.env.CONAN_DATA_DIR = dataDir;
-process.env.CONAN_SETTINGS_PATH = settingsPath;
 process.env.CONAN_AUTH_TOKEN = TOKEN;
 process.env.CONAN_PORT = String(PORT);
 
@@ -29,18 +27,17 @@ const { getDb } = await import("../src/db/index.ts");
 const db = getDb();
 const now = Date.now();
 
-// A configured daily ceiling so the widget shows a percent; cost ~ $4.20.
-const { updateBudgetSettings } = await import("../src/settings/index.ts");
-updateBudgetSettings({ dailyCostCeilingUsd: 10 });
-
+// Plan-usage framing (US-004): token consumption on the session rows + cost as
+// informational only — no dollar ceiling.
 const upSession = db.prepare(
-  `INSERT INTO session (id, model, status, created_at, last_activity, total_cost_usd)
-     VALUES (?, ?, 'running', ?, ?, ?)
+  `INSERT INTO session (id, model, status, created_at, last_activity, total_cost_usd, output_tokens)
+     VALUES (?, ?, 'running', ?, ?, ?, ?)
    ON CONFLICT(id) DO UPDATE SET total_cost_usd = excluded.total_cost_usd,
-                                 last_activity = excluded.last_activity`,
+                                 last_activity = excluded.last_activity,
+                                 output_tokens = excluded.output_tokens`,
 );
-upSession.run("sess-opus", "claude-opus-4-7", now - 3_600_000, now, 3.1);
-upSession.run("sess-sonnet", "claude-sonnet-4-6", now - 3_600_000, now, 1.1);
+upSession.run("sess-opus", "claude-opus-4-7", now - 3_600_000, now, 3.1, 18400);
+upSession.run("sess-sonnet", "claude-sonnet-4-6", now - 3_600_000, now, 1.1, 6200);
 
 const insEvent = db.prepare(
   `INSERT INTO event (session_id, hook_event_name, stream_type, tool_name, payload, ts)
@@ -69,8 +66,9 @@ insEvent.run(
 await sleep(200);
 const usage = await (await fetch(`${BASE}/api/claude/usage`)).json();
 console.log(
-  `\n[verify] usage: cost=$${usage.costToday.toFixed(2)} tokens=${usage.tokensToday} ` +
-    `pct=${usage.pct?.toFixed(0)}% rateLimited=${usage.rateLimited} ` +
+  `\n[verify] usage: cost=$${usage.costToday.toFixed(2)} (info) tokensToday=${usage.tokensToday} ` +
+    `5h=${usage.tokensRecent?.last5h} 7d=${usage.tokensRecent?.last7d} ` +
+    `rateLimited=${usage.rateLimited} ` +
     `resetsIn=${usage.resetAt ? Math.round((usage.resetAt - Date.now()) / 1000) + "s" : "—"}`,
 );
 console.log(`\n[verify] gateway live on ${BASE} (token=${TOKEN}). Ctrl-C to stop.`);

@@ -126,7 +126,10 @@ for ((i = 1; i <= MAX_ITER; i++)); do
   printf '%s\n' "$out"
 
   # Usage / rate limit? Surface reset info, wait, then resume the same story.
-  if printf '%s' "$out" | grep -qiE 'usage limit|rate limit|session limit|reached your|too many requests|try again later|resets? (at|in|[0-9])'; then
+  # Match only Claude's REAL limit banner, not stories that merely discuss
+  # limits/usage (US-023 cost ceiling, US-030 usage widget). The "· resets <t>"
+  # middot banner + "hit your … limit" are the distinctive real signals.
+  if printf '%s' "$out" | grep -qiE '·[[:space:]]*resets|hit your (session|usage|account) limit|usage limit reached|reached your (usage|session) limit|too many requests|status 429|http 429'; then
     line="$(printf '%s' "$out" | grep -iE 'reset|limit' | head -1 | tr -s ' ' | cut -c1-160)"
     secs="$(reset_seconds "$out")"
     msg="⏳ usage limit — ${line:-no detail}; resuming [$tgt] in ${secs}s"
