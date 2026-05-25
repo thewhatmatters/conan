@@ -16,6 +16,7 @@ import { readWidgets } from "../widgets/index.js";
 import { budgetStatus, canLaunchSession } from "../budget/index.js";
 import { usageStatus } from "../usage/index.js";
 import { readStats } from "../stats/index.js";
+import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { updateBudgetSettings } from "../settings/index.js";
 import {
   startSession,
@@ -234,6 +235,17 @@ app.get("/api/claude/usage", (_req, res) => {
 // returns a safe empty shape when stats-cache.json is absent.
 app.get("/api/claude/stats", (_req, res) => {
   res.json(readStats());
+});
+
+// MCP server status for the MCP widget (US-003 → US-011). Claude Code keeps no
+// live MCP registry on disk, so we infer connected/needs-auth from the user's
+// configured servers (~/.claude/settings.json mcpServers + project .mcp.json)
+// minus the needs-auth cache, then override per-server with the most-recent
+// live session's captured system/init mcp_servers (the only true signal).
+// Read-only and access-modeled like the other /api/claude/* GET routes;
+// degrades to a safe empty shape when the config files are absent.
+app.get("/api/claude/mcp", (_req, res) => {
+  res.json(readMcpStatus({ sessionMcp: liveSessionMcp() }));
 });
 
 // Update the cost ceilings (US-023). Token-gated like the other mutations.

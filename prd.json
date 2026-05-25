@@ -51,7 +51,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "No live 'connected' registry on disk. settings.json mcpServers = configured (e.g. obsidian); mcp-needs-auth-cache.json = negative signal; system/init event (already captured by src/session/parser.ts) = real per-run state. Inference is the disk-only path."
     },
     {
