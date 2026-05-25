@@ -14,6 +14,7 @@ import { readTranscript } from "../transcript/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { budgetStatus, canLaunchSession } from "../budget/index.js";
+import { usageStatus } from "../usage/index.js";
 import { updateBudgetSettings } from "../settings/index.js";
 import {
   startSession,
@@ -213,6 +214,14 @@ app.get("/api/claude/permissions", (_req, res) => {
 // arrive over /ws (cost is folded onto sessions by the US-007 parser).
 app.get("/api/claude/budget", (_req, res) => {
   res.json(budgetStatus());
+});
+
+// Usage monitor for the hero widget (US-030): cost + tokens recorded today,
+// plus a rate-limited state and reset time parsed from recent api_retry events.
+// Read-only; the widget refetches as events arrive over /ws and ticks the
+// countdown client-side. The dashboard counterpart to run-tasks.sh's backoff.
+app.get("/api/claude/usage", (_req, res) => {
+  res.json(usageStatus());
 });
 
 // Update the cost ceilings (US-023). Token-gated like the other mutations.

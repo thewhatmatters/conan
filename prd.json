@@ -476,8 +476,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 30,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Dashboard counterpart to run-tasks.sh's reactive usage-limit backoff (which surfaces reset time + resumes the current story)."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: src/usage/index.ts — usageStatus() aggregates costToday (session.total_cost_usd) + tokensToday (result-row output_tokens) and detects a rate-limited state from the newest system/api_retry within a 1h lookback that isRateLimitPayload() flags (error.type rate_limit_error | 429 status | 'rate/usage limit' text) AND hasn't been followed by a non-retry success; parseResetAt() pulls a reset time from the payload across the shapes the API/CLI use (unified-reset header, reset_at/resetsAt epoch-s|ms|ISO, retry_after/delay_ms relative, and a 'resets at 3pm' text fallback with the same >6h guard as run-tasks.sh). Gateway GET /api/claude/usage (read-only). UI: hooks/useUsage.ts (refetch on each WS event seq), UsageWidget in HeroWidgets.tsx (5th hero card; headline = %-of-daily-ceiling when set else $cost else '—'; destructive 'Limited' badge + sub 'rate limited' when rate-limited; resets-in countdown ticking client-side off resetAt via a 1s interval; degrades to '—'/'no usage data' when !hasData). Grid widened to lg:grid-cols-5. Verified: scripts/test-usage.mjs (in npm test) — 17 checks: pure helpers (rate-limit detection true/false cases, reset parsing for seconds/unix-s/ISO/nested-header/none) + gateway round-trip (costToday $2.00, tokensToday 1200, retry sets rateLimited + resetAt=ts+90s, later success clears it). Browser (automate-browser, scripts/verify-usage.mjs on :3772): Usage card shows red 42% + LIMITED badge + 'resets in 13m 39s' in light AND dark, countdown confirmed ticking (13m31s->13m29s over 2.2s). typecheck + ui build + full npm test all clean."
     }
   ]
 }

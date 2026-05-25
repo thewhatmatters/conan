@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { SkillsState } from "../hooks/useSkills.ts";
+import type { UsageState } from "../hooks/useUsage.ts";
 import StatCard from "./StatCard.tsx";
 
 interface HeroWidgetsProps {
@@ -7,6 +9,8 @@ interface HeroWidgetsProps {
   /** The session the Context/Skills widgets describe (running > newest). */
   activeSession: Session | null;
   skills: SkillsState;
+  /** Usage / rate-limit state for the Usage widget (US-030). */
+  usage: UsageState;
 }
 
 /**
@@ -19,6 +23,7 @@ export default function HeroWidgets({
   sessions,
   activeSession,
   skills,
+  usage,
 }: HeroWidgetsProps) {
   // Context window: tokens in vs. the model's window, for the active session.
   const ctxTokens = activeSession?.context_tokens ?? null;
@@ -40,7 +45,7 @@ export default function HeroWidgets({
   ).length;
 
   return (
-    <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <StatCard label="Context" sub={activeSession ? "active session" : "no session"}>
         <div className="flex items-center gap-3">
           <Ring pct={ctxPct} />
@@ -86,8 +91,85 @@ export default function HeroWidgets({
           </span>
         </div>
       </StatCard>
+
+      <UsageWidget usage={usage} />
     </section>
   );
+}
+
+/**
+ * Usage monitor (US-030): current usage today (cost / % of the daily ceiling)
+ * plus a "resets in …" countdown, and a distinct rate-limited state derived
+ * from api_retry events. Ticks the countdown client-side off `resetAt` and
+ * degrades to "—" when no usage/reset data is available.
+ */
+function UsageWidget({ usage }: { usage: UsageState }) {
+  // Tick once a second so the countdown advances without a refetch.
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const remaining =
+    usage.resetAt != null ? Math.max(0, usage.resetAt - tick) : null;
+  const resetLabel =
+    remaining != null
+      ? remaining > 0
+        ? `resets in ${fmtDuration(remaining)}`
+        : "reset due"
+      : null;
+
+  // The headline value: percent of the daily ceiling when one is set, else the
+  // dollar cost, else a dash when we have nothing to show.
+  let headline: string;
+  if (!usage.hasData) headline = "—";
+  else if (usage.pct != null) headline = `${Math.round(usage.pct)}%`;
+  else if (usage.costToday > 0) headline = `$${usage.costToday.toFixed(2)}`;
+  else headline = "—";
+
+  return (
+    <StatCard
+      label="Usage"
+      sub={usage.rateLimited ? "rate limited" : "today"}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={
+            "text-xl font-semibold " +
+            (usage.rateLimited ? "text-destructive" : "text-foreground")
+          }
+        >
+          {headline}
+        </span>
+        {usage.rateLimited && (
+          <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive">
+            Limited
+          </span>
+        )}
+      </div>
+      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+        {resetLabel
+          ? resetLabel
+          : usage.hasData
+            ? usage.tokensToday > 0
+              ? `${fmtTokens(usage.tokensToday)} tok · $${usage.costToday.toFixed(2)}`
+              : `$${usage.costToday.toFixed(2)} today`
+            : "no usage data"}
+      </div>
+    </StatCard>
+  );
+}
+
+/** Compact "1h 02m" / "12m 30s" / "45s" duration for the reset countdown. */
+function fmtDuration(ms: number): string {
+  const total = Math.ceil(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
 }
 
 /** A small SVG progress ring for the context gauge (semantic tokens only). */

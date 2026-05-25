@@ -3,6 +3,7 @@ import { useTheme } from "./hooks/useTheme.ts";
 import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
+import { useUsage } from "./hooks/useUsage.ts";
 import { useSessionEvents } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
@@ -58,6 +59,8 @@ export default function App() {
   const activeSession =
     sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
   const skills = useSkills(activeSession?.id ?? null, wsTrigger);
+  // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
+  const usage = useUsage(wsTrigger);
   // Timeline (US-011): events for the selected session — history + live WS.
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
   // Transcript (US-014): fetched lazily, only while its tab is open.
@@ -157,6 +160,7 @@ export default function App() {
             sessions={sessions}
             activeSession={activeSession}
             skills={skills}
+            usage={usage}
           />
 
           <div className="mt-4">
