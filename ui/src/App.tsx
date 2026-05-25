@@ -4,9 +4,11 @@ import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useSessionEvents } from "./hooks/useSessionEvents.ts";
+import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
 import SessionGrid from "./components/SessionGrid.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
+import PendingApprovals from "./components/PendingApprovals.tsx";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import Toaster from "./components/Toaster.tsx";
 
@@ -38,21 +40,36 @@ export default function App() {
   // Timeline (US-011): events for the selected session — history + live WS.
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
+  // US-013: every pending permission prompt across sessions, kept live by WS.
+  const { pending, refresh: refreshPending } = usePendingPermissions(
+    lastEvent?.seq ?? null,
+  );
 
-  // US-012: route an inline approve/deny choice to the selected session.
-  const decidePermission = (
+  // Route an approve/deny choice to a session via the US-012 decision route,
+  // then refresh the cross-session pending list. Shared by the inline timeline
+  // control and the pending-approvals widget (US-013).
+  const postDecision = (
+    sessionId: string,
     requestId: string | null,
     choice: "allow" | "deny",
   ) => {
-    if (!selectedId || !config?.token) return;
-    fetch(`/api/claude/sessions/${encodeURIComponent(selectedId)}/permission`, {
+    if (!config?.token) return;
+    fetch(`/api/claude/sessions/${encodeURIComponent(sessionId)}/permission`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-conan-token": config.token,
       },
       body: JSON.stringify({ request_id: requestId, decision: choice }),
-    }).catch(() => {});
+    })
+      .then(() => refreshPending())
+      .catch(() => {});
+  };
+
+  // US-012: the timeline decides for whichever session it's showing.
+  const decidePermission = (requestId: string | null, choice: "allow" | "deny") => {
+    if (!selectedId) return;
+    postDecision(selectedId, requestId, choice);
   };
 
   useEffect(() => {
@@ -120,6 +137,10 @@ export default function App() {
             activeSession={activeSession}
             skills={skills}
           />
+
+          <div className="mt-4">
+            <PendingApprovals pending={pending} onDecide={postDecision} />
+          </div>
 
           <SessionGrid
             sessions={sessions}

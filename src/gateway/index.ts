@@ -16,6 +16,7 @@ import {
   decidePermission,
   listSessions,
   listEvents,
+  listPendingPermissions,
   onSessionEvent,
 } from "../session/index.js";
 
@@ -148,6 +149,14 @@ app.get("/api/claude/sessions", (_req, res) => {
 // updates arrive over /ws as {type:'event'}. Newest activity is appended there.
 app.get("/api/claude/sessions/:id/events", (req, res) => {
   res.json(listEvents(req.params.id));
+});
+
+// Every permission prompt awaiting a decision across all live sessions, for the
+// cross-session pending-approvals widget (US-013). Read-only; the widget
+// refetches as control_request/control_cancel events arrive over /ws. Each item
+// is answered via the US-012 POST /sessions/:id/permission route.
+app.get("/api/claude/permissions", (_req, res) => {
+  res.json(listPendingPermissions());
 });
 
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.

@@ -211,8 +211,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser. Distinct from US-012: this is the cross-session aggregate that demands attention."
+      "passes": true,
+      "notes": "Done 2026-05-25. Backend: GET /api/claude/permissions (read-only) returns listPendingPermissions() — the cross-session aggregate of every open can_use_tool prompt. UI: hooks/usePendingPermissions.ts (fetch + refetch on each app-WS event seq, plus explicit refresh after a decision), components/PendingApprovals.tsx (panel with shield header + count badge, empty state, one row per prompt: tool, session short-id, requested-action line from the tool input, inline Approve/Deny). App.tsx: shared postDecision(sessionId,requestId,choice) POSTs to the US-012 route then refreshes pending; the timeline's decidePermission now delegates to it. Widget placed below the hero row, above the session grid. Verified via automate-browser (scripts/verify-approvals.mjs boots the gateway on :3766 against a fake claude emitting 2 cross-session prompts): badge 2 with Bash(sonnet)/Write(opus) rows + action lines in light+dark; clicked Approve -> server pending 2->1 and the row cleared live; Deny -> 0 + 'Nothing awaiting a decision' empty state. typecheck + ui build + npm test all clean."
     },
     {
       "id": "US-014",
