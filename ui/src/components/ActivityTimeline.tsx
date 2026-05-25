@@ -16,6 +16,12 @@ interface ActivityTimelineProps {
  * badge on retry events and a compaction marker on PreCompact. Fed by
  * useSessionEvents (history + live WS appends). Noisy partial-message stream
  * deltas are filtered out so the timeline reads as discrete actions.
+ *
+ * Subagent activity (US-021) is nested: events carrying a parent_tool_use_id are
+ * grouped under a collapsible subagent node keyed by that id — placed inline
+ * after the parent Task tool-use that spawned them (or standalone at the first
+ * child when the parent isn't in view). Each node shows the agent_id and links
+ * to its transcript path.
  */
 export default function ActivityTimeline({
   events,
@@ -24,6 +30,8 @@ export default function ActivityTimeline({
   // Locally-recorded decisions (request id or `event-<id>` key → choice) so the
   // control disappears the instant a choice is made, before the WS round-trip.
   const [decided, setDecided] = useState<Record<string, PermissionChoice>>({});
+  // Subagent nodes are expanded by default; track the ones the user collapsed.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const entries = events.filter(isTimelineEntry);
 
   if (entries.length === 0) {
@@ -52,6 +60,82 @@ export default function ActivityTimeline({
     onDecide?.(requestId, choice);
   };
 
+  // Render one event row with its permission-control wiring (shared by the
+  // top-level timeline and nested subagent children).
+  const renderRow = (e: TimelineEvent) => {
+    const prompt = permissionPrompt(e);
+    const key = prompt?.requestId ?? `event-${e.id}`;
+    return (
+      <TimelineRow
+        key={e.id}
+        event={e}
+        prompt={prompt}
+        decision={decided[key]}
+        superseded={Boolean(prompt?.requestId && resolvedIds.has(prompt.requestId))}
+        onDecide={(choice) => decide(key, prompt?.requestId ?? null, choice)}
+      />
+    );
+  };
+
+  // Group child events (those with a parent_tool_use_id) under their parent.
+  const childrenByParent = new Map<string, TimelineEvent[]>();
+  for (const e of entries) {
+    const pid = e.parent_tool_use_id;
+    if (!pid) continue;
+    const arr = childrenByParent.get(pid);
+    if (arr) arr.push(e);
+    else childrenByParent.set(pid, [e]);
+  }
+
+  // The set of tool_use ids spawned by a top-level event, so we know which child
+  // groups have a visible parent (nested inline) vs. which are orphans.
+  const topLevelToolUseIds = new Set<string>();
+  for (const e of entries) {
+    if (e.parent_tool_use_id) continue;
+    const tid = toolUseId(e);
+    if (tid) topLevelToolUseIds.add(tid);
+  }
+
+  const renderSubagent = (parentId: string, kids: TimelineEvent[]) => {
+    const info = subagentInfo(kids);
+    return (
+      <SubagentGroup
+        key={`sub-${parentId}`}
+        info={info}
+        ts={kids[0]?.ts ?? Date.now()}
+        count={kids.length}
+        collapsed={collapsed[parentId] ?? false}
+        onToggle={() =>
+          setCollapsed((c) => ({ ...c, [parentId]: !(c[parentId] ?? false) }))
+        }
+      >
+        {kids.map(renderRow)}
+      </SubagentGroup>
+    );
+  };
+
+  // Walk events in order: render top-level rows, nesting each subagent group
+  // right after the parent that spawned it; render an orphaned group (parent not
+  // shown) at the position of its first child. Each group renders exactly once.
+  const rendered = new Set<string>();
+  const nodes: React.ReactNode[] = [];
+  for (const e of entries) {
+    if (!e.parent_tool_use_id) {
+      nodes.push(renderRow(e));
+      const tid = toolUseId(e);
+      if (tid && childrenByParent.has(tid) && !rendered.has(tid)) {
+        rendered.add(tid);
+        nodes.push(renderSubagent(tid, childrenByParent.get(tid)!));
+      }
+    } else {
+      const pid = e.parent_tool_use_id;
+      if (!topLevelToolUseIds.has(pid) && !rendered.has(pid)) {
+        rendered.add(pid);
+        nodes.push(renderSubagent(pid, childrenByParent.get(pid)!));
+      }
+    }
+  }
+
   return (
     <ol className="relative space-y-1">
       {/* the vertical rail */}
@@ -59,21 +143,111 @@ export default function ActivityTimeline({
         aria-hidden
         className="absolute left-[15px] top-2 bottom-2 w-px bg-border"
       />
-      {entries.map((e) => {
-        const prompt = permissionPrompt(e);
-        const key = prompt?.requestId ?? `event-${e.id}`;
-        return (
-          <TimelineRow
-            key={e.id}
-            event={e}
-            prompt={prompt}
-            decision={decided[key]}
-            superseded={Boolean(prompt?.requestId && resolvedIds.has(prompt.requestId))}
-            onDecide={(choice) => decide(key, prompt?.requestId ?? null, choice)}
-          />
-        );
-      })}
+      {nodes}
     </ol>
+  );
+}
+
+/** Resolved presentation data for a subagent node (US-021). */
+interface SubagentInfo {
+  agentId?: string;
+  transcriptPath?: string;
+  label: string;
+}
+
+/**
+ * Derive a subagent node's identity from its child events: agent_id and
+ * transcript_path (carried on the SubagentStart/Stop and tool hook payloads),
+ * plus a label from the Task subagent_type when present.
+ */
+function subagentInfo(kids: TimelineEvent[]): SubagentInfo {
+  let agentId: string | undefined;
+  let transcriptPath: string | undefined;
+  let subagentType: string | undefined;
+  for (const e of kids) {
+    const p = parsePayload(e.payload);
+    if (!p) continue;
+    if (!agentId) agentId = str(p.agent_id) ?? str(p.agentId);
+    if (!transcriptPath && typeof p.transcript_path === "string") {
+      transcriptPath = p.transcript_path;
+    }
+    if (!subagentType) {
+      subagentType = str(p.subagent_type) ?? str(p.agent_type);
+    }
+  }
+  return {
+    agentId,
+    transcriptPath,
+    label: subagentType ? `Subagent · ${subagentType}` : "Subagent",
+  };
+}
+
+/**
+ * A collapsible subagent node (US-021): a header carrying the agent_id and a
+ * link to its transcript path, plus an indented, rail-connected list of the
+ * subagent's own events. Collapsed by toggle; expanded by default.
+ */
+function SubagentGroup({
+  info,
+  ts,
+  count,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  info: SubagentInfo;
+  ts: number;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="relative">
+      <div className="flex items-start gap-3 py-1.5">
+        <span className="relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary">
+          <Glyph name="bot" />
+        </span>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <button
+              onClick={onToggle}
+              aria-expanded={!collapsed}
+              className="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-primary"
+            >
+              <Glyph name={collapsed ? "chevronRight" : "chevronDown"} size={14} />
+              {info.label}
+            </button>
+            {info.agentId && (
+              <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {info.agentId}
+              </span>
+            )}
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              {count} {count === 1 ? "event" : "events"}
+            </span>
+            <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70">
+              {fmtTime(ts)}
+            </span>
+          </div>
+          {info.transcriptPath && (
+            <a
+              href={`file://${info.transcriptPath}`}
+              title={info.transcriptPath}
+              className="mt-0.5 inline-flex items-center gap-1 truncate font-mono text-xs text-muted-foreground hover:text-primary hover:underline"
+            >
+              <Glyph name="file" size={12} />
+              {basename(info.transcriptPath)}
+            </a>
+          )}
+        </div>
+      </div>
+      {!collapsed && (
+        <ol className="relative ml-4 space-y-1 border-l border-dashed border-border pl-4">
+          {children}
+        </ol>
+      )}
+    </li>
   );
 }
 
@@ -365,6 +539,40 @@ function str(v: unknown): string | undefined {
   return t.length ? (t.length > 160 ? t.slice(0, 159) + "…" : t) : undefined;
 }
 
+/**
+ * The tool_use id an event represents, if any — the handle a subagent's child
+ * events reference via parent_tool_use_id (US-021). Read from a hook's
+ * tool_use_id or from a tool_use block in a stream-json message's content.
+ */
+function toolUseId(e: TimelineEvent): string | null {
+  const p = parsePayload(e.payload);
+  if (!p) return null;
+  if (typeof p.tool_use_id === "string") return p.tool_use_id;
+  if (typeof p.toolUseId === "string") return p.toolUseId;
+  const blocks = Array.isArray(p.content)
+    ? p.content
+    : p.content_block
+      ? [p.content_block]
+      : [];
+  for (const b of blocks) {
+    if (
+      b &&
+      typeof b === "object" &&
+      (b as Record<string, unknown>).type === "tool_use" &&
+      typeof (b as Record<string, unknown>).id === "string"
+    ) {
+      return (b as Record<string, unknown>).id as string;
+    }
+  }
+  return null;
+}
+
+/** Last path segment of a file path, for a compact transcript-link label. */
+function basename(p: string): string {
+  const parts = p.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
 /** A compact one-line description of a tool invocation from its input. */
 function toolDetail(tool: string | null, input: unknown): string | undefined {
   if (!input || typeof input !== "object") return undefined;
@@ -451,6 +659,8 @@ type GlyphName =
   | "shield"
   | "check"
   | "x"
+  | "chevronRight"
+  | "chevronDown"
   | "dot";
 
 const PATHS: Record<GlyphName, React.ReactNode> = {
@@ -553,6 +763,8 @@ const PATHS: Record<GlyphName, React.ReactNode> = {
       <path d="m6 6 12 12" />
     </>
   ),
+  chevronRight: <polyline points="9 18 15 12 9 6" />,
+  chevronDown: <polyline points="6 9 12 15 18 9" />,
   dot: <circle cx="12" cy="12" r="4" />,
 };
 

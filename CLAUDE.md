@@ -37,6 +37,12 @@ npm run typecheck           # tsc --noEmit (gateway)
   (screenshots, real interaction) — UI stories aren't done until visually checked.
 
 ## Architecture (current)
+- **Glossary — "Session":** one Claude Code *run* (an agent conversation/instance),
+  keyed by `session_id`. Conan tracks its events, tool calls, token/cost, and
+  status (running/idle/error). Sessions are **observed** (any hooked `claude` in
+  this repo self-reports) or **driven** (launched by the session manager). NOT a
+  browser/login session. The Sessions grid should carry an info-icon tooltip with
+  this one-liner so users aren't confused.
 - Routes: `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
   `GET /api/tasks` (prd.json + progress.txt).
 - WS: `/ws` (app events + `{type:'tasks'}` broadcast, snapshot on connect),

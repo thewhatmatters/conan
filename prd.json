@@ -336,8 +336,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 21,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Done 2026-05-25. UI-only (data already carries parent_tool_use_id from US-007 parser + US-003 hook ingest). ActivityTimeline.tsx now groups events by parent_tool_use_id: child events nest under a collapsible SubagentGroup placed inline right after the parent Task tool-use that spawned them (matched via toolUseId() — reads payload.tool_use_id or a tool_use block's id from stream-json content), or standalone at the first child when the parent isn't in view (orphan). Each node header shows the agent_id chip + a file:// transcript link (basename label, full path on hover) + subagent_type label + event count, derived via subagentInfo() from the child SubagentStart/Stop + hook payloads. Expanded by default; chevron toggles collapse (tracked per parent id in component state). Added chevronRight/chevronDown glyphs. Verified via automate-browser (scripts/verify-subagents.mjs boots the gateway on :3769 and seeds a session: prompt -> Task(PreToolUse,tool_use_id=task-1) -> [SubagentStart, Read pre/post, Grep, SubagentStop] nested -> Task result -> Stopped): node renders 'Subagent · code-reviewer' + agent-7f3a2c chip + 5 EVENTS + agent-7f3a2c.jsonl link with the 5 children indented on a dashed rail, top-level Task RESULT/Stopped resume after; collapse toggles child rows 5->0->5; confirmed in light AND dark. typecheck (gateway+ui) + ui build clean."
     },
     {
       "id": "US-022",
