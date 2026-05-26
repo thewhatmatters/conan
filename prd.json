@@ -172,7 +172,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 14 (Tier2 #5)."
     },
     {

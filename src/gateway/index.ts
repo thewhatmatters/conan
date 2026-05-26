@@ -23,6 +23,7 @@ import { readChangelog } from "../changelog/index.js";
 import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import { readHooksCoverage } from "../hooks-coverage/index.js";
 import { readProjectMetrics } from "../project-metrics/index.js";
+import { readPlugins } from "../plugins/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -446,6 +447,13 @@ app.get("/api/claude/hooks-coverage", (_req, res) => {
 app.get("/api/claude/project-metrics", (req, res) => {
   const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
   res.json(readProjectMetrics(cwd));
+});
+
+// Installed plugins (US-011): the plugins on this machine, the marketplaces they
+// came from, and which are enabled — read from ~/.claude/plugins/*.json plus the
+// enabledPlugins map in settings.json. Read-only; missing files degrade to empty.
+app.get("/api/claude/plugins", (_req, res) => {
+  res.json(readPlugins());
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
