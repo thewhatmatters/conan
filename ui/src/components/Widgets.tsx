@@ -5,7 +5,7 @@ import type { SkillsState } from "../hooks/useSkills.ts";
 import type { UsageState, UsageWindow } from "../hooks/useUsage.ts";
 import type { McpState } from "../hooks/useMcp.ts";
 import type { StatsState } from "../hooks/useStats.ts";
-import type { WidgetData } from "../hooks/useWidgets.ts";
+import type { ContextCategory, WidgetData } from "../hooks/useWidgets.ts";
 import type { CwdGit } from "../hooks/useCwdGit.ts";
 import type { ProjectMetrics } from "../hooks/useProjectMetrics.ts";
 import {
@@ -324,6 +324,7 @@ function ContextWidget({
   const ctxPct =
     ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
   const sub = session ? (live ? "active · live" : "active session") : "no session";
+  const breakdown = data?.contextBreakdown ?? null;
   return (
     <StatCard label="Context" sub={sub} scope={scope}>
       <div className="flex items-center gap-3">
@@ -339,7 +340,57 @@ function ContextWidget({
           </div>
         </div>
       </div>
+      {breakdown && breakdown.categories.length > 0 && (
+        <ContextBreakdownBar breakdown={breakdown} />
+      )}
     </StatCard>
+  );
+}
+
+/** Per-category chart color for the context breakdown segments (US-007). */
+const CTX_CAT_COLOR: Record<ContextCategory["key"], string> = {
+  system: "bg-chart-4",
+  tools: "bg-chart-2",
+  mcp: "bg-chart-3",
+  memory: "bg-chart-1",
+  skills: "bg-chart-5",
+  messages: "bg-primary",
+};
+
+/**
+ * Stacked mini-bar + legend approximating where the context window is going
+ * (US-007), reconstructed from disk by the backend (memory/skills/MCP sizes +
+ * messages as the remainder of the real total). Segments are sized by share of
+ * the approximated total so they sum to the bar; the legend lists each category
+ * with its token estimate. Semantic/chart tokens only.
+ */
+function ContextBreakdownBar({
+  breakdown,
+}: {
+  breakdown: NonNullable<WidgetData["contextBreakdown"]>;
+}) {
+  const total = breakdown.approxTotal || 1;
+  return (
+    <div className="mt-2">
+      <span className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+        {breakdown.categories.map((c) => (
+          <span
+            key={c.key}
+            className={CTX_CAT_COLOR[c.key]}
+            style={{ width: `${(c.tokens / total) * 100}%` }}
+            title={`${c.label}: ≈${fmtTokens(c.tokens)} tokens`}
+          />
+        ))}
+      </span>
+      <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-muted-foreground">
+        {breakdown.categories.map((c) => (
+          <span key={c.key} className="inline-flex items-center gap-1">
+            <span className={"size-1.5 rounded-full " + CTX_CAT_COLOR[c.key]} />
+            {c.label} {fmtTokens(c.tokens)}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 

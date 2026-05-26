@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
 
+/** One category in the on-disk context approximation (US-007). */
+export interface ContextCategory {
+  key: "system" | "tools" | "mcp" | "memory" | "skills" | "messages";
+  label: string;
+  tokens: number;
+}
+
 /** Mirrors the WidgetData shape from src/widgets/index.ts (US-010). */
 export interface WidgetData {
   mcp: { name: string; status: string }[] | null;
   git: { available: boolean; branch: string | null; dirty: number };
   /** Latest assistant turn's context consumption from the transcript (US-013). */
   context: { used: number; model: string | null } | null;
+  /** On-disk per-category context approximation (US-007). */
+  contextBreakdown: { categories: ContextCategory[]; approxTotal: number };
 }
 
 /**

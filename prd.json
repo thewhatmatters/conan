@@ -120,7 +120,7 @@
         "Verify in browser using automate-browser skill that the Context widget shows category segments that sum sensibly toward the total"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 3 (the bigger ask). Option B (disk approximation) locked in research; option A (PTY scrape) rejected as brittle. Depends on US-006. Suggested skills: automate-browser."
     },
     {
