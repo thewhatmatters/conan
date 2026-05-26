@@ -87,7 +87,7 @@
         "Verify in browser using automate-browser skill: switch sessions via SessionBar and navigate via the sidebar"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 2 (SessionBar+Sidebar slice). PendingApprovals intentionally excluded — it is rewritten in US-008. Suggested skills: shadcn, automate-browser."
     },
     {

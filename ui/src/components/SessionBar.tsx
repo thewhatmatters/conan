@@ -3,6 +3,13 @@ import type { Session } from "../hooks/useSessions.ts";
 import { ALL_SESSIONS } from "../hooks/useSessionEvents.ts";
 import SessionGlossaryInfo from "./SessionGlossaryInfo.tsx";
 import StatusDot from "./shared/StatusDot.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select.tsx";
 
 interface SessionBarProps {
   sessions: Session[];
@@ -65,23 +72,19 @@ export default function SessionBar({
             Session
             <SessionGlossaryInfo />
           </span>
-          <div className="relative">
-            <select
-              value={selectedId ?? ALL_SESSIONS}
-              onChange={(e) => onSelect(e.target.value)}
-              className="appearance-none rounded-md border border-border bg-card py-1 pl-2.5 pr-7 text-sm text-foreground outline-none focus:border-primary"
-            >
-              <option value={ALL_SESSIONS}>All sessions</option>
+          <Select value={selectedId ?? ALL_SESSIONS} onValueChange={onSelect}>
+            <SelectTrigger className="h-8 w-auto min-w-44 gap-2 border-border bg-card py-1 text-sm shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_SESSIONS}>All sessions</SelectItem>
               {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
+                <SelectItem key={s.id} value={s.id}>
                   {sessionLabel(s)}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted-foreground">
-              ▾
-            </span>
-          </div>
+            </SelectContent>
+          </Select>
           {selected && (
             <StatusDot status={selected.status} />
           )}
@@ -348,13 +351,13 @@ function NewSessionForm({
           />
         </Field>
         <Field label="Model">
-          <Select value={model} onChange={setModel} options={MODELS} />
+          <FormSelect value={model} onChange={setModel} options={MODELS} />
         </Field>
         <Field label="Permission mode">
-          <Select value={permissionMode} onChange={setPermissionMode} options={PERMISSION_MODES} />
+          <FormSelect value={permissionMode} onChange={setPermissionMode} options={PERMISSION_MODES} />
         </Field>
         <Field label="Effort">
-          <Select value={effort} onChange={setEffort} options={EFFORT_OPTIONS} />
+          <FormSelect value={effort} onChange={setEffort} options={EFFORT_OPTIONS} />
         </Field>
         <Field label="From PR (#)" className="sm:col-span-2">
           <input
@@ -455,7 +458,7 @@ function Field({
   );
 }
 
-function Select({
+function FormSelect({
   value,
   onChange,
   options,

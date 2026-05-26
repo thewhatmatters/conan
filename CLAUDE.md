@@ -71,7 +71,10 @@ npm run typecheck           # tsc --noEmit (gateway)
   `bg-card`, `border-border`, `text-muted-foreground`, `bg-term-bg`. Never
   hard-code `neutral-*`/hex in components. Light is default; dark via toggle.
   The terminal theme derives from the same tokens (`getTerminalTheme()`).
-- shadcn-compatible token names so the component lib slots in later.
+- **shadcn adopted; migration completed in v4** — bespoke buttons/selects/tabs
+  across Dock, SessionBar, and Sidebar now ride `ui/*` primitives (`button`,
+  `select`, `dropdown-menu`, `tabs`). Reach for `ui/*` for any new control; the
+  semantic token names match shadcn so the components drop in cleanly.
 - Auth/Origin checks apply to **every** new WS endpoint.
 - **Gateway is single-instance on :3747.** On startup, if the port is already
   bound, exit immediately with a clear message (e.g. "Conan gateway already
@@ -104,8 +107,14 @@ npm run typecheck           # tsc --noEmit (gateway)
 3. Safest model for now: run the *building* session externally (or a separate
    Conan instance on another port) and use this dashboard to **observe**.
 
-## Status (2026-05-25)
-**v1 done (30/30), v2 backlog decomposed and active.** v1 (US-001→030, branch
+## Status (2026-05-26)
+**v3 done (48/48), now QA'ing. v4 backlog open for capture.** v3 (`loop/conan-v3`)
+shipped multi-project global hook, Overview/Agents/Skills/Settings nav, a real shadcn
+foundation, and broad Claude Code data from disk + CLI. **QA findings (bugs + feature
+asks) go in `docs/v4-backlog.md`** — same flow as v2/v3: capture → research → PRD →
+decompose into a fresh `prd.json` → run the loop. v1/v2 history below.
+
+**v1 done (30/30), v2 done (20/20).** v1 (US-001→030, branch
 `loop/claude-code-dashboard`) shipped via `run-tasks.sh`; archived to
 `archive/2026-05-25-claude-code-dashboard/`.
 - Hooks installed in `.claude/settings.json` (9 events -> `scripts/hooks/send-event.mjs`

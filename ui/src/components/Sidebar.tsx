@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import type { Route } from "../hooks/useRoute.ts";
+import { Button } from "./ui/button.tsx";
 
 interface SidebarProps {
   route: Route;
@@ -45,14 +46,16 @@ export default function Sidebar({
       aria-label="Primary"
     >
       <div className="flex items-center gap-1 p-2">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onToggle}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+          className="shrink-0 text-muted-foreground hover:bg-muted"
         >
           <MenuIcon />
-        </button>
+        </Button>
         {!collapsed && (
           <span className="truncate text-base font-semibold tracking-tight">
             Conan
@@ -65,16 +68,17 @@ export default function Sidebar({
           const active = route === item.route;
           const badge = item.route === "whatsnew" ? whatsNewBadge : 0;
           return (
-            <button
+            <Button
               key={item.route}
+              variant={active ? "default" : "ghost"}
               onClick={() => onNavigate(item.route)}
               title={collapsed ? item.label : undefined}
               aria-current={active ? "page" : undefined}
               className={
-                "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors " +
+                "relative h-auto justify-start gap-2.5 px-2.5 py-2 text-sm font-normal [&_svg]:size-[18px] " +
                 (collapsed ? "justify-center " : "") +
                 (active
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground hover:bg-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground")
               }
             >
@@ -107,7 +111,7 @@ export default function Sidebar({
                   )}
                 </>
               )}
-            </button>
+            </Button>
           );
         })}
       </div>
