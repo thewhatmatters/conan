@@ -230,7 +230,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-004. Removes BudgetPanel.tsx/useBudget.ts. Suggested skills: automate-browser."
     },
     {

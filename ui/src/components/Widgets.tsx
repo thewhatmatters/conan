@@ -390,10 +390,14 @@ function GitWidget({ data }: { data: WidgetData | null }) {
 }
 
 /**
- * Usage monitor (US-004): plan-usage framing for a token-based plan — recent
- * token consumption (last 5h) plus a "resets in …" countdown, and a distinct
- * rate-limited state derived from api_retry events. Ticks the countdown
+ * Usage monitor (US-004/US-014): plan-usage framing for a token-based plan —
+ * recent token consumption (last 5h) plus a "resets in …" countdown, and a
+ * distinct rate-limited state derived from api_retry events. Ticks the countdown
  * client-side off `resetAt` and degrades to "—" when no usage data is available.
+ * No dollar ceiling / %-of-budget — and an "≈ approx" marker makes explicit that
+ * this is our own approximation: the live plan % lives only in the claude
+ * process's `anthropic-ratelimit-unified-*` response headers, which Conan (which
+ * just shells out) can't read.
  */
 function UsageWidget({ usage }: { usage: UsageState }) {
   const [tick, setTick] = useState(() => Date.now());
@@ -434,6 +438,7 @@ function UsageWidget({ usage }: { usage: UsageState }) {
             Limited
           </span>
         )}
+        <ApproxTag />
       </div>
       <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
         {resetLabel
@@ -447,6 +452,26 @@ function UsageWidget({ usage }: { usage: UsageState }) {
             : "no usage data"}
       </div>
     </StatCard>
+  );
+}
+
+/**
+ * The "≈ approx" marker for the Usage widget: a hover tooltip making clear that
+ * the figures approximate plan usage from our own token counts — the true live
+ * plan % lives in response headers Conan can't read. Group-hover panel (no
+ * tooltip dependency), semantic tokens only, themed for light + dark.
+ */
+function ApproxTag() {
+  return (
+    <span className="group/approx relative ml-auto inline-block">
+      <span className="cursor-help rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        ≈ approx
+      </span>
+      <span className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-52 rounded-md border border-border bg-card p-2 text-left text-[11px] leading-snug text-muted-foreground shadow-md group-hover/approx:block">
+        Approximation from our own token counts. The real plan % lives in the
+        Claude process's rate-limit response headers, which Conan can't read.
+      </span>
+    </span>
   );
 }
 
