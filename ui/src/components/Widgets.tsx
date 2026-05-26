@@ -3,6 +3,7 @@ import type { Session } from "../hooks/useSessions.ts";
 import type { SkillsState } from "../hooks/useSkills.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { McpState } from "../hooks/useMcp.ts";
+import type { StatsState } from "../hooks/useStats.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import {
   WIDGET_KEYS,
@@ -19,6 +20,8 @@ interface WidgetsProps {
   usage: UsageState;
   /** MCP server status (US-011): inferred connected count + names + needs-auth. */
   mcp: McpState;
+  /** Claude Code usage rollup (US-015): heatmap + headline stats. */
+  stats: StatsState;
   /** Per-session widget data (Git); null until at least one widget is on. */
   data: WidgetData | null;
   enabled: Set<WidgetKey>;
@@ -39,6 +42,7 @@ export default function Widgets({
   skills,
   usage,
   mcp,
+  stats,
   data,
   enabled,
   toggle,
@@ -61,16 +65,22 @@ export default function Widgets({
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {WIDGET_KEYS.filter((key) => enabled.has(key)).map((key) => (
-            <WidgetCell
+            // The Stats heatmap needs the full row; everything else is one cell.
+            <div
               key={key}
-              k={key}
-              sessions={sessions}
-              activeSession={activeSession}
-              skills={skills}
-              usage={usage}
-              mcp={mcp}
-              data={data}
-            />
+              className={key === "stats" ? "col-span-2 sm:col-span-3 lg:col-span-5" : undefined}
+            >
+              <WidgetCell
+                k={key}
+                sessions={sessions}
+                activeSession={activeSession}
+                skills={skills}
+                usage={usage}
+                mcp={mcp}
+                stats={stats}
+                data={data}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -86,6 +96,7 @@ function WidgetCell({
   skills,
   usage,
   mcp,
+  stats,
   data,
 }: {
   k: WidgetKey;
@@ -94,6 +105,7 @@ function WidgetCell({
   skills: SkillsState;
   usage: UsageState;
   mcp: McpState;
+  stats: StatsState;
   data: WidgetData | null;
 }) {
   switch (k) {
@@ -114,7 +126,7 @@ function WidgetCell({
     case "usage":
       return <UsageWidget usage={usage} />;
     case "stats":
-      return <StatsWidget />;
+      return <StatsWidget stats={stats} />;
   }
 }
 
@@ -475,13 +487,149 @@ function ApproxTag() {
   );
 }
 
-/** Placeholder until the contribution-heatmap stats widget lands (US-015). */
-function StatsWidget() {
+/**
+ * Stats / contribution-heatmap widget (US-015). Renders Claude Code's own usage
+ * rollup (GET /api/claude/stats, US-002): a GitHub-style heatmap of the last
+ * ~year of daily activity colored by the heat tokens (US-005), plus headline
+ * stats (total tokens, active days, current/longest streak, favorite model and
+ * hour). The grid is hand-rolled (zero deps); each cell carries a `title` so
+ * hovering shows the date + message count. Degrades to "no activity yet" when
+ * stats-cache.json is missing. Spans the full widget row.
+ */
+function StatsWidget({ stats }: { stats: StatsState }) {
+  if (!stats.hasData || stats.dailyActivity.length === 0) {
+    return (
+      <StatCard label="Stats" sub="activity & streaks">
+        <span className="text-sm text-muted-foreground">no activity yet</span>
+      </StatCard>
+    );
+  }
+
+  // The day count that drives a cell's intensity: messages + tool calls.
+  const dayCount = (d: DailyActivityCell) => d.messageCount + d.toolCallCount;
+  const days = stats.dailyActivity.slice(-371); // ~53 weeks, GitHub-style.
+  const max = days.reduce((m, d) => Math.max(m, dayCount(d)), 0);
+
   return (
     <StatCard label="Stats" sub="activity & streaks">
-      <span className="text-sm text-muted-foreground">coming soon</span>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <Heatmap days={days} max={max} dayCount={dayCount} />
+        <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] lg:shrink-0">
+          <StatItem label="Tokens" value={fmtTokens(stats.totalTokens)} />
+          <StatItem label="Active days" value={String(stats.activeDays)} />
+          <StatItem
+            label="Streak"
+            value={`${stats.currentStreak}d`}
+            hint={`best ${stats.longestStreak}d`}
+          />
+          <StatItem
+            label="Top model"
+            value={shortModel(stats.favoriteModel)}
+            span2
+          />
+          <StatItem label="Peak hour" value={fmtHour(stats.favoriteHour)} />
+        </div>
+      </div>
     </StatCard>
   );
+}
+
+type DailyActivityCell = StatsState["dailyActivity"][number];
+
+/**
+ * Hand-rolled contribution grid: weeks as columns, weekdays (Sun→Sat) as the 7
+ * rows. Leading blanks pad the first week so the first day lands on its real
+ * weekday. Each cell's color is one of five heat tokens chosen by the day's
+ * share of the busiest day; `title` gives the hover detail.
+ */
+function Heatmap({
+  days,
+  max,
+  dayCount,
+}: {
+  days: DailyActivityCell[];
+  max: number;
+  dayCount: (d: DailyActivityCell) => number;
+}) {
+  const first = days[0];
+  const lead = first ? weekday(first.date) : 0;
+  return (
+    <div className="grid grid-flow-col grid-rows-7 gap-[2px] overflow-x-auto">
+      {Array.from({ length: lead }).map((_, i) => (
+        <span key={`pad-${i}`} className="size-2.5 rounded-[2px]" />
+      ))}
+      {days.map((d) => {
+        const c = dayCount(d);
+        return (
+          <span
+            key={d.date}
+            title={`${d.date}: ${d.messageCount} msg · ${d.toolCallCount} tools`}
+            className={"size-2.5 rounded-[2px] " + HEAT_CLASS[heatLevel(c, max)]}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** One labeled figure in the stats grid beside the heatmap. */
+function StatItem({
+  label,
+  value,
+  hint,
+  span2,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  span2?: boolean;
+}) {
+  return (
+    <div className={span2 ? "col-span-2" : undefined}>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+        {label}
+      </div>
+      <div className="truncate font-semibold text-foreground">{value}</div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+/** Heat-token classes for intensity levels 0–4 (literal so Tailwind keeps them). */
+const HEAT_CLASS = [
+  "bg-heat-0",
+  "bg-heat-1",
+  "bg-heat-2",
+  "bg-heat-3",
+  "bg-heat-4",
+] as const;
+
+/** Map a day's count to an intensity level 0–4 relative to the busiest day. */
+function heatLevel(count: number, max: number): number {
+  if (count <= 0 || max <= 0) return 0;
+  const ratio = count / max;
+  if (ratio > 0.75) return 4;
+  if (ratio > 0.5) return 3;
+  if (ratio > 0.25) return 2;
+  return 1;
+}
+
+/** Weekday index (0=Sun..6=Sat) of a YYYY-MM-DD day, parsed as UTC. */
+function weekday(date: string): number {
+  const d = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? 0 : d.getUTCDay();
+}
+
+/** Trim a long model slug to its recognizable tail (e.g. "claude-opus-4-7"). */
+function shortModel(model: string | null): string {
+  if (!model) return "—";
+  return model.replace(/^claude-/, "").replace(/\[.*\]$/, "");
+}
+
+/** Format an hour-of-day (0–23) as "14:00", or "—" when unknown. */
+function fmtHour(hour: number | null): string {
+  if (hour == null) return "—";
+  return `${String(hour).padStart(2, "0")}:00`;
 }
 
 /* ---- shared bits --------------------------------------------------------- */

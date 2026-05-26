@@ -5,6 +5,7 @@ import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useUsage } from "./hooks/useUsage.ts";
 import { useMcp } from "./hooks/useMcp.ts";
+import { useStats } from "./hooks/useStats.ts";
 import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
@@ -76,6 +77,8 @@ export default function App() {
   const usage = useUsage(wsTrigger);
   // US-011: MCP server status — inferred connected count + names + needs-auth.
   const mcp = useMcp(wsTrigger);
+  // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.
+  const stats = useStats(wsTrigger);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // most-recent active session once sessions load; "All sessions" (and any
   // explicit pick) is sticky thereafter.
@@ -199,6 +202,7 @@ export default function App() {
             skills={skills}
             usage={usage}
             mcp={mcp}
+            stats={stats}
             data={widgetData}
             enabled={widgetPrefs.enabled}
             toggle={widgetPrefs.toggle}

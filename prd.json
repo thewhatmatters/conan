@@ -247,7 +247,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-002 (stats endpoint) + US-005 (tokens). Hand-roll the grid (react-calendar-heatmap is React-18-pinned/stale). Suggested skills: automate-browser, frontend-design."
     },
     {
