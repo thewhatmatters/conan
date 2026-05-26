@@ -153,7 +153,7 @@
         "Verify in browser using automate-browser skill: trigger a permission prompt in the docked interactive terminal, approve from the UI, and confirm the terminal prompt advances"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 4 (the hard part). correlate.ts + terminal_session FK confirmed present. Brittle by nature (TUI driving) — keep it best-effort with the honest fallback. Beware footgun #1 when testing in-dock. Depends on US-008. Suggested skills: automate-browser."
     },
     {

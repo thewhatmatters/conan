@@ -810,12 +810,105 @@ function trackPermission(session: ManagedSession, ev: NormalizedEvent): void {
 /** Every open permission prompt across live sessions (US-012; feeds US-013). */
 export interface SessionPermission extends PendingPermission {
   sessionId: string;
+  /**
+   * How a decision reaches this prompt (US-009): "stdin" for driven sessions
+   * (a control_response over the child's stdin) vs "keystroke" for
+   * interactive/observed sessions (the answer is typed into the correlated pty).
+   * The UI uses this to label the prompt; the decision route uses it to pick the
+   * delivery channel.
+   */
+  delivery: "stdin" | "keystroke";
 }
 export function listPendingPermissions(): SessionPermission[] {
   const out: SessionPermission[] = [];
   for (const s of byLaunchId.values()) {
     if (!s.sessionId) continue;
-    for (const p of s.pending.values()) out.push({ sessionId: s.sessionId, ...p });
+    for (const p of s.pending.values())
+      out.push({ ...p, sessionId: s.sessionId, delivery: "stdin" });
+  }
+  return out;
+}
+
+/** Session ids we actively drive — control_response over stdin reaches them. */
+export function drivenSessionIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const s of byLaunchId.values()) if (s.sessionId) ids.add(s.sessionId);
+  return ids;
+}
+
+/** How stale an interactive permission Notification may be and still count. */
+const INTERACTIVE_PERMISSION_MAX_AGE_MS = 30 * 60_000;
+
+/**
+ * Decide whether a session's latest event is an unanswered permission prompt
+ * (US-009). For an observed/interactive session the prompt isn't a stream-json
+ * control_request — it's the TUI's own prompt, surfaced to us only as a
+ * permission-type `Notification` hook. We treat that Notification as pending
+ * while it remains the *latest* event for the session: once the operator
+ * answers (in the terminal or via keystroke injection) a newer event — the
+ * tool's PreToolUse, a Stop, the next prompt — supersedes it.
+ */
+function asPermissionNotification(
+  row: { hook_event_name: string | null; tool_name: string | null; payload: string | null },
+): { toolName: string | null; input: unknown } | null {
+  if (row.hook_event_name !== "Notification") return null;
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = row.payload ? (JSON.parse(row.payload) as Record<string, unknown>) : null;
+  } catch {
+    payload = null;
+  }
+  const message = typeof payload?.message === "string" ? payload.message.toLowerCase() : "";
+  const isPermission =
+    message.includes("permission") ||
+    payload?.permission_decision != null ||
+    payload?.permission_mode != null;
+  if (!isPermission) return null;
+  const toolName =
+    row.tool_name ?? (typeof payload?.tool_name === "string" ? payload.tool_name : null);
+  return { toolName, input: payload?.tool_input ?? payload?.input ?? null };
+}
+
+/**
+ * Interactive/observed permission prompts (US-009): a permission-type
+ * `Notification` is the latest event for a session we don't drive and that has a
+ * live, correlated pty. Each is answerable only by typing into that pty, so the
+ * caller passes the set of session ids with a live terminal
+ * (`liveTerminalSessions`, from the terminal module) — prompts without one are
+ * omitted, leaving the UI's honest non-deliverable path to cover them. Tagged
+ * `delivery:"keystroke"` and carries a synthetic `notif-<eventId>` request id
+ * (there is no stream-json request to match).
+ */
+export function listInteractivePermissions(
+  liveTerminalSessions: Set<string>,
+): SessionPermission[] {
+  if (liveTerminalSessions.size === 0) return [];
+  const driven = drivenSessionIds();
+  const cutoff = Date.now() - INTERACTIVE_PERMISSION_MAX_AGE_MS;
+  const db = getDb();
+  const out: SessionPermission[] = [];
+  for (const sessionId of liveTerminalSessions) {
+    if (driven.has(sessionId)) continue; // a stdin prompt already covers it
+    const row = db
+      .prepare(
+        `SELECT id, hook_event_name, tool_name, payload, ts
+           FROM event WHERE session_id = ?
+           ORDER BY ts DESC, id DESC LIMIT 1`,
+      )
+      .get(sessionId) as
+      | { id: number; hook_event_name: string | null; tool_name: string | null; payload: string | null; ts: number }
+      | undefined;
+    if (!row || row.ts < cutoff) continue;
+    const prompt = asPermissionNotification(row);
+    if (!prompt) continue;
+    out.push({
+      sessionId,
+      requestId: `notif-${row.id}`,
+      toolName: prompt.toolName,
+      input: prompt.input,
+      ts: row.ts,
+      delivery: "keystroke",
+    });
   }
   return out;
 }

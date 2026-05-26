@@ -11,6 +11,8 @@ import {
   attachTerminal,
   closeAllTerminals,
   listTerminalSessions,
+  liveTerminalSessionIds,
+  answerInteractivePermission,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills, listSkills } from "../skills/index.js";
@@ -54,6 +56,7 @@ import {
   listEvents,
   listAllEvents,
   listPendingPermissions,
+  listInteractivePermissions,
   onSessionEvent,
   isValidEffort,
   EFFORT_LEVELS,
@@ -380,7 +383,12 @@ app.get("/api/claude/sessions/:id/widgets", async (req, res) => {
 // refetches as control_request/control_cancel events arrive over /ws. Each item
 // is answered via the US-012 POST /sessions/:id/permission route.
 app.get("/api/claude/permissions", (_req, res) => {
-  res.json(listPendingPermissions());
+  // Driven prompts (stdin-answerable) plus interactive/observed prompts that have
+  // a live correlated pty, so the operator can answer a TUI prompt too (US-009).
+  res.json([
+    ...listPendingPermissions(),
+    ...listInteractivePermissions(liveTerminalSessionIds()),
+  ]);
 });
 
 // Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for
@@ -689,8 +697,12 @@ app.post("/api/claude/sessions/:id/prompt", async (req, res) => {
   }
 });
 
-// Answer a tool-permission prompt from the timeline (US-012). Routes the
-// allow/deny choice to the live session via the stream-json control protocol.
+// Answer a tool-permission prompt from the timeline (US-012/US-009). A driven
+// session is answered over the stream-json control protocol (stdin); an
+// interactive/observed session — surfaced with a synthetic `notif-<id>` request
+// id by listInteractivePermissions — has no control_request to answer, so its
+// decision is typed into the correlated pty as a numbered menu choice (US-009).
+// Either path reports an honest `delivered` flag so the UI never fakes success.
 app.post("/api/claude/sessions/:id/permission", (req, res) => {
   if (!authed(req, res)) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
@@ -698,18 +710,32 @@ app.post("/api/claude/sessions/:id/permission", (req, res) => {
     res.status(400).json({ error: "decision must be 'allow' or 'deny'" });
     return;
   }
-  const result = decidePermission(
-    req.params.id,
-    typeof b.request_id === "string" ? b.request_id : null,
-    {
-      decision: b.decision,
-      message: typeof b.message === "string" ? b.message : undefined,
-      updatedPermissions: Array.isArray(b.updated_permissions)
-        ? b.updated_permissions
-        : undefined,
-    },
-  );
-  res.json({ ok: true, ...result });
+  const requestId = typeof b.request_id === "string" ? b.request_id : null;
+
+  // US-009: interactive/observed prompt → keystroke delivery into the pty. The
+  // TUI renders a numbered menu (1=Yes, 2=No/…); allow→1, deny→2 by default,
+  // overridable with an explicit option_number. A `false` return (no live pty
+  // correlated) falls through to US-008's honest non-deliverable state.
+  if (requestId && requestId.startsWith("notif-")) {
+    const optionNumber =
+      typeof b.option_number === "number"
+        ? b.option_number
+        : b.decision === "allow"
+          ? 1
+          : 2;
+    const delivered = answerInteractivePermission(req.params.id, optionNumber);
+    res.json({ ok: true, delivered, requestId, delivery: "keystroke" });
+    return;
+  }
+
+  const result = decidePermission(req.params.id, requestId, {
+    decision: b.decision,
+    message: typeof b.message === "string" ? b.message : undefined,
+    updatedPermissions: Array.isArray(b.updated_permissions)
+      ? b.updated_permissions
+      : undefined,
+  });
+  res.json({ ok: true, ...result, delivery: "stdin" });
 });
 
 app.post("/api/claude/sessions/:id/stop", (req, res) => {

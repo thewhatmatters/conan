@@ -303,6 +303,56 @@ export function listTerminalSessions(): TerminalSummary[] {
   return out;
 }
 
+/** The live pty running a given Claude session (US-009), or null when none. */
+function findTermForSession(sessionId: string): TermSession | null {
+  for (const s of sessions.values()) {
+    if (s.exited) continue;
+    const info = correlateClaudeSession(s.term.pid, s.cwd);
+    if (info?.sessionId === sessionId) return s;
+  }
+  return null;
+}
+
+/**
+ * Claude session ids that have a live, correlated pty (US-009). A permission
+ * prompt for one of these is answerable by typing into that terminal even when
+ * the session is observed (not driven over stdin). Drives which interactive
+ * prompts the pending-approvals list can honestly present.
+ */
+export function liveTerminalSessionIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const s of sessions.values()) {
+    if (s.exited) continue;
+    const info = correlateClaudeSession(s.term.pid, s.cwd);
+    if (info?.sessionId) ids.add(info.sessionId);
+  }
+  return ids;
+}
+
+/**
+ * Answer an interactive Claude Code permission prompt (US-009) by typing the
+ * chosen option into the correlated pty. Claude's TUI renders the choices as a
+ * numbered menu, so we send the 1-based option number followed by Enter. Returns
+ * whether a live pty was found and written to — best-effort by nature (driving a
+ * TUI is brittle), so a `false` return must fall back to the honest
+ * non-deliverable state rather than claim success.
+ */
+export function answerInteractivePermission(
+  sessionId: string,
+  optionNumber: number,
+): boolean {
+  const s = findTermForSession(sessionId);
+  if (!s || s.exited) return false;
+  const n =
+    Number.isFinite(optionNumber) && optionNumber >= 1 ? Math.floor(optionNumber) : 1;
+  try {
+    s.term.write(`${n}\r`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function clampInt(
   raw: string | null,
   fallback: number,
