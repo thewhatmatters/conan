@@ -16,6 +16,7 @@ import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import { useCwdGit } from "./hooks/useCwdGit.ts";
+import { useProjectMetrics } from "./hooks/useProjectMetrics.ts";
 import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
@@ -124,6 +125,13 @@ export default function App() {
   // US-019: Git is cwd-scoped — it follows the active working directory (the
   // toolbar cwd), not a session's cwd. Refetched on each WS event.
   const cwdGit = useCwdGit(
+    config?.cwd ?? null,
+    wsTrigger,
+    widgetPrefs.anyEnabled,
+  );
+  // US-026: Last-session metrics are also cwd-scoped — they read the figures
+  // Claude Code recorded for the active working directory's project.
+  const projectMetrics = useProjectMetrics(
     config?.cwd ?? null,
     wsTrigger,
     widgetPrefs.anyEnabled,
@@ -238,6 +246,7 @@ export default function App() {
             stats={stats}
             data={widgetData}
             git={cwdGit}
+            metrics={projectMetrics}
             enabled={widgetPrefs.enabled}
             toggle={widgetPrefs.toggle}
           />

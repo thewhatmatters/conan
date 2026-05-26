@@ -7,6 +7,7 @@ import type { McpState } from "../hooks/useMcp.ts";
 import type { StatsState } from "../hooks/useStats.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { CwdGit } from "../hooks/useCwdGit.ts";
+import type { ProjectMetrics } from "../hooks/useProjectMetrics.ts";
 import {
   WIDGET_KEYS,
   WIDGET_LABELS,
@@ -45,6 +46,8 @@ interface WidgetsProps {
   data: WidgetData | null;
   /** cwd-scoped git status for the active working directory (US-019). */
   git: CwdGit | null;
+  /** cwd-scoped last-session metrics for the active project (US-026). */
+  metrics: ProjectMetrics | null;
   enabled: Set<WidgetKey>;
   toggle: (key: WidgetKey) => void;
 }
@@ -83,6 +86,7 @@ export default function Widgets({
   stats,
   data,
   git,
+  metrics,
   enabled,
   toggle,
 }: WidgetsProps) {
@@ -166,6 +170,7 @@ export default function Widgets({
                   stats={stats}
                   data={data}
                   git={git}
+                  metrics={metrics}
                 />
               </div>
             ))}
@@ -219,6 +224,7 @@ function WidgetCell({
   stats,
   data,
   git,
+  metrics,
 }: {
   k: WidgetKey;
   sessions: Session[];
@@ -229,6 +235,7 @@ function WidgetCell({
   stats: StatsState;
   data: WidgetData | null;
   git: CwdGit | null;
+  metrics: ProjectMetrics | null;
 }) {
   const scope = WIDGET_SCOPE[k];
   switch (k) {
@@ -244,6 +251,8 @@ function WidgetCell({
       return <ModelIdleWidget session={activeSession} scope={scope} />;
     case "git":
       return <GitWidget git={git} scope={scope} />;
+    case "metrics":
+      return <MetricsWidget metrics={metrics} scope={scope} />;
     case "usage":
       return <UsageWidget usage={usage} scope={scope} />;
     case "stats":
@@ -558,6 +567,116 @@ function GitWidget({ git, scope }: { git: CwdGit | null; scope: WidgetScope }) {
         </div>
       )}
     </StatCard>
+  );
+}
+
+/**
+ * Per-project last-session metrics widget (US-026). Surfaces the figures Claude
+ * Code records under ~/.claude.json for the active cwd's project (US-010 backend,
+ * GET /api/claude/project-metrics): the last session's cost, token totals
+ * (in/out + cache read/creation), lines added/removed, and the per-model split.
+ * cwd-scoped — it re-scopes when the toolbar working directory changes. Degrades
+ * to "—" / "no data" for a project Claude Code has never run in (found:false) and
+ * to a loading "—" before the first fetch. The model split (when more than one
+ * model was used) is revealed on hover via a shadcn Tooltip. Semantic tokens only.
+ */
+function MetricsWidget({
+  metrics,
+  scope,
+}: {
+  metrics: ProjectMetrics | null;
+  scope: WidgetScope;
+}) {
+  // Loading (null) or a project Claude Code has never run → empty face.
+  if (metrics == null || !metrics.found) {
+    return (
+      <StatCard label="Last session" sub="no data" scope={scope}>
+        <div className="flex items-center gap-2">
+          <Dash />
+          <span className="text-[11px] text-muted-foreground">
+            {metrics == null ? "loading…" : "no run recorded"}
+          </span>
+        </div>
+      </StatCard>
+    );
+  }
+
+  const topModel = metrics.lastModelUsage[0]?.model ?? null;
+  const tin = metrics.lastTotalInputTokens ?? 0;
+  const tout = metrics.lastTotalOutputTokens ?? 0;
+  const cache =
+    (metrics.lastTotalCacheReadInputTokens ?? 0) +
+    (metrics.lastTotalCacheCreationInputTokens ?? 0);
+  const added = metrics.lastLinesAdded ?? 0;
+  const removed = metrics.lastLinesRemoved ?? 0;
+  const cost = metrics.lastCost;
+
+  return (
+    <StatCard label="Last session" sub={prettyModel(topModel)} scope={scope}>
+      <div className="flex items-baseline gap-2">
+        <span className="text-xl font-semibold text-foreground">
+          {cost != null ? `$${cost.toFixed(2)}` : "—"}
+        </span>
+        <span className="truncate text-[11px] text-muted-foreground">
+          ↑{fmtTokens(tin)} ↓{fmtTokens(tout)}
+          {cache > 0 ? ` · ${fmtTokens(cache)} cache` : ""}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+        <span className="truncate">
+          <span className="font-medium text-emerald-600 dark:text-emerald-400">
+            +{added}
+          </span>{" "}
+          <span className="font-medium text-destructive">−{removed}</span>{" "}
+          <span className="text-muted-foreground">lines</span>
+        </span>
+        {metrics.lastModelUsage.length > 1 && (
+          <ModelSplit usage={metrics.lastModelUsage} />
+        )}
+      </div>
+    </StatCard>
+  );
+}
+
+/** Hover tooltip listing the per-model token/cost split (US-026). */
+function ModelSplit({ usage }: { usage: ProjectMetrics["lastModelUsage"] }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${usage.length} models used this session`}
+            className="shrink-0 cursor-help rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {usage.length} models
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          align="end"
+          className="w-56 border border-border bg-card p-2 text-left text-foreground"
+        >
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Model split
+          </div>
+          <ul className="space-y-1">
+            {usage.map((m) => (
+              <li
+                key={m.model}
+                className="flex items-center justify-between gap-2 text-[11px]"
+              >
+                <span className="truncate text-foreground">
+                  {prettyModel(m.model)}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  ${m.costUSD.toFixed(2)} · {fmtTokens(m.inputTokens + m.outputTokens)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

@@ -15,6 +15,7 @@ export const WIDGET_KEYS = [
   "mcp",
   "model",
   "git",
+  "metrics",
   "usage",
   "stats",
 ] as const;
@@ -27,9 +28,10 @@ export type WidgetKey = (typeof WIDGET_KEYS)[number];
  *   - cwd     — follows the app-wide active cwd (the toolbar directory)
  *   - global  — unscoped / machine-wide
  *
- * Decision (documented): Git and MCP are cwd-scoped. Git reads the active cwd's
- * work tree; MCP reflects the servers configured for that context (global +
- * project mcpServers). They re-scope when the active cwd changes.
+ * Decision (documented): Git, MCP, and Last-session metrics are cwd-scoped. Git
+ * reads the active cwd's work tree; MCP reflects the servers configured for that
+ * context (global + project mcpServers); metrics read the last-session figures
+ * Claude Code recorded for that project. They re-scope when the active cwd changes.
  */
 export type WidgetScope = "session" | "cwd" | "global";
 
@@ -39,6 +41,7 @@ export const WIDGET_SCOPE: Record<WidgetKey, WidgetScope> = {
   skills: "session",
   git: "cwd",
   mcp: "cwd",
+  metrics: "cwd",
   sessions: "global",
   usage: "global",
   stats: "global",
@@ -58,6 +61,7 @@ export const WIDGET_LABELS: Record<WidgetKey, string> = {
   mcp: "MCP servers",
   model: "Model & idle",
   git: "Git status",
+  metrics: "Last session",
   usage: "Usage",
   stats: "Stats",
 };
