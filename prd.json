@@ -336,7 +336,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "Small CSS fix in ActivityTimeline.tsx. v3-backlog item 16. Suggested skills: automate-browser."
     },
     {

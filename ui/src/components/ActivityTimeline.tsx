@@ -340,7 +340,7 @@ function SubagentGroup({
   return (
     <li className="relative">
       <div className="flex items-start gap-3 py-1.5">
-        <span className="relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary">
+        <span className="relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-background text-primary before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-primary/10">
           <Glyph name="bot" />
         </span>
         <div className="min-w-0 flex-1 pt-0.5">
@@ -564,9 +564,15 @@ const CompactionBadge = (
 /** Map an event to its timeline presentation. */
 function describe(e: TimelineEvent): EntryMeta {
   const payload = parsePayload(e.payload);
+  // Opaque circle backgrounds (US-022): bg-card/bg-background mask the connector
+  // rail. Tinted variants keep their colour via a negative-z ::before overlay so
+  // the tint sits over the opaque base (above the rail) without letting the rail
+  // show through. The icon (in-flow content) still paints above the overlay.
   const neutral = "border-border bg-card text-muted-foreground";
-  const primary = "border-primary/40 bg-primary/10 text-primary";
-  const danger = "border-destructive/40 bg-destructive/10 text-destructive";
+  const primary =
+    "border-primary/40 bg-background text-primary before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-primary/10";
+  const danger =
+    "border-destructive/40 bg-background text-destructive before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-destructive/10";
 
   // can_use_tool permission request from the headless control protocol (US-012).
   if (e.stream_type === "control_request:can_use_tool") {
