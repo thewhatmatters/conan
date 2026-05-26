@@ -186,7 +186,7 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Feeds the Agents page (US-027). RESEARCH: ~/.claude/agents/<name>/ frontmatter. v3-backlog item 14 (Tier2 #6) + 17."
     },
     {

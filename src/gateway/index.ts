@@ -24,6 +24,7 @@ import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import { readHooksCoverage } from "../hooks-coverage/index.js";
 import { readProjectMetrics } from "../project-metrics/index.js";
 import { readPlugins } from "../plugins/index.js";
+import { readAgents } from "../agents/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -454,6 +455,14 @@ app.get("/api/claude/project-metrics", (req, res) => {
 // enabledPlugins map in settings.json. Read-only; missing files degrade to empty.
 app.get("/api/claude/plugins", (_req, res) => {
   res.json(readPlugins());
+});
+
+// Custom-agents catalog (US-012): the agent definitions the user has defined,
+// scanned from ~/.claude/agents/ (user scope) + the active project's
+// .claude/agents/ (project scope), parsed from each manifest's frontmatter
+// (SOUL.md / <name>.md). Read-only; missing dirs degrade to an empty list.
+app.get("/api/claude/agents", (_req, res) => {
+  res.json(readAgents());
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
