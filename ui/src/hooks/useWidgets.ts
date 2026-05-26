@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 export interface WidgetData {
   mcp: { name: string; status: string }[] | null;
   git: { available: boolean; branch: string | null; dirty: number };
+  /** Latest assistant turn's context consumption from the transcript (US-013). */
+  context: { used: number; model: string | null } | null;
 }
 
 /**

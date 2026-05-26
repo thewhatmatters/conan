@@ -16,6 +16,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { getDb } from "../db/index.js";
+import { readContextUsage, type ContextUsage } from "../transcript/index.js";
 
 /** An MCP server entry as surfaced from system/init. */
 export interface McpServer {
@@ -37,6 +38,12 @@ export interface WidgetData {
   /** null when the session has no system/init event (hook-only session). */
   mcp: McpServer[] | null;
   git: GitStatus;
+  /**
+   * Latest assistant turn's context consumption from the transcript (US-013);
+   * null when no transcript usage is available (UI falls back to the session's
+   * stored context_tokens).
+   */
+  context: ContextUsage | null;
 }
 
 /** Latest system/init payload for a session, parsed, or null if none exists. */
@@ -102,5 +109,6 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
   return {
     mcp: parseMcp(init),
     git: await gitStatus(row?.cwd ?? null),
+    context: readContextUsage(sessionId, row?.cwd ?? null),
   };
 }

@@ -180,3 +180,66 @@ function parseTs(v: unknown): number | null {
   const t = Date.parse(v);
   return Number.isNaN(t) ? null : t;
 }
+
+/**
+ * The latest assistant turn's context-window consumption (US-013). `used` is the
+ * input side of that message's usage block —
+ * input_tokens + cache_read_input_tokens + cache_creation_input_tokens — which is
+ * what occupies the context window going into the next turn (output is not part
+ * of the prompt). `model` is the slug that produced it, so the UI can derive the
+ * window size (1M for *-1m variants, 200k default). This reconstructs what the
+ * TUI's /context shows, since /context is a slash command with no headless feed.
+ */
+export interface ContextUsage {
+  used: number;
+  model: string | null;
+}
+
+/** Coerce a usage field to a non-negative integer, defaulting to 0. */
+function usageInt(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+
+/**
+ * Read the latest assistant message's usage from a session's transcript JSONL
+ * and return its context consumption (US-013). Scans every assistant line and
+ * keeps the last one carrying a usage block. Returns null when no transcript or
+ * no usage is found, so the UI can fall back to the session's stored
+ * context_tokens.
+ */
+export function readContextUsage(
+  sessionId: string,
+  cwd?: string | null,
+): ContextUsage | null {
+  const file = transcriptPath(sessionId, cwd);
+  if (!file) return null;
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+
+  let latest: ContextUsage | null = null;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.type !== "assistant") continue;
+    const msg = (o.message ?? {}) as Record<string, unknown>;
+    const usage = (msg.usage ?? null) as Record<string, unknown> | null;
+    if (!usage) continue;
+    const used =
+      usageInt(usage.input_tokens) +
+      usageInt(usage.cache_read_input_tokens) +
+      usageInt(usage.cache_creation_input_tokens);
+    if (used === 0) continue;
+    latest = { used, model: typeof msg.model === "string" ? msg.model : null };
+  }
+  return latest;
+}

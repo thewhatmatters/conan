@@ -98,7 +98,7 @@ function WidgetCell({
 }) {
   switch (k) {
     case "context":
-      return <ContextWidget session={activeSession} />;
+      return <ContextWidget session={activeSession} data={data} />;
     case "sessions":
       return <SessionsWidget sessions={sessions} />;
     case "skills":
@@ -172,13 +172,29 @@ function WidgetPicker({
 
 /* ---- widget cells -------------------------------------------------------- */
 
-function ContextWidget({ session }: { session: Session | null }) {
-  const ctxTokens = session?.context_tokens ?? null;
-  const ctxWindow = contextWindowFor(session?.model ?? null);
+/**
+ * Per-session context-window usage (US-013). Prefers the latest assistant turn's
+ * usage from the transcript (`data.context`: input + cache-read + cache-creation
+ * tokens, which is what fills the window for the next turn), with the window size
+ * derived from that message's model. Falls back to the session row's stored
+ * context_tokens when no fresh transcript usage is available, and to "—" when
+ * there's nothing at all. Themed with semantic tokens only.
+ */
+function ContextWidget({
+  session,
+  data,
+}: {
+  session: Session | null;
+  data: WidgetData | null;
+}) {
+  const live = data?.context ?? null;
+  const ctxTokens = live?.used ?? session?.context_tokens ?? null;
+  const ctxWindow = contextWindowFor(live?.model ?? session?.model ?? null);
   const ctxPct =
     ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
+  const sub = session ? (live ? "active · live" : "active session") : "no session";
   return (
-    <StatCard label="Context" sub={session ? "active session" : "no session"}>
+    <StatCard label="Context" sub={sub}>
       <div className="flex items-center gap-3">
         <Ring pct={ctxPct} />
         <div className="min-w-0">

@@ -214,7 +214,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "/context is a TUI command; data is reconstructable from transcript JSONL latest assistant usage block. Suggested skills: automate-browser."
     },
     {
