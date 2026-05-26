@@ -27,6 +27,7 @@ import { readProjectMetrics } from "../project-metrics/index.js";
 import { readPlugins } from "../plugins/index.js";
 import { readAgents } from "../agents/index.js";
 import { readBackgroundAgents } from "../background-agents/index.js";
+import { readPromptHistory } from "../prompt-history/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -487,6 +488,27 @@ app.get("/api/claude/background-agents", async (req, res) => {
   if (!authed(req, res)) return;
   const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
   res.json(await readBackgroundAgents({ cwd }));
+});
+
+// Prompt history (US-015): the user's Claude Code prompt history from
+// ~/.claude/history.jsonl, newest-first, with optional ?q= text search,
+// ?project= filter, and ?limit=/?offset= pagination. Read-only and
+// access-modeled like the other GET routes; missing file → empty result.
+app.get("/api/claude/prompt-history", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q : undefined;
+  const project = typeof req.query.project === "string" ? req.query.project : undefined;
+  const limit =
+    typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
+  const offset =
+    typeof req.query.offset === "string" ? parseInt(req.query.offset, 10) : undefined;
+  res.json(
+    await readPromptHistory({
+      q,
+      project,
+      limit: Number.isFinite(limit as number) ? limit : undefined,
+      offset: Number.isFinite(offset as number) ? offset : undefined,
+    }),
+  );
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
