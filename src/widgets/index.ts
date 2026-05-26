@@ -89,8 +89,12 @@ function git(cwd: string, args: string[]): Promise<string | null> {
   });
 }
 
-/** Branch + dirty-file count for a session's cwd (US-022 git widget). */
-async function gitStatus(cwd: string | null): Promise<GitStatus> {
+/**
+ * Branch + dirty-file count for a working directory (US-022 git widget).
+ * Exported so the Git widget can follow the app-wide active cwd (US-019), not
+ * only a session's cwd.
+ */
+export async function gitStatus(cwd: string | null): Promise<GitStatus> {
   const none: GitStatus = { available: false, branch: null, dirty: 0 };
   if (!cwd || !fs.existsSync(cwd)) return none;
   const branch = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);

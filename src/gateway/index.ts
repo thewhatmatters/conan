@@ -13,7 +13,7 @@ import { readSkills, listSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
 import { readSubagents } from "../subagents/index.js";
 import { pulseSeries } from "../pulse/index.js";
-import { readWidgets } from "../widgets/index.js";
+import { readWidgets, gitStatus } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
 import { readStats } from "../stats/index.js";
@@ -145,6 +145,18 @@ app.get("/api/fs/dirs", (req, res) => {
   if (!authed(req, res)) return;
   const path = typeof req.query.path === "string" ? req.query.path : undefined;
   res.json(listDirs(path));
+});
+
+// Git status for the active working directory (US-019). The Git widget is
+// cwd-scoped: it follows the app-wide active cwd (or an explicit ?cwd=) rather
+// than a session's cwd, so changing the toolbar directory re-scopes it. Read
+// only; degrades to { available:false } outside a work tree.
+app.get("/api/cwd/git", async (req, res) => {
+  const cwd =
+    typeof req.query.cwd === "string" && req.query.cwd
+      ? req.query.cwd
+      : getActiveCwd();
+  res.json({ cwd, git: await gitStatus(cwd) });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.

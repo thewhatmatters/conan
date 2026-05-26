@@ -20,6 +20,38 @@ export const WIDGET_KEYS = [
 ] as const;
 export type WidgetKey = (typeof WIDGET_KEYS)[number];
 
+/**
+ * What context each widget reflects (US-019), so the user knows whether a figure
+ * tracks the selected session, the active working directory, or the whole machine:
+ *   - session — follows the timeline session ▾ (updates when the selection changes)
+ *   - cwd     — follows the app-wide active cwd (the toolbar directory)
+ *   - global  — unscoped / machine-wide
+ *
+ * Decision (documented): Git and MCP are cwd-scoped. Git reads the active cwd's
+ * work tree; MCP reflects the servers configured for that context (global +
+ * project mcpServers). They re-scope when the active cwd changes.
+ */
+export type WidgetScope = "session" | "cwd" | "global";
+
+export const WIDGET_SCOPE: Record<WidgetKey, WidgetScope> = {
+  context: "session",
+  model: "session",
+  skills: "session",
+  git: "cwd",
+  mcp: "cwd",
+  sessions: "global",
+  cost: "global",
+  usage: "global",
+  stats: "global",
+};
+
+/** Hover hint explaining each scope (shown on the per-widget scope badge). */
+export const SCOPE_HINT: Record<WidgetScope, string> = {
+  session: "Session-scoped — follows the timeline session ▾",
+  cwd: "Directory-scoped — follows the active working directory",
+  global: "Global — machine-wide, unscoped",
+};
+
 export const WIDGET_LABELS: Record<WidgetKey, string> = {
   context: "Context",
   sessions: "Active sessions",

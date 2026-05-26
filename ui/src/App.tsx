@@ -15,6 +15,7 @@ import PendingApprovals from "./components/PendingApprovals.tsx";
 import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
+import { useCwdGit } from "./hooks/useCwdGit.ts";
 import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
@@ -75,7 +76,15 @@ export default function App() {
   // present, otherwise the most-recently-active (sessions are sorted DESC).
   const activeSession =
     sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
-  const skills = useSkills(activeSession?.id ?? null, wsTrigger);
+  // US-019: the session-scoped widgets (Context, Model, Skills) describe whichever
+  // session the timeline ▾ has selected, falling back to the auto active session
+  // when "All sessions"/nothing is picked — so they update as the ▾ changes.
+  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
+  const widgetSession =
+    selectedId && selectedId !== ALL_SESSIONS
+      ? (selectedSession ?? activeSession)
+      : activeSession;
+  const skills = useSkills(widgetSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   const usage = useUsage(wsTrigger);
   // US-011: MCP server status — inferred connected count + names + needs-auth.
@@ -98,7 +107,6 @@ export default function App() {
     isAll ? null : selectedId,
     effectiveTab === "transcript",
   );
-  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
   // US-020: time-series throughput across sessions for the Pulse chart.
@@ -108,7 +116,14 @@ export default function App() {
   // only when at least one widget is enabled, keeping the default view lean.
   const widgetPrefs = useWidgetPrefs();
   const widgetData = useWidgets(
-    activeSession?.id ?? null,
+    widgetSession?.id ?? null,
+    wsTrigger,
+    widgetPrefs.anyEnabled,
+  );
+  // US-019: Git is cwd-scoped — it follows the active working directory (the
+  // toolbar cwd), not a session's cwd. Refetched on each WS event.
+  const cwdGit = useCwdGit(
+    config?.cwd ?? null,
     wsTrigger,
     widgetPrefs.anyEnabled,
   );
@@ -205,12 +220,13 @@ export default function App() {
           <>
           <Widgets
             sessions={sessions}
-            activeSession={activeSession}
+            activeSession={widgetSession}
             skills={skills}
             usage={usage}
             mcp={mcp}
             stats={stats}
             data={widgetData}
+            git={cwdGit}
             enabled={widgetPrefs.enabled}
             toggle={widgetPrefs.toggle}
           />

@@ -6,10 +6,13 @@ import type { UsageState } from "../hooks/useUsage.ts";
 import type { McpState } from "../hooks/useMcp.ts";
 import type { StatsState } from "../hooks/useStats.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
+import type { CwdGit } from "../hooks/useCwdGit.ts";
 import {
   WIDGET_KEYS,
   WIDGET_LABELS,
+  WIDGET_SCOPE,
   type WidgetKey,
+  type WidgetScope,
 } from "../hooks/useWidgetPrefs.ts";
 import StatCard from "./StatCard.tsx";
 import { Button } from "./ui/button.tsx";
@@ -24,7 +27,7 @@ import {
 
 interface WidgetsProps {
   sessions: Session[];
-  /** The session the per-session widgets describe (running > newest). */
+  /** The session the session-scoped widgets describe — the timeline ▾ pick (US-019). */
   activeSession: Session | null;
   skills: SkillsState;
   usage: UsageState;
@@ -32,8 +35,10 @@ interface WidgetsProps {
   mcp: McpState;
   /** Claude Code usage rollup (US-015): heatmap + headline stats. */
   stats: StatsState;
-  /** Per-session widget data (Git); null until at least one widget is on. */
+  /** Per-session widget data (Context); null until at least one widget is on. */
   data: WidgetData | null;
+  /** cwd-scoped git status for the active working directory (US-019). */
+  git: CwdGit | null;
   enabled: Set<WidgetKey>;
   toggle: (key: WidgetKey) => void;
 }
@@ -71,6 +76,7 @@ export default function Widgets({
   mcp,
   stats,
   data,
+  git,
   enabled,
   toggle,
 }: WidgetsProps) {
@@ -145,6 +151,7 @@ export default function Widgets({
                   mcp={mcp}
                   stats={stats}
                   data={data}
+                  git={git}
                 />
               </div>
             ))}
@@ -187,7 +194,7 @@ function ChevronButton({
   );
 }
 
-/** Render the right card for one widget key. */
+/** Render the right card for one widget key, tagged with its scope (US-019). */
 function WidgetCell({
   k,
   sessions,
@@ -197,6 +204,7 @@ function WidgetCell({
   mcp,
   stats,
   data,
+  git,
 }: {
   k: WidgetKey;
   sessions: Session[];
@@ -206,26 +214,28 @@ function WidgetCell({
   mcp: McpState;
   stats: StatsState;
   data: WidgetData | null;
+  git: CwdGit | null;
 }) {
+  const scope = WIDGET_SCOPE[k];
   switch (k) {
     case "context":
-      return <ContextWidget session={activeSession} data={data} />;
+      return <ContextWidget session={activeSession} data={data} scope={scope} />;
     case "sessions":
-      return <SessionsWidget sessions={sessions} />;
+      return <SessionsWidget sessions={sessions} scope={scope} />;
     case "skills":
-      return <SkillsWidget skills={skills} />;
+      return <SkillsWidget skills={skills} scope={scope} />;
     case "cost":
-      return <CostWidget sessions={sessions} />;
+      return <CostWidget sessions={sessions} scope={scope} />;
     case "mcp":
-      return <McpWidget mcp={mcp} />;
+      return <McpWidget mcp={mcp} scope={scope} />;
     case "model":
-      return <ModelIdleWidget session={activeSession} />;
+      return <ModelIdleWidget session={activeSession} scope={scope} />;
     case "git":
-      return <GitWidget data={data} />;
+      return <GitWidget git={git} scope={scope} />;
     case "usage":
-      return <UsageWidget usage={usage} />;
+      return <UsageWidget usage={usage} scope={scope} />;
     case "stats":
-      return <StatsWidget stats={stats} />;
+      return <StatsWidget stats={stats} scope={scope} />;
   }
 }
 
@@ -281,9 +291,11 @@ function WidgetPicker({
 function ContextWidget({
   session,
   data,
+  scope,
 }: {
   session: Session | null;
   data: WidgetData | null;
+  scope: WidgetScope;
 }) {
   const live = data?.context ?? null;
   const ctxTokens = live?.used ?? session?.context_tokens ?? null;
@@ -292,7 +304,7 @@ function ContextWidget({
     ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
   const sub = session ? (live ? "active · live" : "active session") : "no session";
   return (
-    <StatCard label="Context" sub={sub}>
+    <StatCard label="Context" sub={sub} scope={scope}>
       <div className="flex items-center gap-3">
         <Ring pct={ctxPct} />
         <div className="min-w-0">
@@ -310,14 +322,20 @@ function ContextWidget({
   );
 }
 
-function SessionsWidget({ sessions }: { sessions: Session[] }) {
+function SessionsWidget({
+  sessions,
+  scope,
+}: {
+  sessions: Session[];
+  scope: WidgetScope;
+}) {
   const running = sessions.filter((s) => s.status === "running").length;
   const idle = sessions.filter((s) => s.status === "idle").length;
   const error = sessions.filter(
     (s) => s.status !== "running" && s.status !== "idle",
   ).length;
   return (
-    <StatCard label="Active sessions" sub="running · idle · error">
+    <StatCard label="Active sessions" sub="running · idle · error" scope={scope}>
       <div className="flex items-baseline gap-2">
         <span className="text-xl font-semibold text-foreground">
           {sessions.length}
@@ -332,9 +350,15 @@ function SessionsWidget({ sessions }: { sessions: Session[] }) {
   );
 }
 
-function SkillsWidget({ skills }: { skills: SkillsState }) {
+function SkillsWidget({
+  skills,
+  scope,
+}: {
+  skills: SkillsState;
+  scope: WidgetScope;
+}) {
   return (
-    <StatCard label="Skills" sub="available · loaded">
+    <StatCard label="Skills" sub="available · loaded" scope={scope}>
       <div className="flex items-baseline gap-1.5">
         <span className="text-xl font-semibold text-foreground">
           {skills.available}
@@ -347,13 +371,19 @@ function SkillsWidget({ skills }: { skills: SkillsState }) {
   );
 }
 
-function CostWidget({ sessions }: { sessions: Session[] }) {
+function CostWidget({
+  sessions,
+  scope,
+}: {
+  sessions: Session[];
+  scope: WidgetScope;
+}) {
   const startOfToday = new Date().setHours(0, 0, 0, 0);
   const costToday = sessions
     .filter((s) => s.last_activity >= startOfToday)
     .reduce((sum, s) => sum + (s.total_cost_usd || 0), 0);
   return (
-    <StatCard label="Cost today" sub="across sessions">
+    <StatCard label="Cost today" sub="across sessions" scope={scope}>
       <div className="text-xl font-semibold text-foreground">
         {costToday > 0 ? `$${costToday.toFixed(2)}` : "$0.00"}
       </div>
@@ -368,10 +398,10 @@ function CostWidget({ sessions }: { sessions: Session[] }) {
  * server by name with its status, flagging any that need (re)auth. No tooltip
  * dependency: a group-hover panel, themed with semantic tokens.
  */
-function McpWidget({ mcp }: { mcp: McpState }) {
+function McpWidget({ mcp, scope }: { mcp: McpState; scope: WidgetScope }) {
   const sub = mcp.fromLiveSession ? "connected · live" : "connected · total";
   return (
-    <StatCard label="MCP servers" sub={sub}>
+    <StatCard label="MCP servers" sub={sub} scope={scope}>
       {!mcp.hasData ? (
         <Dash />
       ) : (
@@ -439,11 +469,21 @@ function McpStatusTag({ status }: { status: McpServerStatusValue }) {
 
 type McpServerStatusValue = McpState["servers"][number]["status"];
 
-function ModelIdleWidget({ session }: { session: Session | null }) {
+function ModelIdleWidget({
+  session,
+  scope,
+}: {
+  session: Session | null;
+  scope: WidgetScope;
+}) {
   const model = session?.model ?? null;
   const idle = session ? session.status !== "running" : false;
   return (
-    <StatCard label="Model & idle" sub={session ? session.status : "no session"}>
+    <StatCard
+      label="Model & idle"
+      sub={session ? session.status : "no session"}
+      scope={scope}
+    >
       {session == null ? (
         <Dash />
       ) : (
@@ -460,10 +500,9 @@ function ModelIdleWidget({ session }: { session: Session | null }) {
   );
 }
 
-function GitWidget({ data }: { data: WidgetData | null }) {
-  const git = data?.git;
+function GitWidget({ git, scope }: { git: CwdGit | null; scope: WidgetScope }) {
   return (
-    <StatCard label="Git" sub="branch · dirty">
+    <StatCard label="Git" sub="branch · dirty" scope={scope}>
       {git == null ? (
         <Dash />
       ) : !git.available ? (
@@ -497,7 +536,13 @@ function GitWidget({ data }: { data: WidgetData | null }) {
  * process's `anthropic-ratelimit-unified-*` response headers, which Conan (which
  * just shells out) can't read.
  */
-function UsageWidget({ usage }: { usage: UsageState }) {
+function UsageWidget({
+  usage,
+  scope,
+}: {
+  usage: UsageState;
+  scope: WidgetScope;
+}) {
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setTick(Date.now()), 1000);
@@ -521,7 +566,11 @@ function UsageWidget({ usage }: { usage: UsageState }) {
   else headline = "—";
 
   return (
-    <StatCard label="Usage" sub={usage.rateLimited ? "rate limited" : "last 5h"}>
+    <StatCard
+      label="Usage"
+      sub={usage.rateLimited ? "rate limited" : "last 5h"}
+      scope={scope}
+    >
       <div className="flex items-center gap-2">
         <span
           className={
@@ -582,10 +631,16 @@ function ApproxTag() {
  * hovering shows the date + message count. Degrades to "no activity yet" when
  * stats-cache.json is missing. Spans the full widget row.
  */
-function StatsWidget({ stats }: { stats: StatsState }) {
+function StatsWidget({
+  stats,
+  scope,
+}: {
+  stats: StatsState;
+  scope: WidgetScope;
+}) {
   if (!stats.hasData || stats.dailyActivity.length === 0) {
     return (
-      <StatCard label="Stats" sub="activity & streaks">
+      <StatCard label="Stats" sub="activity & streaks" scope={scope}>
         <span className="text-sm text-muted-foreground">no activity yet</span>
       </StatCard>
     );
@@ -597,7 +652,7 @@ function StatsWidget({ stats }: { stats: StatsState }) {
   const max = days.reduce((m, d) => Math.max(m, dayCount(d)), 0);
 
   return (
-    <StatCard label="Stats" sub="activity & streaks">
+    <StatCard label="Stats" sub="activity & streaks" scope={scope}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <Heatmap days={days} max={max} dayCount={dayCount} />
         <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-[11px] lg:shrink-0">

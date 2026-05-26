@@ -291,7 +291,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 4. Suggested skills: automate-browser."
     },
     {
