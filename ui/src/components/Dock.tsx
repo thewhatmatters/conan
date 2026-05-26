@@ -3,6 +3,7 @@ import Terminal from "./Terminal.tsx";
 import TaskChecklist from "./TaskChecklist.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
+import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 
 interface DockProps {
   token: string | null;
@@ -226,6 +227,8 @@ function TermDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Per-tab Claude session info, polled so a mid-session /rename relabels live.
+  const byTid = useTerminals();
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -248,7 +251,10 @@ function TermDropdown({
     active.kind === "term"
       ? terms.findIndex((t) => t.tid === active.tid)
       : -1;
-  const label = activeIdx >= 0 ? `Term ${activeIdx + 1}` : "Term";
+  const label =
+    activeIdx >= 0
+      ? terminalLabel(byTid.get(terms[activeIdx]!.tid), activeIdx)
+      : "Term";
 
   return (
     <div ref={ref} className="relative">
@@ -256,14 +262,14 @@ function TermDropdown({
         onClick={() => setOpen((v) => !v)}
         title="Terminals"
         className={
-          "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs " +
+          "flex max-w-44 items-center gap-1 rounded-md px-2.5 py-1 text-xs " +
           (active.kind === "term"
             ? "bg-muted font-medium text-foreground"
             : "text-muted-foreground hover:bg-muted/60")
         }
       >
-        {label}
-        <span className="text-[10px] text-muted-foreground">▾</span>
+        <span className="truncate">{label}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">▾</span>
       </button>
 
       {open && (
@@ -291,7 +297,9 @@ function TermDropdown({
                       (on ? "bg-primary" : "bg-transparent")
                     }
                   />
-                  Term {i + 1}
+                  <span className="truncate">
+                    {terminalLabel(byTid.get(t.tid), i)}
+                  </span>
                 </button>
                 <button
                   onClick={() => onClose(t.tid)}

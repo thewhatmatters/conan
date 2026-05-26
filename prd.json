@@ -555,7 +555,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 36,
-      "passes": false,
+      "passes": true,
       "notes": "CONFIRMED: name persists in sessions/<pid>.json `name`. v3-backlog item 10. Suggested skills: automate-browser."
     },
     {

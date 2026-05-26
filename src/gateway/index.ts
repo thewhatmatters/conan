@@ -7,7 +7,11 @@ import { getDb, closeDb } from "../db/index.js";
 import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { resolveTlsConfig, assertRemoteSafe } from "./tls.js";
-import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
+import {
+  attachTerminal,
+  closeAllTerminals,
+  listTerminalSessions,
+} from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills, listSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
@@ -162,6 +166,13 @@ app.get("/api/cwd/git", async (req, res) => {
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
 app.get("/api/tasks", (_req, res) => {
   res.json(readTasks());
+});
+
+// Live terminals + the Claude session running inside each (US-036). The Term ▾
+// dropdown polls this to label tabs by session name + short id ("Conan:ca7cb3a8")
+// instead of "Term N". Read-only, loopback-only like the other GET routes.
+app.get("/api/terminals", (_req, res) => {
+  res.json({ terminals: listTerminalSessions() });
 });
 
 // Shared bearer check for the control-plane routes: the same auth token the WS

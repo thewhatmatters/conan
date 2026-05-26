@@ -4,6 +4,7 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
 import { getActiveCwd } from "../cwd/index.js";
+import { correlateClaudeSession, shortSessionId } from "./correlate.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -66,6 +67,8 @@ interface ClientMessage {
 interface TermSession {
   id: string;
   term: pty.IPty;
+  /** The cwd the pty was spawned in — used to correlate it to a session (US-036). */
+  cwd: string;
   /** Recent output chunks, capped to RING_MAX_BYTES (oldest evicted). */
   buffer: string[];
   bufferBytes: number;
@@ -137,6 +140,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   const session: TermSession = {
     id,
     term,
+    cwd,
     buffer: [],
     bufferBytes: 0,
     ws: null,
@@ -265,6 +269,38 @@ function destroySession(session: TermSession): void {
 /** Tear down every live terminal session (gateway shutdown). */
 export function closeAllTerminals(): void {
   for (const session of [...sessions.values()]) destroySession(session);
+}
+
+/** One terminal tab's identity + the Claude session running inside it (US-036). */
+export interface TerminalSummary {
+  tid: string;
+  /** The /renamed session name, or null when unnamed / no live session. */
+  name: string | null;
+  /** The correlated Claude session id, or null when none is live. */
+  sessionId: string | null;
+  /** First 8 chars of `sessionId`, for the compact dropdown label. */
+  shortId: string | null;
+}
+
+/**
+ * Summarize every live terminal, correlating each pty to the Claude session
+ * running inside it so the Term ▾ dropdown can label tabs by name + short id
+ * (US-036). Exited sessions are skipped. Correlation is best-effort: a tab with
+ * no live Claude session reports null name/id and the UI falls back to "Term N".
+ */
+export function listTerminalSessions(): TerminalSummary[] {
+  const out: TerminalSummary[] = [];
+  for (const s of sessions.values()) {
+    if (s.exited) continue;
+    const info = correlateClaudeSession(s.term.pid, s.cwd);
+    out.push({
+      tid: s.id,
+      name: info?.name ?? null,
+      sessionId: info?.sessionId ?? null,
+      shortId: info ? shortSessionId(info.sessionId) : null,
+    });
+  }
+  return out;
 }
 
 function clampInt(
