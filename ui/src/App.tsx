@@ -208,9 +208,7 @@ export default function App() {
             toggle={widgetPrefs.toggle}
           />
 
-          <div className="mt-4">
-            <PendingApprovals pending={pending} onDecide={postDecision} />
-          </div>
+          <PendingApprovals pending={pending} onDecide={postDecision} />
 
           <div className="mt-4">
             <PulseChart

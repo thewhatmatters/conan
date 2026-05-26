@@ -14,11 +14,13 @@ interface PendingApprovalsProps {
 }
 
 /**
- * Cross-session pending-approvals widget (US-013). One place that lists every
- * permission prompt awaiting a decision — session, tool, and requested action —
- * each with inline Approve/Deny that reuses the US-012 decision route. Shows a
- * count badge and an empty state, and updates live as prompts arrive/resolve
- * over the app WS (via usePendingPermissions). Semantic tokens only.
+ * Cross-session pending-approvals widget (US-013/US-017). One place that lists
+ * every permission prompt awaiting a decision — session, tool, and requested
+ * action — each with inline Approve/Deny that reuses the US-012 decision route.
+ * Shows a count badge and updates live as prompts arrive/resolve over the app
+ * WS (via usePendingPermissions). US-017: the panel renders ONLY when at least
+ * one prompt is awaiting a decision; it is fully absent (no empty-state card)
+ * when the queue is empty. Semantic tokens only.
  */
 export default function PendingApprovals({
   pending,
@@ -34,8 +36,13 @@ export default function PendingApprovals({
     onDecide(p.sessionId, p.requestId, choice);
   };
 
+  // US-017: nothing waiting → render nothing at all (no empty-state card, no
+  // reserved space). The optimistic `decided` state means this also fires the
+  // instant the last pending prompt is answered.
+  if (visible.length === 0) return null;
+
   return (
-    <section className="rounded-xl bg-muted p-1">
+    <section className="mt-4 rounded-xl bg-muted p-1">
       <div className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex items-center gap-2">
@@ -58,13 +65,7 @@ export default function PendingApprovals({
           </span>
         </div>
 
-        {visible.length === 0 ? (
-          <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-            Nothing awaiting a decision. Tool-permission prompts across all
-            sessions show up here.
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
+        <ul className="divide-y divide-border">
             {visible.map((p) => (
               <li
                 key={`${p.sessionId}:${p.requestId}`}
@@ -105,7 +106,6 @@ export default function PendingApprovals({
               </li>
             ))}
           </ul>
-        )}
       </div>
     </section>
   );
