@@ -83,7 +83,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "RESEARCH: --debug api log does NOT expose ratelimit-unified headers (live-tested). PTY scrape of /usage is the only confirmed real source. v3-backlog item 2."
     },
     {

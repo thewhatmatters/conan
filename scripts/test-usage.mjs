@@ -20,6 +20,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 process.env.CONAN_DATA_DIR = dataDir;
 process.env.CONAN_AUTH_TOKEN = TOKEN;
 process.env.CONAN_PORT = String(PORT);
+// Never spawn a real `claude` pty during tests (US-005 probe is live-only).
+process.env.CONAN_DISABLE_USAGE_PROBE = "1";
 
 let failed = false;
 const check = (name, cond) => {
@@ -81,6 +83,63 @@ try {
     parseResetAt({ error: { type: "rate_limit_error" } }, t0) === null,
   );
 
+  // --- US-005 /usage frame parser (against a real captured frame) ----------
+  const probe = await import("../src/usage/probe.ts");
+  const fixture = fs.readFileSync(
+    new URL("./fixtures/usage-frame.txt", import.meta.url),
+    "utf8",
+  );
+  // The captured frame (America/Chicago) shows: Current session 50% used, resets
+  // 12:20am; Current week (all models) 12% used, resets Jun 1 at 3pm.
+  const ref = Date.parse("2026-05-25T20:00:00Z"); // a fixed "now" for determinism
+  const plan = probe.parseUsageFrame(fixture, ref);
+  check("frame parses to a plan object", !!plan);
+  check("five-hour window found", !!plan?.fiveHour);
+  check("five-hour utilizationPct = 50", plan?.fiveHour?.utilizationPct === 50);
+  check("five-hour resetAt is a future epoch", typeof plan?.fiveHour?.resetAt === "number" && plan.fiveHour.resetAt > ref);
+  check("seven-day window found", !!plan?.sevenDay);
+  check("seven-day utilizationPct = 12", plan?.sevenDay?.utilizationPct === 12);
+  check("seven-day resetAt parses the dated reset", typeof plan?.sevenDay?.resetAt === "number" && plan.sevenDay.resetAt > ref);
+  check("status derived (50%/12% -> ok)", plan?.status === "ok");
+
+  // status thresholds + standalone reset parsing.
+  check(
+    "warning at 80%+",
+    probe.parseUsageFrame("Current session\n80% used\nResets 1am (America/Chicago)", ref)?.status === "warning",
+  );
+  check(
+    "limit at 100%+",
+    probe.parseUsageFrame("Current session\n100% used\nResets 1am (America/Chicago)", ref)?.status === "limit",
+  );
+  check(
+    "garbage frame -> null",
+    probe.parseUsageFrame("no usage here at all", ref) === null,
+  );
+  check(
+    "time-only reset resolves to next occurrence",
+    typeof probe.parseResetAt("3pm", "America/Chicago", ref) === "number",
+  );
+  check(
+    "dated reset resolves",
+    typeof probe.parseResetAt("Jun 1 at 3pm", "America/Chicago", ref) === "number",
+  );
+  check(
+    "unparseable reset -> null",
+    probe.parseResetAt("whenever", null, ref) === null,
+  );
+  check(
+    "stripAnsi removes CSI sequences",
+    !probe.stripAnsi("\x1b[1;32mhi\x1b[0m").includes("\x1b"),
+  );
+  check(
+    "getCachedPlanUtilization null before any probe",
+    probe.getCachedPlanUtilization() === null,
+  );
+  check(
+    "maybeProbe is a no-op when disabled (returns cached null)",
+    (await probe.maybeProbe()) === null,
+  );
+
   // --- gateway round-trip -------------------------------------------------
   await import("../src/gateway/index.ts");
   await sleep(300);
@@ -119,6 +178,7 @@ try {
   check("tokensRecent.last5h sums recent session tokens", usage.tokensRecent?.last5h === 1200);
   check("tokensRecent.last7d includes older sessions", usage.tokensRecent?.last7d === 6200);
   check("no dollar ceiling/pct in response", !("dailyCeilingUsd" in usage) && !("pct" in usage));
+  check("planUtilization present (null with no fresh probe)", "planUtilization" in usage && usage.planUtilization === null);
   check("not rate-limited with no retry events", usage.rateLimited === false);
   check("hasData true once usage recorded", usage.hasData === true);
 

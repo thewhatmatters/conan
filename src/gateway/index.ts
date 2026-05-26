@@ -14,6 +14,7 @@ import { readTranscript } from "../transcript/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
+import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
@@ -324,8 +325,21 @@ app.get("/api/claude/permissions", (_req, res) => {
 // Cost-today is reported as informational only, NOT a ceiling. Read-only; the
 // widget refetches as events arrive over /ws and ticks the countdown
 // client-side. The dashboard counterpart to run-tasks.sh's backoff.
-app.get("/api/claude/usage", (_req, res) => {
-  res.json(usageStatus());
+//
+// US-005: also surfaces planUtilization — the REAL 5-hour/7-day "% used" + reset
+// times scraped from Claude Code's `/usage` TUI (the only confirmed live source;
+// the ratelimit-unified headers aren't readable from outside the claude process).
+// Always returns the last cached probe (or null); never blocks on a scrape. A
+// token-gated `?probe=1` requests a fresh, bounded PTY probe on demand (throttled
+// to once per TTL) — that's how the widget refreshes when the dashboard opens.
+app.get("/api/claude/usage", async (req, res) => {
+  const base = usageStatus();
+  let planUtilization = getCachedPlanUtilization();
+  if (req.query.probe === "1") {
+    if (!authed(req, res)) return; // a probe spawns a process — token-gate it
+    planUtilization = await maybeProbe();
+  }
+  res.json({ ...base, planUtilization });
 });
 
 // Claude Code's own usage rollup for the Stats / contribution-heatmap widget
