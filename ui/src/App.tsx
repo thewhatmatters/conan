@@ -12,7 +12,6 @@ import Dock from "./components/Dock.tsx";
 import SessionBar from "./components/SessionBar.tsx";
 import Widgets from "./components/Widgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
-import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import { useCwdGit } from "./hooks/useCwdGit.ts";
@@ -243,15 +242,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* US-038: the activity log (main) and the Terminal dock are stacked
-          vertically here so the dock's top-edge handle resizes the height
-          boundary between them. */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1">
         {/* US-020: top padding lives on the content, not <main>, so the sticky
             widget row (Overview) can pin its opaque background flush to the
             scrollport top with no transparent gap for the timeline to show
             through. Non-Overview routes get the padding back via pt-6. */}
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-6">
+        <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
           {route === "settings" ? (
             <div className="pt-6">
               <SettingsView
@@ -314,14 +310,6 @@ export default function App() {
           />
 
           <PendingApprovals pending={pending} onDecide={postDecision} />
-
-          <div className="mt-4">
-            <PulseChart
-              series={pulse}
-              minutes={pulseMinutes}
-              onRange={setPulseMinutes}
-            />
-          </div>
 
           {/* US-007: timeline-primary Overview — session ▾ + inline lifecycle
               controls replace the removed per-session card grid. */}
@@ -386,6 +374,9 @@ export default function App() {
           theme={theme}
           tasks={tasks}
           hidden={!dockOpen}
+          pulse={pulse}
+          pulseMinutes={pulseMinutes}
+          onPulseRange={setPulseMinutes}
         />
       </div>
       </div>

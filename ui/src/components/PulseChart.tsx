@@ -9,8 +9,6 @@ const RANGES: Range[] = [
   { label: "24h", minutes: 1440 },
 ];
 
-type Metric = "tokens" | "cost";
-
 /**
  * Activity categories the area stacks by (bottom → top), mapped 1:1 onto the
  * --color-chart-1..5 theme tokens (US-005). Mirrors PULSE_CATEGORIES on the
@@ -28,22 +26,35 @@ interface PulseChartProps {
   series: PulseSeries | null;
   minutes: number;
   onRange: (minutes: number) => void;
+  /**
+   * US-004: render as a flush bottom strip inside the Dock (shorter plot, no
+   * card chrome) instead of the standalone Overview panel.
+   */
+  compact?: boolean;
 }
 
-const H = 160; // plot height in px
 const PAD_BOTTOM = 18; // room for the retry tick rail
 
 /**
  * US-016: the Pulse / throughput chart — a hand-rolled SVG stacked-area
  * time-series. Each band is an activity category (tool/assistant/prompt/...)
  * bucketed across all sessions over the selected window; the overlaid line is
- * token (or cost) burn over the same window; red ticks on the bottom rail mark
- * buckets that contained an api_retry. Distinct from the snapshot hero cards
- * (US-010). Zero charting deps, semantic/chart tokens only; geometry is
- * measured so the SVG stays crisp at any width.
+ * token burn over the same window; red ticks on the bottom rail mark buckets
+ * that contained an api_retry. Distinct from the snapshot hero cards (US-010).
+ * Zero charting deps, semantic/chart tokens only; geometry is measured so the
+ * SVG stays crisp at any width.
+ *
+ * US-004: lives pinned to the bottom of the Dock column (`compact`) and always
+ * plots tokens — the tokens↔cost toggle was removed (cost is meaningless on a
+ * token-based plan), though the underlying pulse payload still carries `cost`.
  */
-export default function PulseChart({ series, minutes, onRange }: PulseChartProps) {
-  const [metric, setMetric] = useState<Metric>("tokens");
+export default function PulseChart({
+  series,
+  minutes,
+  onRange,
+  compact = false,
+}: PulseChartProps) {
+  const H = compact ? 96 : 160; // plot height in px
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(720);
 
@@ -100,14 +111,14 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
     });
   }, [buckets, bw, plotH, maxStack]);
 
-  // Token / cost overlay line, on its own scale.
-  const lineVals = buckets.map((b) => (metric === "tokens" ? b.tokens : b.cost));
+  // Token overlay line, on its own scale.
+  const lineVals = buckets.map((b) => b.tokens);
   const maxLine = Math.max(0, ...lineVals);
   const linePts =
     maxLine > 0
       ? buckets
           .map((b, i) => {
-            const v = metric === "tokens" ? b.tokens : b.cost;
+            const v = b.tokens;
             const x = i * bw + bw / 2;
             const y = plotH - (v / maxLine) * (plotH - 8);
             return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -130,49 +141,41 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
   }, [buckets]);
 
   return (
-    <section className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <section
+      className={
+        compact
+          ? "border-t border-border bg-card px-3 py-2"
+          : "rounded-xl border border-border bg-card p-4"
+      }
+    >
+      <div
+        className={
+          "flex flex-wrap items-center justify-between gap-3 " +
+          (compact ? "mb-2" : "mb-3")
+        }
+      >
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">Pulse</span>
           <span className="text-xs text-muted-foreground">
-            throughput across sessions
+            {compact ? "all sessions" : "throughput across sessions"}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Metric toggle: token burn vs. cost burn on the overlay line. */}
-          <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
-            {(["tokens", "cost"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMetric(m)}
-                className={
-                  "rounded px-2 py-0.5 capitalize " +
-                  (metric === m
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted")
-                }
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          {/* Window selector. */}
-          <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
-            {RANGES.map((r) => (
-              <button
-                key={r.minutes}
-                onClick={() => onRange(r.minutes)}
-                className={
-                  "rounded px-2 py-0.5 " +
-                  (minutes === r.minutes
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted")
-                }
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+        {/* Window selector. */}
+        <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
+          {RANGES.map((r) => (
+            <button
+              key={r.minutes}
+              onClick={() => onRange(r.minutes)}
+              className={
+                "rounded px-2 py-0.5 " +
+                (minutes === r.minutes
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted")
+              }
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -240,7 +243,10 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
             )}
           </svg>
         ) : (
-          <div className="flex h-[160px] items-center justify-center text-xs text-muted-foreground">
+          <div
+            style={{ height: H }}
+            className="flex items-center justify-center text-xs text-muted-foreground"
+          >
             No activity in this window yet.
           </div>
         )}
@@ -259,9 +265,7 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
         ))}
         <span className="inline-flex items-center gap-1.5">
           <span className="h-0 w-3 border-t border-dashed border-foreground/55" />
-          {metric === "tokens"
-            ? `${fmtTokens(totals.tokens)} tokens`
-            : `$${totals.cost.toFixed(2)}`}
+          {fmtTokens(totals.tokens)} tokens
         </span>
         {totals.retries > 0 && (
           <span className="inline-flex items-center gap-1.5">

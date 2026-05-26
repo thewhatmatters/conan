@@ -70,7 +70,7 @@
         "Verify in browser using automate-browser skill that Pulse renders at the bottom of the dock and the cost toggle is gone"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 1. Builds on US-003 (migrated dock). Pulse is global (v3 kept it so). Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {

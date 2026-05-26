@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import TaskChecklist from "./TaskChecklist.tsx";
+import PulseChart from "./PulseChart.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
+import type { PulseSeries } from "../hooks/usePulse.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import {
@@ -30,6 +32,14 @@ interface DockProps {
    * live session + scrollback. Only an explicit tab-close kills a pty.
    */
   hidden?: boolean;
+  /**
+   * US-004: the global Pulse time-series, pinned as a strip at the bottom of
+   * the dock column. Stays global across all sessions (not scoped to the
+   * active one). Omitted while still loading → the strip just shows empty.
+   */
+  pulse?: PulseSeries | null;
+  pulseMinutes?: number;
+  onPulseRange?: (minutes: number) => void;
 }
 
 const MIN_W = 320;
@@ -77,7 +87,15 @@ function persistTerms(terms: TermTab[]): void {
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
  * that pty (and its terminal_session row) via an explicit close frame.
  */
-export default function Dock({ token, theme, tasks, hidden }: DockProps) {
+export default function Dock({
+  token,
+  theme,
+  tasks,
+  hidden,
+  pulse,
+  pulseMinutes = 60,
+  onPulseRange,
+}: DockProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [active, setActive] = useState<Active>(() => ({
     kind: "term",
@@ -251,6 +269,21 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
           </div>
         )}
       </div>
+
+      {/* US-004: Pulse pinned to the bottom of the dock column — its own strip,
+          not a third tab. Global across all sessions; shrink-0 so it coexists
+          with the tabbed surface above and the drag-resize without breaking the
+          layout. */}
+      {onPulseRange && (
+        <div className="shrink-0">
+          <PulseChart
+            series={pulse ?? null}
+            minutes={pulseMinutes}
+            onRange={onPulseRange}
+            compact
+          />
+        </div>
+      )}
     </aside>
   );
 }
