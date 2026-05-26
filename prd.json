@@ -35,7 +35,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Decision: multi-project observatory. Today hooks are project-scoped (~/Development/conan/.claude/settings.json) so only this repo self-reports. See v3-backlog Decisions + item 18."
     },
     {

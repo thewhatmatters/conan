@@ -19,6 +19,11 @@ import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus } from "../settings/index.js";
 import {
+  installGlobalHooks,
+  uninstallGlobalHooks,
+  globalSettingsPath,
+} from "../hooks/install.js";
+import {
   startSession,
   sendPrompt,
   stopSession,
@@ -225,6 +230,25 @@ app.post("/api/claude/events", (req, res) => {
   res.json({ ok: true, id: event.id });
 });
 
+// Install/remove Conan's GLOBAL hooks into the user-level ~/.claude/settings.json
+// (US-002), so every `claude` run on this machine self-reports — not just runs
+// inside this repo. Token-gated (mutates the user's settings file). Idempotent
+// and non-destructive: merges, preserves unknown keys, backs up before writing.
+// `?remove=1` (or {remove:true}) uninstalls.
+app.post("/api/claude/hooks/install-global", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const remove = b.remove === true || req.query.remove === "1";
+  try {
+    const result = remove ? uninstallGlobalHooks() : installGlobalHooks();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : String(err), path: globalSettingsPath() });
+  }
+});
+
 // Skills hero widget data (US-010): total skills available on this machine,
 // plus how many the given session loaded (from its system/init event).
 // Read-only, like /api/tasks.
@@ -247,9 +271,11 @@ app.get("/api/claude/sessions/:id/events", (req, res) => {
 });
 
 // The timeline's "All sessions" view (US-007): recent events across every
-// session, oldest-first. Read-only; live updates arrive over /ws.
-app.get("/api/claude/events", (_req, res) => {
-  res.json(listAllEvents());
+// session, oldest-first. Read-only; live updates arrive over /ws. Optional
+// `?cwd=` scopes to one working directory (US-002 multi-project observatory).
+app.get("/api/claude/events", (req, res) => {
+  const cwd = typeof req.query.cwd === "string" && req.query.cwd ? req.query.cwd : undefined;
+  res.json(listAllEvents(1000, cwd));
 });
 
 // A session's full conversation transcript (US-014), read straight from the

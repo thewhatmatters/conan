@@ -194,17 +194,27 @@ export function listEvents(sessionId: string, limit = 1000): EventRow[] {
  * "All sessions" view (US-007). Takes the most-recent `limit` rows (newest
  * activity) then re-orders them ascending so the timeline reads top-to-bottom
  * like a single-session view.
+ *
+ * Pass `cwd` to scope to events from sessions in that working directory
+ * (US-002 multi-project observatory) — events carry no cwd of their own, so we
+ * join to the owning session row.
  */
-export function listAllEvents(limit = 1000): EventRow[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT id, session_id, parent_tool_use_id, hook_event_name,
+export function listAllEvents(limit = 1000, cwd?: string): EventRow[] {
+  const sql = cwd
+    ? `SELECT e.id, e.session_id, e.parent_tool_use_id, e.hook_event_name,
+              e.stream_type, e.tool_name, e.payload, e.ts
+         FROM event e JOIN session s ON s.id = e.session_id
+         WHERE s.cwd = ?
+         ORDER BY e.ts DESC, e.id DESC
+         LIMIT ?`
+    : `SELECT id, session_id, parent_tool_use_id, hook_event_name,
               stream_type, tool_name, payload, ts
          FROM event
          ORDER BY ts DESC, id DESC
-         LIMIT ?`,
-    )
-    .all(limit) as EventRow[];
+         LIMIT ?`;
+  const rows = (cwd
+    ? getDb().prepare(sql).all(cwd, limit)
+    : getDb().prepare(sql).all(limit)) as EventRow[];
   return rows.reverse();
 }
 

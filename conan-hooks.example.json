@@ -1,5 +1,6 @@
 {
   "$comment": "Conan dashboard hooks (US-004). Forwards Claude Code lifecycle events to the local gateway so the dashboard timeline/widgets light up. OPT-IN: merge the `hooks` block below into THIS repo's .claude/settings.json (or .claude/settings.local.json). It only affects claude sessions run inside this repo, and is fire-and-forget (safe when the gateway is down). The send-event script lives at scripts/hooks/send-event.mjs.",
+  "$globalInstall": "To observe sessions across EVERY repo on this machine (not just this one), install the same hooks into the user-level ~/.claude/settings.json: `npm run hooks:install-global` (or POST /api/claude/hooks/install-global, token-gated). That installer is idempotent and non-destructive — it merges in, preserves your existing hooks/keys, backs up the file, and uses an ABSOLUTE path to send-event.mjs (relative paths only work for the in-repo hook). See docs/global-hooks.md.",
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "node scripts/hooks/send-event.mjs" }] }
