@@ -736,7 +736,7 @@
         "Typecheck passes"
       ],
       "priority": 48,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 19. Should reflect shipped state; write last."
     }
   ]
