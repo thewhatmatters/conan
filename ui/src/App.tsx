@@ -31,6 +31,8 @@ import PluginsView from "./components/PluginsView.tsx";
 import CheckpointsView from "./components/CheckpointsView.tsx";
 import PromptHistoryView from "./components/PromptHistoryView.tsx";
 import WhatsNewView from "./components/WhatsNewView.tsx";
+import UltrareviewView from "./components/UltrareviewView.tsx";
+import { useUltrareview } from "./hooks/useUltrareview.ts";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
 import { useChangelog } from "./hooks/useChangelog.ts";
@@ -72,7 +74,7 @@ export default function App() {
   const { theme, toggle } = useTheme();
   // Re-subscribe to whichever session's timeline is open so its events replay
   // after a reconnect (US-018).
-  const { tasks, lastEvent, status, reconnectSeq } = useGateway(
+  const { tasks, lastEvent, lastUltrareview, status, reconnectSeq } = useGateway(
     config?.token ?? null,
     selectedId ? [selectedId] : [],
   );
@@ -105,6 +107,9 @@ export default function App() {
   // US-045: version/update status + on-demand `claude doctor` health for the
   // What's New banner.
   const doctor = useDoctor(wsTrigger, config?.token ?? null);
+  // US-046: ultrareview control + streamed findings, seeded from REST and kept
+  // live by the WS `ultrareview` broadcast.
+  const ultrareview = useUltrareview(lastUltrareview, config?.token ?? null);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // most-recent active session once sessions load; "All sessions" (and any
   // explicit pick) is sticky thereafter.
@@ -279,6 +284,14 @@ export default function App() {
           ) : route === "prompts" ? (
             <div className="pt-6">
               <PromptHistoryView trigger={wsTrigger} />
+            </div>
+          ) : route === "review" ? (
+            <div className="pt-6">
+              <UltrareviewView
+                ultrareview={ultrareview}
+                cwd={config?.cwd ?? null}
+                hasToken={!!config?.token}
+              />
             </div>
           ) : route === "whatsnew" ? (
             <div className="pt-6">

@@ -707,7 +707,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 46,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 14 (Tier4 #13). User-triggered, billed. Suggested skills: automate-browser."
     },
     {

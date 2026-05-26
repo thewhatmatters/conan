@@ -36,12 +36,28 @@ export interface GatewayEvent {
   ts: number;
 }
 
+/** A streamed ultrareview run (US-046), mirrors the gateway UltrareviewRun. */
+export interface UltrareviewRun {
+  id: string;
+  status: "idle" | "running" | "done" | "error";
+  target: { kind: "branch" | "pr"; ref: string | null };
+  cwd: string | null;
+  startedAt: number;
+  endedAt: number | null;
+  output: string;
+  findingsCount: number | null;
+  exitCode: number | null;
+  error: string | null;
+}
+
 export interface GatewayState {
   tasks: TasksState | null;
   /** Latest Claude Code event (US-005). `seq` increments so effects refire.
    *  `replay:true` marks an event re-sent by the server after a reconnect
    *  (US-018) so consumers like toasts can ignore the backfill. */
   lastEvent: (GatewayEvent & { seq: number; replay?: boolean }) | null;
+  /** Latest ultrareview run pushed over /ws (US-046), or null until one streams. */
+  lastUltrareview: UltrareviewRun | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -66,6 +82,7 @@ export function useGateway(
   const [tasks, setTasks] = useState<TasksState | null>(null);
   const [lastEvent, setLastEvent] =
     useState<(GatewayEvent & { seq: number; replay?: boolean }) | null>(null);
+  const [lastUltrareview, setLastUltrareview] = useState<UltrareviewRun | null>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -110,6 +127,8 @@ export function useGateway(
               seq: ++seq,
               replay: true,
             });
+          else if (msg.type === "ultrareview")
+            setLastUltrareview(msg.payload as UltrareviewRun);
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -119,5 +138,5 @@ export function useGateway(
     return () => sock.close();
   }, [token]);
 
-  return { tasks, lastEvent, status, reconnectSeq };
+  return { tasks, lastEvent, lastUltrareview, status, reconnectSeq };
 }

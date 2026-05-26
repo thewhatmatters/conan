@@ -26,6 +26,12 @@ import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
 import { readDoctorStatus, runDoctor } from "../doctor/index.js";
+import {
+  readUltrareview,
+  startUltrareview,
+  stopUltrareview,
+  onUltrareviewUpdate,
+} from "../ultrareview/index.js";
 import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import { readHooksCoverage } from "../hooks-coverage/index.js";
 import { readProjectMetrics } from "../project-metrics/index.js";
@@ -477,6 +483,36 @@ app.get("/api/claude/doctor", async (req, res) => {
   res.json({ ...base, health });
 });
 
+// Ultrareview (US-046): a cloud code review of the active repo, launched as the
+// user's explicit, billed, token-gated action. GET reports the current run
+// snapshot (status + streamed findings + any error) and is read-only like the
+// other GET routes; the run's output also streams live over /ws as
+// {type:'ultrareview'}. POST starts a review for the active cwd (or a PR # via
+// {pr}); POST .../stop kills an in-flight run. Long-running and async: POST
+// returns immediately with the run handle while the review streams.
+app.get("/api/claude/ultrareview", (_req, res) => {
+  res.json(readUltrareview());
+});
+
+app.post("/api/claude/ultrareview", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = startUltrareview({
+    cwd: getActiveCwd(),
+    pr: typeof b.pr === "string" ? b.pr : undefined,
+  });
+  if (!result.ok) {
+    res.status(409).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, run: result.run });
+});
+
+app.post("/api/claude/ultrareview/stop", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(stopUltrareview());
+});
+
 // Checkpoints (US-008): list Claude Code's per-session file-history snapshots
 // (~/.claude/file-history/<session>/<hash>@vN), grouped/sorted per session.
 // Read-only and access-modeled like the other GET routes; safe empty shape when
@@ -770,6 +806,12 @@ const stopReaper = startReaper();
 // limits + token consumption (US-004), not a dollar ceiling.
 onSessionEvent((row) => {
   broadcast({ type: "event", payload: row });
+});
+
+// Stream ultrareview output (US-046) to app clients as it arrives so the
+// findings panel renders live without polling — same broadcast bus as events.
+onUltrareviewUpdate((run) => {
+  broadcast({ type: "ultrareview", payload: run });
 });
 
 server.on("upgrade", (req, socket, head) => {
