@@ -194,7 +194,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <main className="min-w-0 flex-1 overflow-auto p-6">
           {route === "settings" ? (
-            <SettingsView />
+            <SettingsView theme={theme} onToggleTheme={toggle} />
           ) : (
           <>
           <Widgets

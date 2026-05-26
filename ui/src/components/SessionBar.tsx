@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import { ALL_SESSIONS } from "../hooks/useSessionEvents.ts";
+import SessionGlossaryInfo from "./SessionGlossaryInfo.tsx";
 
 interface SessionBarProps {
   sessions: Session[];
@@ -54,8 +55,9 @@ export default function SessionBar({
       <div className="flex flex-wrap items-center gap-2">
         {/* session ▾ — the primary selector */}
         <label className="flex items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
             Session
+            <SessionGlossaryInfo />
           </span>
           <div className="relative">
             <select

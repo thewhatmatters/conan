@@ -328,7 +328,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "Folds settings into the new shell. Sessions tooltip from CLAUDE.md glossary. Suggested skills: automate-browser, shadcn."
     }
   ]

@@ -17,6 +17,7 @@ import { usageStatus } from "../usage/index.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
+import { readHooksStatus } from "../settings/index.js";
 import {
   startSession,
   sendPrompt,
@@ -320,6 +321,23 @@ app.get("/api/claude/stats", (_req, res) => {
 // degrades to a safe empty shape when the config files are absent.
 app.get("/api/claude/mcp", (_req, res) => {
   res.json(readMcpStatus({ sessionMcp: liveSessionMcp() }));
+});
+
+// Read-only settings surface for the Settings view (US-020): which Claude Code
+// lifecycle hooks are wired (so observed sessions self-report) and the
+// remote-access (TLS) posture. NO cost-ceiling/budget here — removed in
+// US-004/US-014; the plan is token-based, not dollar-metered. Theme + usage
+// preferences live client-side. Access-modeled like the other GET routes.
+app.get("/api/settings", (_req, res) => {
+  res.json({
+    hooks: readHooksStatus(),
+    remote: {
+      tlsEnabled: TLS.enabled,
+      scheme: SCHEME,
+      host: HOST,
+      loopbackOnly: !TLS.enabled,
+    },
+  });
 });
 
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.
