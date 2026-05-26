@@ -4,6 +4,7 @@ import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useUsage } from "./hooks/useUsage.ts";
+import { useMcp } from "./hooks/useMcp.ts";
 import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
@@ -73,6 +74,8 @@ export default function App() {
   const skills = useSkills(activeSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   const usage = useUsage(wsTrigger);
+  // US-011: MCP server status — inferred connected count + names + needs-auth.
+  const mcp = useMcp(wsTrigger);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // most-recent active session once sessions load; "All sessions" (and any
   // explicit pick) is sticky thereafter.
@@ -195,6 +198,7 @@ export default function App() {
             activeSession={activeSession}
             skills={skills}
             usage={usage}
+            mcp={mcp}
             data={widgetData}
             enabled={widgetPrefs.enabled}
             toggle={widgetPrefs.toggle}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { SkillsState } from "../hooks/useSkills.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
+import type { McpState } from "../hooks/useMcp.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import {
   WIDGET_KEYS,
@@ -16,7 +17,9 @@ interface WidgetsProps {
   activeSession: Session | null;
   skills: SkillsState;
   usage: UsageState;
-  /** Per-session widget data (MCP/Git); null until at least one widget is on. */
+  /** MCP server status (US-011): inferred connected count + names + needs-auth. */
+  mcp: McpState;
+  /** Per-session widget data (Git); null until at least one widget is on. */
   data: WidgetData | null;
   enabled: Set<WidgetKey>;
   toggle: (key: WidgetKey) => void;
@@ -35,6 +38,7 @@ export default function Widgets({
   activeSession,
   skills,
   usage,
+  mcp,
   data,
   enabled,
   toggle,
@@ -64,6 +68,7 @@ export default function Widgets({
               activeSession={activeSession}
               skills={skills}
               usage={usage}
+              mcp={mcp}
               data={data}
             />
           ))}
@@ -80,6 +85,7 @@ function WidgetCell({
   activeSession,
   skills,
   usage,
+  mcp,
   data,
 }: {
   k: WidgetKey;
@@ -87,6 +93,7 @@ function WidgetCell({
   activeSession: Session | null;
   skills: SkillsState;
   usage: UsageState;
+  mcp: McpState;
   data: WidgetData | null;
 }) {
   switch (k) {
@@ -99,7 +106,7 @@ function WidgetCell({
     case "cost":
       return <CostWidget sessions={sessions} />;
     case "mcp":
-      return <McpWidget data={data} />;
+      return <McpWidget mcp={mcp} />;
     case "model":
       return <ModelIdleWidget session={activeSession} />;
     case "git":
@@ -240,25 +247,83 @@ function CostWidget({ sessions }: { sessions: Session[] }) {
   );
 }
 
-function McpWidget({ data }: { data: WidgetData | null }) {
-  const mcp = data?.mcp;
-  const healthy =
-    mcp?.filter((s) => /connected|ok|ready/i.test(s.status)).length ?? 0;
+/**
+ * MCP servers widget (US-011). Shows the inferred connected count from
+ * /api/claude/mcp (US-003 — config-derived, enriched by a live session's real
+ * statuses) over the total known. Hovering reveals a tooltip listing every
+ * server by name with its status, flagging any that need (re)auth. No tooltip
+ * dependency: a group-hover panel, themed with semantic tokens.
+ */
+function McpWidget({ mcp }: { mcp: McpState }) {
+  const sub = mcp.fromLiveSession ? "connected · live" : "connected · total";
   return (
-    <StatCard label="MCP servers" sub="connected · total">
-      {mcp == null ? (
+    <StatCard label="MCP servers" sub={sub}>
+      {!mcp.hasData ? (
         <Dash />
       ) : (
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xl font-semibold text-foreground">
-            {healthy}
-          </span>
-          <span className="text-sm text-muted-foreground">· {mcp.length}</span>
+        <div className="group/mcp relative inline-block">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-semibold text-foreground">
+              {mcp.connectedCount}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              · {mcp.servers.length}
+            </span>
+            {mcp.needsAuthCount > 0 && (
+              <span className="ml-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
+                {mcp.needsAuthCount} auth
+              </span>
+            )}
+          </div>
+          <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-44 rounded-md border border-border bg-card p-2 text-left shadow-md group-hover/mcp:block">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              MCP servers
+            </div>
+            <ul className="space-y-1">
+              {mcp.servers.map((s) => (
+                <li
+                  key={s.name}
+                  className="flex items-center justify-between gap-2 text-[11px]"
+                >
+                  <span className="truncate font-mono text-foreground">
+                    {s.name}
+                  </span>
+                  <McpStatusTag status={s.status} />
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </StatCard>
   );
 }
+
+/** A small per-server status pill for the MCP tooltip. */
+function McpStatusTag({ status }: { status: McpServerStatusValue }) {
+  if (status === "needs-auth") {
+    return (
+      <span className="shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-500">
+        needs auth
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="shrink-0 rounded bg-destructive/15 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-destructive">
+        failed
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+      <span className="size-1.5 rounded-full bg-primary" />
+      connected
+    </span>
+  );
+}
+
+type McpServerStatusValue = McpState["servers"][number]["status"];
 
 function ModelIdleWidget({ session }: { session: Session | null }) {
   const model = session?.model ?? null;
