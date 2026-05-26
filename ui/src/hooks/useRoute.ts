@@ -4,6 +4,7 @@ export type Route =
   | "overview"
   | "agents"
   | "skills"
+  | "plugins"
   | "checkpoints"
   | "whatsnew"
   | "settings";
@@ -13,6 +14,7 @@ function routeFor(pathname: string): Route {
   const p = pathname.replace(/\/+$/, "");
   if (p === "/agents") return "agents";
   if (p === "/skills") return "skills";
+  if (p === "/plugins") return "plugins";
   if (p === "/checkpoints") return "checkpoints";
   if (p === "/whats-new") return "whatsnew";
   if (p === "/settings") return "settings";
@@ -26,6 +28,8 @@ function pathFor(route: Route): string {
       return "/agents";
     case "skills":
       return "/skills";
+    case "plugins":
+      return "/plugins";
     case "checkpoints":
       return "/checkpoints";
     case "whatsnew":

@@ -14,6 +14,7 @@ const NAV: { route: Route; label: string; icon: ReactElement }[] = [
   { route: "overview", label: "Overview", icon: <GridIcon /> },
   { route: "agents", label: "Agents", icon: <BotIcon /> },
   { route: "skills", label: "Skills", icon: <SparkIcon /> },
+  { route: "plugins", label: "Plugins", icon: <PlugIcon /> },
   { route: "checkpoints", label: "Checkpoints", icon: <HistoryIcon /> },
   { route: "whatsnew", label: "What's New", icon: <SparklesIcon /> },
   { route: "settings", label: "Settings", icon: <GearIcon /> },
@@ -147,6 +148,17 @@ function SparklesIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M9.5 3.5l1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6L4.5 8.5l3.6-1.4z" />
       <path d="M18 13l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+    </svg>
+  );
+}
+
+function PlugIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 2v6" />
+      <path d="M15 2v6" />
+      <path d="M6 8h12v3a6 6 0 0 1-12 0z" />
+      <path d="M12 17v5" />
     </svg>
   );
 }
