@@ -83,7 +83,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Charting decision: ZERO new deps \u2014 hand-rolled SVG (Pulse) + CSS-grid (heatmap), themed via these tokens. Suggested skills: tailwind-design-system if present."
     },
     {
