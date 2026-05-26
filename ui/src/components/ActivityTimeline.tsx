@@ -2,6 +2,10 @@ import { useState } from "react";
 import type { TimelineEvent } from "../hooks/useSessionEvents.ts";
 import type { SubagentNode } from "../hooks/useSubagents.ts";
 import type { TranscriptBlock, TranscriptMessage } from "../hooks/useTranscript.ts";
+import SortToggle, { type SortDir } from "./shared/SortToggle.tsx";
+
+// Re-exported for back-compat with consumers that imported SortDir from here.
+export type { SortDir };
 
 /** Operator choice for a tool-permission prompt (US-012). */
 export type PermissionChoice = "allow" | "deny";
@@ -306,36 +310,6 @@ function TypeFilter({
         );
       })}
     </div>
-  );
-}
-
-/** Timeline sort direction by timestamp (US-021). */
-export type SortDir = "asc" | "desc";
-
-/**
- * Newest/oldest-first sort toggle (US-021). A single button that flips the
- * order and labels the current choice; an arrow glyph rotates to match.
- */
-function SortToggle({
-  value,
-  onChange,
-}: {
-  value: SortDir;
-  onChange: (v: SortDir) => void;
-}) {
-  const newest = value === "desc";
-  return (
-    <button
-      onClick={() => onChange(newest ? "asc" : "desc")}
-      aria-label={`Sort by time, ${newest ? "newest" : "oldest"} first`}
-      title={`Sorted ${newest ? "newest" : "oldest"} first — click to flip`}
-      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
-    >
-      <span className={newest ? "" : "rotate-180"}>
-        <Glyph name="arrowDown" size={13} />
-      </span>
-      {newest ? "Newest first" : "Oldest first"}
-    </button>
   );
 }
 
@@ -1024,7 +998,6 @@ type GlyphName =
   | "x"
   | "chevronRight"
   | "chevronDown"
-  | "arrowDown"
   | "dot";
 
 const PATHS: Record<GlyphName, React.ReactNode> = {
@@ -1129,12 +1102,6 @@ const PATHS: Record<GlyphName, React.ReactNode> = {
   ),
   chevronRight: <polyline points="9 18 15 12 9 6" />,
   chevronDown: <polyline points="6 9 12 15 18 9" />,
-  arrowDown: (
-    <>
-      <path d="M12 5v14" />
-      <path d="m19 12-7 7-7-7" />
-    </>
-  ),
   dot: <circle cx="12" cy="12" r="4" />,
 };
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import { ALL_SESSIONS } from "../hooks/useSessionEvents.ts";
 import SessionGlossaryInfo from "./SessionGlossaryInfo.tsx";
+import StatusDot from "./shared/StatusDot.tsx";
 
 interface SessionBarProps {
   sessions: Session[];
@@ -221,23 +222,6 @@ function Action({
     <button type="button" onClick={onClick} disabled={disabled} className={`${base} ${tone}`}>
       {label}
     </button>
-  );
-}
-
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "running"
-      ? "bg-primary"
-      : status === "error"
-        ? "bg-destructive"
-        : "bg-muted-foreground/40";
-  return (
-    <span className="relative inline-flex size-2.5 shrink-0 items-center justify-center">
-      {status === "running" && (
-        <span className="absolute inline-flex size-2.5 animate-ping rounded-full bg-primary/60" />
-      )}
-      <span className={"size-2 rounded-full " + color} />
-    </span>
   );
 }
 

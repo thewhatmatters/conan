@@ -1,743 +1,229 @@
 {
-  "project": "Conan",
-  "branchName": "loop/conan-v3",
-  "description": "Conan v3 \u2014 'leverage everything Claude Code can do.' Multi-project (global ~/.claude hook so any claude run self-reports; UI filters by cwd); nav expands to Overview/Agents/Skills/Settings; built on a real shadcn foundation. Surfaces broad Claude Code data from disk + CLI: real /usage via PTY scrape, settings mirror, MCP from ~/.claude.json, changelog feed, checkpoints (file-history), per-project metrics, plugins, custom agents, background agents, subagent reconstruction, prompt history, skills. Plus drive-flag expansion (effort/fork/from-pr/worktree/json-schema/ultrareview) and UX refinements (widget carousel+scope+sticky, sort toggle, term dropdown name+id, non-destructive show/hide, cwd picker, toasts). Builds on v1+v2 (Express+WS :3747, Vite+React 19 SPA, Tailwind v4, SQLite). Source backlog + research verdicts: docs/v3-backlog.md.",
+  "project": "Conan \u2014 Claude Code dashboard (v4: QA polish + live in-cwd app preview)",
+  "branchName": "loop/conan-v4",
+  "description": "v4 folds the six items QA logged against the shipped v3 build (docs/v4-backlog.md) into a fresh build loop: finish the shadcn migration v3 started, make the Context widget and permission flow honest, relocate Pulse, and add the marquee feature \u2014 run the project in Conan's current cwd and see it rendered live via a same-origin reverse proxy (Replit-style, not WebContainers). Decisions + re-verified anchors: docs/v4-research.md. Stories are dependency-ordered (shared components -> consumers; backend -> proxy -> UI) and sequenced to avoid migrate-then-rewrite churn.",
   "generatedAt": "2026-05-26",
-  "sourcePrd": "/Users/digitalalchemist/Development/conan/prd-claude-code-dashboard.md",
+  "sourcePrd": "prd-claude-code-dashboard.md (## v4 section) + docs/v4-backlog.md + docs/v4-research.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "shadcn foundation \u2014 init deps, components.json, cn(), core primitives",
-      "description": "As a developer, I need shadcn properly installed so v3's dropdown/control-heavy UI builds on accessible primitives instead of bespoke divs.",
+      "title": "Extract shared UI patterns into reusable components (SortToggle, status dot, two-tier card, time-ago, scope badge)",
+      "description": "As a developer, I need v3's repeated bespoke patterns lifted into shared components so the rest of v4 (transcript sort, shadcn migration, widgets) consumes one implementation instead of copies.",
       "acceptanceCriteria": [
-        "Install shadcn deps (class-variance-authority, clsx, tailwind-merge, lucide-react, radix primitives, cmdk) and add components.json configured for React 19 + Tailwind v4 (use render not asChild)",
-        "Add lib/utils cn() helper; map existing semantic tokens to shadcn's so current theming (light+dark) carries over with no visual regression",
-        "Add core primitives under components/ui/: button, dropdown-menu, popover, tooltip, select, switch, tabs, badge, card, dialog, command",
-        "Existing app still builds and renders unchanged (no regression)",
+        "Extract SortToggle (currently a private function in ActivityTimeline.tsx:319-339, with SortDir type at :313) into a shared component module under ui/src/components/ (e.g. shared/SortToggle.tsx) and re-wire ActivityTimeline to import it \u2014 no behavior change to the timeline",
+        "Componentize the remaining repeated patterns named in v4-backlog item 2: a status dot, the two-tier card shell (bg-muted shell + bg-card inner), a time-ago label, and a scope badge \u2014 each as a small shared component using semantic tokens only",
+        "Replace at least the existing inline duplicates of these patterns with the shared components so adoption is real (not just new files sitting unused)",
+        "No visual regression in ActivityTimeline or any component touched",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
+        "Verify in browser using automate-browser skill that the timeline sort toggle and any restyled cards/badges render unchanged"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "v1/v2 never actually installed shadcn (no components.json/cn/radix) \u2014 only used shadcn-compatible tokens. See docs/v3-backlog.md item 20. Suggested skills: shadcn, automate-browser."
+      "notes": "Foundation for US-002 (transcript sort reuses SortToggle) and the shadcn slices. SortToggle is NOT currently exported. Keep semantic theme tokens only. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
       "id": "US-002",
-      "title": "Multi-project global hook + cwd-aware event ingestion",
-      "description": "As a user, I want any Claude Code run on my machine to self-report to Conan so I can observe sessions across all my repos, not just this one.",
+      "title": "Transcript view: newest/oldest-first sort toggle (reuse shared SortToggle)",
+      "description": "As a user, I want the Transcript tab to have the same sort control the Activity timeline has, so I can flip newest/oldest-first instead of being stuck in fixed order.",
       "acceptanceCriteria": [
-        "Provide a user-level (~/.claude/settings.json) hook config + installer (script or gateway action) that forwards events to the gateway, carrying the session cwd; document install in docs and conan-hooks.example.json",
-        "Gateway ingests events from any cwd (not only this repo); session rows store cwd; events are queryable/filterable by cwd",
-        "Installing the global hook is idempotent and does not clobber existing user hooks/settings (merge, preserve unknown keys)",
-        "Token-gated where applicable; existing project-hook path still works",
-        "Tests pass",
-        "Typecheck passes"
+        "TranscriptViewer.tsx (renders state.messages in fixed order at ~:33, no sort UI) gains a sortDir state defaulting to newest-first (desc)",
+        "Use the shared SortToggle extracted in US-001 \u2014 do not re-implement it",
+        "Display order reverses with the toggle, with a stable tie-break on ts then uuid",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill that toggling reorders transcript messages and defaults to newest-first"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Decision: multi-project observatory. Today hooks are project-scoped (~/Development/conan/.claude/settings.json) so only this repo self-reports. See v3-backlog Decisions + item 18."
+      "passes": false,
+      "notes": "v4-backlog item 5. Default newest-first per the ask (latest turn on top). Depends on US-001. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
-      "title": "Active-CWD backend \u2014 set/validate/persist/list + re-scope tasks & terminal",
-      "description": "As a user, I want to change Conan's active working directory so tasks, new terminals, and project reads follow it.",
+      "title": "Migrate Dock.tsx controls to shadcn primitives (Term dropdown + Terminal|Tasks tabs)",
+      "description": "As a developer, I need the dock's hand-rolled controls on accessible shadcn primitives so keyboard/focus behavior is consistent and later dock work (Pulse strip, Preview tab) builds on real tabs.",
       "acceptanceCriteria": [
-        "Backend tracks an active cwd (persisted); GET returns it, token-gated PUT sets it after validating the path exists and is a directory",
-        "A directory-list endpoint supports browsing/selecting a folder (token-gated, returns subdirectories of a given path)",
-        "Changing active cwd re-scopes: the Tasks source (prd.json/progress.txt resolves to the active cwd) and the cwd new terminals spawn in; existing ptys keep their cwd",
-        "Invalid/inaccessible paths rejected with a clear error",
-        "Tests pass",
-        "Typecheck passes"
+        "Replace the raw Term dropdown buttons in Dock.tsx (~:282 and the TermDropdown around :236-349) with ui/dropdown-menu, preserving the session name+ID display and selection behavior",
+        "Replace the raw Terminal|Tasks tab buttons (TabButton ~:351-373, raw buttons ~:308/325/336/361) with ui/tabs",
+        "Drag-resize, show/hide, and pty-survival behavior are unchanged",
+        "Semantic tokens only; no visual regression vs current dock",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill: open the Term dropdown, switch Terminal/Tasks tabs, and drag-resize the dock"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Backend for the cwd picker (UI in US-040). v3-backlog item 5/19."
+      "passes": false,
+      "notes": "v4-backlog item 2 (Dock slice). dropdown-menu + tabs are each imported only once today (shallow adoption). Do NOT edit src/gateway/* or src/terminal/* from an in-dock session (footgun #1). Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-004",
-      "title": "MCP status \u2014 read ~/.claude.json (global + project) for configured servers",
-      "description": "As a user, I want the MCP count to reflect all my configured servers, not just the one in settings.json.",
+      "title": "Relocate Pulse into the dock as a global bottom strip; remove tokens/cost toggle",
+      "description": "As a user, I want the Pulse activity chart docked alongside the terminal where 'is anything happening' context belongs, not floating in the Overview, and without a cost toggle that's meaningless on a token-based plan.",
       "acceptanceCriteria": [
-        "MCP status reads configured servers from ~/.claude.json global mcpServers + the union of projects[*].mcpServers (plus existing settings.json + project .mcp.json)",
-        "connectedCount = configured minus servers in mcp-needs-auth-cache.json; still enrich/override with a live session's system/init mcp_servers",
-        "Payload lists per-server names + status (connected | needs-auth) for the tooltip; handles missing files",
-        "Verified the count reflects the real set (e.g. figma, mobbin, notion, linear, vercel, paper, \u2026 \u2014 not 1)",
-        "Tests pass",
-        "Typecheck passes"
+        "Move PulseChart from its standalone Overview section (App.tsx:316, below PendingApprovals) into the right-side Dock as a pinned strip at the BOTTOM of the dock column (its own strip, not a third tab)",
+        "Remove the tokens<->cost toggle (PulseChart.tsx:142-158); render tokens/activity only",
+        "Pulse stays GLOBAL across all sessions (keep consuming the global src/pulse payload; do not scope to the active session)",
+        "Do not break src/pulse payload consumers \u2014 stop rendering the cost field, leave the payload shape intact",
+        "Coexists with the Terminal|Tasks tabs + drag-resize without layout breakage",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill that Pulse renders at the bottom of the dock and the cost toggle is gone"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "ROOT CAUSE from research: servers live in ~/.claude.json (global + per-project), not settings.json. v3-backlog item 3."
+      "passes": false,
+      "notes": "v4-backlog item 1. Builds on US-003 (migrated dock). Pulse is global (v3 kept it so). Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Real /usage via PTY scrape \u2014 planUtilization on /api/claude/usage",
-      "description": "As a Claude Max user, I want the real plan-utilization % and reset times surfaced, not just an approximation.",
+      "title": "Migrate SessionBar + Sidebar controls to shadcn primitives",
+      "description": "As a developer, I need the remaining bespoke navigation/selection controls on shadcn primitives to finish the migration v3 started (PendingApprovals is handled in US-008's rewrite).",
       "acceptanceCriteria": [
-        "Add a controlled PTY probe: spawn a claude node-pty session, send /usage, capture the rendered frame, strip ANSI, parse the five_hour and seven_day windows ({utilizationPct, resetAt}) + status",
-        "Extend /api/claude/usage with planUtilization: { fiveHour:{pct,resetAt}, sevenDay:{pct,resetAt}, status, probedAt }; cache the last probe; probe lazily (on demand / when dashboard open), not on a tight timer",
-        "Falls back to the existing US-004 token-trend baseline + reactive rateLimited/resetAt when no fresh scrape; never throws if the scrape fails",
-        "Probe is bounded (timeout, killed after capture) and does not leave stray ptys",
-        "Tests pass (parser unit-tested against a captured sample frame)",
-        "Typecheck passes"
+        "Replace the bespoke session picker in SessionBar.tsx (raw buttons ~:221/272/279) with ui/select or ui/dropdown-menu, preserving the session \u25be selection behavior",
+        "Replace Sidebar.tsx nav/toggle raw buttons (~:48/68) with ui/button",
+        "No visual regression; semantic tokens only",
+        "Update the CLAUDE.md/memory note so it reflects 'shadcn adopted, migration completed in v4' (not 'in progress')",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill: switch sessions via SessionBar and navigate via the sidebar"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "RESEARCH: --debug api log does NOT expose ratelimit-unified headers (live-tested). PTY scrape of /usage is the only confirmed real source. v3-backlog item 2."
+      "passes": false,
+      "notes": "v4-backlog item 2 (SessionBar+Sidebar slice). PendingApprovals intentionally excluded \u2014 it is rewritten in US-008. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-006",
-      "title": "Settings backend \u2014 read Claude Code settings + safe write endpoint",
-      "description": "As a user, I want Conan to read (and safely edit) Claude Code's real settings so the Settings page can mirror /settings.",
+      "title": "Fix Context widget: bind to the live pty-correlated session + render total %",
+      "description": "As a user, I want the Context widget to show real usage for the session I'm actually running, instead of reading 'no usage yet' because it grabbed the wrong row out of ~155 sessions.",
       "acceptanceCriteria": [
-        "GET /api/claude/settings reads ~/.claude/settings.json (+ settings.local.json, + relevant ~/.claude.json flags) and returns each known setting with key, value, type (boolean|enum|string), allowed values, and source file; treats missing keys as defaults",
-        "Setting definitions/types come from the canonical schema (json.schemastore.org/claude-code-settings.json), bundled or fetched+cached, not guessed",
-        "Token-gated PUT writes only a safe allowlisted subset to settings.json (theme, verbose, alwaysThinkingEnabled, editorMode, agentPushNotifEnabled, auto-compact threshold), with atomic write + preserve unknown keys; refuses risky keys (permissions.*, hooks, mcpServers) and ~/.claude.json writes",
-        "Returns a clear error on invalid value (not in enum / wrong type)",
-        "Tests pass",
-        "Typecheck passes"
+        "Replace the binding at App.tsx:87-88 (sessions.find(s=>s.status==='running') ?? sessions[0]) so the Context widget targets the actually-live, pty-correlated session \u2014 use src/terminal/correlate.ts / the terminal_session.session_id link rather than the first 'running' row",
+        "When a transcript usage block exists, the widget renders the total context % (readContextUsage in src/transcript/index.ts:220-255, fallback session.context_tokens) instead of blank",
+        "If no live session is correlated, fall back gracefully (don't crash, show an honest empty state)",
+        "Confirm against a real running session that the widget no longer reads 'no usage yet' when /context shows usage in the terminal",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill with a live session that the Context ring shows a non-empty %"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "RESEARCH: settings persist to ~/.claude/settings.json; most TUI toggles unmaterialized until changed. Safe vs risky list in v3-backlog item 7."
+      "passes": false,
+      "notes": "v4-backlog item 3 (binding + total-% fix). Also sanity-check the session-liveness reaper (79 error/74 idle of 155 smells stale). correlate.ts confirmed to exist. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
-      "title": "Changelog endpoint \u2014 parse changelog.md + new-since-last-seen",
-      "description": "As a user, I want a feed of Claude Code updates sourced from the local changelog.",
+      "title": "Context widget category breakdown via on-disk approximation",
+      "description": "As a user, I want the Context widget to show where my context is going (System/Tools/MCP/Memory/Skills/Messages), not just one total, reconstructed from disk since the transcript only carries totals.",
       "acceptanceCriteria": [
-        "GET /api/claude/changelog parses ~/.claude/cache/changelog.md into entries [{version, items[]}] (no dates in source; date null), newest-first",
-        "Returns the installed version (from sessions/<pid>.json version or ~/.claude.json lastReleaseNotesSeen) and flags entries newer than lastReleaseNotesSeen as 'new' (semver-tuple compare)",
-        "Includes changelogLastFetched (epoch ms) for staleness; safe empty shape if the file is missing",
-        "Tests pass",
-        "Typecheck passes"
+        "Add a backend computation (extend src/widgets/index.ts / a new helper) that approximates per-category context from on-disk sources: memory files (CLAUDE.md + MEMORY.md sizes), skills (SKILL.md sizes), MCP tools (~/.claude.json mcpServers), messages (transcript) \u2014 clearly an approximation Conan owns (option B; do NOT PTY-scrape /context)",
+        "Surface the breakdown in the Context widget as a stacked mini-bar or legend alongside the total from US-006",
+        "Degrade gracefully when a source is missing (omit that category, don't error)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill that the Context widget shows category segments that sum sensibly toward the total"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "RESEARCH: uniform `## <version>` + flat `- ` bullets, no dates. v3-backlog item 15."
+      "passes": false,
+      "notes": "v4-backlog item 3 (the bigger ask). Option B (disk approximation) locked in research; option A (PTY scrape) rejected as brittle. Depends on US-006. Suggested skills: automate-browser."
     },
     {
       "id": "US-008",
-      "title": "Checkpoints endpoint \u2014 list file-history snapshots (read-only)",
-      "description": "As a user, I want to see Claude Code's per-session file checkpoints so I can review what changed.",
+      "title": "Permission honesty floor: surface delivered:false, offer the 3rd option, migrate PendingApprovals to shadcn",
+      "description": "As a user, I want permission approvals from the UI to tell the truth \u2014 show the real options and not falsely report success when the decision went nowhere.",
       "acceptanceCriteria": [
-        "GET endpoint lists ~/.claude/file-history/<session-id>/ snapshots as [{sessionId, hash, version, mtime}] (version from the @vN suffix), grouped/sorted per session",
-        "Supports fetching a single snapshot's content for preview (read-only); no restore/write in this story",
-        "Handles sessions with no history + missing dir gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "POST /api/claude/sessions/:id/permission (src/gateway/index.ts:694-710) and the UI propagate decidePermission's delivered flag; when delivered:false the card is NOT optimistically cleared (PendingApprovals.tsx:29) and shows an honest 'answer in terminal / not deliverable' state",
+        "Map permission_suggestions (captured at src/session/parser.ts:232, currently unused) to buttons so the real options render (e.g. Yes / Yes-don't-ask-again / No) instead of hardcoded allow|deny (PendingApprovals.tsx:4,93-104)",
+        "Migrate PendingApprovals approve/deny controls to ui/button as part of this rewrite (this is where item 2's PendingApprovals migration lands)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill: a driven-session prompt shows the suggested options; a non-deliverable prompt is marked honestly and not auto-cleared"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "RESEARCH: ~/.claude/file-history/<id>/<hash>@vN are full file snapshots; no manifest (order by @vN + mtime). Restore is deferred/risky. v3-backlog item 14 (Tier1)."
+      "passes": false,
+      "notes": "v4-backlog item 4 (honesty floor + 3rd option). Driven sessions only still \u2014 interactive driving is US-009. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-009",
-      "title": "Hooks-coverage endpoint \u2014 full hook set vs wired",
-      "description": "As an operator, I want to see which Claude Code hook events Conan consumes and which it doesn't.",
+      "title": "Answer interactive terminal permission prompts via keystroke injection into the correlated pty",
+      "description": "As a user, I want to approve/deny a Claude Code permission prompt from Conan even for an interactive/observed terminal session, by having Conan type the answer into the right pty.",
       "acceptanceCriteria": [
-        "GET endpoint returns the full known Claude Code hook-event set, each marked wired/unwired in Conan, per scope (user ~/.claude/settings.json + project .claude/settings.json)",
-        "Flags events Conan doesn't consume yet (e.g. SubagentStart, permission/error)",
-        "Reads the hooks block from both settings files; handles absence gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "For a prompt belonging to an interactive/observed session (not in byLaunchId, so unreachable by decidePermission's stdin path), resolve the matching pty via src/terminal/correlate.ts + the terminal_session.session_id link",
+        "Inject the chosen option as keystrokes (option index + Enter) into that pty so the TUI prompt is actually answered",
+        "listPendingPermissions (src/session/index.ts:805, currently byLaunchId-only) or the UI is extended so interactive-session prompts can be presented and routed to the correct terminal; clearly distinguish driven (stdin) vs interactive (keystroke) delivery",
+        "If no pty can be correlated, fall back to the honest non-deliverable state from US-008 (never claim success)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill: trigger a permission prompt in the docked interactive terminal, approve from the UI, and confirm the terminal prompt advances"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Conan wires 9 of ~16 (src/settings KNOWN_HOOK_EVENTS). v3-backlog item 14 (Tier1 #3)."
+      "passes": false,
+      "notes": "v4-backlog item 4 (the hard part). correlate.ts + terminal_session FK confirmed present. Brittle by nature (TUI driving) \u2014 keep it best-effort with the honest fallback. Beware footgun #1 when testing in-dock. Depends on US-008. Suggested skills: automate-browser."
     },
     {
       "id": "US-010",
-      "title": "Per-project metrics endpoint \u2014 last-session cost/tokens/lines/model",
-      "description": "As a user, I want per-project last-session metrics that Claude Code already records.",
+      "title": "Preview backend: dev-server process manager + dev-command discovery (src/preview/)",
+      "description": "As a user, I want Conan to run the current cwd's dev server on demand, so the project I'm editing can be previewed live without me leaving the dashboard.",
       "acceptanceCriteria": [
-        "GET endpoint reads ~/.claude.json projects[<cwd>] and returns lastCost, lastTotalInput/Output/Cache tokens, lastModelUsage (per-model split), lastLinesAdded/Removed, lastDuration, lastSessionId",
-        "Accepts a cwd param (defaults to active cwd); handles unknown project gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "Add src/preview/index.ts mirroring the pty/TermSession abstraction in src/terminal/index.ts (ring buffer of stdout, onExit handler, capped buffer) to spawn the project's dev command in getActiveCwd()",
+        "Discover candidate commands from the cwd's package.json scripts (default order dev -> start -> preview), exposed for the UI to pick/override per cwd",
+        "Pin the port: for Vite-style commands spawn with -- --port <free> --strictPort --base /preview/<id>/ --host 127.0.0.1; keep a stdout 'Local: http://localhost:NNNN' regex as the fallback for non-Vite tools",
+        "Subscribe to onCwdChange (src/cwd/index.ts) to stop/restart appropriately; the preview process lifecycle is DECOUPLED from the gateway watch restart (footgun #1)",
+        "Expose start/stop/status REST routes (authed like other /api routes) returning the chosen command, bound port, and run state",
+        "Typecheck passes",
+        "Start a real preview against a sample Vite project (or ui/) and confirm via the status route that it reports a bound port and running state"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Rich data already on disk, currently ignored. v3-backlog item 14 (Tier1 #4)."
+      "passes": false,
+      "notes": "v4-backlog item 6 (backend). v1 scope = run + proxy + preview, no container sandbox. Port-pinning preferred over stdout scrape (research). Suggested skills: typescript-expert, websocket."
     },
     {
       "id": "US-011",
-      "title": "Plugins endpoint \u2014 installed plugins + marketplaces + enabled",
-      "description": "As a user, I want to see my installed Claude Code plugins.",
+      "title": "Preview reverse proxy: /preview/:id mount + framing-header strip + HMR upgrade branch",
+      "description": "As a user, I want the running dev server served same-origin inside Conan so it inherits auth, works under TLS, and frames cleanly \u2014 including hot reload.",
       "acceptanceCriteria": [
-        "GET endpoint reads ~/.claude/plugins/installed_plugins.json + known_marketplaces.json + enabledPlugins and returns installed plugins (name@marketplace, version, scope, gitCommitSha, installPath, enabled) + marketplaces",
-        "Handles missing files gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "Add http-proxy-middleware (pin v3) as the one new dep; mount a proxy at /preview/:id -> http://127.0.0.1:<devport> in src/gateway/index.ts (near the static/SPA serving at :740-742)",
+        "In the proxy's proxyRes, delete x-frame-options and strip frame-ancestors from CSP so the proxied page frames in an iframe",
+        "Build the proxy with ws:true and add a pathname.startsWith('/preview/') branch in the server.on('upgrade') router (src/gateway/index.ts:825-845) that calls wsProxy.upgrade(req, socket, head) \u2014 placed BEFORE the else socket.destroy() catch-all so it inherits the existing verifyUpgrade auth+Origin gate",
+        "Configure the spawned dev server (from US-010) so Vite HMR dials back through Conan's port: server.hmr.clientPort = Conan port, server.hmr.path under /preview/<id>/, protocol wss under TLS \u2014 injected via flags/env, not by editing the user's vite config",
+        "Confirm HMR works through the proxy (edit a file, see it hot-update in the proxied page) and does NOT silently fall back to dialing :5173 directly",
+        "Document the security floor: /preview/ HTTP relies on same-origin + loopback + the Origin-checked WS upgrade (an iframe src can't send x-conan-token) \u2014 note it in docs/ or a code comment",
+        "Typecheck passes",
+        "Load /preview/:id directly in a browser and confirm the dev page renders with working HMR"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier2 #5)."
+      "passes": false,
+      "notes": "v4-backlog item 6 (proxy + HMR). The two real gotchas (HMR fallback, framing headers) are solved in docs/v4-research.md. Depends on US-010. Editing src/gateway/* from an in-dock session triggers footgun #1 \u2014 run gateway with npm start (no watch). Suggested skills: websocket, typescript-expert."
     },
     {
       "id": "US-012",
-      "title": "Custom-agents catalog endpoint \u2014 ~/.claude/agents + project",
-      "description": "As a user, I want a catalog of my defined custom agents.",
+      "title": "Preview UI: Preview dock tab with iframe + start/stop + dev-command picker",
+      "description": "As a user, I want a Preview tab beside Terminal|Tasks that shows the live app for the current cwd, so I can watch Claude's edits render in real time in one window.",
       "acceptanceCriteria": [
-        "GET endpoint scans ~/.claude/agents/ and the active project .claude/agents/ for agent definitions and returns [{name, description/role, scope, tools?}] parsed from the agent markdown frontmatter (SOUL.md or <name>.md)",
-        "Distinguishes user vs project scope; handles absence gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "Add a Preview tab to Dock.tsx (sibling of Terminal|Tasks, using the ui/tabs from US-003) hosting an iframe pointed at /preview/:id/",
+        "Provide start/stop controls and a dev-command picker fed by US-010's package.json script discovery (with an override), plus an 'open in new tab' affordance",
+        "Show run state and surface the dev server's stdout/stderr somewhere honest (a small log pane or folded into the existing activity timeline per the 'would I tail this?' rule)",
+        "Preview targets the active cwd from /api/config; reflect cwd changes sensibly (offer/handle restart) without leaving a dead iframe",
+        "Semantic tokens only; no layout breakage with the dock tabs + Pulse strip (US-004)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill: start a preview, see the app render in the iframe, edit a file and watch it hot-update, then stop it"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "Feeds the Agents page (US-027). RESEARCH: ~/.claude/agents/<name>/ frontmatter. v3-backlog item 14 (Tier2 #6) + 17."
+      "passes": false,
+      "notes": "v4-backlog item 6 (UI). Depends on US-010 + US-011 + US-003. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
       "id": "US-013",
-      "title": "Background-agents endpoint \u2014 claude agents --json",
-      "description": "As a user, I want to see Claude Code background agents.",
+      "title": "Docs + memory: shadcn migration complete, live preview feature",
+      "description": "As a maintainer, I need CLAUDE.md, the README, and persistent memory updated so the next session knows the shadcn migration finished and how the live preview works.",
       "acceptanceCriteria": [
-        "GET endpoint shells out to `claude agents --json` (token-gated, bounded timeout) and returns the parsed live background-agent list; optional cwd filter",
-        "Confirm the JSON field shape at build time; normalize to a stable payload; handle non-zero exit / empty list gracefully",
-        "Tests pass",
-        "Typecheck passes"
+        "Update CLAUDE.md: status line to v4, note shadcn migration completed, and document the preview architecture (src/preview/, /preview/:id reverse proxy, HMR/framing handling, security floor, cwd lifecycle)",
+        "Update README with a short 'Live preview' usage section (how to start a preview for the current cwd)",
+        "Update the persistent memory note that previously said shadcn 'migration in progress' to 'complete'",
+        "Cross-check that docs/v4-backlog.md items 1-6 are all reflected as shipped (or note any deferred scope)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "RESEARCH: `claude agents --json` prints live sessions as JSON (schema to confirm at build). Feeds Agents page. v3-backlog item 17."
-    },
-    {
-      "id": "US-014",
-      "title": "Subagent reconstruction endpoint \u2014 from disk for any session",
-      "description": "As a user, I want subagent trees for past/observed sessions, not just live ones.",
-      "acceptanceCriteria": [
-        "GET endpoint parses ~/.claude/projects/<enc-cwd>/<session-id>/subagents/agent-*.jsonl + agent-*.meta.json ({agentType, description, toolUseId}) and returns the subagent tree + per-subagent transcript for a given session",
-        "Works for sessions Conan didn't launch; handles sessions with no subagents",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "Extends US-021 live tree (v2) to any session. v3-backlog item 14 (Tier2 #7)."
-    },
-    {
-      "id": "US-015",
-      "title": "Prompt-history endpoint \u2014 search history.jsonl",
-      "description": "As a user, I want to search my Claude Code prompt history.",
-      "acceptanceCriteria": [
-        "GET endpoint reads ~/.claude/history.jsonl and returns entries [{display, timestamp, project}] with optional text-search + project filter + pagination",
-        "Handles large files reasonably (stream/limit); missing file \u2192 empty",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier2 #8)."
-    },
-    {
-      "id": "US-016",
-      "title": "Skills list endpoint \u2014 global + project SKILL.md + loaded",
-      "description": "As a user, I want a browsable list of my skills with descriptions, not just a count.",
-      "acceptanceCriteria": [
-        "GET endpoint returns skills from ~/.claude/skills/*/SKILL.md (global) + active project .claude/skills/*/SKILL.md, each with {name, description, scope} from frontmatter and a loaded flag (from a session's system/init slash_commands when available)",
-        "Handles absence gracefully",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 16,
-      "passes": true,
-      "notes": "Feeds the Skills page (US-028). v3-backlog item 21."
-    },
-    {
-      "id": "US-017",
-      "title": "App shell \u2014 sidebar nav Overview/Agents/Skills/Settings + routing",
-      "description": "As a user, I want four nav destinations so Agents and Skills get dedicated pages.",
-      "acceptanceCriteria": [
-        "Extend the v2 sidebar to four items: Overview (/), Agents (/agents), Skills (/skills), Settings (/settings); pushState routing + popstate; deep-link + back/forward work; gateway SPA fallback serves all",
-        "Active item highlighted; sidebar collapse state preserved; Terminal+Tasks stay in the dock (not nav)",
-        "Agents/Skills routes render placeholder shells filled by US-027/US-028",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": "Extends v2 US-006. Decision: 4-item nav. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-018",
-      "title": "Widget area \u2014 settings cog + single-row 4-up carousel with chevrons",
-      "description": "As a user, I want the widgets in one non-overflowing row I can scroll, configured via a cog.",
-      "acceptanceCriteria": [
-        "Replace the v2 widget dropdown with a settings cog next to the 'Widgets' heading that opens the show/hide picker",
-        "Widgets render in a single row with horizontal overflow; viewport shows ~4 at a time",
-        "Right chevron appears when widgets overflow right and advances; left chevron is enabled only once scrolled (widgets overflow left) and scrolls back",
-        "Uses shadcn primitives; semantic tokens; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": "v3-backlog item 1. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-019",
-      "title": "Widget scope grouping \u2014 session / cwd / global",
-      "description": "As a user, I want to know whether a widget reflects the selected session, the active cwd, or is global.",
-      "acceptanceCriteria": [
-        "Widgets are visibly scoped: session-scoped (Context, Model & idle, Skills) follow the timeline session \u25be; cwd-scoped (Git, MCP) follow the active cwd; global (Stats, Usage, Active sessions, Pulse) are unscoped",
-        "Scope is indicated (grouping or a per-widget scope badge); session-scoped widgets update when the session \u25be selection changes",
-        "Decide + implement: Git/MCP follow the active cwd (documented)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 19,
-      "passes": true,
-      "notes": "v3-backlog item 4. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-020",
-      "title": "Pin the widget area on scroll (sticky)",
-      "description": "As a user, I want widgets to stay visible while the activity log scrolls.",
-      "acceptanceCriteria": [
-        "The widget row stays pinned (sticky within the scroll container) while the timeline scrolls beneath it",
-        "Respects sidebar + toolbar offsets; no overlap; works with the US-018 carousel",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 20,
-      "passes": true,
-      "notes": "v3-backlog item 6. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-021",
-      "title": "Activity log \u2014 sort order toggle (asc/desc by timestamp)",
-      "description": "As a user, I want to sort the activity log newest- or oldest-first.",
-      "acceptanceCriteria": [
-        "A toggle sorts the timeline ascending/descending by timestamp; default newest-first",
-        "Combines with the session \u25be + activity-type filters (v2); live-appended events insert at the correct end for the chosen order",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 21,
-      "passes": true,
-      "notes": "v3-backlog item 5 (sort). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-022",
-      "title": "Timeline event-icon \u2014 opaque background (rail no longer shows through)",
-      "description": "As a user, I want timeline icons to read as solid nodes, not transparent ones the rail shows through.",
-      "acceptanceCriteria": [
-        "The event-icon circle has a solid/opaque background (bg-background/bg-card) so the connector rail is masked",
-        "Verified in light + dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 22,
-      "passes": true,
-      "notes": "Small CSS fix in ActivityTimeline.tsx. v3-backlog item 16. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-023",
-      "title": "MCP widget \u2014 real connected count + tooltip of names",
-      "description": "As a user, I want the MCP widget to show the real count and which servers.",
-      "acceptanceCriteria": [
-        "MCP widget shows the connected count from US-004; hovering lists server names, marking needs-auth",
-        "Updates on WS refetch; shadcn tooltip; light+dark",
-        "Verified the count matches the real configured set (not 1)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 23,
-      "passes": true,
-      "notes": "Depends on US-004. v3-backlog item 3. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-024",
-      "title": "Widget fixes \u2014 remove Cost-today; Model widget shows model name",
-      "description": "As a user, I want irrelevant widgets gone and the Model widget to show the real model.",
-      "acceptanceCriteria": [
-        "Remove the 'Cost today' widget (token-based plan \u2014 not relevant); drop its data path if unused",
-        "Model widget shows the active session's real model name (e.g. 'Opus 4.7') alongside idle state; handle no-active-session",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 24,
-      "passes": true,
-      "notes": "v3-backlog item 3. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-025",
-      "title": "Usage widget \u2014 real planUtilization + baseline + countdown",
-      "description": "As a user, I want the real /usage % and reset surfaced, with a baseline so it's never blank.",
-      "acceptanceCriteria": [
-        "Usage widget consumes US-005 planUtilization: shows five_hour + seven_day % used + reset countdown + warning/limit status when a fresh scrape exists",
-        "Falls back to the token-trend baseline (US-004) when no fresh scrape; labels approximation clearly; never blank",
-        "shadcn; semantic tokens; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 25,
-      "passes": true,
-      "notes": "Depends on US-005. v3-backlog item 2. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-026",
-      "title": "Per-project metrics widget",
-      "description": "As a user, I want a widget showing the active project's last-session metrics.",
-      "acceptanceCriteria": [
-        "Widget shows from US-010: last-session cost, tokens (in/out/cache), lines +/-, model split, for the active cwd",
-        "cwd-scoped (follows active cwd); handles unknown project; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 26,
-      "passes": true,
-      "notes": "Depends on US-010. v3-backlog item 14 (Tier1 #4). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-027",
-      "title": "Agents page \u2014 registry + background agents + teams",
-      "description": "As a user, I want a dedicated Agents page to view custom agents and background agents.",
-      "acceptanceCriteria": [
-        "The /agents route renders: a custom-agents registry (US-012: name, role/description, scope) and live background agents (US-013) with status; a section for agent teams/worktree runs (placeholder if no data)",
-        "If background-agent control is available, expose safe actions (view; stop where supported) token-gated",
-        "shadcn; semantic tokens; light+dark; empty states handled",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 27,
-      "passes": true,
-      "notes": "Depends on US-012, US-013, US-017. v3-backlog item 17. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-028",
-      "title": "Skills page \u2014 browse global + project skills",
-      "description": "As a user, I want a dedicated Skills page listing global and project skills with descriptions.",
-      "acceptanceCriteria": [
-        "The /skills route lists skills from US-016 with name, description, scope (global vs project), and loaded state; expand to show details",
-        "Project skills follow the active cwd; search/filter; empty states",
-        "shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 28,
-      "passes": true,
-      "notes": "Depends on US-016, US-017. v3-backlog item 21. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-029",
-      "title": "Settings page \u2014 mirror Claude Code /settings (typed controls + search)",
-      "description": "As a user, I want the Settings page to reflect Claude Code's real settings with the right control per type.",
-      "acceptanceCriteria": [
-        "The /settings view renders settings from US-006: boolean\u2192switch, enum\u2192select, string\u2192input; shows current/default; searchable filter ('Search settings\u2026')",
-        "Editing a safe setting persists via the US-006 write endpoint with optimistic UI + error handling; risky keys are read-only or gated",
-        "Keep Conan's own config (hooks/remote/theme) accessible too; NO cost-ceiling; Sessions glossary tooltip retained",
-        "shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 29,
-      "passes": true,
-      "notes": "Depends on US-006, US-017. Expands v2 US-020. v3-backlog item 7. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-030",
-      "title": "What's New feed + nav badge",
-      "description": "As a user, I want to see Claude Code updates and be notified when new ones land.",
-      "acceptanceCriteria": [
-        "A 'What's New' view/panel renders the US-007 changelog feed by version, highlighting entries newer than lastReleaseNotesSeen",
-        "A small nav/badge indicator appears when unseen newer entries exist",
-        "shadcn; light+dark; graceful empty",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 30,
-      "passes": true,
-      "notes": "Depends on US-007. v3-backlog item 15. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-031",
-      "title": "Checkpoints / rewind viewer (read-only)",
-      "description": "As a user, I want to browse per-session file checkpoints and preview them.",
-      "acceptanceCriteria": [
-        "A view lists per-session checkpoints from US-008 (file, versions @vN, mtime) and previews a snapshot's content (read-only)",
-        "Clearly marks this as read-only (no restore in this story); empty states",
-        "shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 31,
-      "passes": true,
-      "notes": "Depends on US-008. v3-backlog item 14 (Tier1 #2). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-032",
-      "title": "Plugins panel",
-      "description": "As a user, I want to see my installed plugins and marketplaces.",
-      "acceptanceCriteria": [
-        "A panel renders US-011 data: installed plugins (name, version, scope, enabled, marketplace) + known marketplaces",
-        "shadcn; light+dark; empty states",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 32,
-      "passes": true,
-      "notes": "Depends on US-011. v3-backlog item 14 (Tier2 #5). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-033",
-      "title": "Hooks-coverage panel",
-      "description": "As an operator, I want to see Conan's hook coverage vs Claude Code's full set.",
-      "acceptanceCriteria": [
-        "A panel renders US-009 data: full hook-event set with wired/unwired status per scope; unwired events flagged",
-        "shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 33,
-      "passes": true,
-      "notes": "Depends on US-009. Likely lives in Settings. v3-backlog item 14 (Tier1 #3). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-034",
-      "title": "Prompt-history search UI",
-      "description": "As a user, I want to search my prompt history in Conan.",
-      "acceptanceCriteria": [
-        "A view renders US-015 prompt history with search + project filter + timestamps; paginated/virtualized for large histories",
-        "shadcn; light+dark; empty states",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 34,
-      "passes": true,
-      "notes": "Depends on US-015. v3-backlog item 14 (Tier2 #8). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-035",
-      "title": "Subagent tree for past/observed sessions",
-      "description": "As a user, I want the subagent tree to work for any session, reconstructed from disk.",
-      "acceptanceCriteria": [
-        "When a selected session has on-disk subagents (US-014), the timeline/transcript shows the reconstructed subagent tree + per-subagent transcript, not only live parent_tool_use_id",
-        "Falls back to live tree when no disk data; handles none",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 35,
-      "passes": true,
-      "notes": "Depends on US-014. Extends v2 US-021. v3-backlog item 14 (Tier2 #7). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-036",
-      "title": "Terminal dropdown reflects session name + short ID",
-      "description": "As a user, I want a /renamed session to show its name + id in the Term dropdown, not 'Term 1'.",
-      "acceptanceCriteria": [
-        "The Term \u25be dropdown (v2 US-018) labels each terminal with the running claude session's name + short id (e.g. 'Conan:ca7cb3a8'), falling back to 'Term N' when unnamed",
-        "Correlate pty\u2192claude session: from the pty child pid, find the descendant claude pid and read ~/.claude/sessions/<pid>.json for name + sessionId (fallback: match by cwd + most-recent live session)",
-        "Watch/poll so a mid-session /rename updates the label live",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 36,
-      "passes": true,
-      "notes": "CONFIRMED: name persists in sessions/<pid>.json `name`. v3-backlog item 10. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-037",
-      "title": "Show/hide Terminal is non-destructive (don't kill the session)",
-      "description": "As a user, I want hiding the terminal to keep my session alive.",
-      "acceptanceCriteria": [
-        "Toggling the terminal off no longer kills the pty: keep the Dock mounted-but-hidden (WS stays open, no detach), or treat hide as a no-kill detach; only an explicit tab-close kills the pty",
-        "Re-showing after an arbitrary delay (well beyond the 30s detach grace) preserves the session + scrollback",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 37,
-      "passes": true,
-      "notes": "CONFIRMED: App.tsx unmounts Dock on hide \u2192 30s grace-kill (src/terminal DETACH_GRACE_MS). v3-backlog item 12. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-038",
-      "title": "Height drag handle for the activity log / Terminal split",
-      "description": "As a user, I want to resize the activity-log vs terminal height.",
-      "acceptanceCriteria": [
-        "Add a vertical-resize (height) drag handle on the activity-log / terminal boundary, mirroring the dock's width handle; persist the height (localStorage)",
-        "Confirmed layout: a horizontal handle between the activity log and the terminal pane; smooth drag with min/max bounds",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 38,
-      "passes": true,
-      "notes": "v3-backlog item 8 (boundary clarified during build if needed). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-039",
-      "title": "Tasks tab conditional on cwd task source",
-      "description": "As a user, I don't want a Tasks tab when the active cwd has no tasks.",
-      "acceptanceCriteria": [
-        "The Tasks tab/panel renders only when the active cwd has a task source (prd.json, or progress.txt with content); hidden otherwise",
-        "Re-evaluates when the active cwd changes (US-003)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 39,
-      "passes": true,
-      "notes": "Depends on US-003. v3-backlog item 9. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-040",
-      "title": "CWD directory picker (toolbar)",
-      "description": "As a user, I want to change the active working directory from the toolbar.",
-      "acceptanceCriteria": [
-        "The toolbar cwd label becomes a clickable directory picker (browse/select) wired to US-003; selection persists across reloads",
-        "Changing cwd updates cwd-scoped widgets, Tasks visibility (US-039), and new-terminal spawn dir; invalid paths rejected with a message",
-        "shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 40,
-      "passes": true,
-      "notes": "Depends on US-003. v3-backlog item 5/19. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-041",
-      "title": "Move toasts to bottom-right",
-      "description": "As a user, I want notifications bottom-right.",
-      "acceptanceCriteria": [
-        "Toaster renders bottom-right, stacking upward; no overlap with the dock/bottom controls",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 41,
-      "passes": true,
-      "notes": "Toaster.tsx currently top-right. v3-backlog item 11. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-042",
-      "title": "Driven-session options \u2014 --effort, --fork-session, --from-pr",
-      "description": "As a user, I want more control when launching/resuming driven sessions.",
-      "acceptanceCriteria": [
-        "Extend the session-launch options (src/session buildArgs) + the new-session UI to pass --effort (low/medium/high/xhigh/max), --fork-session (on resume), and --from-pr <n>",
-        "Options validated; defaults unchanged when unset",
-        "Tests pass",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 42,
-      "passes": true,
-      "notes": "Flag passthroughs through the session manager. v3-backlog item 14 (Tier3 #10). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-043",
-      "title": "Worktree-isolated driven sessions",
-      "description": "As a user, I want to run a driven session in an isolated git worktree.",
-      "acceptanceCriteria": [
-        "Launching a driven session can target a fresh git worktree (-w/--worktree and/or --add-dir) so parallel runs don't collide; the worktree/base ref is surfaced on the session",
-        "Cleanup/teardown handled or documented; defaults unchanged when unused",
-        "Tests pass",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 43,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier3 #9). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-044",
-      "title": "--json-schema typed outputs for driven tasks",
-      "description": "As a user, I want structured, validated results from driven sessions.",
-      "acceptanceCriteria": [
-        "Driven sessions can pass --json-schema so a task returns structured output validated against the schema; the result is captured + surfaced",
-        "Invalid/absent schema handled; defaults unchanged",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 44,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier3 #11)."
-    },
-    {
-      "id": "US-045",
-      "title": "Doctor + version/update banner",
-      "description": "As a user, I want a health + update indicator.",
-      "acceptanceCriteria": [
-        "Show the installed Claude Code version and an update-available indicator (from changelog/version + ~/.claude.json autoUpdates); optional one-shot `claude doctor` health summary (token-gated, bounded)",
-        "Handles unavailable gracefully; shadcn; light+dark",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 45,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier3 #12). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-046",
-      "title": "ultrareview trigger + findings panel",
-      "description": "As a user, I want to launch a cloud code review from Conan and see findings.",
-      "acceptanceCriteria": [
-        "A token-gated action runs `claude ultrareview` for the active repo (current branch or a PR #) and streams/renders the findings in a panel",
-        "Long-running handled (async/progress); errors surfaced; clearly the user's explicit action",
-        "Tests pass",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 46,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier4 #13). User-triggered, billed. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-047",
-      "title": "Remote-control / Chrome driven sessions",
-      "description": "As a user, I want to launch/observe remote-control or in-Chrome sessions.",
-      "acceptanceCriteria": [
-        "Driven-session launch can pass --remote-control [name] and/or --chrome; the resulting session is observed in Conan like other driven sessions",
-        "Flags optional; defaults unchanged; documented",
-        "Tests pass",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 47,
-      "passes": true,
-      "notes": "v3-backlog item 14 (Tier4 #14). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-048",
-      "title": "Create README",
-      "description": "As a developer, I want a README documenting Conan.",
-      "acceptanceCriteria": [
-        "Create README.md: what Conan is (always-on web UI that observes + drives Claude Code), stack, run/build/verify commands, architecture overview, the backlog/loop workflow, and the nav (Overview/Agents/Skills/Settings)",
-        "Accurate to the shipped v3 state",
-        "Typecheck passes"
-      ],
-      "priority": 48,
-      "passes": true,
-      "notes": "v3-backlog item 19. Should reflect shipped state; write last."
+      "passes": false,
+      "notes": "v4-backlog wrap-up + the user's 'beautiful sequence' (docs/memory/README; commit/push happens separately when asked). Suggested skills: none (docs)."
     }
   ]
 }

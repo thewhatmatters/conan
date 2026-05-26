@@ -4,6 +4,8 @@ import {
   type CustomAgent,
 } from "../hooks/useAgents.ts";
 import { Badge } from "./ui/badge.tsx";
+import StatusDot from "./shared/StatusDot.tsx";
+import { relativeTime } from "./shared/TimeAgo.tsx";
 
 /**
  * Agents page (US-027). Three sections at /agents:
@@ -144,10 +146,10 @@ function BackgroundAgentRow({ agent }: { agent: BackgroundAgent }) {
           ) : null}
         </span>
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span
-            className={
-              "size-2 rounded-full " + (isIdle ? "bg-muted-foreground/50" : "bg-primary")
-            }
+          <StatusDot
+            status={isIdle ? "idle" : "running"}
+            ping={false}
+            tone={isIdle ? "bg-muted-foreground/50" : "bg-primary"}
           />
           {status}
         </span>
@@ -163,17 +165,6 @@ function BackgroundAgentRow({ agent }: { agent: BackgroundAgent }) {
       </div>
     </li>
   );
-}
-
-/** "3m ago" / "2h ago" — compact, dependency-free relative time. */
-function relativeTime(epochMs: number): string {
-  const secs = Math.max(0, Math.round((Date.now() - epochMs) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
 }
 
 function Section({

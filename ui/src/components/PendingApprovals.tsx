@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PendingPermission } from "../hooks/usePendingPermissions.ts";
+import TwoTierCard from "./shared/TwoTierCard.tsx";
 
 export type PermissionChoice = "allow" | "deny";
 
@@ -42,8 +43,7 @@ export default function PendingApprovals({
   if (visible.length === 0) return null;
 
   return (
-    <section className="mt-4 rounded-xl bg-muted p-1">
-      <div className="rounded-lg border border-border bg-card">
+    <TwoTierCard as="section" className="mt-4" innerClassName="p-0">
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex items-center gap-2">
             <span className="text-primary">
@@ -106,8 +106,7 @@ export default function PendingApprovals({
               </li>
             ))}
           </ul>
-      </div>
-    </section>
+    </TwoTierCard>
   );
 }
 
