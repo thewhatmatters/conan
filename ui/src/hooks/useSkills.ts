@@ -37,3 +37,60 @@ export function useSkills(
 
   return skills;
 }
+
+/** One skill in the browsable catalog (mirrors the gateway's SkillInfo). */
+export interface SkillInfo {
+  name: string;
+  description: string | null;
+  scope: "user" | "project";
+  loaded: boolean | null;
+  source: string;
+}
+
+export interface SkillsListState {
+  skills: SkillInfo[];
+  /** True until the first fetch settles. */
+  loaded: boolean;
+}
+
+/**
+ * Loads the browsable skills catalog (US-028) from GET /api/claude/skills/list
+ * (US-016): every skill across the user (~/.claude/skills) and active-project
+ * (<cwd>/.claude/skills) scopes, with name/description/scope and a per-session
+ * `loaded` flag. Refetches when the active session changes, when the active cwd
+ * changes (so project skills follow the toolbar cwd), or on a new WS event.
+ */
+export function useSkillsList(
+  activeSessionId: string | null,
+  cwd: string | null,
+  eventSeq: number | null,
+): SkillsListState {
+  const [state, setState] = useState<SkillsListState>({
+    skills: [],
+    loaded: false,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const qs = activeSessionId
+      ? `?session_id=${encodeURIComponent(activeSessionId)}`
+      : "";
+    fetch(`/api/claude/skills/list${qs}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setState({
+          skills: Array.isArray(d?.skills) ? (d.skills as SkillInfo[]) : [],
+          loaded: true,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ skills: [], loaded: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, cwd, eventSeq]);
+
+  return state;
+}

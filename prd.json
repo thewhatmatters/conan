@@ -1,13 +1,13 @@
 {
   "project": "Conan",
   "branchName": "loop/conan-v3",
-  "description": "Conan v3 — 'leverage everything Claude Code can do.' Multi-project (global ~/.claude hook so any claude run self-reports; UI filters by cwd); nav expands to Overview/Agents/Skills/Settings; built on a real shadcn foundation. Surfaces broad Claude Code data from disk + CLI: real /usage via PTY scrape, settings mirror, MCP from ~/.claude.json, changelog feed, checkpoints (file-history), per-project metrics, plugins, custom agents, background agents, subagent reconstruction, prompt history, skills. Plus drive-flag expansion (effort/fork/from-pr/worktree/json-schema/ultrareview) and UX refinements (widget carousel+scope+sticky, sort toggle, term dropdown name+id, non-destructive show/hide, cwd picker, toasts). Builds on v1+v2 (Express+WS :3747, Vite+React 19 SPA, Tailwind v4, SQLite). Source backlog + research verdicts: docs/v3-backlog.md.",
+  "description": "Conan v3 \u2014 'leverage everything Claude Code can do.' Multi-project (global ~/.claude hook so any claude run self-reports; UI filters by cwd); nav expands to Overview/Agents/Skills/Settings; built on a real shadcn foundation. Surfaces broad Claude Code data from disk + CLI: real /usage via PTY scrape, settings mirror, MCP from ~/.claude.json, changelog feed, checkpoints (file-history), per-project metrics, plugins, custom agents, background agents, subagent reconstruction, prompt history, skills. Plus drive-flag expansion (effort/fork/from-pr/worktree/json-schema/ultrareview) and UX refinements (widget carousel+scope+sticky, sort toggle, term dropdown name+id, non-destructive show/hide, cwd picker, toasts). Builds on v1+v2 (Express+WS :3747, Vite+React 19 SPA, Tailwind v4, SQLite). Source backlog + research verdicts: docs/v3-backlog.md.",
   "generatedAt": "2026-05-26",
   "sourcePrd": "/Users/digitalalchemist/Development/conan/prd-claude-code-dashboard.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "shadcn foundation — init deps, components.json, cn(), core primitives",
+      "title": "shadcn foundation \u2014 init deps, components.json, cn(), core primitives",
       "description": "As a developer, I need shadcn properly installed so v3's dropdown/control-heavy UI builds on accessible primitives instead of bespoke divs.",
       "acceptanceCriteria": [
         "Install shadcn deps (class-variance-authority, clsx, tailwind-merge, lucide-react, radix primitives, cmdk) and add components.json configured for React 19 + Tailwind v4 (use render not asChild)",
@@ -20,7 +20,7 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "v1/v2 never actually installed shadcn (no components.json/cn/radix) — only used shadcn-compatible tokens. See docs/v3-backlog.md item 20. Suggested skills: shadcn, automate-browser."
+      "notes": "v1/v2 never actually installed shadcn (no components.json/cn/radix) \u2014 only used shadcn-compatible tokens. See docs/v3-backlog.md item 20. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-002",
@@ -40,7 +40,7 @@
     },
     {
       "id": "US-003",
-      "title": "Active-CWD backend — set/validate/persist/list + re-scope tasks & terminal",
+      "title": "Active-CWD backend \u2014 set/validate/persist/list + re-scope tasks & terminal",
       "description": "As a user, I want to change Conan's active working directory so tasks, new terminals, and project reads follow it.",
       "acceptanceCriteria": [
         "Backend tracks an active cwd (persisted); GET returns it, token-gated PUT sets it after validating the path exists and is a directory",
@@ -56,13 +56,13 @@
     },
     {
       "id": "US-004",
-      "title": "MCP status — read ~/.claude.json (global + project) for configured servers",
+      "title": "MCP status \u2014 read ~/.claude.json (global + project) for configured servers",
       "description": "As a user, I want the MCP count to reflect all my configured servers, not just the one in settings.json.",
       "acceptanceCriteria": [
         "MCP status reads configured servers from ~/.claude.json global mcpServers + the union of projects[*].mcpServers (plus existing settings.json + project .mcp.json)",
         "connectedCount = configured minus servers in mcp-needs-auth-cache.json; still enrich/override with a live session's system/init mcp_servers",
         "Payload lists per-server names + status (connected | needs-auth) for the tooltip; handles missing files",
-        "Verified the count reflects the real set (e.g. figma, mobbin, notion, linear, vercel, paper, … — not 1)",
+        "Verified the count reflects the real set (e.g. figma, mobbin, notion, linear, vercel, paper, \u2026 \u2014 not 1)",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -72,7 +72,7 @@
     },
     {
       "id": "US-005",
-      "title": "Real /usage via PTY scrape — planUtilization on /api/claude/usage",
+      "title": "Real /usage via PTY scrape \u2014 planUtilization on /api/claude/usage",
       "description": "As a Claude Max user, I want the real plan-utilization % and reset times surfaced, not just an approximation.",
       "acceptanceCriteria": [
         "Add a controlled PTY probe: spawn a claude node-pty session, send /usage, capture the rendered frame, strip ANSI, parse the five_hour and seven_day windows ({utilizationPct, resetAt}) + status",
@@ -88,7 +88,7 @@
     },
     {
       "id": "US-006",
-      "title": "Settings backend — read Claude Code settings + safe write endpoint",
+      "title": "Settings backend \u2014 read Claude Code settings + safe write endpoint",
       "description": "As a user, I want Conan to read (and safely edit) Claude Code's real settings so the Settings page can mirror /settings.",
       "acceptanceCriteria": [
         "GET /api/claude/settings reads ~/.claude/settings.json (+ settings.local.json, + relevant ~/.claude.json flags) and returns each known setting with key, value, type (boolean|enum|string), allowed values, and source file; treats missing keys as defaults",
@@ -104,7 +104,7 @@
     },
     {
       "id": "US-007",
-      "title": "Changelog endpoint — parse changelog.md + new-since-last-seen",
+      "title": "Changelog endpoint \u2014 parse changelog.md + new-since-last-seen",
       "description": "As a user, I want a feed of Claude Code updates sourced from the local changelog.",
       "acceptanceCriteria": [
         "GET /api/claude/changelog parses ~/.claude/cache/changelog.md into entries [{version, items[]}] (no dates in source; date null), newest-first",
@@ -119,7 +119,7 @@
     },
     {
       "id": "US-008",
-      "title": "Checkpoints endpoint — list file-history snapshots (read-only)",
+      "title": "Checkpoints endpoint \u2014 list file-history snapshots (read-only)",
       "description": "As a user, I want to see Claude Code's per-session file checkpoints so I can review what changed.",
       "acceptanceCriteria": [
         "GET endpoint lists ~/.claude/file-history/<session-id>/ snapshots as [{sessionId, hash, version, mtime}] (version from the @vN suffix), grouped/sorted per session",
@@ -134,7 +134,7 @@
     },
     {
       "id": "US-009",
-      "title": "Hooks-coverage endpoint — full hook set vs wired",
+      "title": "Hooks-coverage endpoint \u2014 full hook set vs wired",
       "description": "As an operator, I want to see which Claude Code hook events Conan consumes and which it doesn't.",
       "acceptanceCriteria": [
         "GET endpoint returns the full known Claude Code hook-event set, each marked wired/unwired in Conan, per scope (user ~/.claude/settings.json + project .claude/settings.json)",
@@ -149,7 +149,7 @@
     },
     {
       "id": "US-010",
-      "title": "Per-project metrics endpoint — last-session cost/tokens/lines/model",
+      "title": "Per-project metrics endpoint \u2014 last-session cost/tokens/lines/model",
       "description": "As a user, I want per-project last-session metrics that Claude Code already records.",
       "acceptanceCriteria": [
         "GET endpoint reads ~/.claude.json projects[<cwd>] and returns lastCost, lastTotalInput/Output/Cache tokens, lastModelUsage (per-model split), lastLinesAdded/Removed, lastDuration, lastSessionId",
@@ -163,7 +163,7 @@
     },
     {
       "id": "US-011",
-      "title": "Plugins endpoint — installed plugins + marketplaces + enabled",
+      "title": "Plugins endpoint \u2014 installed plugins + marketplaces + enabled",
       "description": "As a user, I want to see my installed Claude Code plugins.",
       "acceptanceCriteria": [
         "GET endpoint reads ~/.claude/plugins/installed_plugins.json + known_marketplaces.json + enabledPlugins and returns installed plugins (name@marketplace, version, scope, gitCommitSha, installPath, enabled) + marketplaces",
@@ -177,7 +177,7 @@
     },
     {
       "id": "US-012",
-      "title": "Custom-agents catalog endpoint — ~/.claude/agents + project",
+      "title": "Custom-agents catalog endpoint \u2014 ~/.claude/agents + project",
       "description": "As a user, I want a catalog of my defined custom agents.",
       "acceptanceCriteria": [
         "GET endpoint scans ~/.claude/agents/ and the active project .claude/agents/ for agent definitions and returns [{name, description/role, scope, tools?}] parsed from the agent markdown frontmatter (SOUL.md or <name>.md)",
@@ -191,7 +191,7 @@
     },
     {
       "id": "US-013",
-      "title": "Background-agents endpoint — claude agents --json",
+      "title": "Background-agents endpoint \u2014 claude agents --json",
       "description": "As a user, I want to see Claude Code background agents.",
       "acceptanceCriteria": [
         "GET endpoint shells out to `claude agents --json` (token-gated, bounded timeout) and returns the parsed live background-agent list; optional cwd filter",
@@ -205,7 +205,7 @@
     },
     {
       "id": "US-014",
-      "title": "Subagent reconstruction endpoint — from disk for any session",
+      "title": "Subagent reconstruction endpoint \u2014 from disk for any session",
       "description": "As a user, I want subagent trees for past/observed sessions, not just live ones.",
       "acceptanceCriteria": [
         "GET endpoint parses ~/.claude/projects/<enc-cwd>/<session-id>/subagents/agent-*.jsonl + agent-*.meta.json ({agentType, description, toolUseId}) and returns the subagent tree + per-subagent transcript for a given session",
@@ -219,11 +219,11 @@
     },
     {
       "id": "US-015",
-      "title": "Prompt-history endpoint — search history.jsonl",
+      "title": "Prompt-history endpoint \u2014 search history.jsonl",
       "description": "As a user, I want to search my Claude Code prompt history.",
       "acceptanceCriteria": [
         "GET endpoint reads ~/.claude/history.jsonl and returns entries [{display, timestamp, project}] with optional text-search + project filter + pagination",
-        "Handles large files reasonably (stream/limit); missing file → empty",
+        "Handles large files reasonably (stream/limit); missing file \u2192 empty",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -233,7 +233,7 @@
     },
     {
       "id": "US-016",
-      "title": "Skills list endpoint — global + project SKILL.md + loaded",
+      "title": "Skills list endpoint \u2014 global + project SKILL.md + loaded",
       "description": "As a user, I want a browsable list of my skills with descriptions, not just a count.",
       "acceptanceCriteria": [
         "GET endpoint returns skills from ~/.claude/skills/*/SKILL.md (global) + active project .claude/skills/*/SKILL.md, each with {name, description, scope} from frontmatter and a loaded flag (from a session's system/init slash_commands when available)",
@@ -247,7 +247,7 @@
     },
     {
       "id": "US-017",
-      "title": "App shell — sidebar nav Overview/Agents/Skills/Settings + routing",
+      "title": "App shell \u2014 sidebar nav Overview/Agents/Skills/Settings + routing",
       "description": "As a user, I want four nav destinations so Agents and Skills get dedicated pages.",
       "acceptanceCriteria": [
         "Extend the v2 sidebar to four items: Overview (/), Agents (/agents), Skills (/skills), Settings (/settings); pushState routing + popstate; deep-link + back/forward work; gateway SPA fallback serves all",
@@ -263,7 +263,7 @@
     },
     {
       "id": "US-018",
-      "title": "Widget area — settings cog + single-row 4-up carousel with chevrons",
+      "title": "Widget area \u2014 settings cog + single-row 4-up carousel with chevrons",
       "description": "As a user, I want the widgets in one non-overflowing row I can scroll, configured via a cog.",
       "acceptanceCriteria": [
         "Replace the v2 widget dropdown with a settings cog next to the 'Widgets' heading that opens the show/hide picker",
@@ -280,11 +280,11 @@
     },
     {
       "id": "US-019",
-      "title": "Widget scope grouping — session / cwd / global",
+      "title": "Widget scope grouping \u2014 session / cwd / global",
       "description": "As a user, I want to know whether a widget reflects the selected session, the active cwd, or is global.",
       "acceptanceCriteria": [
-        "Widgets are visibly scoped: session-scoped (Context, Model & idle, Skills) follow the timeline session ▾; cwd-scoped (Git, MCP) follow the active cwd; global (Stats, Usage, Active sessions, Pulse) are unscoped",
-        "Scope is indicated (grouping or a per-widget scope badge); session-scoped widgets update when the session ▾ selection changes",
+        "Widgets are visibly scoped: session-scoped (Context, Model & idle, Skills) follow the timeline session \u25be; cwd-scoped (Git, MCP) follow the active cwd; global (Stats, Usage, Active sessions, Pulse) are unscoped",
+        "Scope is indicated (grouping or a per-widget scope badge); session-scoped widgets update when the session \u25be selection changes",
         "Decide + implement: Git/MCP follow the active cwd (documented)",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -311,11 +311,11 @@
     },
     {
       "id": "US-021",
-      "title": "Activity log — sort order toggle (asc/desc by timestamp)",
+      "title": "Activity log \u2014 sort order toggle (asc/desc by timestamp)",
       "description": "As a user, I want to sort the activity log newest- or oldest-first.",
       "acceptanceCriteria": [
         "A toggle sorts the timeline ascending/descending by timestamp; default newest-first",
-        "Combines with the session ▾ + activity-type filters (v2); live-appended events insert at the correct end for the chosen order",
+        "Combines with the session \u25be + activity-type filters (v2); live-appended events insert at the correct end for the chosen order",
         "Typecheck passes",
         "cd ui && npm run build is clean",
         "Verify in browser using automate-browser skill"
@@ -326,7 +326,7 @@
     },
     {
       "id": "US-022",
-      "title": "Timeline event-icon — opaque background (rail no longer shows through)",
+      "title": "Timeline event-icon \u2014 opaque background (rail no longer shows through)",
       "description": "As a user, I want timeline icons to read as solid nodes, not transparent ones the rail shows through.",
       "acceptanceCriteria": [
         "The event-icon circle has a solid/opaque background (bg-background/bg-card) so the connector rail is masked",
@@ -341,7 +341,7 @@
     },
     {
       "id": "US-023",
-      "title": "MCP widget — real connected count + tooltip of names",
+      "title": "MCP widget \u2014 real connected count + tooltip of names",
       "description": "As a user, I want the MCP widget to show the real count and which servers.",
       "acceptanceCriteria": [
         "MCP widget shows the connected count from US-004; hovering lists server names, marking needs-auth",
@@ -357,10 +357,10 @@
     },
     {
       "id": "US-024",
-      "title": "Widget fixes — remove Cost-today; Model widget shows model name",
+      "title": "Widget fixes \u2014 remove Cost-today; Model widget shows model name",
       "description": "As a user, I want irrelevant widgets gone and the Model widget to show the real model.",
       "acceptanceCriteria": [
-        "Remove the 'Cost today' widget (token-based plan — not relevant); drop its data path if unused",
+        "Remove the 'Cost today' widget (token-based plan \u2014 not relevant); drop its data path if unused",
         "Model widget shows the active session's real model name (e.g. 'Opus 4.7') alongside idle state; handle no-active-session",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -372,7 +372,7 @@
     },
     {
       "id": "US-025",
-      "title": "Usage widget — real planUtilization + baseline + countdown",
+      "title": "Usage widget \u2014 real planUtilization + baseline + countdown",
       "description": "As a user, I want the real /usage % and reset surfaced, with a baseline so it's never blank.",
       "acceptanceCriteria": [
         "Usage widget consumes US-005 planUtilization: shows five_hour + seven_day % used + reset countdown + warning/limit status when a fresh scrape exists",
@@ -403,7 +403,7 @@
     },
     {
       "id": "US-027",
-      "title": "Agents page — registry + background agents + teams",
+      "title": "Agents page \u2014 registry + background agents + teams",
       "description": "As a user, I want a dedicated Agents page to view custom agents and background agents.",
       "acceptanceCriteria": [
         "The /agents route renders: a custom-agents registry (US-012: name, role/description, scope) and live background agents (US-013) with status; a section for agent teams/worktree runs (placeholder if no data)",
@@ -419,7 +419,7 @@
     },
     {
       "id": "US-028",
-      "title": "Skills page — browse global + project skills",
+      "title": "Skills page \u2014 browse global + project skills",
       "description": "As a user, I want a dedicated Skills page listing global and project skills with descriptions.",
       "acceptanceCriteria": [
         "The /skills route lists skills from US-016 with name, description, scope (global vs project), and loaded state; expand to show details",
@@ -430,15 +430,15 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-016, US-017. v3-backlog item 21. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-029",
-      "title": "Settings page — mirror Claude Code /settings (typed controls + search)",
+      "title": "Settings page \u2014 mirror Claude Code /settings (typed controls + search)",
       "description": "As a user, I want the Settings page to reflect Claude Code's real settings with the right control per type.",
       "acceptanceCriteria": [
-        "The /settings view renders settings from US-006: boolean→switch, enum→select, string→input; shows current/default; searchable filter ('Search settings…')",
+        "The /settings view renders settings from US-006: boolean\u2192switch, enum\u2192select, string\u2192input; shows current/default; searchable filter ('Search settings\u2026')",
         "Editing a safe setting persists via the US-006 write endpoint with optimistic UI + error handling; risky keys are read-only or gated",
         "Keep Conan's own config (hooks/remote/theme) accessible too; NO cost-ceiling; Sessions glossary tooltip retained",
         "shadcn; light+dark",
@@ -547,8 +547,8 @@
       "title": "Terminal dropdown reflects session name + short ID",
       "description": "As a user, I want a /renamed session to show its name + id in the Term dropdown, not 'Term 1'.",
       "acceptanceCriteria": [
-        "The Term ▾ dropdown (v2 US-018) labels each terminal with the running claude session's name + short id (e.g. 'Conan:ca7cb3a8'), falling back to 'Term N' when unnamed",
-        "Correlate pty→claude session: from the pty child pid, find the descendant claude pid and read ~/.claude/sessions/<pid>.json for name + sessionId (fallback: match by cwd + most-recent live session)",
+        "The Term \u25be dropdown (v2 US-018) labels each terminal with the running claude session's name + short id (e.g. 'Conan:ca7cb3a8'), falling back to 'Term N' when unnamed",
+        "Correlate pty\u2192claude session: from the pty child pid, find the descendant claude pid and read ~/.claude/sessions/<pid>.json for name + sessionId (fallback: match by cwd + most-recent live session)",
         "Watch/poll so a mid-session /rename updates the label live",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -571,7 +571,7 @@
       ],
       "priority": 37,
       "passes": false,
-      "notes": "CONFIRMED: App.tsx unmounts Dock on hide → 30s grace-kill (src/terminal DETACH_GRACE_MS). v3-backlog item 12. Suggested skills: automate-browser."
+      "notes": "CONFIRMED: App.tsx unmounts Dock on hide \u2192 30s grace-kill (src/terminal DETACH_GRACE_MS). v3-backlog item 12. Suggested skills: automate-browser."
     },
     {
       "id": "US-038",
@@ -635,7 +635,7 @@
     },
     {
       "id": "US-042",
-      "title": "Driven-session options — --effort, --fork-session, --from-pr",
+      "title": "Driven-session options \u2014 --effort, --fork-session, --from-pr",
       "description": "As a user, I want more control when launching/resuming driven sessions.",
       "acceptanceCriteria": [
         "Extend the session-launch options (src/session buildArgs) + the new-session UI to pass --effort (low/medium/high/xhigh/max), --fork-session (on resume), and --from-pr <n>",

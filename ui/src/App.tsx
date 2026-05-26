@@ -233,7 +233,11 @@ export default function App() {
             </div>
           ) : route === "skills" ? (
             <div className="pt-6">
-              <SkillsView />
+              <SkillsView
+                sessionId={widgetSession?.id ?? null}
+                cwd={config?.cwd ?? null}
+                trigger={wsTrigger}
+              />
             </div>
           ) : (
           <>
