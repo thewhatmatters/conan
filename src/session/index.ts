@@ -102,6 +102,14 @@ export interface PendingPermission {
   toolName: string | null;
   input: unknown;
   ts: number;
+  /**
+   * The control_request's `permission_suggestions` (US-008): the real options
+   * Claude Code offers for this prompt (e.g. an "allow + don't ask again" rule
+   * update). Passed through untouched so the UI can render the actual choices
+   * instead of a hardcoded allow|deny, and echoed back as `updatedPermissions`
+   * when the operator picks one.
+   */
+  permissionSuggestions?: unknown;
 }
 
 // Two views of the same set of live children. We can't key by session_id at
@@ -792,6 +800,7 @@ function trackPermission(session: ManagedSession, ev: NormalizedEvent): void {
       toolName: ev.toolName,
       input: p?.input,
       ts: Date.now(),
+      permissionSuggestions: p?.permission_suggestions,
     });
   } else if (ev.streamType === "control_cancel_request" && requestId) {
     session.pending.delete(requestId);
@@ -817,6 +826,12 @@ export interface PermissionDecision {
   updatedInput?: Record<string, unknown>;
   /** Reason surfaced to the agent when denying. */
   message?: string;
+  /**
+   * Permission rule updates to persist alongside an allow (US-008) — e.g. the
+   * "allow, don't ask again" option built from the prompt's
+   * `permission_suggestions`. Echoed back to the CLI as `updatedPermissions`.
+   */
+  updatedPermissions?: unknown[];
 }
 
 /**
@@ -845,6 +860,9 @@ export function decidePermission(
       ? {
           behavior: "allow" as const,
           updatedInput: decision.updatedInput ?? (open?.input as object) ?? {},
+          ...(decision.updatedPermissions && decision.updatedPermissions.length
+            ? { updatedPermissions: decision.updatedPermissions }
+            : {}),
         }
       : {
           behavior: "deny" as const,

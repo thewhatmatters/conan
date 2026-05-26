@@ -354,6 +354,64 @@ into a fresh `prd.json` (v2 archived). Source backlog + full research verdicts:
   remote-control/Chrome.
 - **Docs:** README.
 
+## v4 — QA polish + live in-cwd app preview (2026-05-26)
+
+v3 shipped 48/48. v4 folds the six items QA logged in `docs/v4-backlog.md` into a
+fresh `prd.json` (`loop/conan-v4`; v3 archived). Full anchor re-verification + the
+decisions below: `docs/v4-research.md`. Theme: finish what v3 started (shadcn
+migration, honest widgets/permissions) and add the marquee feature — **run the
+project in Conan's current cwd and see it rendered live, in one window.**
+
+### Locked decisions
+- **Live preview = Replit-style host-process + same-origin reverse proxy**, NOT
+  WebContainers. Conan spawns the project's dev server in the active cwd and proxies
+  it under `/preview/:id` so it inherits the existing token/Origin auth and frames
+  cleanly. v1 scope is **run + proxy + preview** — no container sandboxing. One new
+  dep (`http-proxy-middleware`, pin v3). Two real gotchas, both solved in research:
+  Vite HMR must be told to dial back through `:3747` (`server.hmr.clientPort/path`),
+  and framing headers (`X-Frame-Options`/CSP `frame-ancestors`) get stripped in
+  `proxyRes`. Port is **pinned** (`--port --strictPort --base /preview/<id>/`), not
+  guessed from stdout. Preview keys off `getActiveCwd()`/`onCwdChange`; its lifecycle
+  is **decoupled from the gateway watch restart** (footgun #1).
+- **Finish the shadcn migration without churn.** Extract shared patterns first
+  (SortToggle, status dot, two-tier card, time-ago, scope badge), then migrate Dock,
+  SessionBar, Sidebar. PendingApprovals is migrated *inside* the permission rewrite
+  (item 4a) since it's rewritten anyway — no migrate-then-rewrite.
+- **Honesty over false-success.** The Context widget must bind to the actually-live
+  pty-correlated session (not `find(running)` over ~155 rows) and never read blank in
+  normal use; the permission flow must surface `delivered:false` instead of
+  optimistically clearing, and offer the real 3 TUI options.
+- **Drive interactive prompts for real.** `correlate.ts` already maps pty→session, so
+  Conan can inject keystrokes into the correlated terminal to answer TUI permission
+  prompts — closing the gap where timeline "Approve" silently no-ops for
+  observed/terminal sessions.
+
+### Research verdicts (what's readable, and how)
+- **Context category split — compute from disk (option B), not PTY scrape.** `/context`
+  per-category usage (System/Tools/MCP/Memory/Skills/Messages) isn't in the transcript
+  `usage` block; reconstruct it from on-disk sizes (CLAUDE.md+MEMORY.md, SKILL.md,
+  `~/.claude.json` MCP, transcript messages) — an approximation Conan owns. PTY
+  `/context` scraping (option A) is rejected as too brittle.
+- **`permission_suggestions` is already captured** (`parser.ts:232`) but unused — the
+  3rd "don't ask again" option is one mapping away.
+- **Preview security floor is same-origin + loopback + Origin-checked WS upgrade.** An
+  iframe `src` can't send the `x-conan-token` header, so `/preview/` HTTP is protected
+  exactly like the static SPA — decided consciously, not by omission.
+
+### Scope (grouped; see prd.json for the ordered stories)
+- **Shared/foundation:** extract reusable SortToggle + componentize shared patterns
+  (status dot, two-tier card, time-ago, scope badge).
+- **shadcn finish:** Dock (Term ▾ → dropdown-menu, tabs → tabs); SessionBar (session ▾)
+  + Sidebar nav → primitives.
+- **Honest widgets/permissions:** Transcript sort toggle; Context widget binding+total-%
+  fix; Context category breakdown (disk-based stacked mini-bar); permission honesty floor
+  + 3-option + PendingApprovals→shadcn; keystroke-injection driving for interactive prompts.
+- **Pulse:** relocate into the dock as a global bottom strip, drop the tokens/cost toggle.
+- **Live preview:** preview process manager + dev-command discovery (`src/preview/`);
+  `/preview/:id` reverse proxy + framing-strip + HMR upgrade branch; Preview dock tab
+  (iframe + start/stop + command picker).
+- **Docs:** CLAUDE.md/memory/README — shadcn migration complete, preview feature.
+
 ## Sources
 
 1. [Claude Agent SDK — Stream responses in real-time](https://code.claude.com/docs/en/agent-sdk/streaming-output) — Anthropic docs

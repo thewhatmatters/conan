@@ -136,7 +136,7 @@
         "Verify in browser using automate-browser skill: a driven-session prompt shows the suggested options; a non-deliverable prompt is marked honestly and not auto-cleared"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 4 (honesty floor + 3rd option). Driven sessions only still — interactive driving is US-009. Suggested skills: shadcn, automate-browser."
     },
     {

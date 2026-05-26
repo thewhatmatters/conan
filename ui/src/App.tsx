@@ -191,18 +191,35 @@ export default function App() {
     sessionId: string,
     requestId: string | null,
     choice: "allow" | "deny",
-  ) => {
-    if (!config?.token) return;
-    fetch(`/api/claude/sessions/${encodeURIComponent(sessionId)}/permission`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-conan-token": config.token,
+    updatedPermissions?: unknown[],
+  ): Promise<{ delivered: boolean }> => {
+    if (!config?.token) return Promise.resolve({ delivered: false });
+    return fetch(
+      `/api/claude/sessions/${encodeURIComponent(sessionId)}/permission`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-conan-token": config.token,
+        },
+        body: JSON.stringify({
+          request_id: requestId,
+          decision: choice,
+          ...(updatedPermissions && updatedPermissions.length
+            ? { updated_permissions: updatedPermissions }
+            : {}),
+        }),
       },
-      body: JSON.stringify({ request_id: requestId, decision: choice }),
-    })
-      .then(() => refreshPending())
-      .catch(() => {});
+    )
+      .then((r) => r.json())
+      // The route reports decidePermission's `delivered` flag (US-008): false
+      // means no live child received the answer, so the UI must stay honest and
+      // not pretend the prompt resolved.
+      .then((j) => {
+        refreshPending();
+        return { delivered: j?.delivered === true };
+      })
+      .catch(() => ({ delivered: false }));
   };
 
   // US-012: the timeline decides for whichever session it's showing. In the

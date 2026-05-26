@@ -704,6 +704,9 @@ app.post("/api/claude/sessions/:id/permission", (req, res) => {
     {
       decision: b.decision,
       message: typeof b.message === "string" ? b.message : undefined,
+      updatedPermissions: Array.isArray(b.updated_permissions)
+        ? b.updated_permissions
+        : undefined,
     },
   );
   res.json({ ok: true, ...result });

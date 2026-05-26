@@ -1,27 +1,46 @@
 import { useState } from "react";
 import type { PendingPermission } from "../hooks/usePendingPermissions.ts";
 import TwoTierCard from "./shared/TwoTierCard.tsx";
+import { Button } from "./ui/button.tsx";
 
 export type PermissionChoice = "allow" | "deny";
 
 interface PendingApprovalsProps {
   pending: PendingPermission[];
-  /** Answer a prompt via the US-012 decision route, then refresh the list. */
+  /**
+   * Answer a prompt via the US-012 decision route, then refresh the list.
+   * Resolves with the route's `delivered` flag (US-008): when `false` no live
+   * child received the answer, so the card must stay honest instead of clearing.
+   */
   onDecide: (
     sessionId: string,
     requestId: string,
     choice: PermissionChoice,
-  ) => void;
+    updatedPermissions?: unknown[],
+  ) => Promise<{ delivered: boolean }>;
+}
+
+/** One selectable option rendered as a button (US-008). */
+interface PermissionOption {
+  key: string;
+  label: string;
+  decision: PermissionChoice;
+  variant: "default" | "destructive" | "outline";
+  /** Rule updates echoed back as `updatedPermissions` (the "don't ask again"). */
+  updatedPermissions?: unknown[];
 }
 
 /**
  * Cross-session pending-approvals widget (US-013/US-017). One place that lists
  * every permission prompt awaiting a decision — session, tool, and requested
- * action — each with inline Approve/Deny that reuses the US-012 decision route.
+ * action. US-008: the buttons reflect the prompt's real `permission_suggestions`
+ * (e.g. Approve / Approve-don't-ask-again / Deny) rather than a hardcoded
+ * allow|deny pair, and a decision that comes back `delivered:false` is NOT
+ * optimistically cleared — it flips to an honest "answer in terminal" state.
  * Shows a count badge and updates live as prompts arrive/resolve over the app
  * WS (via usePendingPermissions). US-017: the panel renders ONLY when at least
- * one prompt is awaiting a decision; it is fully absent (no empty-state card)
- * when the queue is empty. Semantic tokens only.
+ * one prompt is awaiting attention; it is fully absent when nothing is queued.
+ * Semantic tokens only.
  */
 export default function PendingApprovals({
   pending,
@@ -30,84 +49,171 @@ export default function PendingApprovals({
   // Optimistically hide a prompt the instant it's answered, before the refetch
   // round-trip clears it from the server-side pending map.
   const [decided, setDecided] = useState<Record<string, PermissionChoice>>({});
-  const visible = pending.filter((p) => !decided[p.requestId]);
+  // US-008: prompts whose decision was NOT delivered (no live child accepted
+  // it). We keep our own snapshot so the honest state survives even after the
+  // prompt leaves the server-side pending list, until the operator dismisses it.
+  const [stuck, setStuck] = useState<Record<string, PendingPermission>>({});
 
-  const decide = (p: PendingPermission, choice: PermissionChoice) => {
-    setDecided((d) => ({ ...d, [p.requestId]: choice }));
-    onDecide(p.sessionId, p.requestId, choice);
+  const visible = pending.filter(
+    (p) => !decided[p.requestId] && !stuck[p.requestId],
+  );
+  const stuckList = Object.values(stuck);
+
+  const decide = async (p: PendingPermission, option: PermissionOption) => {
+    setDecided((d) => ({ ...d, [p.requestId]: option.decision }));
+    const { delivered } = await onDecide(
+      p.sessionId,
+      p.requestId,
+      option.decision,
+      option.updatedPermissions,
+    );
+    if (!delivered) {
+      // Un-hide and surface the honest "not deliverable" state.
+      setDecided((d) => {
+        const next = { ...d };
+        delete next[p.requestId];
+        return next;
+      });
+      setStuck((s) => ({ ...s, [p.requestId]: p }));
+    }
   };
 
+  const dismiss = (requestId: string) =>
+    setStuck((s) => {
+      const next = { ...s };
+      delete next[requestId];
+      return next;
+    });
+
+  const count = visible.length + stuckList.length;
+
   // US-017: nothing waiting → render nothing at all (no empty-state card, no
-  // reserved space). The optimistic `decided` state means this also fires the
-  // instant the last pending prompt is answered.
-  if (visible.length === 0) return null;
+  // reserved space).
+  if (count === 0) return null;
 
   return (
     <TwoTierCard as="section" className="mt-4" innerClassName="p-0">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-primary">
-              <Shield />
-            </span>
-            <span className="text-sm font-medium text-foreground">
-              Pending approvals
-            </span>
-          </div>
-          <span
-            className={
-              "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold " +
-              (visible.length
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground")
-            }
-          >
-            {visible.length}
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-primary">
+            <Shield />
+          </span>
+          <span className="text-sm font-medium text-foreground">
+            Pending approvals
           </span>
         </div>
+        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+          {count}
+        </span>
+      </div>
 
-        <ul className="divide-y divide-border">
-            {visible.map((p) => (
-              <li
-                key={`${p.sessionId}:${p.requestId}`}
-                className="flex items-start gap-3 px-3 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span className="text-sm font-medium text-foreground">
-                      {p.toolName ?? "Tool"}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground/70">
-                      {p.sessionId.slice(0, 8)}
-                    </span>
-                    <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70">
-                      {fmtTime(p.ts)}
-                    </span>
-                  </div>
-                  {actionLine(p.toolName, p.input) && (
-                    <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                      {actionLine(p.toolName, p.input)}
-                    </div>
-                  )}
+      <ul className="divide-y divide-border">
+        {visible.map((p) => (
+          <li
+            key={`${p.sessionId}:${p.requestId}`}
+            className="flex items-start gap-3 px-3 py-2.5"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  {p.toolName ?? "Tool"}
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground/70">
+                  {p.sessionId.slice(0, 8)}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70">
+                  {fmtTime(p.ts)}
+                </span>
+              </div>
+              {actionLine(p.toolName, p.input) && (
+                <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                  {actionLine(p.toolName, p.input)}
                 </div>
-                <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                  <button
-                    onClick={() => decide(p, "allow")}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
-                  >
-                    <Check /> Approve
-                  </button>
-                  <button
-                    onClick={() => decide(p, "deny")}
-                    className="inline-flex items-center gap-1 rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/20"
-                  >
-                    <X /> Deny
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-0.5">
+              {deriveOptions(p.permissionSuggestions).map((opt) => (
+                <Button
+                  key={opt.key}
+                  size="sm"
+                  variant={opt.variant}
+                  onClick={() => decide(p, opt)}
+                >
+                  {opt.decision === "allow" ? <Check /> : <X />}
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </li>
+        ))}
+
+        {stuckList.map((p) => (
+          <li
+            key={`stuck:${p.sessionId}:${p.requestId}`}
+            className="flex items-start gap-3 px-3 py-2.5"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  {p.toolName ?? "Tool"}
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground/70">
+                  {p.sessionId.slice(0, 8)}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70">
+                  {fmtTime(p.ts)}
+                </span>
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Couldn't deliver that decision — no live session received it.
+                Answer the prompt directly in the terminal.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center pt-0.5">
+              <Button size="sm" variant="outline" onClick={() => dismiss(p.requestId)}>
+                Dismiss
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </TwoTierCard>
   );
+}
+
+/**
+ * Build the option buttons from the prompt's `permission_suggestions` (US-008).
+ * Always offers Approve + Deny; when a suggestion carries an allow-behavior rule
+ * update, adds an "Approve, don't ask again" option that echoes those rules back
+ * as `updatedPermissions`. Unknown/empty suggestions degrade to the base pair.
+ */
+function deriveOptions(suggestions: unknown): PermissionOption[] {
+  const opts: PermissionOption[] = [
+    { key: "allow", label: "Approve", decision: "allow", variant: "default" },
+  ];
+  const list = Array.isArray(suggestions) ? suggestions : [];
+  const allowRules = list.filter(
+    (s) =>
+      s != null &&
+      typeof s === "object" &&
+      (s as Record<string, unknown>).behavior === "allow",
+  );
+  if (allowRules.length) {
+    opts.push({
+      key: "allow-always",
+      label: "Don't ask again",
+      decision: "allow",
+      variant: "outline",
+      updatedPermissions: allowRules,
+    });
+  }
+  opts.push({
+    key: "deny",
+    label: "Deny",
+    decision: "deny",
+    variant: "destructive",
+  });
+  return opts;
 }
 
 /** A compact one-line description of the requested action from the tool input. */

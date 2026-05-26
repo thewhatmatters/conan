@@ -8,6 +8,12 @@ export interface PendingPermission {
   /** The tool input the agent wants to run (JSON-ish), for the "action" line. */
   input: unknown;
   ts: number;
+  /**
+   * The real options Claude Code offered for this prompt (US-008), passed
+   * through from the control_request. Used to render the actual choices
+   * (e.g. allow / allow-don't-ask-again / deny) instead of a hardcoded pair.
+   */
+  permissionSuggestions?: unknown;
 }
 
 /**
