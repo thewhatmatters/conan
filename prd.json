@@ -149,7 +149,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Transcript view is a KEEPER. Reuse TranscriptViewer.tsx + useTranscript.ts unchanged. Suggested skills: automate-browser."
     },
     {
