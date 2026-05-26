@@ -12,6 +12,9 @@ export interface TaskStory {
 
 export interface TasksState {
   exists: boolean;
+  /** Active cwd has a task source — prd.json, or progress.txt with content
+   *  (US-039). The Tasks tab is hidden entirely when false. */
+  hasSource: boolean;
   project: string;
   branchName: string;
   total: number;

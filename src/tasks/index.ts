@@ -17,6 +17,13 @@ export interface TaskStory {
 
 export interface TasksState {
   exists: boolean;
+  /**
+   * Whether the active cwd has *any* task source — prd.json present, or
+   * progress.txt with content (US-039). The UI hides the Tasks tab entirely
+   * when this is false, so a plain project directory carries no empty tab.
+   * (`exists` stays prd-only; the checklist still needs prd.json to render.)
+   */
+  hasSource: boolean;
   project: string;
   branchName: string;
   total: number;
@@ -28,6 +35,7 @@ export interface TasksState {
 
 const EMPTY: TasksState = {
   exists: false,
+  hasSource: false,
   project: "",
   branchName: "",
   total: 0,
@@ -44,11 +52,16 @@ const EMPTY: TasksState = {
  * run-tasks.sh picks next.
  */
 export function readTasks(): TasksState {
+  // progress.txt with content is itself a task source (US-039), so read it
+  // first — even when prd.json is absent, its presence keeps the Tasks tab.
+  const activity = readActivity();
+  const hasProgress = activity.length > 0;
+
   let raw: string;
   try {
     raw = fs.readFileSync(prdPath(), "utf8");
   } catch {
-    return EMPTY;
+    return { ...EMPTY, hasSource: hasProgress, activity };
   }
 
   let prd: {
@@ -64,7 +77,9 @@ export function readTasks(): TasksState {
   try {
     prd = JSON.parse(raw);
   } catch {
-    return EMPTY; // mid-write; a later watch event will deliver valid JSON
+    // mid-write; a later watch event will deliver valid JSON. The file still
+    // exists, so it remains a task source.
+    return { ...EMPTY, hasSource: true, activity };
   }
 
   const stories: TaskStory[] = (prd.userStories ?? [])
@@ -81,13 +96,14 @@ export function readTasks(): TasksState {
 
   return {
     exists: true,
+    hasSource: true,
     project: prd.project ?? "",
     branchName: prd.branchName ?? "",
     total: stories.length,
     done,
     currentId: current?.id ?? null,
     stories,
-    activity: readActivity(),
+    activity,
   };
 }
 

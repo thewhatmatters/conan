@@ -90,6 +90,18 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
 
   const isTermActive = active.kind === "term";
 
+  // US-039: the Tasks tab exists only when the active cwd has a task source
+  // (prd.json, or progress.txt with content). The state is re-broadcast on every
+  // cwd change (US-019), so this flips live as the toolbar picker switches
+  // projects. When the source disappears while Tasks is the active surface, fall
+  // back to the first terminal so the dock never strands on a vanished tab.
+  const showTasks = Boolean(tasks?.hasSource);
+  useEffect(() => {
+    if (!showTasks && active.kind === "tasks") {
+      setActive({ kind: "term", tid: terms[0]!.tid });
+    }
+  }, [showTasks, active, terms]);
+
   const addTerm = useCallback(() => {
     const tid = crypto.randomUUID();
     setTerms((prev) => {
@@ -164,19 +176,21 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
           onNew={addTerm}
         />
 
-        <div className="ml-auto">
-          <TabButton
-            active={active.kind === "tasks"}
-            onClick={() => setActive({ kind: "tasks" })}
-          >
-            Tasks
-            {tasks?.exists && (
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {tasks.done}/{tasks.total}
-              </span>
-            )}
-          </TabButton>
-        </div>
+        {showTasks && (
+          <div className="ml-auto">
+            <TabButton
+              active={active.kind === "tasks"}
+              onClick={() => setActive({ kind: "tasks" })}
+            >
+              Tasks
+              {tasks?.exists && (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {tasks.done}/{tasks.total}
+                </span>
+              )}
+            </TabButton>
+          </div>
+        )}
       </div>
 
       <div className="relative min-h-0 flex-1">
