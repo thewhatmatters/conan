@@ -28,6 +28,7 @@ import AgentsView from "./components/AgentsView.tsx";
 import SkillsView from "./components/SkillsView.tsx";
 import PluginsView from "./components/PluginsView.tsx";
 import CheckpointsView from "./components/CheckpointsView.tsx";
+import PromptHistoryView from "./components/PromptHistoryView.tsx";
 import WhatsNewView from "./components/WhatsNewView.tsx";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
@@ -258,6 +259,10 @@ export default function App() {
           ) : route === "checkpoints" ? (
             <div className="pt-6">
               <CheckpointsView trigger={wsTrigger} />
+            </div>
+          ) : route === "prompts" ? (
+            <div className="pt-6">
+              <PromptHistoryView trigger={wsTrigger} />
             </div>
           ) : route === "whatsnew" ? (
             <div className="pt-6">

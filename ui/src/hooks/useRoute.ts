@@ -6,6 +6,7 @@ export type Route =
   | "skills"
   | "plugins"
   | "checkpoints"
+  | "prompts"
   | "whatsnew"
   | "settings";
 
@@ -16,6 +17,7 @@ function routeFor(pathname: string): Route {
   if (p === "/skills") return "skills";
   if (p === "/plugins") return "plugins";
   if (p === "/checkpoints") return "checkpoints";
+  if (p === "/prompts") return "prompts";
   if (p === "/whats-new") return "whatsnew";
   if (p === "/settings") return "settings";
   return "overview";
@@ -32,6 +34,8 @@ function pathFor(route: Route): string {
       return "/plugins";
     case "checkpoints":
       return "/checkpoints";
+    case "prompts":
+      return "/prompts";
     case "whatsnew":
       return "/whats-new";
     case "settings":
