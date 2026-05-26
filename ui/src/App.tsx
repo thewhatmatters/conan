@@ -86,7 +86,8 @@ export default function App() {
       : activeSession;
   const skills = useSkills(widgetSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
-  const usage = useUsage(wsTrigger);
+  // US-025: also surfaces the real /usage scrape; token-gated probe on open.
+  const usage = useUsage(wsTrigger, config?.token ?? null);
   // US-011: MCP server status — inferred connected count + names + needs-auth.
   const mcp = useMcp(wsTrigger);
   // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.

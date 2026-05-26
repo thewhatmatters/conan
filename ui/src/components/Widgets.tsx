@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { SkillsState } from "../hooks/useSkills.ts";
-import type { UsageState } from "../hooks/useUsage.ts";
+import type { UsageState, UsageWindow } from "../hooks/useUsage.ts";
 import type { McpState } from "../hooks/useMcp.ts";
 import type { StatsState } from "../hooks/useStats.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
@@ -562,14 +562,13 @@ function GitWidget({ git, scope }: { git: CwdGit | null; scope: WidgetScope }) {
 }
 
 /**
- * Usage monitor (US-004/US-014): plan-usage framing for a token-based plan —
- * recent token consumption (last 5h) plus a "resets in …" countdown, and a
- * distinct rate-limited state derived from api_retry events. Ticks the countdown
- * client-side off `resetAt` and degrades to "—" when no usage data is available.
- * No dollar ceiling / %-of-budget — and an "≈ approx" marker makes explicit that
- * this is our own approximation: the live plan % lives only in the claude
- * process's `anthropic-ratelimit-unified-*` response headers, which Conan (which
- * just shells out) can't read.
+ * Usage monitor (US-004/US-005/US-025). When a fresh `/usage` scrape exists
+ * (`planUtilization`, US-005) it shows the REAL plan utilization: the 5-hour and
+ * 7-day "% used" with a per-window reset countdown and a warning/limit posture.
+ * Otherwise it falls back to the token-trend baseline (recent token consumption
+ * + a rate-limited state and reset countdown derived from api_retry events) and
+ * marks itself an approximation via the "≈ approx" tag. It is never blank: with
+ * no data at all it shows "—". The countdowns tick client-side off `resetAt`.
  */
 function UsageWidget({
   usage,
@@ -584,6 +583,12 @@ function UsageWidget({
     return () => clearInterval(t);
   }, []);
 
+  // Prefer the real scrape (US-005) when it carries at least one parsed window.
+  const plan = usage.planUtilization;
+  const hasPlan = !!plan && (!!plan.fiveHour || !!plan.sevenDay);
+  if (hasPlan && plan) return <PlanUsage plan={plan} tick={tick} scope={scope} />;
+
+  // --- baseline (US-004): token-trend approximation -------------------------
   const remaining =
     usage.resetAt != null ? Math.max(0, usage.resetAt - tick) : null;
   const resetLabel =
@@ -634,6 +639,111 @@ function UsageWidget({
             : "no usage data"}
       </div>
     </StatCard>
+  );
+}
+
+/** Posture → text color for the headline + status chip. */
+const STATUS_COLOR: Record<"ok" | "warning" | "limit", string> = {
+  ok: "text-foreground",
+  warning: "text-amber-600 dark:text-amber-400",
+  limit: "text-destructive",
+};
+
+/**
+ * The REAL plan-utilization face of the Usage widget (US-025): the 5-hour and
+ * 7-day windows' "% used" + per-window reset countdown, headlined by the worst
+ * window and tinted by the scrape's posture. The countdown ticks off `tick`.
+ */
+function PlanUsage({
+  plan,
+  tick,
+  scope,
+}: {
+  plan: NonNullable<UsageState["planUtilization"]>;
+  tick: number;
+  scope: WidgetScope;
+}) {
+  // Headline = the window closest to its limit (the binding constraint).
+  const worst =
+    Math.max(
+      plan.fiveHour?.utilizationPct ?? -1,
+      plan.sevenDay?.utilizationPct ?? -1,
+    ) | 0;
+  const statusLabel =
+    plan.status === "limit"
+      ? "Limit"
+      : plan.status === "warning"
+        ? "High"
+        : null;
+
+  return (
+    <StatCard label="Usage" sub="plan · live" scope={scope}>
+      <div className="flex items-center gap-2">
+        <span
+          className={"text-xl font-semibold " + STATUS_COLOR[plan.status]}
+        >
+          {worst}%
+        </span>
+        {statusLabel && (
+          <span
+            className={
+              "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide " +
+              (plan.status === "limit"
+                ? "bg-destructive/15 text-destructive"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-400")
+            }
+          >
+            {statusLabel}
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 space-y-1">
+        <PlanWindowRow label="5h" win={plan.fiveHour} tick={tick} />
+        <PlanWindowRow label="7d" win={plan.sevenDay} tick={tick} />
+      </div>
+    </StatCard>
+  );
+}
+
+/** One window row: label, mini bar + %, and a reset countdown. */
+function PlanWindowRow({
+  label,
+  win,
+  tick,
+}: {
+  label: string;
+  win: UsageWindow | null;
+  tick: number;
+}) {
+  if (!win) return null;
+  const pct = Math.max(0, Math.min(100, win.utilizationPct));
+  const remaining = win.resetAt != null ? Math.max(0, win.resetAt - tick) : null;
+  const barColor =
+    win.utilizationPct >= 100
+      ? "bg-destructive"
+      : win.utilizationPct >= 80
+        ? "bg-amber-500"
+        : "bg-primary";
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-5 shrink-0 text-muted-foreground">{label}</span>
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+        <span
+          className={"block h-full rounded-full " + barColor}
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
+        {win.utilizationPct}%
+      </span>
+      <span className="w-20 shrink-0 truncate text-right text-muted-foreground">
+        {remaining != null
+          ? remaining > 0
+            ? fmtDuration(remaining)
+            : "due"
+          : ""}
+      </span>
+    </div>
   );
 }
 
