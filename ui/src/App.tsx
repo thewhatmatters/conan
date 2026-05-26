@@ -4,10 +4,10 @@ import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useUsage } from "./hooks/useUsage.ts";
-import { useSessionEvents } from "./hooks/useSessionEvents.ts";
+import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
-import SessionGrid from "./components/SessionGrid.tsx";
+import SessionBar from "./components/SessionBar.tsx";
 import HeroWidgets from "./components/HeroWidgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
 import PulseChart from "./components/PulseChart.tsx";
@@ -74,10 +74,22 @@ export default function App() {
   const skills = useSkills(activeSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   const usage = useUsage(wsTrigger);
+  // US-007: the timeline is the primary surface. Default the session ▾ to the
+  // most-recent active session once sessions load; "All sessions" (and any
+  // explicit pick) is sticky thereafter.
+  useEffect(() => {
+    if (selectedId === null && activeSession) setSelectedId(activeSession.id);
+  }, [selectedId, activeSession]);
+  const isAll = selectedId === ALL_SESSIONS;
+  // Transcript is per-session; "All sessions" only has an Activity view.
+  const effectiveTab = isAll ? "activity" : detailTab;
   // Timeline (US-011): events for the selected session — history + live WS.
   const timelineEvents = useSessionEvents(selectedId, lastEvent);
   // Transcript (US-014): fetched lazily, only while its tab is open.
-  const transcript = useTranscript(selectedId, detailTab === "transcript");
+  const transcript = useTranscript(
+    isAll ? null : selectedId,
+    effectiveTab === "transcript",
+  );
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
@@ -114,9 +126,11 @@ export default function App() {
       .catch(() => {});
   };
 
-  // US-012: the timeline decides for whichever session it's showing.
+  // US-012: the timeline decides for whichever session it's showing. In the
+  // "All sessions" view there is no single target — the PendingApprovals panel
+  // handles cross-session decisions with the correct session id.
   const decidePermission = (requestId: string | null, choice: "allow" | "deny") => {
-    if (!selectedId) return;
+    if (!selectedId || selectedId === ALL_SESSIONS) return;
     postDecision(selectedId, requestId, choice);
   };
 
@@ -205,60 +219,56 @@ export default function App() {
             />
           </div>
 
-          <SessionGrid
-            sessions={sessions}
-            token={config?.token ?? null}
-            defaultCwd={config?.cwd ?? ""}
-            onRefresh={refresh}
-            selectedId={selectedId}
-            onSelect={(id) =>
-              setSelectedId((cur) => (cur === id ? null : id))
-            }
-          />
+          {/* US-007: timeline-primary Overview — session ▾ + inline lifecycle
+              controls replace the removed per-session card grid. */}
+          <section className="mt-6">
+            <SessionBar
+              sessions={sessions}
+              token={config?.token ?? null}
+              defaultCwd={config?.cwd ?? ""}
+              onRefresh={refresh}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onOpen={() => setDockOpen(true)}
+            />
 
-          {selectedId && (
-            <section className="mt-6">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex rounded-md border border-border bg-card p-0.5 text-xs">
-                    {(["activity", "transcript"] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        onClick={() => setDetailTab(tab)}
-                        className={
-                          "rounded px-2.5 py-1 capitalize " +
-                          (detailTab === tab
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-muted")
-                        }
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="truncate font-mono text-xs text-muted-foreground">
-                    {selectedSession?.title ??
-                      selectedSession?.model ??
-                      selectedId.slice(0, 8)}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-                >
-                  Close
-                </button>
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex rounded-md border border-border bg-card p-0.5 text-xs">
+                {(["activity", "transcript"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setDetailTab(tab)}
+                    disabled={isAll && tab === "transcript"}
+                    className={
+                      "rounded px-2.5 py-1 capitalize disabled:opacity-40 " +
+                      (effectiveTab === tab
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted")
+                    }
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
-              {detailTab === "activity" ? (
-                <ActivityTimeline
-                  events={timelineEvents}
-                  onDecide={decidePermission}
-                />
-              ) : (
-                <TranscriptViewer state={transcript} />
-              )}
-            </section>
-          )}
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {isAll
+                  ? "All sessions"
+                  : (selectedSession?.title ??
+                    selectedSession?.model ??
+                    selectedId?.slice(0, 8) ??
+                    "no session")}
+              </span>
+            </div>
+
+            {effectiveTab === "activity" ? (
+              <ActivityTimeline
+                events={timelineEvents}
+                onDecide={decidePermission}
+              />
+            ) : (
+              <TranscriptViewer state={transcript} />
+            )}
+          </section>
           </>
           )}
         </main>

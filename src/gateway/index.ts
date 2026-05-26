@@ -24,6 +24,7 @@ import {
   decidePermission,
   listSessions,
   listEvents,
+  listAllEvents,
   listPendingPermissions,
   onSessionEvent,
 } from "../session/index.js";
@@ -167,6 +168,12 @@ app.get("/api/claude/sessions", (_req, res) => {
 // updates arrive over /ws as {type:'event'}. Newest activity is appended there.
 app.get("/api/claude/sessions/:id/events", (req, res) => {
   res.json(listEvents(req.params.id));
+});
+
+// The timeline's "All sessions" view (US-007): recent events across every
+// session, oldest-first. Read-only; live updates arrive over /ws.
+app.get("/api/claude/events", (_req, res) => {
+  res.json(listAllEvents());
 });
 
 // A session's full conversation transcript (US-014), read straight from the

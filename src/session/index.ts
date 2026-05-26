@@ -189,6 +189,25 @@ export function listEvents(sessionId: string, limit = 1000): EventRow[] {
     .all(sessionId, limit) as EventRow[];
 }
 
+/**
+ * Recent events across every session, oldest-first, for the timeline's
+ * "All sessions" view (US-007). Takes the most-recent `limit` rows (newest
+ * activity) then re-orders them ascending so the timeline reads top-to-bottom
+ * like a single-session view.
+ */
+export function listAllEvents(limit = 1000): EventRow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, session_id, parent_tool_use_id, hook_event_name,
+              stream_type, tool_name, payload, ts
+         FROM event
+         ORDER BY ts DESC, id DESC
+         LIMIT ?`,
+    )
+    .all(limit) as EventRow[];
+  return rows.reverse();
+}
+
 /** Insert one normalized stream-json event for a known session_id (US-007). */
 function persistEvent(sessionId: string, ev: NormalizedEvent): number {
   const ts = Date.now();

@@ -13,17 +13,25 @@ export interface TimelineEvent {
   ts: number;
 }
 
+/** The session ▾ sentinel that selects every session's events (US-007). */
+export const ALL_SESSIONS = "all";
+
 /**
  * Loads the selected session's event history from
  * GET /api/claude/sessions/:id/events (US-011) and appends live events that
  * arrive over the app WS, so the timeline stays current without its own socket.
  * Returns events oldest-first. Resets when the selected session changes.
+ *
+ * When `sessionId` is the ALL_SESSIONS sentinel (US-007), it loads the
+ * cross-session history from GET /api/claude/events and live-appends every
+ * event regardless of which session it belongs to.
  */
 export function useSessionEvents(
   sessionId: string | null,
   lastEvent: (GatewayEvent & { seq: number }) | null,
 ): TimelineEvent[] {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const all = sessionId === ALL_SESSIONS;
 
   // Initial history load (and reset) when the selected session changes.
   useEffect(() => {
@@ -31,8 +39,11 @@ export function useSessionEvents(
       setEvents([]);
       return;
     }
+    const url = all
+      ? "/api/claude/events"
+      : `/api/claude/sessions/${encodeURIComponent(sessionId)}/events`;
     let cancelled = false;
-    fetch(`/api/claude/sessions/${encodeURIComponent(sessionId)}/events`)
+    fetch(url)
       .then((r) => r.json())
       .then((rows) => {
         if (!cancelled) setEvents(Array.isArray(rows) ? rows : []);
@@ -41,12 +52,14 @@ export function useSessionEvents(
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, all]);
 
-  // Live append: push the latest WS event when it belongs to this session and
-  // hasn't already been loaded (de-dupe by id, so history + live never double).
+  // Live append: push the latest WS event when it belongs to this session (or
+  // always, in All-sessions view) and hasn't already been loaded (de-dupe by
+  // id, so history + live never double).
   useEffect(() => {
-    if (!sessionId || !lastEvent || lastEvent.session_id !== sessionId) return;
+    if (!sessionId || !lastEvent) return;
+    if (!all && lastEvent.session_id !== sessionId) return;
     setEvents((prev) => {
       if (prev.some((e) => e.id === lastEvent.id)) return prev;
       const { seq: _seq, ...row } = lastEvent;
@@ -54,7 +67,7 @@ export function useSessionEvents(
     });
     // Keyed on seq so each distinct WS event fires exactly once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, lastEvent?.seq]);
+  }, [sessionId, all, lastEvent?.seq]);
 
   return events;
 }
