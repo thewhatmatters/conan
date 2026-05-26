@@ -1,7 +1,7 @@
 {
-  "project": "Conan \u2014 Claude Code dashboard (v4: QA polish + live in-cwd app preview)",
+  "project": "Conan — Claude Code dashboard (v4: QA polish + live in-cwd app preview)",
   "branchName": "loop/conan-v4",
-  "description": "v4 folds the six items QA logged against the shipped v3 build (docs/v4-backlog.md) into a fresh build loop: finish the shadcn migration v3 started, make the Context widget and permission flow honest, relocate Pulse, and add the marquee feature \u2014 run the project in Conan's current cwd and see it rendered live via a same-origin reverse proxy (Replit-style, not WebContainers). Decisions + re-verified anchors: docs/v4-research.md. Stories are dependency-ordered (shared components -> consumers; backend -> proxy -> UI) and sequenced to avoid migrate-then-rewrite churn.",
+  "description": "v4 folds the six items QA logged against the shipped v3 build (docs/v4-backlog.md) into a fresh build loop: finish the shadcn migration v3 started, make the Context widget and permission flow honest, relocate Pulse, and add the marquee feature — run the project in Conan's current cwd and see it rendered live via a same-origin reverse proxy (Replit-style, not WebContainers). Decisions + re-verified anchors: docs/v4-research.md. Stories are dependency-ordered (shared components -> consumers; backend -> proxy -> UI) and sequenced to avoid migrate-then-rewrite churn.",
   "generatedAt": "2026-05-26",
   "sourcePrd": "prd-claude-code-dashboard.md (## v4 section) + docs/v4-backlog.md + docs/v4-research.md",
   "userStories": [
@@ -10,8 +10,8 @@
       "title": "Extract shared UI patterns into reusable components (SortToggle, status dot, two-tier card, time-ago, scope badge)",
       "description": "As a developer, I need v3's repeated bespoke patterns lifted into shared components so the rest of v4 (transcript sort, shadcn migration, widgets) consumes one implementation instead of copies.",
       "acceptanceCriteria": [
-        "Extract SortToggle (currently a private function in ActivityTimeline.tsx:319-339, with SortDir type at :313) into a shared component module under ui/src/components/ (e.g. shared/SortToggle.tsx) and re-wire ActivityTimeline to import it \u2014 no behavior change to the timeline",
-        "Componentize the remaining repeated patterns named in v4-backlog item 2: a status dot, the two-tier card shell (bg-muted shell + bg-card inner), a time-ago label, and a scope badge \u2014 each as a small shared component using semantic tokens only",
+        "Extract SortToggle (currently a private function in ActivityTimeline.tsx:319-339, with SortDir type at :313) into a shared component module under ui/src/components/ (e.g. shared/SortToggle.tsx) and re-wire ActivityTimeline to import it — no behavior change to the timeline",
+        "Componentize the remaining repeated patterns named in v4-backlog item 2: a status dot, the two-tier card shell (bg-muted shell + bg-card inner), a time-ago label, and a scope badge — each as a small shared component using semantic tokens only",
         "Replace at least the existing inline duplicates of these patterns with the shared components so adoption is real (not just new files sitting unused)",
         "No visual regression in ActivityTimeline or any component touched",
         "Typecheck passes",
@@ -28,7 +28,7 @@
       "description": "As a user, I want the Transcript tab to have the same sort control the Activity timeline has, so I can flip newest/oldest-first instead of being stuck in fixed order.",
       "acceptanceCriteria": [
         "TranscriptViewer.tsx (renders state.messages in fixed order at ~:33, no sort UI) gains a sortDir state defaulting to newest-first (desc)",
-        "Use the shared SortToggle extracted in US-001 \u2014 do not re-implement it",
+        "Use the shared SortToggle extracted in US-001 — do not re-implement it",
         "Display order reverses with the toggle, with a stable tie-break on ts then uuid",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -52,7 +52,7 @@
         "Verify in browser using automate-browser skill: open the Term dropdown, switch Terminal/Tasks tabs, and drag-resize the dock"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 2 (Dock slice). dropdown-menu + tabs are each imported only once today (shallow adoption). Do NOT edit src/gateway/* or src/terminal/* from an in-dock session (footgun #1). Suggested skills: shadcn, automate-browser."
     },
     {
@@ -63,7 +63,7 @@
         "Move PulseChart from its standalone Overview section (App.tsx:316, below PendingApprovals) into the right-side Dock as a pinned strip at the BOTTOM of the dock column (its own strip, not a third tab)",
         "Remove the tokens<->cost toggle (PulseChart.tsx:142-158); render tokens/activity only",
         "Pulse stays GLOBAL across all sessions (keep consuming the global src/pulse payload; do not scope to the active session)",
-        "Do not break src/pulse payload consumers \u2014 stop rendering the cost field, leave the payload shape intact",
+        "Do not break src/pulse payload consumers — stop rendering the cost field, leave the payload shape intact",
         "Coexists with the Terminal|Tasks tabs + drag-resize without layout breakage",
         "Typecheck passes",
         "cd ui && npm run build is clean",
@@ -78,7 +78,7 @@
       "title": "Migrate SessionBar + Sidebar controls to shadcn primitives",
       "description": "As a developer, I need the remaining bespoke navigation/selection controls on shadcn primitives to finish the migration v3 started (PendingApprovals is handled in US-008's rewrite).",
       "acceptanceCriteria": [
-        "Replace the bespoke session picker in SessionBar.tsx (raw buttons ~:221/272/279) with ui/select or ui/dropdown-menu, preserving the session \u25be selection behavior",
+        "Replace the bespoke session picker in SessionBar.tsx (raw buttons ~:221/272/279) with ui/select or ui/dropdown-menu, preserving the session ▾ selection behavior",
         "Replace Sidebar.tsx nav/toggle raw buttons (~:48/68) with ui/button",
         "No visual regression; semantic tokens only",
         "Update the CLAUDE.md/memory note so it reflects 'shadcn adopted, migration completed in v4' (not 'in progress')",
@@ -88,14 +88,14 @@
       ],
       "priority": 5,
       "passes": false,
-      "notes": "v4-backlog item 2 (SessionBar+Sidebar slice). PendingApprovals intentionally excluded \u2014 it is rewritten in US-008. Suggested skills: shadcn, automate-browser."
+      "notes": "v4-backlog item 2 (SessionBar+Sidebar slice). PendingApprovals intentionally excluded — it is rewritten in US-008. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-006",
       "title": "Fix Context widget: bind to the live pty-correlated session + render total %",
       "description": "As a user, I want the Context widget to show real usage for the session I'm actually running, instead of reading 'no usage yet' because it grabbed the wrong row out of ~155 sessions.",
       "acceptanceCriteria": [
-        "Replace the binding at App.tsx:87-88 (sessions.find(s=>s.status==='running') ?? sessions[0]) so the Context widget targets the actually-live, pty-correlated session \u2014 use src/terminal/correlate.ts / the terminal_session.session_id link rather than the first 'running' row",
+        "Replace the binding at App.tsx:87-88 (sessions.find(s=>s.status==='running') ?? sessions[0]) so the Context widget targets the actually-live, pty-correlated session — use src/terminal/correlate.ts / the terminal_session.session_id link rather than the first 'running' row",
         "When a transcript usage block exists, the widget renders the total context % (readContextUsage in src/transcript/index.ts:220-255, fallback session.context_tokens) instead of blank",
         "If no live session is correlated, fall back gracefully (don't crash, show an honest empty state)",
         "Confirm against a real running session that the widget no longer reads 'no usage yet' when /context shows usage in the terminal",
@@ -112,7 +112,7 @@
       "title": "Context widget category breakdown via on-disk approximation",
       "description": "As a user, I want the Context widget to show where my context is going (System/Tools/MCP/Memory/Skills/Messages), not just one total, reconstructed from disk since the transcript only carries totals.",
       "acceptanceCriteria": [
-        "Add a backend computation (extend src/widgets/index.ts / a new helper) that approximates per-category context from on-disk sources: memory files (CLAUDE.md + MEMORY.md sizes), skills (SKILL.md sizes), MCP tools (~/.claude.json mcpServers), messages (transcript) \u2014 clearly an approximation Conan owns (option B; do NOT PTY-scrape /context)",
+        "Add a backend computation (extend src/widgets/index.ts / a new helper) that approximates per-category context from on-disk sources: memory files (CLAUDE.md + MEMORY.md sizes), skills (SKILL.md sizes), MCP tools (~/.claude.json mcpServers), messages (transcript) — clearly an approximation Conan owns (option B; do NOT PTY-scrape /context)",
         "Surface the breakdown in the Context widget as a stacked mini-bar or legend alongside the total from US-006",
         "Degrade gracefully when a source is missing (omit that category, don't error)",
         "Typecheck passes",
@@ -126,7 +126,7 @@
     {
       "id": "US-008",
       "title": "Permission honesty floor: surface delivered:false, offer the 3rd option, migrate PendingApprovals to shadcn",
-      "description": "As a user, I want permission approvals from the UI to tell the truth \u2014 show the real options and not falsely report success when the decision went nowhere.",
+      "description": "As a user, I want permission approvals from the UI to tell the truth — show the real options and not falsely report success when the decision went nowhere.",
       "acceptanceCriteria": [
         "POST /api/claude/sessions/:id/permission (src/gateway/index.ts:694-710) and the UI propagate decidePermission's delivered flag; when delivered:false the card is NOT optimistically cleared (PendingApprovals.tsx:29) and shows an honest 'answer in terminal / not deliverable' state",
         "Map permission_suggestions (captured at src/session/parser.ts:232, currently unused) to buttons so the real options render (e.g. Yes / Yes-don't-ask-again / No) instead of hardcoded allow|deny (PendingApprovals.tsx:4,93-104)",
@@ -137,7 +137,7 @@
       ],
       "priority": 8,
       "passes": false,
-      "notes": "v4-backlog item 4 (honesty floor + 3rd option). Driven sessions only still \u2014 interactive driving is US-009. Suggested skills: shadcn, automate-browser."
+      "notes": "v4-backlog item 4 (honesty floor + 3rd option). Driven sessions only still — interactive driving is US-009. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-009",
@@ -154,7 +154,7 @@
       ],
       "priority": 9,
       "passes": false,
-      "notes": "v4-backlog item 4 (the hard part). correlate.ts + terminal_session FK confirmed present. Brittle by nature (TUI driving) \u2014 keep it best-effort with the honest fallback. Beware footgun #1 when testing in-dock. Depends on US-008. Suggested skills: automate-browser."
+      "notes": "v4-backlog item 4 (the hard part). correlate.ts + terminal_session FK confirmed present. Brittle by nature (TUI driving) — keep it best-effort with the honest fallback. Beware footgun #1 when testing in-dock. Depends on US-008. Suggested skills: automate-browser."
     },
     {
       "id": "US-010",
@@ -176,20 +176,20 @@
     {
       "id": "US-011",
       "title": "Preview reverse proxy: /preview/:id mount + framing-header strip + HMR upgrade branch",
-      "description": "As a user, I want the running dev server served same-origin inside Conan so it inherits auth, works under TLS, and frames cleanly \u2014 including hot reload.",
+      "description": "As a user, I want the running dev server served same-origin inside Conan so it inherits auth, works under TLS, and frames cleanly — including hot reload.",
       "acceptanceCriteria": [
         "Add http-proxy-middleware (pin v3) as the one new dep; mount a proxy at /preview/:id -> http://127.0.0.1:<devport> in src/gateway/index.ts (near the static/SPA serving at :740-742)",
         "In the proxy's proxyRes, delete x-frame-options and strip frame-ancestors from CSP so the proxied page frames in an iframe",
-        "Build the proxy with ws:true and add a pathname.startsWith('/preview/') branch in the server.on('upgrade') router (src/gateway/index.ts:825-845) that calls wsProxy.upgrade(req, socket, head) \u2014 placed BEFORE the else socket.destroy() catch-all so it inherits the existing verifyUpgrade auth+Origin gate",
-        "Configure the spawned dev server (from US-010) so Vite HMR dials back through Conan's port: server.hmr.clientPort = Conan port, server.hmr.path under /preview/<id>/, protocol wss under TLS \u2014 injected via flags/env, not by editing the user's vite config",
+        "Build the proxy with ws:true and add a pathname.startsWith('/preview/') branch in the server.on('upgrade') router (src/gateway/index.ts:825-845) that calls wsProxy.upgrade(req, socket, head) — placed BEFORE the else socket.destroy() catch-all so it inherits the existing verifyUpgrade auth+Origin gate",
+        "Configure the spawned dev server (from US-010) so Vite HMR dials back through Conan's port: server.hmr.clientPort = Conan port, server.hmr.path under /preview/<id>/, protocol wss under TLS — injected via flags/env, not by editing the user's vite config",
         "Confirm HMR works through the proxy (edit a file, see it hot-update in the proxied page) and does NOT silently fall back to dialing :5173 directly",
-        "Document the security floor: /preview/ HTTP relies on same-origin + loopback + the Origin-checked WS upgrade (an iframe src can't send x-conan-token) \u2014 note it in docs/ or a code comment",
+        "Document the security floor: /preview/ HTTP relies on same-origin + loopback + the Origin-checked WS upgrade (an iframe src can't send x-conan-token) — note it in docs/ or a code comment",
         "Typecheck passes",
         "Load /preview/:id directly in a browser and confirm the dev page renders with working HMR"
       ],
       "priority": 11,
       "passes": false,
-      "notes": "v4-backlog item 6 (proxy + HMR). The two real gotchas (HMR fallback, framing headers) are solved in docs/v4-research.md. Depends on US-010. Editing src/gateway/* from an in-dock session triggers footgun #1 \u2014 run gateway with npm start (no watch). Suggested skills: websocket, typescript-expert."
+      "notes": "v4-backlog item 6 (proxy + HMR). The two real gotchas (HMR fallback, framing headers) are solved in docs/v4-research.md. Depends on US-010. Editing src/gateway/* from an in-dock session triggers footgun #1 — run gateway with npm start (no watch). Suggested skills: websocket, typescript-expert."
     },
     {
       "id": "US-012",

@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import TaskChecklist from "./TaskChecklist.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu.tsx";
+
+// Tab-trigger styling tuned to match the dock's flat controls (no pill list,
+// active = bg-muted) rather than shadcn's default card-with-shadow look.
+const TAB_TRIGGER =
+  "rounded-md px-2.5 py-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 interface DockProps {
   token: string | null;
@@ -18,8 +32,8 @@ interface DockProps {
   hidden?: boolean;
 }
 
-const MIN_H = 140;
-const MAX_H = 1000;
+const MIN_W = 320;
+const MAX_W = 900;
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
 
 /** A single terminal tab — its `tid` keys an independent pty on the backend. */
@@ -56,8 +70,8 @@ function persistTerms(terms: TermTab[]): void {
 }
 
 /**
- * The bottom dock (US-038): a draggable-height panel stacked under the activity
- * log, with a tabbed surface. It holds N terminal tabs (US-026) plus a Tasks tab. Every terminal stays mounted at all
+ * The right-hand dock: a draggable-width panel with a tabbed surface. It holds N
+ * terminal tabs (US-026) plus a Tasks tab. Every terminal stays mounted at all
  * times (stacked, only the active one on top) so switching tabs never tears down
  * a pty and scrollback is preserved; the Tasks checklist overlays them. Each
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
@@ -69,13 +83,16 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
     kind: "term",
     tid: terms[0]!.tid, // loadTerms() always returns ≥1 tab
   }));
-  // US-038: the dock is a bottom panel under the activity log; its top-edge
-  // handle resizes the dock's height (the activity-log / terminal boundary),
-  // mirroring the old left-edge width handle. Persisted like the width was.
-  const [height, setHeight] = useState<number>(
-    () => Number(localStorage.getItem("conan-dock-h")) || 360,
+  // Remember the last terminal that was on top so switching back from Tasks via
+  // the tab returns to it (rather than always snapping to the first terminal).
+  const [lastTermTid, setLastTermTid] = useState<string>(terms[0]!.tid);
+  useEffect(() => {
+    if (active.kind === "term") setLastTermTid(active.tid);
+  }, [active]);
+  const [width, setWidth] = useState<number>(
+    () => Number(localStorage.getItem("conan-dock-w")) || 460,
   );
-  const heightRef = useRef(height);
+  const widthRef = useRef(width);
   // Per-tab "destroy on unmount" flags. Set just before removing a tab so the
   // Terminal's cleanup sends the backend close frame (US-026 criterion 3).
   const closeFlags = useRef(new Map<string, { current: boolean }>());
@@ -136,19 +153,15 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const onMove = (ev: MouseEvent) => {
-      // The dock sits flush against the viewport bottom, so its height is the
-      // distance from the cursor to the bottom edge. Clamp to [MIN_H, MAX_H]
-      // and never taller than the viewport leaves room for the log above.
-      const max = Math.min(MAX_H, window.innerHeight - 160);
-      const h = Math.min(max, Math.max(MIN_H, window.innerHeight - ev.clientY));
-      heightRef.current = h;
-      setHeight(h);
+      const w = Math.min(MAX_W, Math.max(MIN_W, window.innerWidth - ev.clientX));
+      widthRef.current = w;
+      setWidth(w);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
-      localStorage.setItem("conan-dock-h", String(heightRef.current));
+      localStorage.setItem("conan-dock-w", String(widthRef.current));
     };
     document.body.style.userSelect = "none";
     window.addEventListener("mousemove", onMove);
@@ -157,41 +170,50 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
 
   return (
     <aside
-      style={{ height, display: hidden ? "none" : undefined }}
-      className="relative flex shrink-0 flex-col border-t border-border bg-card"
+      style={{ width, display: hidden ? "none" : undefined }}
+      className="relative flex shrink-0 flex-col border-l border-border bg-card"
     >
-      {/* drag handle on the top edge — resizes the activity-log / terminal split */}
+      {/* drag handle on the left edge */}
       <div
         onMouseDown={startResize}
         title="Drag to resize"
-        className="absolute left-0 top-0 z-20 h-1.5 w-full -translate-y-1/2 cursor-row-resize hover:bg-primary/40"
+        className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
       />
 
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <TermDropdown
-          terms={terms}
-          active={active}
-          onSelect={(tid) => setActive({ kind: "term", tid })}
-          onClose={closeTerm}
-          onNew={addTerm}
-        />
+      <Tabs
+        value={active.kind}
+        onValueChange={(v) =>
+          setActive(
+            v === "tasks"
+              ? { kind: "tasks" }
+              : { kind: "term", tid: lastTermTid },
+          )
+        }
+      >
+        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+          <TabsList className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0">
+            <TermDropdown
+              terms={terms}
+              active={active}
+              lastTermTid={lastTermTid}
+              onSelect={(tid) => setActive({ kind: "term", tid })}
+              onClose={closeTerm}
+              onNew={addTerm}
+            />
 
-        {showTasks && (
-          <div className="ml-auto">
-            <TabButton
-              active={active.kind === "tasks"}
-              onClick={() => setActive({ kind: "tasks" })}
-            >
-              Tasks
-              {tasks?.exists && (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  {tasks.done}/{tasks.total}
-                </span>
-              )}
-            </TabButton>
-          </div>
-        )}
-      </div>
+            {showTasks && (
+              <TabsTrigger value="tasks" className={TAB_TRIGGER + " ml-auto"}>
+                Tasks
+                {tasks?.exists && (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {tasks.done}/{tasks.total}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
+      </Tabs>
 
       <div className="relative min-h-0 flex-1">
         {/* Every terminal stays mounted and sized (stacked, absolute inset-0) so
@@ -243,139 +265,84 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
 function TermDropdown({
   terms,
   active,
+  lastTermTid,
   onSelect,
   onClose,
   onNew,
 }: {
   terms: TermTab[];
   active: Active;
+  lastTermTid: string;
   onSelect: (tid: string) => void;
   onClose: (tid: string) => void;
   onNew: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   // Per-tab Claude session info, polled so a mid-session /rename relabels live.
   const byTid = useTerminals();
 
-  // Close on outside click / Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const activeIdx =
-    active.kind === "term"
-      ? terms.findIndex((t) => t.tid === active.tid)
-      : -1;
+  // Trigger label tracks whichever terminal is (or was last) on top, so it stays
+  // informative even while the Tasks surface is active.
+  const labelTid = active.kind === "term" ? active.tid : lastTermTid;
+  const labelIdx = terms.findIndex((t) => t.tid === labelTid);
   const label =
-    activeIdx >= 0
-      ? terminalLabel(byTid.get(terms[activeIdx]!.tid), activeIdx)
-      : "Term";
+    labelIdx >= 0 ? terminalLabel(byTid.get(labelTid), labelIdx) : "Term";
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        title="Terminals"
-        className={
-          "flex max-w-44 items-center gap-1 rounded-md px-2.5 py-1 text-xs " +
-          (active.kind === "term"
-            ? "bg-muted font-medium text-foreground"
-            : "text-muted-foreground hover:bg-muted/60")
-        }
-      >
-        <span className="truncate">{label}</span>
-        <span className="shrink-0 text-[10px] text-muted-foreground">▾</span>
-      </button>
+    <DropdownMenu>
+      {/* The dropdown's trigger doubles as the "term" tab: clicking it selects
+          the terminal surface and opens the picker. */}
+      <DropdownMenuTrigger asChild>
+        <TabsTrigger
+          value="term"
+          title="Terminals"
+          className={TAB_TRIGGER + " max-w-44 gap-1"}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+        </TabsTrigger>
+      </DropdownMenuTrigger>
 
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 min-w-44 rounded-md border border-border bg-card py-1 shadow-md">
-          {terms.map((t, i) => {
-            const on = active.kind === "term" && active.tid === t.tid;
-            return (
-              <div
-                key={t.tid}
+      <DropdownMenuContent align="start" className="min-w-44">
+        {terms.map((t, i) => {
+          const on = active.kind === "term" && active.tid === t.tid;
+          return (
+            <DropdownMenuItem
+              key={t.tid}
+              onSelect={() => onSelect(t.tid)}
+              className="group text-xs"
+            >
+              <span
                 className={
-                  "group flex items-center text-xs " +
-                  (on ? "bg-muted text-foreground" : "text-muted-foreground")
+                  "size-1.5 rounded-full " +
+                  (on ? "bg-primary" : "bg-transparent")
                 }
+              />
+              <span className="flex-1 truncate">
+                {terminalLabel(byTid.get(t.tid), i)}
+              </span>
+              <button
+                onClick={(e) => {
+                  // Don't let the close button bubble into the item's select.
+                  e.stopPropagation();
+                  onClose(t.tid);
+                }}
+                title="Close terminal"
+                className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
               >
-                <button
-                  onClick={() => {
-                    onSelect(t.tid);
-                    setOpen(false);
-                  }}
-                  className="flex flex-1 items-center gap-2 py-1.5 pl-3 pr-1 text-left hover:text-foreground"
-                >
-                  <span
-                    className={
-                      "size-1.5 rounded-full " +
-                      (on ? "bg-primary" : "bg-transparent")
-                    }
-                  />
-                  <span className="truncate">
-                    {terminalLabel(byTid.get(t.tid), i)}
-                  </span>
-                </button>
-                <button
-                  onClick={() => onClose(t.tid)}
-                  title="Close terminal"
-                  className="mr-2 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-            );
-          })}
-          <div className="my-1 border-t border-border" />
-          <button
-            onClick={() => {
-              onNew();
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          >
-            <span className="text-sm leading-none">+</span> New terminal
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        "flex items-center rounded-md px-2.5 py-1 text-xs " +
-        (active
-          ? "bg-muted font-medium text-foreground"
-          : "text-muted-foreground hover:bg-muted/60")
-      }
-    >
-      {children}
-    </button>
+                <CloseIcon />
+              </button>
+            </DropdownMenuItem>
+          );
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={onNew}
+          className="text-xs text-muted-foreground"
+        >
+          <span className="text-sm leading-none">+</span> New terminal
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
