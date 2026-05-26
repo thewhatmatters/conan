@@ -242,7 +242,7 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Feeds the Skills page (US-028). v3-backlog item 21."
     },
     {

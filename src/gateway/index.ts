@@ -9,7 +9,7 @@ import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { resolveTlsConfig, assertRemoteSafe } from "./tls.js";
 import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
-import { readSkills } from "../skills/index.js";
+import { readSkills, listSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
 import { readSubagents } from "../subagents/index.js";
 import { pulseSeries } from "../pulse/index.js";
@@ -266,6 +266,17 @@ app.get("/api/claude/skills", (req, res) => {
   const sessionId =
     typeof req.query.session_id === "string" ? req.query.session_id : undefined;
   res.json(readSkills(sessionId));
+});
+
+// Skills catalog (US-016): the browsable list behind the Skills page (US-028) —
+// every skill across the user (~/.claude/skills) and active-project
+// (<cwd>/.claude/skills) scopes, each with {name, description, scope} from its
+// SKILL.md frontmatter plus a `loaded` flag derived from a session's
+// system/init slash_commands. Read-only; missing dirs → empty list.
+app.get("/api/claude/skills/list", (req, res) => {
+  const sessionId =
+    typeof req.query.session_id === "string" ? req.query.session_id : undefined;
+  res.json(listSkills({ sessionId }));
 });
 
 // Session grid data (US-009): every persisted session, newest activity first.
