@@ -25,6 +25,14 @@ import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
+import {
+  discoverCommands,
+  startPreview,
+  stopPreview,
+  previewStatus,
+  initPreview,
+  closePreview,
+} from "../preview/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
 import { readDoctorStatus, runDoctor } from "../doctor/index.js";
@@ -173,6 +181,35 @@ app.get("/api/cwd/git", async (req, res) => {
       ? req.query.cwd
       : getActiveCwd();
   res.json({ cwd, git: await gitStatus(cwd) });
+});
+
+// Live preview (US-010): run the active cwd's dev server on demand so the
+// project being edited can be previewed inside the dashboard. GET /status
+// reports the discovered candidate dev commands (package.json scripts, in
+// dev → start → preview order) plus the running process's chosen command,
+// bound port, and run state — read-only. POST /start and /stop are token-gated
+// (they spawn/kill a process). The reverse proxy that surfaces the server is
+// US-011; the dock UI is US-012. Lifecycle is decoupled from the pty layer.
+app.get("/api/preview/status", (_req, res) => {
+  res.json({ status: previewStatus(), discovery: discoverCommands() });
+});
+
+app.post("/api/preview/start", async (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = await startPreview({
+    script: typeof b.script === "string" ? b.script : undefined,
+  });
+  if (!result.ok) {
+    res.status(400).json({ error: result.error ?? "could not start preview" });
+    return;
+  }
+  res.json({ ok: true, status: result.status });
+});
+
+app.post("/api/preview/stop", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ ...stopPreview(), status: previewStatus() });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
@@ -837,6 +874,11 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 // so its reconciled status flows to the UI on the next refetch.
 const stopReaper = startReaper();
 
+// Preview manager (US-010): subscribe to active-cwd changes so a running dev
+// server stops when the dashboard switches projects. Decoupled from the pty
+// layer — torn down only on graceful shutdown via closePreview().
+initPreview();
+
 // Live-stream parser-persisted events (US-007) to app clients so headless
 // sessions surface in the timeline (US-011) the same way hook events do. Cost is
 // folded onto the session row by the parser; usage is now framed around plan
@@ -885,6 +927,7 @@ server.listen(PORT, HOST, () => {
 function shutdown(): void {
   stopWatching();
   stopReaper();
+  closePreview();
   closeAllTerminals();
   server.close();
   eventsWss.close();
