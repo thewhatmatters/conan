@@ -294,7 +294,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "Current Dock.tsx renders a tab per terminal (overflows at ~4\u20135). Keep the stacked-mounted pty model + sessionStorage tid persistence. Suggested skills: automate-browser, shadcn."
     },
     {

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Terminal from "./Terminal.tsx";
 import TaskChecklist from "./TaskChecklist.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
@@ -140,43 +140,14 @@ export default function Dock({ token, theme, tasks }: DockProps) {
         className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
       />
 
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5">
-        {terms.map((t, i) => {
-          const on = isTermActive && active.tid === t.tid;
-          return (
-            <div
-              key={t.tid}
-              className={
-                "group flex items-center rounded-md text-xs " +
-                (on
-                  ? "bg-muted font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60")
-              }
-            >
-              <button
-                onClick={() => setActive({ kind: "term", tid: t.tid })}
-                className="py-1 pl-2.5 pr-1"
-                title={`Terminal ${i + 1}`}
-              >
-                Term {i + 1}
-              </button>
-              <button
-                onClick={() => closeTerm(t.tid)}
-                title="Close terminal"
-                className="mr-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-background/60 hover:text-foreground group-hover:opacity-100"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-          );
-        })}
-        <button
-          onClick={addTerm}
-          title="New terminal"
-          className="rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60"
-        >
-          +
-        </button>
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <TermDropdown
+          terms={terms}
+          active={active}
+          onSelect={(tid) => setActive({ kind: "term", tid })}
+          onClose={closeTerm}
+          onNew={addTerm}
+        />
 
         <div className="ml-auto">
           <TabButton
@@ -230,6 +201,121 @@ export default function Dock({ token, theme, tasks }: DockProps) {
         )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * "Term ▾" dropdown (US-018): replaces the horizontal tab strip that overflowed
+ * once several terminals were open. Lists Term 1..N (the active one marked),
+ * each row carrying a close button that kills its pty, plus a "+ New terminal"
+ * action. The terminals themselves stay mounted in the body below — this only
+ * picks which one is on top, so scrollback is preserved.
+ */
+function TermDropdown({
+  terms,
+  active,
+  onSelect,
+  onClose,
+  onNew,
+}: {
+  terms: TermTab[];
+  active: Active;
+  onSelect: (tid: string) => void;
+  onClose: (tid: string) => void;
+  onNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click / Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const activeIdx =
+    active.kind === "term"
+      ? terms.findIndex((t) => t.tid === active.tid)
+      : -1;
+  const label = activeIdx >= 0 ? `Term ${activeIdx + 1}` : "Term";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Terminals"
+        className={
+          "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs " +
+          (active.kind === "term"
+            ? "bg-muted font-medium text-foreground"
+            : "text-muted-foreground hover:bg-muted/60")
+        }
+      >
+        {label}
+        <span className="text-[10px] text-muted-foreground">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 min-w-44 rounded-md border border-border bg-card py-1 shadow-md">
+          {terms.map((t, i) => {
+            const on = active.kind === "term" && active.tid === t.tid;
+            return (
+              <div
+                key={t.tid}
+                className={
+                  "group flex items-center text-xs " +
+                  (on ? "bg-muted text-foreground" : "text-muted-foreground")
+                }
+              >
+                <button
+                  onClick={() => {
+                    onSelect(t.tid);
+                    setOpen(false);
+                  }}
+                  className="flex flex-1 items-center gap-2 py-1.5 pl-3 pr-1 text-left hover:text-foreground"
+                >
+                  <span
+                    className={
+                      "size-1.5 rounded-full " +
+                      (on ? "bg-primary" : "bg-transparent")
+                    }
+                  />
+                  Term {i + 1}
+                </button>
+                <button
+                  onClick={() => onClose(t.tid)}
+                  title="Close terminal"
+                  className="mr-2 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            );
+          })}
+          <div className="my-1 border-t border-border" />
+          <button
+            onClick={() => {
+              onNew();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            <span className="text-sm leading-none">+</span> New terminal
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
