@@ -50,6 +50,39 @@ app.use(express.json({ limit: "2mb" }));
 // Open the database up front so a bad schema fails fast at boot (US-001).
 const db = getDb();
 
+// One-time backfill (US-012): observed sessions never had their model captured,
+// so the Model & idle widget showed "unknown". The model has always been in the
+// forwarded hook payloads — recover it for any session still missing one from
+// its most recent payload that carries a model field. Future events set it at
+// write time in POST /api/claude/events.
+function backfillSessionModels(): void {
+  const sessions = db
+    .prepare("SELECT id FROM session WHERE model IS NULL")
+    .all() as { id: string }[];
+  const latest = db.prepare(
+    `SELECT payload FROM event
+       WHERE session_id = ? AND payload LIKE '%"model"%'
+       ORDER BY ts DESC LIMIT 1`,
+  );
+  const setModel = db.prepare("UPDATE session SET model = ? WHERE id = ?");
+  let filled = 0;
+  for (const { id } of sessions) {
+    const row = latest.get(id) as { payload: string } | undefined;
+    if (!row) continue;
+    try {
+      const p = JSON.parse(row.payload) as Record<string, unknown>;
+      if (typeof p.model === "string" && p.model) {
+        setModel.run(p.model, id);
+        filled++;
+      }
+    } catch {
+      /* malformed payload — skip */
+    }
+  }
+  if (filled > 0) console.log(`[conan] backfilled model for ${filled} session(s)`);
+}
+backfillSessionModels();
+
 app.get("/api/health", (_req, res) => {
   const tables = db
     .prepare(
@@ -106,16 +139,26 @@ app.post("/api/claude/events", (req, res) => {
   const hookEvent = typeof b.hook_event_name === "string" ? b.hook_event_name : null;
   const status = hookEvent && IDLE_EVENTS.has(hookEvent) ? "idle" : "running";
 
+  // Capture the model from the hook payload (SessionStart and most events carry
+  // it, e.g. "claude-opus-4-7[1m]") so observed sessions populate the Model &
+  // idle widget (US-012). COALESCE keeps a known model when a later event omits
+  // it. The model is nested in the forwarded hook payload, not at body top-level.
+  const payload = (b.payload ?? null) as Record<string, unknown> | null;
+  const model =
+    payload && typeof payload.model === "string" ? payload.model : null;
+
   db.prepare(
-    `INSERT INTO session (id, cwd, status, created_at, last_activity)
-       VALUES (@id, @cwd, @status, @now, @now)
+    `INSERT INTO session (id, cwd, model, status, created_at, last_activity)
+       VALUES (@id, @cwd, @model, @status, @now, @now)
      ON CONFLICT(id) DO UPDATE SET
        last_activity = @now,
        status = @status,
-       cwd = COALESCE(excluded.cwd, session.cwd)`,
+       cwd = COALESCE(excluded.cwd, session.cwd),
+       model = COALESCE(excluded.model, session.model)`,
   ).run({
     id: sessionId,
     cwd: typeof b.cwd === "string" ? b.cwd : null,
+    model,
     status,
     now,
   });

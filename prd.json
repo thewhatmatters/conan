@@ -198,7 +198,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Git data already flows via /api/claude/sessions/:id/widgets git field. Suggested skills: automate-browser."
     },
     {
