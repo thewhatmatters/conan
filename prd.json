@@ -275,7 +275,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 1. Suggested skills: shadcn, automate-browser."
     },
     {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { SkillsState } from "../hooks/useSkills.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
@@ -11,6 +12,15 @@ import {
   type WidgetKey,
 } from "../hooks/useWidgetPrefs.ts";
 import StatCard from "./StatCard.tsx";
+import { Button } from "./ui/button.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu.tsx";
 
 interface WidgetsProps {
   sessions: Session[];
@@ -28,13 +38,30 @@ interface WidgetsProps {
   toggle: (key: WidgetKey) => void;
 }
 
+/** The widget row gap (Tailwind `gap-3` = 0.75rem); shared by the slot-width math. */
+const ROW_GAP = "0.75rem";
+
 /**
- * The picker-fronted hero widget area (US-010). A "Widgets ▾" menu chooses which
- * cards show; the grid maxes at five columns so it never grows into an
- * overflowing row. Each enabled widget renders in `WIDGET_KEYS` order. The
- * Plugins, API-retry, and Top-tools widgets were removed; the remaining/new
- * widgets — Context, Active sessions, Skills, Cost, MCP, Model & idle, Git,
- * Usage, Stats — all slot into this one structure.
+ * Per-widget slot span. The viewport fits ~4 single-slot widgets at a time; the
+ * Stats heatmap is wide so it claims two slots. Width is computed off the
+ * container so exactly four single slots fill the visible row, with the rest
+ * reachable by horizontal scroll.
+ */
+const WIDGET_SPAN: Partial<Record<WidgetKey, number>> = { stats: 2 };
+
+/** CSS width for a widget occupying `span` of the 4-up slots (accounting for gaps). */
+function slotWidth(span: number): string {
+  // single slot = (100% - 3 gaps) / 4; a span adds (span-1) inner gaps back.
+  return `calc(${span} * (100% - 3 * ${ROW_GAP}) / 4 + ${span - 1} * ${ROW_GAP})`;
+}
+
+/**
+ * The hero widget area (US-018). A settings cog beside the "Widgets" heading
+ * opens the show/hide picker; enabled widgets render in a single horizontal row
+ * that overflows (≈4 visible at once) and is paged by left/right chevrons. The
+ * chevrons appear/enable only when there's content to scroll to in that
+ * direction. Each enabled widget renders in `WIDGET_KEYS` order; Stats spans two
+ * slots for its heatmap.
  */
 export default function Widgets({
   sessions,
@@ -47,6 +74,37 @@ export default function Widgets({
   enabled,
   toggle,
 }: WidgetsProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const recompute = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    setCanLeft(el.scrollLeft > 1);
+    setCanRight(el.scrollLeft < maxScroll - 1);
+  }, []);
+
+  // Recompute scroll affordances when the enabled set changes or on resize.
+  useLayoutEffect(() => {
+    recompute();
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recompute, enabled]);
+
+  const page = (dir: -1 | 1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Advance by ~one viewport-worth (a little less so context carries over).
+    el.scrollBy({ left: dir * el.clientWidth * 0.85, behavior: "smooth" });
+  };
+
+  const keys = WIDGET_KEYS.filter((key) => enabled.has(key));
+
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -56,35 +114,76 @@ export default function Widgets({
         <WidgetPicker enabled={enabled} toggle={toggle} />
       </div>
 
-      {enabled.size === 0 ? (
+      {keys.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          No widgets shown. Use{" "}
-          <span className="font-medium text-foreground">Widgets ▾</span> to
+          No widgets shown. Use the{" "}
+          <span className="font-medium text-foreground">settings cog</span> to
           surface Context, sessions, MCP, model, git, usage, or stats.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {WIDGET_KEYS.filter((key) => enabled.has(key)).map((key) => (
-            // The Stats heatmap needs the full row; everything else is one cell.
-            <div
-              key={key}
-              className={key === "stats" ? "col-span-2 sm:col-span-3 lg:col-span-5" : undefined}
-            >
-              <WidgetCell
-                k={key}
-                sessions={sessions}
-                activeSession={activeSession}
-                skills={skills}
-                usage={usage}
-                mcp={mcp}
-                stats={stats}
-                data={data}
-              />
-            </div>
-          ))}
+        <div className="relative">
+          {canLeft && (
+            <ChevronButton side="left" onClick={() => page(-1)} />
+          )}
+          <div
+            ref={scrollRef}
+            onScroll={recompute}
+            className="flex gap-3 overflow-x-auto scroll-smooth pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {keys.map((key) => (
+              <div
+                key={key}
+                className="shrink-0"
+                style={{ width: slotWidth(WIDGET_SPAN[key] ?? 1) }}
+              >
+                <WidgetCell
+                  k={key}
+                  sessions={sessions}
+                  activeSession={activeSession}
+                  skills={skills}
+                  usage={usage}
+                  mcp={mcp}
+                  stats={stats}
+                  data={data}
+                />
+              </div>
+            ))}
+          </div>
+          {canRight && (
+            <ChevronButton side="right" onClick={() => page(1)} />
+          )}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * A floating chevron over the widget row's left/right edge. Only mounted when
+ * there's something to scroll to in that direction (US-018). Uses the shadcn
+ * Button (outline) and semantic tokens so it reads in light + dark.
+ */
+function ChevronButton({
+  side,
+  onClick,
+}: {
+  side: "left" | "right";
+  onClick: () => void;
+}) {
+  const Icon = side === "left" ? ChevronLeft : ChevronRight;
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={onClick}
+      aria-label={side === "left" ? "Scroll widgets left" : "Scroll widgets right"}
+      className={
+        "absolute top-1/2 z-10 size-7 -translate-y-1/2 rounded-full shadow-md " +
+        (side === "left" ? "left-0 -translate-x-1/2" : "right-0 translate-x-1/2")
+      }
+    >
+      <Icon className="size-4" />
+    </Button>
   );
 }
 
@@ -130,7 +229,12 @@ function WidgetCell({
   }
 }
 
-/** The "Widgets ▾" dropdown: a checkbox per available widget. */
+/**
+ * The widget show/hide picker (US-018): a settings cog that opens a shadcn
+ * dropdown with one checkbox per available widget. Replaces the v2 "Widgets ▾"
+ * text dropdown. `onSelect`-preventDefault keeps the menu open while toggling
+ * several widgets in a row.
+ */
 function WidgetPicker({
   enabled,
   toggle,
@@ -138,47 +242,29 @@ function WidgetPicker({
   enabled: Set<WidgetKey>;
   toggle: (key: WidgetKey) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Configure widgets"
+        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent"
       >
-        Widgets ▾
-      </button>
-      {open && (
-        <div className="absolute right-0 z-10 mt-1 w-44 rounded-md border border-border bg-card p-1 shadow-md">
-          {WIDGET_KEYS.map((key) => (
-            <label
-              key={key}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-foreground hover:bg-muted"
-            >
-              <input
-                type="checkbox"
-                checked={enabled.has(key)}
-                onChange={() => toggle(key)}
-                className="accent-primary"
-              />
-              {WIDGET_LABELS[key]}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+        <Settings2 className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>Show widgets</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {WIDGET_KEYS.map((key) => (
+          <DropdownMenuCheckboxItem
+            key={key}
+            checked={enabled.has(key)}
+            onCheckedChange={() => toggle(key)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            {WIDGET_LABELS[key]}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
