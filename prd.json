@@ -616,7 +616,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 40,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-003. v3-backlog item 5/19. Suggested skills: shadcn, automate-browser."
     },
     {

@@ -1,4 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronsUpDown, CornerLeftUp, Folder, FolderInput } from "lucide-react";
+
+import { Button, buttonVariants } from "./ui/button.tsx";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "./ui/command.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 
 interface DirEntry {
   name: string;
@@ -22,19 +34,22 @@ interface CwdPickerProps {
 }
 
 /**
- * Toolbar directory picker (US-019). The cwd label opens a browser of the local
- * filesystem (subdirectories of the current path, plus ".." to go up). Picking
+ * Toolbar directory picker (US-040, backed by US-003). The cwd label is a shadcn
+ * Popover trigger that opens a Command-driven browser of the local filesystem
+ * (subdirectories of the current path, plus ".." to go up). The Command input
+ * doubles as a filter over the listed folders and — when it looks like a path
+ * (starts with "/" or "~") — a "Go to" target for jumping anywhere directly.
  * "Use this folder" PUTs the active cwd to the gateway, which re-scopes new
- * terminals + the Tasks reader; already-running ptys keep their own cwd. A typed
- * path can be navigated to directly. Invalid/inaccessible paths surface the
- * gateway's error inline.
+ * terminals, the Tasks reader (so the Tasks tab appears/disappears, US-039), and
+ * the cwd-scoped widgets; already-running ptys keep their own cwd. The choice
+ * persists across reloads (server-side). Invalid/inaccessible paths surface the
+ * gateway's error inline. shadcn primitives + semantic tokens → light + dark.
  */
 export default function CwdPicker({ cwd, token, onChange }: CwdPickerProps) {
   const [open, setOpen] = useState(false);
   const [listing, setListing] = useState<DirListing | null>(null);
-  const [typed, setTyped] = useState(cwd);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
 
   const headers = (): Record<string, string> =>
     token ? { "x-conan-token": token } : {};
@@ -46,33 +61,16 @@ export default function CwdPicker({ cwd, token, onChange }: CwdPickerProps) {
       .then((r) => r.json())
       .then((l: DirListing) => {
         setListing(l);
-        setTyped(l.path);
+        setQuery("");
         if (l.error) setError(l.error);
       })
       .catch(() => setError("failed to list directory"));
   };
 
-  // Open the browser at the current cwd each time the dropdown opens.
+  // Open the browser at the current cwd each time the popover opens.
   useEffect(() => {
     if (open) browse(cwd);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // Close on outside click / Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
   }, [open]);
 
   const select = (path: string) => {
@@ -98,100 +96,95 @@ export default function CwdPicker({ cwd, token, onChange }: CwdPickerProps) {
   };
 
   const browsePath = listing?.path ?? cwd;
+  // A query that looks like a filesystem path becomes a "Go to" target rather
+  // than only a name filter, so the user can jump anywhere directly.
+  const looksLikePath = query.startsWith("/") || query.startsWith("~");
 
   return (
-    <div ref={ref} className="relative min-w-0">
-      <button
-        onClick={() => setOpen((v) => !v)}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
         title={`${cwd} — click to change working directory`}
-        className="flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 font-mono text-xs text-muted-foreground hover:bg-muted"
+        className={buttonVariants({
+          variant: "outline",
+          size: "sm",
+          className:
+            "h-7 min-w-0 max-w-[42vw] gap-1.5 bg-muted/50 px-2 font-mono text-xs font-normal text-muted-foreground",
+        })}
       >
-        <FolderIcon />
+        <Folder />
         <span className="truncate">{prettyPath(cwd)}</span>
-        <span className="text-[10px]">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full z-40 mt-1 w-96 max-w-[80vw] rounded-md border border-border bg-card p-2 shadow-md">
-          {/* Typed path: Enter navigates the browser there. */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              browse(typed);
-            }}
-            className="mb-2 flex items-center gap-1.5"
-          >
-            <input
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              spellCheck={false}
-              placeholder="/path/to/project"
-              className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 font-mono text-xs text-foreground outline-none focus:border-primary"
-            />
-            <button
-              type="submit"
-              className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-            >
-              Go
-            </button>
-          </form>
-
-          <div className="mb-1 truncate font-mono text-[11px] text-muted-foreground">
+        <ChevronsUpDown className="opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 max-w-[80vw] p-0">
+        {/* shouldFilter=false: we filter folder entries ourselves so the same
+            input can also act as a free-form path to "Go to". */}
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Filter folders, or type a /path…"
+          />
+          <div className="truncate border-b border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
             {browsePath}
           </div>
-
           {error && (
-            <div className="mb-1 rounded bg-red-500/10 px-2 py-1 text-[11px] text-red-500">
+            <div className="border-b border-border bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
               {error}
             </div>
           )}
-
-          <div className="max-h-56 overflow-auto rounded border border-border">
-            {listing?.parent && (
-              <button
-                onClick={() => browse(listing.parent!)}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
-              >
-                <span className="font-mono">..</span>
-                <span className="text-[10px]">(parent)</span>
-              </button>
-            )}
-            {listing?.entries.map((d) => (
-              <button
-                key={d.path}
-                onClick={() => browse(d.path)}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted"
-              >
-                <FolderIcon />
-                <span className="truncate">{d.name}</span>
-              </button>
-            ))}
-            {listing && listing.entries.length === 0 && !listing.parent && (
-              <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                no subdirectories
-              </div>
-            )}
-            {listing && listing.entries.length === 0 && listing.parent && (
-              <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                no subdirectories here
-              </div>
-            )}
-          </div>
-
-          <div className="mt-2 flex items-center justify-between gap-2">
+          <CommandList className="max-h-56">
+            <CommandEmpty>No matching folders.</CommandEmpty>
+            <CommandGroup>
+              {looksLikePath && query.trim() && (
+                <CommandItem
+                  value={`__goto__${query}`}
+                  onSelect={() => browse(query.trim())}
+                >
+                  <FolderInput />
+                  <span className="truncate">Go to {query.trim()}</span>
+                </CommandItem>
+              )}
+              {listing?.parent && (
+                <CommandItem
+                  value="__parent__"
+                  onSelect={() => browse(listing.parent!)}
+                >
+                  <CornerLeftUp />
+                  <span className="font-mono">..</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    parent
+                  </span>
+                </CommandItem>
+              )}
+              {(listing?.entries ?? [])
+                .filter((d) =>
+                  looksLikePath
+                    ? true
+                    : d.name.toLowerCase().includes(query.toLowerCase()),
+                )
+                .map((d) => (
+                  <CommandItem
+                    key={d.path}
+                    value={d.path}
+                    onSelect={() => browse(d.path)}
+                  >
+                    <Folder />
+                    <span className="truncate">{d.name}</span>
+                  </CommandItem>
+                ))}
+            </CommandGroup>
+          </CommandList>
+          <div className="flex items-center justify-between gap-2 border-t border-border p-2">
             <span className="truncate text-[10px] text-muted-foreground">
               New terminals + Tasks follow this; open ptys keep theirs.
             </span>
-            <button
-              onClick={() => select(browsePath)}
-              className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
-            >
+            <Button size="sm" onClick={() => select(browsePath)}>
               Use this folder
-            </button>
+            </Button>
           </div>
-        </div>
-      )}
-    </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -203,23 +196,4 @@ function prettyPath(p: string): string {
     if (rest.length > 1) return "~/" + rest.slice(1).join("/");
   }
   return p;
-}
-
-function FolderIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-    </svg>
-  );
 }
