@@ -21,6 +21,7 @@ import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
 import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
+import { readHooksCoverage } from "../hooks-coverage/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -425,6 +426,16 @@ app.get("/api/claude/checkpoints/:sessionId/content", (req, res) => {
     return;
   }
   res.json(snap);
+});
+
+// Hooks-coverage (US-009): the full known Claude Code hook-event set (from the
+// bundled canonical schema), each marked consumed-by-Conan and wired/unwired per
+// scope (user ~/.claude/settings.json + the active project's .claude/settings.json).
+// Surfaces the events Conan doesn't consume yet (SubagentStart, PermissionRequest,
+// …). Read-only and access-modeled like the other GET routes; safe empty-ish
+// shape when schema/settings are absent.
+app.get("/api/claude/hooks-coverage", (_req, res) => {
+  res.json(readHooksCoverage());
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to

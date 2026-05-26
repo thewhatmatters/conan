@@ -144,7 +144,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Conan wires 9 of ~16 (src/settings KNOWN_HOOK_EVENTS). v3-backlog item 14 (Tier1 #3)."
     },
     {

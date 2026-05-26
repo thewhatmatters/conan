@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { PACKAGE_ROOT, HOME } from "../paths.js";
 
 /** The Claude Code hook events Conan listens for (mirrors conan-hooks.example.json). */
-const KNOWN_HOOK_EVENTS = [
+export const KNOWN_HOOK_EVENTS = [
   "SessionStart",
   "SessionEnd",
   "UserPromptSubmit",
