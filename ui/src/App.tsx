@@ -26,6 +26,7 @@ import Sidebar from "./components/Sidebar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
 import AgentsView from "./components/AgentsView.tsx";
 import SkillsView from "./components/SkillsView.tsx";
+import CheckpointsView from "./components/CheckpointsView.tsx";
 import WhatsNewView from "./components/WhatsNewView.tsx";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
@@ -247,6 +248,10 @@ export default function App() {
                 cwd={config?.cwd ?? null}
                 trigger={wsTrigger}
               />
+            </div>
+          ) : route === "checkpoints" ? (
+            <div className="pt-6">
+              <CheckpointsView trigger={wsTrigger} />
             </div>
           ) : route === "whatsnew" ? (
             <div className="pt-6">

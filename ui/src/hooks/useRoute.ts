@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type Route = "overview" | "agents" | "skills" | "whatsnew" | "settings";
+export type Route =
+  | "overview"
+  | "agents"
+  | "skills"
+  | "checkpoints"
+  | "whatsnew"
+  | "settings";
 
 /** Map a URL pathname to one of our routes. */
 function routeFor(pathname: string): Route {
   const p = pathname.replace(/\/+$/, "");
   if (p === "/agents") return "agents";
   if (p === "/skills") return "skills";
+  if (p === "/checkpoints") return "checkpoints";
   if (p === "/whats-new") return "whatsnew";
   if (p === "/settings") return "settings";
   return "overview";
@@ -19,6 +26,8 @@ function pathFor(route: Route): string {
       return "/agents";
     case "skills":
       return "/skills";
+    case "checkpoints":
+      return "/checkpoints";
     case "whatsnew":
       return "/whats-new";
     case "settings":
