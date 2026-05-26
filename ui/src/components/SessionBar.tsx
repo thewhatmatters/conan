@@ -310,6 +310,10 @@ function NewSessionForm({
   // Worktree isolation (US-043): run this session in a fresh git worktree.
   const [worktree, setWorktree] = useState(false);
   const [worktreeRef, setWorktreeRef] = useState("");
+  // Remote-control / Chrome driven sessions (US-047).
+  const [remoteControl, setRemoteControl] = useState(false);
+  const [remoteControlName, setRemoteControlName] = useState("");
+  const [chrome, setChrome] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -330,6 +334,9 @@ function NewSessionForm({
         body.worktree = true;
         if (worktreeRef.trim()) body.worktree_ref = worktreeRef.trim();
       }
+      // US-047: a named remote-control session, or just the toggle; and --chrome.
+      if (remoteControl) body.remote_control = remoteControlName.trim() || true;
+      if (chrome) body.chrome = true;
       const res = await fetch("/api/claude/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-conan-token": token },
@@ -393,6 +400,38 @@ function NewSessionForm({
             placeholder="default: HEAD — e.g. main, a sha, or a tag"
             className="w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground outline-none focus:border-primary disabled:opacity-40"
           />
+        </Field>
+        {/* Remote-control / Chrome driven sessions (US-047). */}
+        <Field label="Remote control">
+          <label className="flex items-center gap-2 py-1 text-xs text-foreground select-none">
+            <input
+              type="checkbox"
+              checked={remoteControl}
+              onChange={(e) => setRemoteControl(e.target.checked)}
+              className="size-3.5 accent-primary"
+            />
+            Enable Remote Control
+          </label>
+        </Field>
+        <Field label="Remote-control name" className="sm:col-span-2">
+          <input
+            value={remoteControlName}
+            onChange={(e) => setRemoteControlName(e.target.value)}
+            disabled={!remoteControl}
+            placeholder="optional — names the remote-control session"
+            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-primary disabled:opacity-40"
+          />
+        </Field>
+        <Field label="Chrome">
+          <label className="flex items-center gap-2 py-1 text-xs text-foreground select-none">
+            <input
+              type="checkbox"
+              checked={chrome}
+              onChange={(e) => setChrome(e.target.checked)}
+              className="size-3.5 accent-primary"
+            />
+            Claude in Chrome
+          </label>
         </Field>
         <div className="flex items-end sm:col-start-3">
           <button

@@ -341,6 +341,36 @@ try {
   // (d) absent schema: the primary FIXED_ID session was driven with no schema.
   const plainSchemaRow = sessionRow(FIXED_ID);
   check("no-schema session has null json_schema/result", plainSchemaRow?.json_schema == null && plainSchemaRow?.structured_result == null && plainSchemaRow?.schema_valid == null);
+
+  // --- US-047: remote-control / Chrome driven sessions ------------------
+  // (a) named remote-control + chrome flow through to argv, session observed.
+  const rcRes = await post("/api/claude/sessions", {
+    cwd: tmp,
+    prompt: "rc-task",
+    remote_control: "my-bridge",
+    chrome: true,
+  });
+  const rcBody = await rcRes.json();
+  check("remote-control start returns 200", rcRes.status === 200);
+  check("remote-control session is observed (id captured)", rcBody.sessionId === "p-rc-task");
+  const rcArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n").pop());
+  check("start passes --remote-control", rcArgv.includes("--remote-control"));
+  check("start passes the remote-control name", rcArgv[rcArgv.indexOf("--remote-control") + 1] === "my-bridge");
+  check("start passes --chrome", rcArgv.includes("--chrome"));
+  check("remote-control session row is tracked", sessionRow("p-rc-task") != null);
+
+  // (b) bare remote_control:true enables it without a name.
+  const rcBareRes = await post("/api/claude/sessions", { cwd: tmp, prompt: "rc-bare", remote_control: true });
+  await rcBareRes.json();
+  const rcBareArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n").pop());
+  check("bare remote-control passes --remote-control", rcBareArgv.includes("--remote-control"));
+  // No name was slotted in: the token after the flag is the positional prompt.
+  check("bare remote-control passes no name", rcBareArgv[rcBareArgv.indexOf("--remote-control") + 1] === "rc-bare");
+  check("bare remote-control omits --chrome", !rcBareArgv.includes("--chrome"));
+
+  // (c) defaults unchanged: a plain start passes neither flag.
+  const plainRcArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n")[0]);
+  check("plain start omits --remote-control and --chrome", !plainRcArgv.includes("--remote-control") && !plainRcArgv.includes("--chrome"));
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

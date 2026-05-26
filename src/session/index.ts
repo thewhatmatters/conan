@@ -36,6 +36,13 @@ export interface StartSessionOptions {
   effort?: string;
   /** Resume a session linked to a GitHub PR, passed via --from-pr <n> (US-042). */
   fromPr?: string;
+  /**
+   * Enable Remote Control via `--remote-control [name]` (US-047). `true` starts
+   * remote control unnamed; a string passes that session name. Unset = off.
+   */
+  remoteControl?: boolean | string;
+  /** Enable the Claude-in-Chrome integration via `--chrome` (US-047). Unset = off. */
+  chrome?: boolean;
   /** Append --bare for a reproducible, minimal-config launch. */
   bare?: boolean;
   /**
@@ -175,6 +182,15 @@ function buildArgs(opts: StartSessionOptions, schemaFile?: string): string[] {
   if (opts.permissionMode) args.push("--permission-mode", opts.permissionMode);
   if (isValidEffort(opts.effort)) args.push("--effort", opts.effort);
   if (opts.fromPr) args.push("--from-pr", opts.fromPr);
+  // US-047: remote-control / Chrome driven sessions. `--remote-control` takes an
+  // optional name; `--chrome` is a bare toggle. Both observed like any session.
+  if (opts.remoteControl) {
+    args.push("--remote-control");
+    if (typeof opts.remoteControl === "string" && opts.remoteControl.trim()) {
+      args.push(opts.remoteControl.trim());
+    }
+  }
+  if (opts.chrome) args.push("--chrome");
   for (const dir of opts.addDirs ?? []) {
     if (dir.trim()) args.push("--add-dir", dir.trim());
   }

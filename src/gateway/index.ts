@@ -643,6 +643,14 @@ app.post("/api/claude/sessions", async (req, res) => {
       permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
       effort: typeof b.effort === "string" ? b.effort : undefined,
       fromPr: typeof b.from_pr === "string" ? b.from_pr : undefined,
+      // US-047: --remote-control [name] (true = unnamed, string = named) and --chrome.
+      remoteControl:
+        b.remote_control === true
+          ? true
+          : typeof b.remote_control === "string"
+            ? b.remote_control
+            : undefined,
+      chrome: b.chrome === true,
       worktree: b.worktree === true,
       worktreeRef: typeof b.worktree_ref === "string" ? b.worktree_ref : undefined,
       addDirs,
