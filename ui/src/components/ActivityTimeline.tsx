@@ -32,9 +32,15 @@ export default function ActivityTimeline({
   const [decided, setDecided] = useState<Record<string, PermissionChoice>>({});
   // Subagent nodes are expanded by default; track the ones the user collapsed.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const entries = events.filter(isTimelineEntry);
+  // US-008: scope the timeline to one activity type. "All" shows everything; the
+  // option list is derived from the types actually present, so it tracks the
+  // live stream and combines with the US-007 session ▾ (events are already
+  // session-scoped here). Filtering is re-derived each render, so new matching
+  // events still stream in while a filter is active.
+  const [typeFilter, setTypeFilter] = useState<string>(ALL_TYPES);
+  const allEntries = events.filter(isTimelineEntry);
 
-  if (entries.length === 0) {
+  if (allEntries.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
         No activity yet for this session. Events appear here live as the agent
@@ -42,6 +48,13 @@ export default function ActivityTimeline({
       </div>
     );
   }
+
+  // Distinct types present (sorted) for the filter chips, plus the filtered set.
+  const types = Array.from(new Set(allEntries.map(categoryOf))).sort();
+  const entries =
+    typeFilter === ALL_TYPES
+      ? allEntries
+      : allEntries.filter((e) => categoryOf(e) === typeFilter);
 
   // A prompt is superseded once a later event cancels/answers its request id.
   const resolvedIds = new Set<string>();
@@ -137,14 +150,92 @@ export default function ActivityTimeline({
   }
 
   return (
-    <ol className="relative space-y-1">
-      {/* the vertical rail */}
-      <span
-        aria-hidden
-        className="absolute left-[15px] top-2 bottom-2 w-px bg-border"
-      />
-      {nodes}
-    </ol>
+    <div className="space-y-3">
+      <TypeFilter types={types} value={typeFilter} onChange={setTypeFilter} />
+      {entries.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          No <span className="font-medium text-foreground">{typeFilter}</span>{" "}
+          events for this session.
+        </div>
+      ) : (
+        <ol className="relative space-y-1">
+          {/* the vertical rail */}
+          <span
+            aria-hidden
+            className="absolute left-[15px] top-2 bottom-2 w-px bg-border"
+          />
+          {nodes}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/** Sentinel filter value: show every activity type (US-008). */
+const ALL_TYPES = "All";
+
+/**
+ * The filter category an event belongs to (US-008): the tool name for
+ * tool-bearing events, otherwise a human label for the lifecycle/stream type.
+ * Kept in sync with describe() so chips read the way rows do.
+ */
+function categoryOf(e: TimelineEvent): string {
+  if (e.tool_name) return e.tool_name;
+  if (e.stream_type === "system/api_retry") return "API retry";
+  if (e.stream_type === "control_request:can_use_tool") return "Permission";
+  switch (e.hook_event_name) {
+    case "UserPromptSubmit":
+      return "Prompt";
+    case "Notification":
+      return "Notification";
+    case "PreCompact":
+      return "Compaction";
+    case "SessionStart":
+    case "SessionEnd":
+    case "Stop":
+      return "Session";
+    case "SubagentStart":
+    case "SubagentStop":
+      return "Subagent";
+    default:
+      return e.hook_event_name ?? "Other";
+  }
+}
+
+/**
+ * Activity-type filter chips (US-008): "All" plus every type present in the
+ * current (session-scoped) event set. The active chip is highlighted.
+ */
+function TypeFilter({
+  types,
+  value,
+  onChange,
+}: {
+  types: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {[ALL_TYPES, ...types].map((t) => {
+        const active = value === t;
+        return (
+          <button
+            key={t}
+            onClick={() => onChange(t)}
+            aria-pressed={active}
+            className={
+              "rounded-full border px-2.5 py-0.5 text-xs transition-colors " +
+              (active
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground hover:bg-muted")
+            }
+          >
+            {t}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

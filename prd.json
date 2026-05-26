@@ -133,7 +133,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Pairs with US-007's session \u25be. Suggested skills: automate-browser."
     },
     {
