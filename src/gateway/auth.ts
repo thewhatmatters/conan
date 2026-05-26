@@ -75,15 +75,29 @@ export interface AuthResult {
 }
 
 /**
+ * Validate the Origin of a WebSocket upgrade against the allow-list. Split out
+ * from verifyUpgrade so the live-preview proxy (US-011) can gate /preview/ HMR
+ * upgrades on Origin alone: that WebSocket originates inside Conan's same-origin
+ * iframe and cannot attach the x-conan-token (an <iframe src> sets no custom
+ * headers; Vite supplies its own end-to-end HMR token instead). This is the
+ * documented security floor — same-origin + loopback + Origin-checked upgrade.
+ */
+export function verifyUpgradeOrigin(req: IncomingMessage): AuthResult {
+  const origin = req.headers.origin;
+  if (origin !== undefined && !ALLOWED.has(origin)) {
+    return { ok: false, reason: `origin not allowed: ${origin}` };
+  }
+  return { ok: true };
+}
+
+/**
  * Validate a WebSocket upgrade request: Origin must be allow-listed and the
  * token (query param `?token=` or `Sec-WebSocket-Protocol`) must match.
  * Checked on every connection, not just the first.
  */
 export function verifyUpgrade(req: IncomingMessage): AuthResult {
-  const origin = req.headers.origin;
-  if (origin !== undefined && !ALLOWED.has(origin)) {
-    return { ok: false, reason: `origin not allowed: ${origin}` };
-  }
+  const origin = verifyUpgradeOrigin(req);
+  if (!origin.ok) return origin;
 
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${PORT}`);
   const token =

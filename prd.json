@@ -188,7 +188,7 @@
         "Load /preview/:id directly in a browser and confirm the dev page renders with working HMR"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 6 (proxy + HMR). The two real gotchas (HMR fallback, framing headers) are solved in docs/v4-research.md. Depends on US-010. Editing src/gateway/* from an in-dock session triggers footgun #1 \u2014 run gateway with npm start (no watch). Suggested skills: websocket, typescript-expert."
     },
     {

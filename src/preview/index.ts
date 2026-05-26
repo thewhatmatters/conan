@@ -2,8 +2,14 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { getActiveCwd, onCwdChange } from "../cwd/index.js";
+
+/** The HMR shim config Vite is pointed at so hot-reload dials back via Conan. */
+const PREVIEW_VITE_CONFIG = fileURLToPath(
+  new URL("../../scripts/preview-vite-config.mjs", import.meta.url),
+);
 
 /**
  * Live-preview backend (US-010): run the active cwd's dev server on demand so
@@ -188,8 +194,18 @@ export async function startPreview(opts: StartPreviewOptions = {}): Promise<Star
   // beats stdout scraping). --strictPort makes Vite fail rather than drift to
   // another port, so the bound port is exactly what we passed. Non-Vite tools
   // get no extra flags and we fall back to the stdout "Local:" regex.
+  //
+  // HMR (US-011): the page is served same-origin through Conan's /preview/<id>/
+  // reverse proxy, so the Vite HMR client must dial back via Conan's port + a
+  // /preview/ path — otherwise it silently connects straight to the dev-server
+  // port, bypassing the proxy/auth and breaking when framed. We can't pass HMR
+  // settings as CLI flags, so we point Vite at a shim config (scripts/
+  // preview-vite-config.mjs) that loads the project's own config and merges a
+  // server.hmr overlay; the values travel via env. The user's config is never
+  // edited.
   let pinnedPort: number | null = null;
   const extraArgs: string[] = [];
+  const env: NodeJS.ProcessEnv = { ...process.env };
   if (isVite) {
     pinnedPort = await findFreePort();
     extraArgs.push(
@@ -200,7 +216,18 @@ export async function startPreview(opts: StartPreviewOptions = {}): Promise<Star
       `/preview/${id}/`,
       "--host",
       "127.0.0.1",
+      "--config",
+      PREVIEW_VITE_CONFIG,
     );
+    const conanPort = Number.parseInt(process.env.CONAN_PORT ?? "3747", 10) || 3747;
+    const tls = Boolean(process.env.CONAN_TLS_CERT && process.env.CONAN_TLS_KEY);
+    env.CONAN_PREVIEW_ROOT = cwd;
+    env.CONAN_PREVIEW_CLIENT_PORT = String(conanPort);
+    // Relative path: Vite joins it under the --base (/preview/<id>/), so the HMR
+    // client dials ws://<conan>/preview/<id>/__hmr — which the gateway's
+    // /preview/ upgrade branch proxies back to the dev server.
+    env.CONAN_PREVIEW_HMR_PATH = "__hmr";
+    env.CONAN_PREVIEW_HMR_PROTOCOL = tls ? "wss" : "ws";
   }
 
   const args = ["run", script, ...(extraArgs.length ? ["--", ...extraArgs] : [])];
@@ -210,7 +237,7 @@ export async function startPreview(opts: StartPreviewOptions = {}): Promise<Star
   try {
     child = spawn("npm", args, {
       cwd,
-      env: { ...process.env },
+      env,
       // Own process group so we can signal the whole dev-server tree on stop.
       detached: process.platform !== "win32",
     }) as ChildProcessWithoutNullStreams;
@@ -313,6 +340,28 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
       /* already gone */
     }
   }
+}
+
+/**
+ * The reverse-proxy target for the live preview (US-011), or null when nothing
+ * is up yet. The gateway's /preview/:id mount and its WS-upgrade branch use this
+ * to route requests to the dev server's bound loopback port. Only surfaced once
+ * a port is known (Vite's pinned port is known immediately; non-Vite tools wait
+ * for the stdout scrape), so the proxy never targets a dead port.
+ */
+export function previewProxyTarget(): { id: string; port: number } | null {
+  if (
+    current &&
+    current.boundPort &&
+    (current.state === "running" || current.state === "starting")
+  ) {
+    return { id: current.id, port: current.boundPort };
+  }
+  // Vite's port is pinned up front even before the "Local:" line confirms it.
+  if (current && current.pinnedPort && current.state === "starting") {
+    return { id: current.id, port: current.pinnedPort };
+  }
+  return null;
 }
 
 /** Current preview status (idle shape when nothing has been started). */
