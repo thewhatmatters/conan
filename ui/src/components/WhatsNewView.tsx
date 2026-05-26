@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import type { ChangelogState } from "../hooks/useChangelog.ts";
+import type { DoctorState } from "../hooks/useDoctor.ts";
+import DoctorBanner from "./DoctorBanner.tsx";
 import { Badge } from "./ui/badge.tsx";
 
 /**
@@ -9,7 +11,13 @@ import { Badge } from "./ui/badge.tsx";
  * entry via `markSeen`, clearing the sidebar's unseen badge. shadcn primitives,
  * semantic tokens, light+dark, with loading + graceful empty states.
  */
-export default function WhatsNewView({ changelog }: { changelog: ChangelogState }) {
+export default function WhatsNewView({
+  changelog,
+  doctor,
+}: {
+  changelog: ChangelogState;
+  doctor: DoctorState;
+}) {
   const {
     entries,
     installedVersion,
@@ -47,6 +55,11 @@ export default function WhatsNewView({ changelog }: { changelog: ChangelogState 
         )}
         .
       </p>
+
+      {/* US-045: version/update banner + on-demand `claude doctor` health. */}
+      <div className="mt-5">
+        <DoctorBanner doctor={doctor} />
+      </div>
 
       <div className="mt-5">
         {!loaded ? (

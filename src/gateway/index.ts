@@ -25,6 +25,7 @@ import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
+import { readDoctorStatus, runDoctor } from "../doctor/index.js";
 import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import { readHooksCoverage } from "../hooks-coverage/index.js";
 import { readProjectMetrics } from "../project-metrics/index.js";
@@ -456,6 +457,24 @@ app.get("/api/claude/settings", (_req, res) => {
 // the file mtime for staleness. Read-only; safe empty shape if the file is gone.
 app.get("/api/claude/changelog", (_req, res) => {
   res.json(readChangelog());
+});
+
+// Doctor + version/update banner (US-045): the installed Claude Code version,
+// the newest version the local changelog knows about, whether that's an update,
+// and the auto-update posture (~/.claude.json autoUpdates +
+// autoUpdatesProtectedForNative). The base read is synchronous and read-only —
+// access-modeled like the other GET routes. A token-gated `?check=1` additionally
+// runs a bounded one-shot of `claude doctor` (it spawns a process) and returns
+// its health summary; `doctor` is interactive, so headless it degrades to a
+// graceful "unavailable" rather than an error. health is null without ?check=1.
+app.get("/api/claude/doctor", async (req, res) => {
+  const base = readDoctorStatus();
+  let health = null;
+  if (req.query.check === "1") {
+    if (!authed(req, res)) return; // a doctor run spawns a process — token-gate it
+    health = await runDoctor();
+  }
+  res.json({ ...base, health });
 });
 
 // Checkpoints (US-008): list Claude Code's per-session file-history snapshots

@@ -34,6 +34,7 @@ import WhatsNewView from "./components/WhatsNewView.tsx";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
 import { useChangelog } from "./hooks/useChangelog.ts";
+import { useDoctor } from "./hooks/useDoctor.ts";
 
 interface Health {
   status: string;
@@ -101,6 +102,9 @@ export default function App() {
   const stats = useStats(wsTrigger);
   // US-030: What's New changelog feed + unseen-entry count for the nav badge.
   const changelog = useChangelog(wsTrigger);
+  // US-045: version/update status + on-demand `claude doctor` health for the
+  // What's New banner.
+  const doctor = useDoctor(wsTrigger, config?.token ?? null);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // most-recent active session once sessions load; "All sessions" (and any
   // explicit pick) is sticky thereafter.
@@ -278,7 +282,7 @@ export default function App() {
             </div>
           ) : route === "whatsnew" ? (
             <div className="pt-6">
-              <WhatsNewView changelog={changelog} />
+              <WhatsNewView changelog={changelog} doctor={doctor} />
             </div>
           ) : (
           <>
