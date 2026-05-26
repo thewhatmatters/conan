@@ -18,7 +18,7 @@ import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
-import { readHooksStatus } from "../settings/index.js";
+import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -379,6 +379,31 @@ app.get("/api/settings", (_req, res) => {
       loopbackOnly: !TLS.enabled,
     },
   });
+});
+
+// Claude Code settings mirror for the Settings page (US-006 → US-029). GET
+// reads the real values from ~/.claude/settings.json (+ settings.local.json
+// overrides + a couple of ~/.claude.json flags), reporting each known setting's
+// value, type, allowed values, default, and source file. Setting definitions
+// come from the bundled canonical schema (json.schemastore.org), not guesses.
+// Read-only and access-modeled like the other GET routes.
+app.get("/api/claude/settings", (_req, res) => {
+  res.json(readClaudeSettings());
+});
+
+// Token-gated safe write: persists ONE allowlisted preference key to
+// settings.json (atomic, preserving unknown keys). Refuses unknown / risky keys
+// (permissions.*, hooks, mcpServers) and rejects invalid values with a clear
+// error. Never writes ~/.claude.json.
+app.put("/api/claude/settings", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = writeClaudeSetting(b.key, b.value);
+  if (!result.ok) {
+    res.status(result.status ?? 400).json({ error: result.error ?? "write failed" });
+    return;
+  }
+  res.json({ ok: true, key: b.key, value: result.value });
 });
 
 // --- Session control plane (US-008): start / sendPrompt / stop / resume.

@@ -99,7 +99,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "RESEARCH: settings persist to ~/.claude/settings.json; most TUI toggles unmaterialized until changed. Safe vs risky list in v3-backlog item 7."
     },
     {
