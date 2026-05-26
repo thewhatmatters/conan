@@ -1,16 +1,42 @@
+import { useMemo, useState } from "react";
 import type {
   TranscriptBlock,
   TranscriptMessage,
   TranscriptState,
 } from "../hooks/useTranscript.ts";
+import SortToggle, { type SortDir } from "./shared/SortToggle.tsx";
 
 /**
  * Transcript viewer (US-014). Renders a session's full conversation —
- * user / assistant / tool messages in order with timestamps — read from the
+ * user / assistant / tool messages with timestamps — read from the
  * Claude Code JSONL under ~/.claude (never duplicated into SQLite). A missing or
  * unreadable transcript degrades to an empty state.
+ *
+ * US-002: a newest/oldest-first SortToggle (the shared control from US-001, also
+ * used by the Activity timeline) flips display order. Defaults to newest-first
+ * so the latest turn sits on top; tie-broken on ts then uuid for stability.
  */
 export default function TranscriptViewer({ state }: { state: TranscriptState }) {
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const sorted = useMemo(() => {
+    // The JSONL arrives oldest-first; keep that index as the final, stable
+    // tie-break so messages with equal ts and uuid never reorder arbitrarily.
+    const indexed = state.messages.map((m, i) => ({ m, i }));
+    indexed.sort((a, b) => {
+      const ta = a.m.ts ?? 0;
+      const tb = b.m.ts ?? 0;
+      const byTs = sortDir === "asc" ? ta - tb : tb - ta;
+      if (byTs !== 0) return byTs;
+      const ua = a.m.uuid ?? "";
+      const ub = b.m.uuid ?? "";
+      const byUuid = sortDir === "asc" ? cmp(ua, ub) : cmp(ub, ua);
+      if (byUuid !== 0) return byUuid;
+      return sortDir === "asc" ? a.i - b.i : b.i - a.i;
+    });
+    return indexed.map((x) => x.m);
+  }, [state.messages, sortDir]);
+
   if (state.loading) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
@@ -30,11 +56,18 @@ export default function TranscriptViewer({ state }: { state: TranscriptState }) 
 
   return (
     <div className="space-y-3">
-      {state.messages.map((m, i) => (
+      <div className="flex items-center justify-end">
+        <SortToggle value={sortDir} onChange={setSortDir} />
+      </div>
+      {sorted.map((m, i) => (
         <MessageCard key={m.uuid ?? i} message={m} />
       ))}
     </div>
   );
+}
+
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function MessageCard({ message }: { message: TranscriptMessage }) {

@@ -35,7 +35,7 @@
         "Verify in browser using automate-browser skill that toggling reorders transcript messages and defaults to newest-first"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 5. Default newest-first per the ask (latest turn on top). Depends on US-001. Suggested skills: automate-browser."
     },
     {
