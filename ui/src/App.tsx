@@ -209,13 +209,23 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <main className="min-w-0 flex-1 overflow-auto p-6">
+        {/* US-020: top padding lives on the content, not <main>, so the sticky
+            widget row (Overview) can pin its opaque background flush to the
+            scrollport top with no transparent gap for the timeline to show
+            through. Non-Overview routes get the padding back via pt-6. */}
+        <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
           {route === "settings" ? (
-            <SettingsView theme={theme} onToggleTheme={toggle} />
+            <div className="pt-6">
+              <SettingsView theme={theme} onToggleTheme={toggle} />
+            </div>
           ) : route === "agents" ? (
-            <AgentsView />
+            <div className="pt-6">
+              <AgentsView />
+            </div>
           ) : route === "skills" ? (
-            <SkillsView />
+            <div className="pt-6">
+              <SkillsView />
+            </div>
           ) : (
           <>
           <Widgets

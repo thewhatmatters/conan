@@ -112,7 +112,15 @@ export default function Widgets({
   const keys = WIDGET_KEYS.filter((key) => enabled.has(key));
 
   return (
-    <section>
+    // US-020: pin the widget area while the timeline scrolls beneath it. Sticky
+    // within the scrolling <main>; `top-0` clamps the row's opaque background
+    // flush to the scrollport top (the header lives outside the scroll container,
+    // so its offset is respected for free). `-mx-6 px-6` bleeds bg-background
+    // full-width over <main>'s p-6 so scrolled content can't peek past the row's
+    // edges; the high z-index keeps the row (and its tooltips/chevrons) above the
+    // timeline. No negative top margin — that would leave a transparent band the
+    // scrolled timeline shows through.
+    <section className="sticky top-0 z-20 -mx-6 bg-background px-6 pb-3 pt-6">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-muted-foreground">
           Widgets
