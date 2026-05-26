@@ -463,7 +463,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 30,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-007. v3-backlog item 15. Suggested skills: automate-browser."
     },
     {

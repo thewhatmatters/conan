@@ -6,12 +6,15 @@ interface SidebarProps {
   onNavigate: (route: Route) => void;
   collapsed: boolean;
   onToggle: () => void;
+  /** US-030: count of unseen "What's New" entries — drives the nav badge. */
+  whatsNewBadge?: number;
 }
 
 const NAV: { route: Route; label: string; icon: ReactElement }[] = [
   { route: "overview", label: "Overview", icon: <GridIcon /> },
   { route: "agents", label: "Agents", icon: <BotIcon /> },
   { route: "skills", label: "Skills", icon: <SparkIcon /> },
+  { route: "whatsnew", label: "What's New", icon: <SparklesIcon /> },
   { route: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
@@ -27,6 +30,7 @@ export default function Sidebar({
   onNavigate,
   collapsed,
   onToggle,
+  whatsNewBadge = 0,
 }: SidebarProps) {
   return (
     <nav
@@ -55,6 +59,7 @@ export default function Sidebar({
       <div className="flex flex-col gap-1 p-2">
         {NAV.map((item) => {
           const active = route === item.route;
+          const badge = item.route === "whatsnew" ? whatsNewBadge : 0;
           return (
             <button
               key={item.route}
@@ -62,15 +67,42 @@ export default function Sidebar({
               title={collapsed ? item.label : undefined}
               aria-current={active ? "page" : undefined}
               className={
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors " +
+                "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors " +
                 (collapsed ? "justify-center " : "") +
                 (active
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground")
               }
             >
-              <span className="shrink-0">{item.icon}</span>
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              <span className="relative shrink-0">
+                {item.icon}
+                {/* US-030: collapsed nav shows a dot on the icon; expanded shows
+                    a count pill on the right (below). */}
+                {badge > 0 && collapsed && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1 -top-1 size-2 rounded-full bg-primary ring-2 ring-card"
+                  />
+                )}
+              </span>
+              {!collapsed && (
+                <>
+                  <span className="truncate">{item.label}</span>
+                  {badge > 0 && (
+                    <span
+                      className={
+                        "ml-auto inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4 " +
+                        (active
+                          ? "bg-primary-foreground text-primary"
+                          : "bg-primary text-primary-foreground")
+                      }
+                      aria-label={`${badge} new`}
+                    >
+                      {badge > 9 ? "9+" : badge}
+                    </span>
+                  )}
+                </>
+              )}
             </button>
           );
         })}
@@ -105,6 +137,15 @@ function SparkIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+    </svg>
+  );
+}
+
+function SparklesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9.5 3.5l1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6L4.5 8.5l3.6-1.4z" />
+      <path d="M18 13l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
     </svg>
   );
 }

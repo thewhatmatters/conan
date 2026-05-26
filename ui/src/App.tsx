@@ -26,8 +26,10 @@ import Sidebar from "./components/Sidebar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
 import AgentsView from "./components/AgentsView.tsx";
 import SkillsView from "./components/SkillsView.tsx";
+import WhatsNewView from "./components/WhatsNewView.tsx";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
+import { useChangelog } from "./hooks/useChangelog.ts";
 
 interface Health {
   status: string;
@@ -93,6 +95,8 @@ export default function App() {
   const mcp = useMcp(wsTrigger);
   // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.
   const stats = useStats(wsTrigger);
+  // US-030: What's New changelog feed + unseen-entry count for the nav badge.
+  const changelog = useChangelog(wsTrigger);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // most-recent active session once sessions load; "All sessions" (and any
   // explicit pick) is sticky thereafter.
@@ -185,6 +189,7 @@ export default function App() {
         onNavigate={navigate}
         collapsed={sidebarCollapsed}
         onToggle={toggleSidebar}
+        whatsNewBadge={changelog.unseenCount}
       />
       <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
@@ -242,6 +247,10 @@ export default function App() {
                 cwd={config?.cwd ?? null}
                 trigger={wsTrigger}
               />
+            </div>
+          ) : route === "whatsnew" ? (
+            <div className="pt-6">
+              <WhatsNewView changelog={changelog} />
             </div>
           ) : (
           <>
