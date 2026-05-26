@@ -158,7 +158,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Rich data already on disk, currently ignored. v3-backlog item 14 (Tier1 #4)."
     },
     {

@@ -22,6 +22,7 @@ import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../sett
 import { readChangelog } from "../changelog/index.js";
 import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import { readHooksCoverage } from "../hooks-coverage/index.js";
+import { readProjectMetrics } from "../project-metrics/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -436,6 +437,15 @@ app.get("/api/claude/checkpoints/:sessionId/content", (req, res) => {
 // shape when schema/settings are absent.
 app.get("/api/claude/hooks-coverage", (_req, res) => {
   res.json(readHooksCoverage());
+});
+
+// Per-project metrics (US-010): the last-session cost/tokens/lines/model-split
+// Claude Code records under ~/.claude.json projects[<cwd>]. Accepts a ?cwd=
+// param (defaults to the active cwd); unknown project / missing file degrade to
+// a safe found:false shape. Read-only and access-modeled like the other GET routes.
+app.get("/api/claude/project-metrics", (req, res) => {
+  const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
+  res.json(readProjectMetrics(cwd));
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
