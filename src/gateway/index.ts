@@ -591,6 +591,9 @@ app.post("/api/claude/sessions", async (req, res) => {
       worktree: b.worktree === true,
       worktreeRef: typeof b.worktree_ref === "string" ? b.worktree_ref : undefined,
       addDirs,
+      // US-044: a plausible JSON schema constrains + validates the result; a
+      // missing or malformed one is ignored, leaving output at its default.
+      jsonSchema: b.json_schema,
       bare: b.bare === true,
       prompt: typeof b.prompt === "string" ? b.prompt : undefined,
     });

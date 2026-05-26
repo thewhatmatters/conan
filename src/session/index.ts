@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { getDb } from "../db/index.js";
 import { PACKAGE_ROOT } from "../paths.js";
@@ -8,6 +11,7 @@ import {
   type UsageUpdate,
 } from "./parser.js";
 import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.js";
+import { isPlausibleSchema, validateAgainstSchema } from "./json-schema.js";
 
 /** The `claude` binary to launch headless; override with CONAN_CLAUDE_BIN. */
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
@@ -44,6 +48,14 @@ export interface StartSessionOptions {
   worktreeRef?: string;
   /** Extra directories granted to the session via `--add-dir <path>` (US-043). */
   addDirs?: string[];
+  /**
+   * JSON Schema the task's final result must conform to (US-044). When a
+   * plausible (non-array object) schema is supplied it is written to a temp
+   * file and passed via `--json-schema <path>`; the final result is then
+   * captured and validated against it on the session row. A missing or
+   * malformed schema is ignored — defaults are unchanged.
+   */
+  jsonSchema?: unknown;
   /** Optional first prompt. When omitted the session reads prompts over stdin. */
   prompt?: string;
   /** UI session color, persisted onto the session row. */
@@ -64,6 +76,10 @@ export interface ManagedSession {
   worktreePath?: string;
   /** Base ref the worktree branch was cut from (US-043). */
   worktreeBaseRef?: string;
+  /** JSON Schema the final result is validated against (US-044); undefined if none. */
+  jsonSchema?: unknown;
+  /** Temp file holding the serialized schema, unlinked on exit (US-044). */
+  schemaFile?: string;
   startedAt: number;
   /**
    * Open tool-permission prompts keyed by control_request id (US-012). The CLI
@@ -114,6 +130,9 @@ export interface SessionRow {
   context_tokens: number | null;
   worktree_path: string | null;
   worktree_base_ref: string | null;
+  json_schema: string | null;
+  structured_result: string | null;
+  schema_valid: number | null;
 }
 
 /**
@@ -127,7 +146,8 @@ export function listSessions(): SessionRow[] {
       `SELECT id, title, cwd, model, permission_mode, status, color,
               created_at, last_activity, total_cost_usd,
               input_tokens, output_tokens, context_tokens,
-              worktree_path, worktree_base_ref
+              worktree_path, worktree_base_ref,
+              json_schema, structured_result, schema_valid
          FROM session
          ORDER BY last_activity DESC`,
     )
@@ -140,7 +160,7 @@ export function listSessions(): SessionRow[] {
  * We additionally request stream-json *input* so the process stays alive to
  * receive follow-up prompts (US-008); a one-shot `prompt` is passed positionally.
  */
-function buildArgs(opts: StartSessionOptions): string[] {
+function buildArgs(opts: StartSessionOptions, schemaFile?: string): string[] {
   const args = [
     "-p",
     "--output-format",
@@ -158,9 +178,26 @@ function buildArgs(opts: StartSessionOptions): string[] {
   for (const dir of opts.addDirs ?? []) {
     if (dir.trim()) args.push("--add-dir", dir.trim());
   }
+  // US-044: constrain the final result to a JSON schema (written to schemaFile).
+  if (schemaFile) args.push("--json-schema", schemaFile);
   if (opts.bare) args.push("--bare");
   if (opts.prompt !== undefined) args.push(opts.prompt);
   return args;
+}
+
+/**
+ * Serialize a plausible JSON schema to a temp file for `--json-schema <path>`
+ * (US-044). Returns the path, or undefined when the schema is missing/malformed
+ * so the launch falls back to default (unconstrained) output.
+ */
+function writeSchemaFile(jsonSchema: unknown): string | undefined {
+  if (!isPlausibleSchema(jsonSchema)) return undefined;
+  const file = path.join(
+    os.tmpdir(),
+    `conan-schema-${crypto.randomUUID()}.json`,
+  );
+  fs.writeFileSync(file, JSON.stringify(jsonSchema), "utf8");
+  return file;
 }
 
 /**
@@ -323,9 +360,9 @@ function persistSession(s: ManagedSession): void {
     .prepare(
       `INSERT INTO session
          (id, cwd, model, permission_mode, status, created_at, last_activity,
-          worktree_path, worktree_base_ref)
+          worktree_path, worktree_base_ref, json_schema)
          VALUES (@id, @cwd, @model, @permissionMode, 'running', @startedAt, @now,
-                 @worktreePath, @worktreeBaseRef)
+                 @worktreePath, @worktreeBaseRef, @jsonSchema)
        ON CONFLICT(id) DO UPDATE SET
          status = 'running',
          last_activity = @now,
@@ -333,7 +370,8 @@ function persistSession(s: ManagedSession): void {
          model = COALESCE(excluded.model, session.model),
          permission_mode = COALESCE(excluded.permission_mode, session.permission_mode),
          worktree_path = COALESCE(excluded.worktree_path, session.worktree_path),
-         worktree_base_ref = COALESCE(excluded.worktree_base_ref, session.worktree_base_ref)`,
+         worktree_base_ref = COALESCE(excluded.worktree_base_ref, session.worktree_base_ref),
+         json_schema = COALESCE(excluded.json_schema, session.json_schema)`,
     )
     .run({
       id: s.sessionId,
@@ -342,8 +380,42 @@ function persistSession(s: ManagedSession): void {
       permissionMode: s.permissionMode ?? null,
       worktreePath: s.worktreePath ?? null,
       worktreeBaseRef: s.worktreeBaseRef ?? null,
+      jsonSchema: s.jsonSchema !== undefined ? JSON.stringify(s.jsonSchema) : null,
       startedAt: s.startedAt,
       now,
+    });
+}
+
+/**
+ * Capture the structured output of a finished driven session (US-044): pull the
+ * `result` field off the final result message, validate it against the
+ * session's JSON schema, and persist both the captured result and the
+ * pass/fail flag on the session row. No-op when the session carried no schema.
+ */
+function captureStructuredResult(s: ManagedSession, resultPayload: unknown): void {
+  if (!s.sessionId || s.jsonSchema === undefined) return;
+  const p = (resultPayload ?? {}) as Record<string, unknown>;
+  // The structured output rides in `result`; when emitted as a JSON string,
+  // parse it so we validate (and surface) the object rather than its text.
+  let value: unknown = p.result;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      // Leave as the raw string; validation will flag the type mismatch.
+    }
+  }
+  const { valid } = validateAgainstSchema(value, s.jsonSchema);
+  getDb()
+    .prepare(
+      `UPDATE session SET structured_result = @result, schema_valid = @valid,
+              last_activity = @now WHERE id = @id`,
+    )
+    .run({
+      id: s.sessionId,
+      result: JSON.stringify(value ?? null),
+      valid: valid ? 1 : 0,
+      now: Date.now(),
     });
 }
 
@@ -363,6 +435,10 @@ interface LaunchConfig {
   permissionMode?: string;
   /** Worktree the session runs in, surfaced on the row (US-043). */
   worktree?: WorktreeInfo;
+  /** JSON schema the final result is validated against (US-044). */
+  jsonSchema?: unknown;
+  /** Temp file holding the serialized schema, unlinked on exit (US-044). */
+  schemaFile?: string;
   /**
    * Known session_id, set when resuming. Lets us register the child in
    * `bySessionId` and resolve the id promise immediately so a follow-up
@@ -396,6 +472,8 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     permissionMode: cfg.permissionMode,
     worktreePath: cfg.worktree?.path,
     worktreeBaseRef: cfg.worktree?.baseRef,
+    jsonSchema: cfg.jsonSchema,
+    schemaFile: cfg.schemaFile,
     startedAt: Date.now(),
     pending: new Map(),
   };
@@ -445,6 +523,10 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     if (parsed.event) {
       trackPermission(session, parsed.event);
       persistEvent(sid, parsed.event);
+      // US-044: capture + validate the structured output off the final result.
+      if (parsed.event.streamType === "result") {
+        captureStructuredResult(session, parsed.event.payload);
+      }
     }
     if (parsed.usage) applyUsage(sid, parsed.usage);
   };
@@ -474,6 +556,15 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     // resume may have replaced it with a fresh process for the same id.
     if (session.sessionId && bySessionId.get(session.sessionId) === session) {
       bySessionId.delete(session.sessionId);
+    }
+    // Remove the schema temp file we wrote for --json-schema (US-044).
+    if (session.schemaFile) {
+      try {
+        fs.unlinkSync(session.schemaFile);
+      } catch {
+        // Already gone — nothing to do.
+      }
+      session.schemaFile = undefined;
     }
   };
   child.on("error", (err) => {
@@ -507,11 +598,16 @@ export function startSession(opts: StartSessionOptions = {}): StartSessionResult
     worktree = createWorktree(cwd, opts.worktreeRef);
     cwd = worktree.path;
   }
-  return launch(buildArgs({ ...opts, cwd }), {
+  // US-044: a plausible schema is written to a temp file and constrains output;
+  // a missing/malformed one leaves the launch (and the row) at its defaults.
+  const schemaFile = writeSchemaFile(opts.jsonSchema);
+  return launch(buildArgs({ ...opts, cwd }, schemaFile), {
     cwd,
     model: opts.model,
     permissionMode: opts.permissionMode,
     worktree,
+    jsonSchema: schemaFile ? opts.jsonSchema : undefined,
+    schemaFile,
   });
 }
 

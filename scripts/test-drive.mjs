@@ -32,18 +32,32 @@ import path from "node:path";
 const argv = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(argvLog)}, JSON.stringify(argv) + "\\n");
 const ri = argv.indexOf("--resume");
-// A worktree-isolated run gets a distinct id derived from its cwd so it doesn't
-// collide with the primary FIXED_ID session (US-043).
+const si = argv.indexOf("--json-schema");
+const hasInput = argv.includes("--input-format");
+const lastArg = argv[argv.length - 1];
+// Pick a session id that won't collide across the suite's many launches:
+// resume reuses the id; a worktree run derives from its cwd (US-043); a
+// one-shot prompt run (US-044 schema tests) derives from the prompt; the
+// stdin-driven primary session is FIXED_ID.
 const sid = ri !== -1 && argv[ri + 1] ? argv[ri + 1]
   : process.cwd().includes(".conan-worktrees") ? "wt-" + path.basename(process.cwd())
+  : !hasInput ? "p-" + lastArg
   : ${JSON.stringify(FIXED_ID)};
 const init = { type: "system", subtype: "init", session_id: sid, model: "claude-sonnet-4-6", tools: [], cwd: process.cwd() };
 process.stdout.write(JSON.stringify(init) + "\\n");
-// Emit a tool-permission control_request so the driver can answer it (US-012).
-setTimeout(() => {
-  const req = { type: "control_request", request_id: "perm-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } } };
-  process.stdout.write(JSON.stringify(req) + "\\n");
-}, 80);
+if (si !== -1) {
+  // US-044: a --json-schema run emits a fixed structured result then exits, so
+  // the manager can capture + validate it against whichever schema was passed.
+  const result = { type: "result", subtype: "success", session_id: sid, result: JSON.stringify({ status: "done", files: 3 }), total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 } };
+  process.stdout.write(JSON.stringify(result) + "\\n");
+  setTimeout(() => process.exit(0), 50);
+} else {
+  // Emit a tool-permission control_request so the driver can answer it (US-012).
+  setTimeout(() => {
+    const req = { type: "control_request", request_id: "perm-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } } };
+    process.stdout.write(JSON.stringify(req) + "\\n");
+  }, 80);
+}
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
@@ -265,6 +279,68 @@ try {
   fs.mkdirSync(nonRepo);
   const badWtRes = await post("/api/claude/sessions", { cwd: nonRepo, worktree: true });
   check("worktree on non-repo cwd returns 400", badWtRes.status === 400);
+
+  // --- US-044: --json-schema typed outputs for driven tasks -------------
+  // Poll the session row until `pred(row)` holds (the result lands async).
+  async function waitForRow(id, pred, ms = 3000) {
+    const deadline = Date.now() + ms;
+    let row = sessionRow(id);
+    while (Date.now() < deadline) {
+      if (row && pred(row)) return row;
+      await sleep(50);
+      row = sessionRow(id);
+    }
+    return row;
+  }
+
+  // (a) valid result against its schema -> captured + schema_valid=1.
+  const validSchema = {
+    type: "object",
+    properties: { status: { type: "string" }, files: { type: "integer" } },
+    required: ["status", "files"],
+  };
+  const okRes = await post("/api/claude/sessions", { cwd: tmp, prompt: "schematask-valid", json_schema: validSchema });
+  const okBody = await okRes.json();
+  check("json-schema start returns 200", okRes.status === 200);
+  check("json-schema start captured the session id", okBody.sessionId === "p-schematask-valid");
+
+  const okArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n").pop());
+  check("start passes --json-schema <file>", okArgv.includes("--json-schema") && typeof okArgv[okArgv.indexOf("--json-schema") + 1] === "string");
+
+  const okRow = await waitForRow("p-schematask-valid", (r) => r.structured_result != null);
+  check("schema persisted on the session row", JSON.stringify(JSON.parse(okRow?.json_schema ?? "null")) === JSON.stringify(validSchema));
+  check("structured result captured", JSON.stringify(JSON.parse(okRow?.structured_result ?? "null")) === JSON.stringify({ status: "done", files: 3 }));
+  check("conforming result marked schema_valid=1", okRow?.schema_valid === 1);
+
+  // result is also surfaced via the session grid (GET /api/claude/sessions).
+  const grid = await (await fetch(BASE + "/api/claude/sessions", { headers: { "x-conan-token": TOKEN } })).json();
+  const okGridRow = grid.find((s) => s.id === "p-schematask-valid");
+  check("structured result surfaced on the grid", okGridRow?.schema_valid === 1 && okGridRow?.structured_result != null);
+
+  // (b) same result against a stricter schema it violates -> schema_valid=0.
+  const strictSchema = {
+    type: "object",
+    properties: { status: { type: "number" } },
+    required: ["status", "must_exist"],
+  };
+  const badRes = await post("/api/claude/sessions", { cwd: tmp, prompt: "schematask-invalid", json_schema: strictSchema });
+  await badRes.json();
+  const badRow = await waitForRow("p-schematask-invalid", (r) => r.structured_result != null);
+  check("non-conforming result marked schema_valid=0", badRow?.schema_valid === 0);
+  check("non-conforming result still captured", badRow?.structured_result != null);
+
+  // (c) malformed schema is ignored: defaults unchanged, no --json-schema flag.
+  const malRes = await post("/api/claude/sessions", { cwd: tmp, prompt: "schematask-malformed", json_schema: "not-a-schema" });
+  const malBody = await malRes.json();
+  check("malformed-schema start still returns 200", malRes.status === 200);
+  const malArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n").pop());
+  check("malformed schema not passed to argv", !malArgv.includes("--json-schema"));
+  const malRow = await waitForRow("p-schematask-malformed", () => true, 300);
+  check("malformed-schema row has null json_schema", malRow?.json_schema == null);
+
+  // (d) absent schema: the primary FIXED_ID session was driven with no schema.
+  const plainSchemaRow = sessionRow(FIXED_ID);
+  check("no-schema session has null json_schema/result", plainSchemaRow?.json_schema == null && plainSchemaRow?.structured_result == null && plainSchemaRow?.schema_valid == null);
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

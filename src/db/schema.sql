@@ -23,7 +23,13 @@ CREATE TABLE IF NOT EXISTS session (
   -- into a fresh git worktree, we record its path and the base ref it was cut
   -- from so parallel runs are visible and traceable; null for normal launches.
   worktree_path               TEXT,
-  worktree_base_ref           TEXT
+  worktree_base_ref           TEXT,
+  -- Typed structured output for driven sessions (US-044). When a session is
+  -- launched with --json-schema, we record the schema, the final structured
+  -- result, and whether it validated against the schema; null for normal runs.
+  json_schema                 TEXT,            -- JSON schema the result is checked against
+  structured_result           TEXT,            -- JSON of the captured final result
+  schema_valid                INTEGER          -- 1 valid, 0 invalid, null = not applicable
 );
 
 -- Lifecycle + stream events for a session (from hooks and the stream-json parser).
