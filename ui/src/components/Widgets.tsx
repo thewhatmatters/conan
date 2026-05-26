@@ -24,6 +24,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip.tsx";
 
 interface WidgetsProps {
   sessions: Session[];
@@ -400,11 +406,13 @@ function CostWidget({
 }
 
 /**
- * MCP servers widget (US-011). Shows the inferred connected count from
- * /api/claude/mcp (US-003 — config-derived, enriched by a live session's real
- * statuses) over the total known. Hovering reveals a tooltip listing every
- * server by name with its status, flagging any that need (re)auth. No tooltip
- * dependency: a group-hover panel, themed with semantic tokens.
+ * MCP servers widget (US-023). Shows the real connected count from
+ * /api/claude/mcp (US-004 — config-derived from ~/.claude.json global + project
+ * mcpServers, minus needs-auth, enriched by a live session's real statuses) over
+ * the total known. Hovering reveals a shadcn Tooltip listing every server by
+ * name with its status, flagging any that need (re)auth. Refetches on every WS
+ * event (via useMcp's eventSeq) so the count tracks live session changes. The
+ * Tooltip content is re-skinned with semantic tokens so it reads in light+dark.
  */
 function McpWidget({ mcp, scope }: { mcp: McpState; scope: WidgetScope }) {
   const sub = mcp.fromLiveSession ? "connected · live" : "connected · total";
@@ -413,39 +421,52 @@ function McpWidget({ mcp, scope }: { mcp: McpState; scope: WidgetScope }) {
       {!mcp.hasData ? (
         <Dash />
       ) : (
-        <div className="group/mcp relative inline-block">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-xl font-semibold text-foreground">
-              {mcp.connectedCount}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              · {mcp.servers.length}
-            </span>
-            {mcp.needsAuthCount > 0 && (
-              <span className="ml-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
-                {mcp.needsAuthCount} auth
-              </span>
-            )}
-          </div>
-          <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-44 rounded-md border border-border bg-card p-2 text-left shadow-md group-hover/mcp:block">
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              MCP servers
-            </div>
-            <ul className="space-y-1">
-              {mcp.servers.map((s) => (
-                <li
-                  key={s.name}
-                  className="flex items-center justify-between gap-2 text-[11px]"
-                >
-                  <span className="truncate font-mono text-foreground">
-                    {s.name}
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${mcp.connectedCount} of ${mcp.servers.length} MCP servers connected${
+                  mcp.needsAuthCount > 0 ? `, ${mcp.needsAuthCount} need auth` : ""
+                }`}
+                className="flex cursor-help items-baseline gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="text-xl font-semibold text-foreground">
+                  {mcp.connectedCount}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  · {mcp.servers.length}
+                </span>
+                {mcp.needsAuthCount > 0 && (
+                  <span className="ml-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-500">
+                    {mcp.needsAuthCount} auth
                   </span>
-                  <McpStatusTag status={s.status} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              align="start"
+              className="w-52 border border-border bg-card p-2 text-left text-foreground"
+            >
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                MCP servers
+              </div>
+              <ul className="space-y-1">
+                {mcp.servers.map((s) => (
+                  <li
+                    key={s.name}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="truncate font-mono text-foreground">
+                      {s.name}
+                    </span>
+                    <McpStatusTag status={s.status} />
+                  </li>
+                ))}
+              </ul>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
     </StatCard>
   );
