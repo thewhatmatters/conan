@@ -236,6 +236,7 @@ export default function App() {
                 theme={theme}
                 onToggleTheme={toggle}
                 token={config?.token ?? null}
+                trigger={wsTrigger}
               />
             </div>
           ) : route === "agents" ? (

@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "./ui/select.tsx";
 import { Badge } from "./ui/badge.tsx";
+import HooksCoveragePanel from "./HooksCoveragePanel.tsx";
 
 /**
  * Settings view (US-020 → US-029). Mirrors Claude Code's own /settings: real
@@ -29,10 +30,12 @@ export default function SettingsView({
   theme,
   onToggleTheme,
   token,
+  trigger,
 }: {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   token: string | null;
+  trigger: number | null;
 }) {
   const { hooks, remote, loaded } = useSettings();
   const claude = useClaudeSettings(token);
@@ -120,6 +123,14 @@ export default function SettingsView({
               detail="Add Conan's hooks (see conan-hooks.example.json) to .claude/settings.json so sessions self-report."
             />
           )}
+        </Section>
+
+        {/* Hook coverage (US-033) — full event set vs what Conan consumes/wires */}
+        <Section
+          title="Hook coverage"
+          desc="The full Claude Code hook-event set vs what Conan consumes and what's wired per scope. Events with no ingestion path, or unwired in both scopes, are flagged."
+        >
+          <HooksCoveragePanel trigger={trigger} />
         </Section>
 
         {/* Remote access / TLS */}

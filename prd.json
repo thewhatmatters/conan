@@ -509,7 +509,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 33,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-009. Likely lives in Settings. v3-backlog item 14 (Tier1 #3). Suggested skills: automate-browser."
     },
     {
