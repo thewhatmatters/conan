@@ -8,6 +8,7 @@ import { useMcp } from "./hooks/useMcp.ts";
 import { useStats } from "./hooks/useStats.ts";
 import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
+import { useTerminals } from "./hooks/useTerminals.ts";
 import Dock from "./components/Dock.tsx";
 import SessionBar from "./components/SessionBar.tsx";
 import Widgets from "./components/Widgets.tsx";
@@ -81,10 +82,28 @@ export default function App() {
   // REST-backed hooks re-pull their snapshots after a connection gap.
   const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
   const { sessions, refresh } = useSessions(wsTrigger);
-  // The Context/Skills widgets describe the active session: a running one if
-  // present, otherwise the most-recently-active (sessions are sorted DESC).
+  // US-006: the Claude session running inside a live dock pty, correlated by
+  // src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.
+  // This is the session the user is *actually* running — the right binding for
+  // the session-scoped widgets (Context, Model, Skills) instead of the first of
+  // ~155 historical 'running' rows.
+  const terminals = useTerminals();
+  const correlatedSession = (() => {
+    const matched = [...terminals.values()]
+      .map((t) => t.sessionId)
+      .filter((id): id is string => !!id)
+      .map((id) => sessions.find((s) => s.id === id))
+      .filter((s): s is (typeof sessions)[number] => !!s);
+    return matched.find((s) => s.status === "running") ?? matched[0] ?? null;
+  })();
+  // The Context/Skills widgets describe the active session: the one correlated to
+  // a live pty if present, otherwise a running one, otherwise the most-recently-
+  // active (sessions are sorted DESC). Falls through to null when there are none.
   const activeSession =
-    sessions.find((s) => s.status === "running") ?? sessions[0] ?? null;
+    correlatedSession ??
+    sessions.find((s) => s.status === "running") ??
+    sessions[0] ??
+    null;
   // US-019: the session-scoped widgets (Context, Model, Skills) describe whichever
   // session the timeline ▾ has selected, falling back to the auto active session
   // when "All sessions"/nothing is picked — so they update as the ▾ changes.
@@ -110,11 +129,15 @@ export default function App() {
   // live by the WS `ultrareview` broadcast.
   const ultrareview = useUltrareview(lastUltrareview, config?.token ?? null);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
-  // most-recent active session once sessions load; "All sessions" (and any
-  // explicit pick) is sticky thereafter.
+  // active session; "All sessions" (and any explicit pick) is sticky thereafter.
+  // US-006: until the user explicitly picks, keep the default tracking the active
+  // session so a late-resolving pty correlation (terminals poll after the first
+  // render) re-points the widgets at the session actually running — not the stale
+  // 'running' row chosen before correlation arrived.
+  const [userPicked, setUserPicked] = useState(false);
   useEffect(() => {
-    if (selectedId === null && activeSession) setSelectedId(activeSession.id);
-  }, [selectedId, activeSession]);
+    if (!userPicked && activeSession) setSelectedId(activeSession.id);
+  }, [userPicked, activeSession]);
   const isAll = selectedId === ALL_SESSIONS;
   // Transcript is per-session; "All sessions" only has an Activity view.
   const effectiveTab = isAll ? "activity" : detailTab;
@@ -320,7 +343,10 @@ export default function App() {
               defaultCwd={config?.cwd ?? ""}
               onRefresh={refresh}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={(id) => {
+                setUserPicked(true);
+                setSelectedId(id);
+              }}
               onOpen={() => setDockOpen(true)}
             />
 

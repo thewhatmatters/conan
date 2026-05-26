@@ -104,7 +104,7 @@
         "Verify in browser using automate-browser skill with a live session that the Context ring shows a non-empty %"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 3 (binding + total-% fix). Also sanity-check the session-liveness reaper (79 error/74 idle of 155 smells stale). correlate.ts confirmed to exist. Suggested skills: automate-browser."
     },
     {
