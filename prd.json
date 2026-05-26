@@ -114,7 +114,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "RESEARCH: uniform `## <version>` + flat `- ` bullets, no dates. v3-backlog item 15."
     },
     {

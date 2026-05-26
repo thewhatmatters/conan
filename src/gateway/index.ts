@@ -19,6 +19,7 @@ import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
+import { readChangelog } from "../changelog/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -389,6 +390,16 @@ app.get("/api/settings", (_req, res) => {
 // Read-only and access-modeled like the other GET routes.
 app.get("/api/claude/settings", (_req, res) => {
   res.json(readClaudeSettings());
+});
+
+// Changelog feed for the "What's New" view (US-007 → US-030). Parses
+// ~/.claude/cache/changelog.md into newest-first {version, items} entries (no
+// dates in the source → date null), reports the installed version (from a live
+// sessions/<pid>.json, else lastReleaseNotesSeen) and flags entries newer than
+// lastReleaseNotesSeen as `new` (semver-tuple compare). changelogLastFetched is
+// the file mtime for staleness. Read-only; safe empty shape if the file is gone.
+app.get("/api/claude/changelog", (_req, res) => {
+  res.json(readChangelog());
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
