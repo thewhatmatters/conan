@@ -19,6 +19,9 @@ import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
 import { useTranscript } from "./hooks/useTranscript.ts";
 import Toaster from "./components/Toaster.tsx";
+import Sidebar from "./components/Sidebar.tsx";
+import SettingsView from "./components/SettingsView.tsx";
+import { useRoute } from "./hooks/useRoute.ts";
 
 interface Health {
   status: string;
@@ -37,6 +40,18 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [dockOpen, setDockOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // US-006: pushState routing (Overview / Settings) + collapsible sidebar whose
+  // collapsed state survives reloads.
+  const { route, navigate } = useRoute();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("conan.sidebar.collapsed") === "1",
+  );
+  const toggleSidebar = () =>
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem("conan.sidebar.collapsed", next ? "1" : "0");
+      return next;
+    });
   // Which tab the selected-session detail shows (US-011 vs US-014).
   const [detailTab, setDetailTab] = useState<"activity" | "transcript">(
     "activity",
@@ -117,11 +132,17 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
+    <div className="flex h-full bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
+      <Sidebar
+        route={route}
+        onNavigate={navigate}
+        collapsed={sidebarCollapsed}
+        onToggle={toggleSidebar}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="text-lg font-semibold tracking-tight">Conan</span>
           {config?.cwd && (
             <span
               title={config.cwd}
@@ -152,6 +173,10 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <main className="min-w-0 flex-1 overflow-auto p-6">
+          {route === "settings" ? (
+            <SettingsView />
+          ) : (
+          <>
           <HeroWidgets
             sessions={sessions}
             activeSession={activeSession}
@@ -234,11 +259,14 @@ export default function App() {
               )}
             </section>
           )}
+          </>
+          )}
         </main>
 
         {dockOpen && (
           <Dock token={config?.token ?? null} theme={theme} tasks={tasks} />
         )}
+      </div>
       </div>
     </div>
   );

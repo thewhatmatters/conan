@@ -100,7 +100,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Matches project_conan_layout_ia. Prior Conan shell used shadcn Sidebar/SidebarProvider/SidebarInset + pushState. Suggested skills: automate-browser, shadcn."
     },
     {
