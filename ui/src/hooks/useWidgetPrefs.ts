@@ -3,15 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 /**
  * The widgets available in the picker-fronted hero area (US-010). The Plugins,
  * API-retry, and Top-tools widgets were dropped — they added no value. The
- * remaining/new widgets (MCP, Model & idle, Git, Context, Usage, Stats) plus
- * the carried-over Sessions/Skills/Cost cards all slot in here and are toggled
- * from the "Widgets ▾" picker.
+ * "Cost today" card was also removed (US-024): Claude Max is token-based, so a
+ * dollar figure is irrelevant. The remaining/new widgets (MCP, Model & idle,
+ * Git, Context, Usage, Stats) plus the carried-over Sessions/Skills cards all
+ * slot in here and are toggled from the "Widgets ▾" picker.
  */
 export const WIDGET_KEYS = [
   "context",
   "sessions",
   "skills",
-  "cost",
   "mcp",
   "model",
   "git",
@@ -40,7 +40,6 @@ export const WIDGET_SCOPE: Record<WidgetKey, WidgetScope> = {
   git: "cwd",
   mcp: "cwd",
   sessions: "global",
-  cost: "global",
   usage: "global",
   stats: "global",
 };
@@ -56,7 +55,6 @@ export const WIDGET_LABELS: Record<WidgetKey, string> = {
   context: "Context",
   sessions: "Active sessions",
   skills: "Skills",
-  cost: "Cost today",
   mcp: "MCP servers",
   model: "Model & idle",
   git: "Git status",

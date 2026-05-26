@@ -238,8 +238,6 @@ function WidgetCell({
       return <SessionsWidget sessions={sessions} scope={scope} />;
     case "skills":
       return <SkillsWidget skills={skills} scope={scope} />;
-    case "cost":
-      return <CostWidget sessions={sessions} scope={scope} />;
     case "mcp":
       return <McpWidget mcp={mcp} scope={scope} />;
     case "model":
@@ -385,26 +383,6 @@ function SkillsWidget({
   );
 }
 
-function CostWidget({
-  sessions,
-  scope,
-}: {
-  sessions: Session[];
-  scope: WidgetScope;
-}) {
-  const startOfToday = new Date().setHours(0, 0, 0, 0);
-  const costToday = sessions
-    .filter((s) => s.last_activity >= startOfToday)
-    .reduce((sum, s) => sum + (s.total_cost_usd || 0), 0);
-  return (
-    <StatCard label="Cost today" sub="across sessions" scope={scope}>
-      <div className="text-xl font-semibold text-foreground">
-        {costToday > 0 ? `$${costToday.toFixed(2)}` : "$0.00"}
-      </div>
-    </StatCard>
-  );
-}
-
 /**
  * MCP servers widget (US-023). Shows the real connected count from
  * /api/claude/mcp (US-004 — config-derived from ~/.claude.json global + project
@@ -498,6 +476,13 @@ function McpStatusTag({ status }: { status: McpServerStatusValue }) {
 
 type McpServerStatusValue = McpState["servers"][number]["status"];
 
+/**
+ * Model & idle widget (US-024). Shows the active (timeline-selected) session's
+ * real model rendered as a friendly display name — "Opus 4.7" rather than the
+ * raw "claude-opus-4-7[1m]" slug — alongside its idle/active state. Degrades to
+ * "—" / "no session" when nothing is selected, and to "unknown" when a session
+ * has no model recorded yet.
+ */
 function ModelIdleWidget({
   session,
   scope,
@@ -505,7 +490,6 @@ function ModelIdleWidget({
   session: Session | null;
   scope: WidgetScope;
 }) {
-  const model = session?.model ?? null;
   const idle = session ? session.status !== "running" : false;
   return (
     <StatCard
@@ -518,7 +502,7 @@ function ModelIdleWidget({
       ) : (
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">
-            {model ?? "unknown"}
+            {prettyModel(session.model ?? null)}
           </div>
           <div className="text-[11px] text-muted-foreground">
             {idle ? `idle ${sinceLabel(session.last_activity)}` : "active now"}
@@ -527,6 +511,28 @@ function ModelIdleWidget({
       )}
     </StatCard>
   );
+}
+
+/**
+ * Turn a Claude model slug into a human display name: "claude-opus-4-7[1m]" →
+ * "Opus 4.7", "claude-sonnet-4-6" → "Sonnet 4.6", "claude-haiku-4-5-20251001" →
+ * "Haiku 4.5". Strips the "claude-" prefix, any "[…]" context marker, and a
+ * trailing yyyymmdd date, then Title-cases the family and dots the version
+ * numbers. Returns "unknown" when the model is missing, and the raw slug if it
+ * doesn't parse.
+ */
+function prettyModel(model: string | null): string {
+  if (!model) return "unknown";
+  const s = model
+    .replace(/^claude-/i, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/-\d{8}$/, "");
+  const parts = s.split("-").filter(Boolean);
+  const family = parts[0];
+  if (!family) return model;
+  const fam = family.charAt(0).toUpperCase() + family.slice(1);
+  const nums = parts.slice(1).filter((p) => /^\d+$/.test(p));
+  return nums.length ? `${fam} ${nums.join(".")}` : fam;
 }
 
 function GitWidget({ git, scope }: { git: CwdGit | null; scope: WidgetScope }) {
