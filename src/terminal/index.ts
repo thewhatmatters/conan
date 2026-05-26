@@ -3,7 +3,7 @@ import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
-import { PACKAGE_ROOT } from "../paths.js";
+import { getActiveCwd } from "../cwd/index.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -106,7 +106,9 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   // --- Fresh session ---------------------------------------------------------
   const cols = clampInt(url.searchParams.get("cols"), 80, 1, 1000);
   const rows = clampInt(url.searchParams.get("rows"), 24, 1, 1000);
-  const cwd = url.searchParams.get("cwd") ?? PACKAGE_ROOT;
+  // New ptys spawn in the app-wide active cwd (US-019); an explicit ?cwd= still
+  // wins. Already-running ptys keep the cwd they were spawned with.
+  const cwd = url.searchParams.get("cwd") ?? getActiveCwd();
   const mode = url.searchParams.get("mode") ?? "claude";
   const { file, args } = resolveCommand(mode);
 

@@ -22,6 +22,7 @@ import { useTranscript } from "./hooks/useTranscript.ts";
 import Toaster from "./components/Toaster.tsx";
 import Sidebar from "./components/Sidebar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
+import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
 
 interface Health {
@@ -163,13 +164,13 @@ export default function App() {
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {config?.cwd && (
-            <span
-              title={config.cwd}
-              className="hidden min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 font-mono text-xs text-muted-foreground sm:flex"
-            >
-              <FolderIcon />
-              <span className="truncate">{prettyPath(config.cwd)}</span>
-            </span>
+            <CwdPicker
+              cwd={config.cwd}
+              token={config.token}
+              onChange={(cwd) =>
+                setConfig((c) => (c ? { ...c, cwd } : c))
+              }
+            />
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
@@ -324,33 +325,5 @@ function ConnectionStatus({
       <span className={"size-2 rounded-full " + m.dot} />
       {m.label}
     </span>
-  );
-}
-
-/** Abbreviate $HOME to ~ for a compact toolbar path. */
-function prettyPath(p: string): string {
-  const home = "/Users/";
-  if (p.startsWith(home)) {
-    const rest = p.slice(home.length).split("/");
-    if (rest.length > 1) return "~/" + rest.slice(1).join("/");
-  }
-  return p;
-}
-
-function FolderIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-    </svg>
   );
 }

@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { PACKAGE_ROOT } from "../paths.js";
+import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 
-const PRD_PATH = path.join(PACKAGE_ROOT, "prd.json");
-const PROGRESS_PATH = path.join(PACKAGE_ROOT, "progress.txt");
+// The Tasks reader follows the app-wide active cwd (US-019): when the toolbar
+// directory picker switches projects, prd.json/progress.txt resolve under the
+// new directory. Resolved per-read so a cwd change takes effect immediately.
+const prdPath = () => path.join(getActiveCwd(), "prd.json");
+const progressPath = () => path.join(getActiveCwd(), "progress.txt");
 
 export interface TaskStory {
   id: string;
@@ -43,7 +46,7 @@ const EMPTY: TasksState = {
 export function readTasks(): TasksState {
   let raw: string;
   try {
-    raw = fs.readFileSync(PRD_PATH, "utf8");
+    raw = fs.readFileSync(prdPath(), "utf8");
   } catch {
     return EMPTY;
   }
@@ -92,7 +95,7 @@ export function readTasks(): TasksState {
 function readActivity(limit = 8): string[] {
   try {
     return fs
-      .readFileSync(PROGRESS_PATH, "utf8")
+      .readFileSync(progressPath(), "utf8")
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l && !l.startsWith("# run:"))
@@ -104,19 +107,35 @@ function readActivity(limit = 8): string[] {
 
 /**
  * Watch prd.json + progress.txt and invoke `onChange` (debounced) whenever the
- * build loop updates them. Watches the repo dir so atomic replaces are caught.
+ * build loop updates them. Watches the active cwd so atomic replaces are caught,
+ * and re-targets the watcher (then fires once) when the active cwd changes
+ * (US-019) so the Tasks tab re-scopes to the newly-selected project.
  */
 export function watchTasks(onChange: (state: TasksState) => void): () => void {
   let timer: NodeJS.Timeout | null = null;
+  let watcher: fs.FSWatcher | null = null;
   const fire = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => onChange(readTasks()), 200);
   };
-  const watcher = fs.watch(PACKAGE_ROOT, (_event, filename) => {
-    if (filename === "prd.json" || filename === "progress.txt") fire();
+  const startWatch = () => {
+    if (watcher) watcher.close();
+    try {
+      watcher = fs.watch(getActiveCwd(), (_event, filename) => {
+        if (filename === "prd.json" || filename === "progress.txt") fire();
+      });
+    } catch {
+      watcher = null; // directory vanished — a later cwd change can re-arm it
+    }
+  };
+  startWatch();
+  const unsub = onCwdChange(() => {
+    startWatch();
+    fire(); // push the new project's tasks even if no file event follows
   });
   return () => {
     if (timer) clearTimeout(timer);
-    watcher.close();
+    if (watcher) watcher.close();
+    unsub();
   };
 }

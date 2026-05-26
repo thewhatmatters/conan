@@ -16,6 +16,7 @@ import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
+import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import {
   startSession,
   sendPrompt,
@@ -95,8 +96,39 @@ app.get("/api/health", (_req, res) => {
 
 // Same-origin bootstrap: the SPA reads the auth token here. Cross-origin pages
 // cannot read this response (no CORS headers are set), so the token stays put.
+// cwd is the app-wide active working directory (US-019), which the toolbar
+// picker can change; it survives a restart so reloads see the chosen directory.
 app.get("/api/config", (_req, res) => {
-  res.json({ token: AUTH_TOKEN, port: PORT, cwd: PACKAGE_ROOT });
+  res.json({ token: AUTH_TOKEN, port: PORT, cwd: getActiveCwd() });
+});
+
+// Active working-directory picker (US-019). The toolbar cwd is no longer a
+// static label: GET reports the current active cwd (+ the repo-root default),
+// PUT changes it (token-gated; rejects anything that isn't an accessible
+// directory). Changing it re-scopes new terminals + the Tasks reader; existing
+// ptys keep their own cwd. The choice persists across reloads.
+app.get("/api/cwd", (_req, res) => {
+  res.json({ cwd: getActiveCwd(), default: PACKAGE_ROOT });
+});
+
+app.put("/api/cwd", (req, res) => {
+  if (!authed(req, res)) return;
+  const result = setActiveCwd((req.body ?? {}).cwd);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error ?? "invalid directory" });
+    return;
+  }
+  res.json({ ok: true, cwd: result.cwd });
+});
+
+// Directory browser backing the toolbar picker (US-019). Lists the immediate
+// subdirectories of ?path= (defaults to the active cwd), token-gated since it
+// exposes the local filesystem layout. Unreadable targets degrade to an empty
+// listing carrying an `error` the UI surfaces.
+app.get("/api/fs/dirs", (req, res) => {
+  if (!authed(req, res)) return;
+  const path = typeof req.query.path === "string" ? req.query.path : undefined;
+  res.json(listDirs(path));
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
