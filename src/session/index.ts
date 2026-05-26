@@ -11,6 +11,15 @@ import {
 /** The `claude` binary to launch headless; override with CONAN_CLAUDE_BIN. */
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
 
+/** Valid `--effort` levels accepted by the CLI (US-042). */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+/** Narrow an arbitrary value to a valid `--effort` level. */
+export function isValidEffort(v: unknown): v is EffortLevel {
+  return typeof v === "string" && (EFFORT_LEVELS as readonly string[]).includes(v);
+}
+
 export interface StartSessionOptions {
   /** Working directory the agent runs in. Defaults to the repo root. */
   cwd?: string;
@@ -18,6 +27,10 @@ export interface StartSessionOptions {
   model?: string;
   /** Permission mode passed via --permission-mode (default|acceptEdits|plan|dontAsk). */
   permissionMode?: string;
+  /** Effort level passed via --effort (low|medium|high|xhigh|max); unset = CLI default. */
+  effort?: string;
+  /** Resume a session linked to a GitHub PR, passed via --from-pr <n> (US-042). */
+  fromPr?: string;
   /** Append --bare for a reproducible, minimal-config launch. */
   bare?: boolean;
   /** Optional first prompt. When omitted the session reads prompts over stdin. */
@@ -122,6 +135,8 @@ function buildArgs(opts: StartSessionOptions): string[] {
   }
   if (opts.model) args.push("--model", opts.model);
   if (opts.permissionMode) args.push("--permission-mode", opts.permissionMode);
+  if (isValidEffort(opts.effort)) args.push("--effort", opts.effort);
+  if (opts.fromPr) args.push("--from-pr", opts.fromPr);
   if (opts.bare) args.push("--bare");
   if (opts.prompt !== undefined) args.push(opts.prompt);
   return args;
@@ -468,6 +483,10 @@ export interface ResumeSessionOptions {
   cwd?: string;
   model?: string;
   permissionMode?: string;
+  /** Effort level passed via --effort (low|medium|high|xhigh|max); unset = CLI default. */
+  effort?: string;
+  /** Pass --fork-session so the resumed run gets a fresh session id (US-042). */
+  forkSession?: boolean;
   bare?: boolean;
   /** Optional prompt to deliver over stdin right after relaunch. */
   prompt?: string;
@@ -504,13 +523,17 @@ export function resumeSession(
   ];
   if (opts.model) args.push("--model", opts.model);
   if (opts.permissionMode) args.push("--permission-mode", opts.permissionMode);
+  if (isValidEffort(opts.effort)) args.push("--effort", opts.effort);
+  if (opts.forkSession) args.push("--fork-session");
   if (opts.bare) args.push("--bare");
 
   const result = launch(args, {
     cwd,
     model: opts.model,
     permissionMode: opts.permissionMode,
-    knownSessionId: sessionId,
+    // --fork-session mints a fresh session id, so don't pin the old one; let the
+    // new id be captured from system/init like a normal start.
+    knownSessionId: opts.forkSession ? undefined : sessionId,
   });
   if (opts.prompt !== undefined) writeUserMessage(result.child, opts.prompt);
   return result;

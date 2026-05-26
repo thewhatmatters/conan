@@ -646,7 +646,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 42,
-      "passes": false,
+      "passes": true,
       "notes": "Flag passthroughs through the session manager. v3-backlog item 14 (Tier3 #10). Suggested skills: automate-browser."
     },
     {

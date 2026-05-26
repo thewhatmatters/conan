@@ -116,12 +116,24 @@ try {
     cwd: tmp,
     model: "sonnet",
     permission_mode: "acceptEdits",
+    effort: "high",
+    from_pr: "1234",
   });
   const startBody = await startRes.json();
   check("start returns 200", startRes.status === 200);
   check("start captures the session_id", startBody.sessionId === FIXED_ID);
   check("start tracks a launchId", typeof startBody.launchId === "string" && startBody.launchId.length > 0);
   check("session row is running after start", sessionStatus() === "running");
+
+  // --- US-042: start passed --effort and --from-pr through to argv -------
+  const firstLaunch = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n")[0]);
+  check("start passes --effort <level>", firstLaunch.includes("--effort") && firstLaunch[firstLaunch.indexOf("--effort") + 1] === "high");
+  check("start passes --from-pr <n>", firstLaunch.includes("--from-pr") && firstLaunch[firstLaunch.indexOf("--from-pr") + 1] === "1234");
+
+  // --- US-042: invalid effort is rejected with a clear error (400) ------
+  const badEffortRes = await post("/api/claude/sessions", { cwd: tmp, effort: "ludicrous" });
+  check("start rejects invalid effort (400)", badEffortRes.status === 400);
+  check("invalid-effort error names the bad value", (await badEffortRes.json()).error?.includes("ludicrous"));
 
   // --- sendPrompt to the LIVE process -----------------------------------
   check("prompt rejects empty text (400)", (await post(`/api/claude/sessions/${FIXED_ID}/prompt`, { text: "" })).status === 400);
@@ -158,7 +170,9 @@ try {
 
   // --- resume (dormant) -------------------------------------------------
   const launchesBefore = fs.readFileSync(argvLog, "utf8").trim().split("\n").length;
-  const resumeRes = await post(`/api/claude/sessions/${FIXED_ID}/resume`, {});
+  const resumeRes = await post(`/api/claude/sessions/${FIXED_ID}/resume`, {
+    fork_session: true,
+  });
   const resumeBody = await resumeRes.json();
   check("resume returns 200", resumeRes.status === 200);
   check("resume keeps the same session_id", resumeBody.sessionId === FIXED_ID);
@@ -172,6 +186,8 @@ try {
   check("resume passes --resume <id>", lastLaunch.includes("--resume") && lastLaunch.includes(FIXED_ID));
   check("resume re-attaches the stream-json contract", lastLaunch.join(" ").includes("--output-format stream-json") && lastLaunch.includes("--input-format"));
   check("session row is running again after resume", sessionStatus() === "running");
+  // --- US-042: --fork-session passed through on resume ------------------
+  check("resume passes --fork-session", lastLaunch.includes("--fork-session"));
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

@@ -48,6 +48,8 @@ import {
   listAllEvents,
   listPendingPermissions,
   onSessionEvent,
+  isValidEffort,
+  EFFORT_LEVELS,
 } from "../session/index.js";
 import { startReaper } from "../session/reaper.js";
 
@@ -566,10 +568,18 @@ app.put("/api/claude/settings", (req, res) => {
 app.post("/api/claude/sessions", async (req, res) => {
   if (!authed(req, res)) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
+  if (b.effort !== undefined && !isValidEffort(b.effort)) {
+    res.status(400).json({
+      error: `invalid effort '${String(b.effort)}' (expected one of ${EFFORT_LEVELS.join(", ")})`,
+    });
+    return;
+  }
   const result = startSession({
     cwd: typeof b.cwd === "string" ? b.cwd : undefined,
     model: typeof b.model === "string" ? b.model : undefined,
     permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
+    effort: typeof b.effort === "string" ? b.effort : undefined,
+    fromPr: typeof b.from_pr === "string" ? b.from_pr : undefined,
     bare: b.bare === true,
     prompt: typeof b.prompt === "string" ? b.prompt : undefined,
   });
@@ -621,9 +631,17 @@ app.post("/api/claude/sessions/:id/stop", (req, res) => {
 app.post("/api/claude/sessions/:id/resume", async (req, res) => {
   if (!authed(req, res)) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
+  if (b.effort !== undefined && !isValidEffort(b.effort)) {
+    res.status(400).json({
+      error: `invalid effort '${String(b.effort)}' (expected one of ${EFFORT_LEVELS.join(", ")})`,
+    });
+    return;
+  }
   const result = resumeSession(req.params.id, {
     model: typeof b.model === "string" ? b.model : undefined,
     permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
+    effort: typeof b.effort === "string" ? b.effort : undefined,
+    forkSession: b.fork_session === true,
     prompt: typeof b.prompt === "string" ? b.prompt : undefined,
   });
   const sessionId = await awaitSessionId(result.sessionId, 3000);

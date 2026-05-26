@@ -33,6 +33,8 @@ export default function SessionBar({
 }: SessionBarProps) {
   const [showNew, setShowNew] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  // --fork-session (US-042): when set, Resume mints a fresh session id.
+  const [forkOnResume, setForkOnResume] = useState(false);
 
   const isAll = selectedId === ALL_SESSIONS;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
@@ -90,8 +92,26 @@ export default function SessionBar({
           <Action
             label="Resume"
             disabled={!hasTarget || running}
-            onClick={() => selected && post(`/api/claude/sessions/${enc(selected.id)}/resume`, {})}
+            onClick={() =>
+              selected &&
+              post(`/api/claude/sessions/${enc(selected.id)}/resume`, {
+                fork_session: forkOnResume,
+              })
+            }
           />
+          <label
+            className="flex items-center gap-1 text-xs text-muted-foreground select-none"
+            title="Resume into a fresh session id (--fork-session)"
+          >
+            <input
+              type="checkbox"
+              checked={forkOnResume}
+              onChange={(e) => setForkOnResume(e.target.checked)}
+              disabled={!hasTarget || running}
+              className="size-3 accent-primary"
+            />
+            Fork
+          </label>
           <Action
             label="Send prompt"
             disabled={!hasTarget}
@@ -232,6 +252,8 @@ function PromptForm({
 
 const MODELS = ["sonnet", "opus", "haiku"];
 const PERMISSION_MODES = ["default", "acceptEdits", "plan", "dontAsk"];
+// "default" is a UI sentinel meaning "don't pass --effort" (use the CLI default).
+const EFFORT_OPTIONS = ["default", "low", "medium", "high", "xhigh", "max"];
 
 /** "New session" form — POSTs to startSession and selects the new session. */
 function NewSessionForm({
@@ -246,6 +268,8 @@ function NewSessionForm({
   const [cwd, setCwd] = useState(defaultCwd);
   const [model, setModel] = useState("sonnet");
   const [permissionMode, setPermissionMode] = useState("default");
+  const [effort, setEffort] = useState("default");
+  const [fromPr, setFromPr] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -258,10 +282,14 @@ function NewSessionForm({
     setBusy(true);
     setError(null);
     try {
+      const body: Record<string, unknown> = { cwd, model, permission_mode: permissionMode };
+      // Only send the optional flags when set, so defaults are unchanged.
+      if (effort !== "default") body.effort = effort;
+      if (fromPr.trim()) body.from_pr = fromPr.trim();
       const res = await fetch("/api/claude/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-conan-token": token },
-        body: JSON.stringify({ cwd, model, permission_mode: permissionMode }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`start failed (${res.status})`);
       const data = (await res.json().catch(() => ({}))) as { sessionId?: string };
@@ -289,6 +317,17 @@ function NewSessionForm({
         </Field>
         <Field label="Permission mode">
           <Select value={permissionMode} onChange={setPermissionMode} options={PERMISSION_MODES} />
+        </Field>
+        <Field label="Effort">
+          <Select value={effort} onChange={setEffort} options={EFFORT_OPTIONS} />
+        </Field>
+        <Field label="From PR (#)" className="sm:col-span-2">
+          <input
+            value={fromPr}
+            onChange={(e) => setFromPr(e.target.value)}
+            placeholder="e.g. 1234 — resume a PR-linked session"
+            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+          />
         </Field>
         <div className="flex items-end">
           <button
