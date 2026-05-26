@@ -22,6 +22,8 @@ import { useTranscript } from "./hooks/useTranscript.ts";
 import Toaster from "./components/Toaster.tsx";
 import Sidebar from "./components/Sidebar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
+import AgentsView from "./components/AgentsView.tsx";
+import SkillsView from "./components/SkillsView.tsx";
 import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
 
@@ -195,6 +197,10 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-auto p-6">
           {route === "settings" ? (
             <SettingsView theme={theme} onToggleTheme={toggle} />
+          ) : route === "agents" ? (
+            <AgentsView />
+          ) : route === "skills" ? (
+            <SkillsView />
           ) : (
           <>
           <Widgets

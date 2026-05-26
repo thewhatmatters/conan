@@ -258,7 +258,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "Extends v2 US-006. Decision: 4-item nav. Suggested skills: shadcn, automate-browser."
     },
     {

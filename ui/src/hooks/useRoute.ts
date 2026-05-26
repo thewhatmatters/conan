@@ -1,22 +1,37 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type Route = "overview" | "settings";
+export type Route = "overview" | "agents" | "skills" | "settings";
 
-/** Map a URL pathname to one of our two routes. */
+/** Map a URL pathname to one of our four routes. */
 function routeFor(pathname: string): Route {
-  return pathname.replace(/\/+$/, "") === "/settings" ? "settings" : "overview";
+  const p = pathname.replace(/\/+$/, "");
+  if (p === "/agents") return "agents";
+  if (p === "/skills") return "skills";
+  if (p === "/settings") return "settings";
+  return "overview";
 }
 
 /** Canonical pathname for a route. */
 function pathFor(route: Route): string {
-  return route === "settings" ? "/settings" : "/";
+  switch (route) {
+    case "agents":
+      return "/agents";
+    case "skills":
+      return "/skills";
+    case "settings":
+      return "/settings";
+    default:
+      return "/";
+  }
 }
 
 /**
- * pushState-based router (US-006) — no react-router. Tracks the current route,
- * exposes a `navigate` that pushes history (so back/forward work), and listens
- * for popstate. The gateway's SPA fallback serves index.html for any path, so
- * deep-linking to /settings loads the app on that route.
+ * pushState-based router (US-017, extends v2 US-006) — no react-router. Four
+ * destinations: Overview (/), Agents (/agents), Skills (/skills), Settings
+ * (/settings). Tracks the current route, exposes a `navigate` that pushes
+ * history (so back/forward work), and listens for popstate. The gateway's SPA
+ * fallback serves index.html for any path, so deep-linking to any route loads
+ * the app there.
  */
 export function useRoute() {
   const [route, setRoute] = useState<Route>(() =>

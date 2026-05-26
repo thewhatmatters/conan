@@ -10,14 +10,17 @@ interface SidebarProps {
 
 const NAV: { route: Route; label: string; icon: ReactElement }[] = [
   { route: "overview", label: "Overview", icon: <GridIcon /> },
+  { route: "agents", label: "Agents", icon: <BotIcon /> },
+  { route: "skills", label: "Skills", icon: <SparkIcon /> },
   { route: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
 /**
- * App nav (US-006): a collapsible sidebar with exactly two items — Overview (/)
- * and Settings (/settings). Terminal + Tasks live in the right dock, not here.
- * Collapsed state is owned by App (persisted to localStorage). Uses semantic
- * tokens only, so light/dark follow the theme.
+ * App nav (US-017, extends v2 US-006): a collapsible sidebar with four items —
+ * Overview (/), Agents (/agents), Skills (/skills), and Settings (/settings).
+ * Terminal + Tasks live in the right dock, not here. Collapsed state is owned by
+ * App (persisted to localStorage). Uses semantic tokens only, so light/dark
+ * follow the theme.
  */
 export default function Sidebar({
   route,
@@ -82,6 +85,26 @@ function MenuIcon() {
       <line x1="3" y1="6" x2="21" y2="6" />
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function BotIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="10" rx="2" />
+      <circle cx="12" cy="5" r="2" />
+      <path d="M12 7v4" />
+      <line x1="8" y1="16" x2="8" y2="16" />
+      <line x1="16" y1="16" x2="16" y2="16" />
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
     </svg>
   );
 }
