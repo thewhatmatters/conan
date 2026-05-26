@@ -229,7 +229,7 @@ export default function App() {
             </div>
           ) : route === "agents" ? (
             <div className="pt-6">
-              <AgentsView />
+              <AgentsView token={config?.token ?? null} trigger={wsTrigger} />
             </div>
           ) : route === "skills" ? (
             <div className="pt-6">
