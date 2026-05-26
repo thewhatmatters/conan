@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 
+export type PulseCategory =
+  | "tool"
+  | "assistant"
+  | "prompt"
+  | "session"
+  | "other";
+
 export interface PulseBucket {
   t: number;
   events: number;
+  /** Per-category breakdown of `events` (stacked by the chart); sums to events. */
+  types: Record<PulseCategory, number>;
   retries: number;
   tokens: number;
   cost: number;

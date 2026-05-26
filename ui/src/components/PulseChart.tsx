@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { PulseSeries } from "../hooks/usePulse.ts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PulseSeries, PulseCategory } from "../hooks/usePulse.ts";
 
 type Range = { label: string; minutes: number };
 const RANGES: Range[] = [
@@ -11,6 +11,19 @@ const RANGES: Range[] = [
 
 type Metric = "tokens" | "cost";
 
+/**
+ * Activity categories the area stacks by (bottom → top), mapped 1:1 onto the
+ * --color-chart-1..5 theme tokens (US-005). Mirrors PULSE_CATEGORIES on the
+ * backend (src/pulse/index.ts).
+ */
+const CATEGORIES: { key: PulseCategory; label: string; varName: string }[] = [
+  { key: "tool", label: "Tools", varName: "--color-chart-1" },
+  { key: "assistant", label: "Assistant", varName: "--color-chart-2" },
+  { key: "prompt", label: "Prompts", varName: "--color-chart-3" },
+  { key: "session", label: "Session", varName: "--color-chart-4" },
+  { key: "other", label: "Other", varName: "--color-chart-5" },
+];
+
 interface PulseChartProps {
   series: PulseSeries | null;
   minutes: number;
@@ -21,11 +34,13 @@ const H = 160; // plot height in px
 const PAD_BOTTOM = 18; // room for the retry tick rail
 
 /**
- * US-020: the Pulse / throughput chart. Bars are events-per-minute across all
- * sessions; the overlaid line is token (or cost) burn over the same window;
- * red ticks on the bottom rail mark buckets that contained an api_retry. This
- * is time-series — distinct from the snapshot hero cards (US-010). Semantic
- * tokens only; geometry is measured so the SVG stays crisp at any width.
+ * US-016: the Pulse / throughput chart — a hand-rolled SVG stacked-area
+ * time-series. Each band is an activity category (tool/assistant/prompt/...)
+ * bucketed across all sessions over the selected window; the overlaid line is
+ * token (or cost) burn over the same window; red ticks on the bottom rail mark
+ * buckets that contained an api_retry. Distinct from the snapshot hero cards
+ * (US-010). Zero charting deps, semantic/chart tokens only; geometry is
+ * measured so the SVG stays crisp at any width.
  */
 export default function PulseChart({ series, minutes, onRange }: PulseChartProps) {
   const [metric, setMetric] = useState<Metric>("tokens");
@@ -47,25 +62,47 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
   const totals = series?.totals ?? { events: 0, retries: 0, tokens: 0, cost: 0 };
   const hasData = totals.events > 0 || totals.tokens > 0 || totals.cost > 0;
 
-  const maxEvents = Math.max(1, ...buckets.map((b) => b.events));
-  const lineVals = buckets.map((b) => (metric === "tokens" ? b.tokens : b.cost));
-  const maxLine = Math.max(0, ...lineVals);
-
   const plotH = H - PAD_BOTTOM;
   const n = Math.max(1, buckets.length);
   const bw = width / n;
-  // Bar geometry.
-  const bars = buckets.map((b, i) => {
-    const h = (b.events / maxEvents) * (plotH - 4);
-    return {
-      x: i * bw + bw * 0.15,
-      w: Math.max(1, bw * 0.7),
-      y: plotH - h,
-      h,
-      retry: b.retries > 0,
-    };
-  });
-  // Line points (centered in each bucket); only drawn when there's a scale.
+
+  // Tallest total-activity bucket sets the area's vertical scale.
+  const maxStack = Math.max(
+    1,
+    ...buckets.map((b) => b.events),
+  );
+
+  // Build one filled <polygon> per category by walking the running stack base
+  // bucket-by-bucket: the band's top edge is left→right, its bottom edge is the
+  // previous bands' cumulative total drawn right→left to close the shape.
+  const bandPolys = useMemo(() => {
+    const xAt = (i: number) => i * bw + bw / 2;
+    const yAt = (v: number) => plotH - (v / maxStack) * (plotH - 6);
+    const running = buckets.map(() => 0); // cumulative height below current band
+
+    return CATEGORIES.map(({ key, varName }) => {
+      const tops: string[] = [];
+      const bottoms: string[] = [];
+      let any = false;
+      buckets.forEach((b, i) => {
+        const base = running[i] ?? 0;
+        const top = base + (b.types?.[key] ?? 0);
+        if (b.types?.[key]) any = true;
+        const x = xAt(i).toFixed(1);
+        tops.push(`${x},${yAt(top).toFixed(1)}`);
+        bottoms.push(`${x},${yAt(base).toFixed(1)}`);
+        running[i] = top;
+      });
+      // Anchor the band to the baseline at both ends so single-point series
+      // (n===1) and edges still render as a visible shape.
+      const points = [...tops, ...bottoms.reverse()].join(" ");
+      return { key, varName, points, any };
+    });
+  }, [buckets, bw, plotH, maxStack]);
+
+  // Token / cost overlay line, on its own scale.
+  const lineVals = buckets.map((b) => (metric === "tokens" ? b.tokens : b.cost));
+  const maxLine = Math.max(0, ...lineVals);
   const linePts =
     maxLine > 0
       ? buckets
@@ -77,6 +114,20 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
           })
           .join(" ")
       : "";
+
+  // Per-category totals for the legend.
+  const typeTotals = useMemo(() => {
+    const acc: Record<PulseCategory, number> = {
+      tool: 0,
+      assistant: 0,
+      prompt: 0,
+      session: 0,
+      other: 0,
+    };
+    for (const b of buckets)
+      for (const c of CATEGORIES) acc[c.key] += b.types?.[c.key] ?? 0;
+    return acc;
+  }, [buckets]);
 
   return (
     <section className="rounded-xl border border-border bg-card p-4">
@@ -133,7 +184,7 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
             viewBox={`0 0 ${width} ${H}`}
             className="block"
             role="img"
-            aria-label="Activity and token/cost over time"
+            aria-label="Activity by type and token/cost over time"
           >
             {/* Baseline. */}
             <line
@@ -144,37 +195,41 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
               className="stroke-border"
               strokeWidth="1"
             />
-            {/* Events-per-bucket bars. */}
-            {bars.map((b, i) => (
-              <rect
-                key={i}
-                x={b.x}
-                y={b.y}
-                width={b.w}
-                height={Math.max(0, b.h)}
-                rx="1"
-                className="fill-primary/30"
-              />
-            ))}
+            {/* Stacked activity bands, one filled polygon per category. */}
+            {bandPolys.map((band) =>
+              band.any ? (
+                <polygon
+                  key={band.key}
+                  points={band.points}
+                  fill={`var(${band.varName})`}
+                  fillOpacity={0.78}
+                  stroke={`var(${band.varName})`}
+                  strokeWidth="1"
+                  strokeLinejoin="round"
+                />
+              ) : null,
+            )}
             {/* Token / cost overlay line. */}
             {linePts && (
               <polyline
                 points={linePts}
                 fill="none"
-                className="stroke-primary"
-                strokeWidth="1.75"
+                className="stroke-foreground"
+                strokeOpacity={0.55}
+                strokeWidth="1.5"
+                strokeDasharray="3 2"
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
             )}
             {/* api_retry rail: a red tick under each bucket that retried. */}
-            {bars.map((b, i) =>
-              b.retry ? (
+            {buckets.map((b, i) =>
+              b.retries > 0 ? (
                 <rect
                   key={`r${i}`}
-                  x={b.x}
+                  x={i * bw + bw * 0.15}
                   y={plotH + 4}
-                  width={b.w}
+                  width={Math.max(1, bw * 0.7)}
                   height="4"
                   rx="1"
                   className="fill-destructive"
@@ -191,22 +246,29 @@ export default function PulseChart({ series, minutes, onRange }: PulseChartProps
         )}
       </div>
 
-      {/* Summary footer + legend. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+      {/* Summary footer + per-category legend. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {CATEGORIES.filter((c) => typeTotals[c.key] > 0).map((c) => (
+          <span key={c.key} className="inline-flex items-center gap-1.5">
+            <span
+              className="size-2 rounded-sm"
+              style={{ backgroundColor: `var(${c.varName})` }}
+            />
+            {typeTotals[c.key]} {c.label.toLowerCase()}
+          </span>
+        ))}
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-primary/30" />
-          {totals.events} events
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-3 rounded bg-primary" />
+          <span className="h-0 w-3 border-t border-dashed border-foreground/55" />
           {metric === "tokens"
             ? `${fmtTokens(totals.tokens)} tokens`
             : `$${totals.cost.toFixed(2)}`}
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-destructive" />
-          {totals.retries} retries
-        </span>
+        {totals.retries > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-destructive" />
+            {totals.retries} retries
+          </span>
+        )}
       </div>
     </section>
   );

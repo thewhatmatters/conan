@@ -263,7 +263,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Research: REJECT Sankey (no time axis, wrong for small tile; reserve for a future full-width flow panel). Hand-roll SVG area chart. Current: PulseChart.tsx (SVG bar+line). Suggested skills: automate-browser, frontend-design."
     },
     {

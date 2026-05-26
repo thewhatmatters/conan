@@ -5,12 +5,51 @@
 // (US-010) — those describe "now", this describes the recent past.
 import { getDb } from "../db/index.js";
 
+/**
+ * Activity categories the stacked-area Pulse chart stacks by (US-016). Order is
+ * the stack order (bottom → top) and maps 1:1 onto --color-chart-1..5 in the UI.
+ * Every meaningful (non-stream-delta) event falls into exactly one category, so
+ * the per-bucket `types` always sum to `events`.
+ */
+export const PULSE_CATEGORIES = [
+  { key: "tool", label: "Tools" },
+  { key: "assistant", label: "Assistant" },
+  { key: "prompt", label: "Prompts" },
+  { key: "session", label: "Session" },
+  { key: "other", label: "Other" },
+] as const;
+
+export type PulseCategory = (typeof PULSE_CATEGORIES)[number]["key"];
+
+/** Bucket one event into a stack category from its stream/hook columns alone
+ * (no payload parsing) so the breakdown is cheap and deterministic. */
+function categorize(row: EventRow): PulseCategory {
+  const h = row.hook_event_name;
+  if (h === "PreToolUse" || h === "PostToolUse" || h === "PostToolUseFailure")
+    return "tool";
+  if (h === "UserPromptSubmit") return "prompt";
+  if (
+    h === "SessionStart" ||
+    h === "SessionEnd" ||
+    h === "Stop" ||
+    h === "SubagentStop" ||
+    h === "Notification" ||
+    h === "PreCompact"
+  )
+    return "session";
+  const s = row.stream_type;
+  if (s === "assistant" || s === "result") return "assistant";
+  return "other";
+}
+
 /** One time slice of activity aggregated across every session. */
 export interface PulseBucket {
   /** Bucket start, epoch ms. */
   t: number;
   /** Meaningful events in this slice (stream-token deltas excluded as noise). */
   events: number;
+  /** Per-category breakdown of `events` (stacked by the UI); sums to `events`. */
+  types: Record<PulseCategory, number>;
   /** api_retry events in this slice, surfaced distinctly on the chart. */
   retries: number;
   /** Output tokens produced (from ResultMessage usage). */
@@ -68,9 +107,18 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
   );
   const count = Math.max(1, Math.ceil(windowMs / bucketMs));
 
+  const zeroTypes = (): Record<PulseCategory, number> => ({
+    tool: 0,
+    assistant: 0,
+    prompt: 0,
+    session: 0,
+    other: 0,
+  });
+
   const buckets: PulseBucket[] = Array.from({ length: count }, (_, i) => ({
     t: start + i * bucketMs,
     events: 0,
+    types: zeroTypes(),
     retries: 0,
     tokens: 0,
     cost: 0,
@@ -98,7 +146,10 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
     const b = i < 0 ? undefined : buckets[i];
     if (!b) continue;
     if (isRetry(row)) b.retries++;
-    if (!isStreamDelta(row.stream_type)) b.events++;
+    if (!isStreamDelta(row.stream_type)) {
+      b.events++;
+      b.types[categorize(row)]++;
+    }
   }
 
   // Token/cost from result rows. Walk ALL result rows in time order so the
