@@ -1,43 +1,70 @@
 import { useCallback, useEffect, useState } from "react";
 
-/** The opt-in secondary widgets (US-022), all off by default. */
+/**
+ * The widgets available in the picker-fronted hero area (US-010). The Plugins,
+ * API-retry, and Top-tools widgets were dropped — they added no value. The
+ * remaining/new widgets (MCP, Model & idle, Git, Context, Usage, Stats) plus
+ * the carried-over Sessions/Skills/Cost cards all slot in here and are toggled
+ * from the "Widgets ▾" picker.
+ */
 export const WIDGET_KEYS = [
+  "context",
+  "sessions",
+  "skills",
+  "cost",
   "mcp",
-  "plugins",
   "model",
-  "retry",
-  "tools",
   "git",
+  "usage",
+  "stats",
 ] as const;
 export type WidgetKey = (typeof WIDGET_KEYS)[number];
 
 export const WIDGET_LABELS: Record<WidgetKey, string> = {
+  context: "Context",
+  sessions: "Active sessions",
+  skills: "Skills",
+  cost: "Cost today",
   mcp: "MCP servers",
-  plugins: "Plugins",
   model: "Model & idle",
-  retry: "API retry rate",
-  tools: "Top tools",
   git: "Git status",
+  usage: "Usage",
+  stats: "Stats",
 };
+
+/**
+ * Default set shown to a first-time user — five widgets so the row reads at a
+ * glance without overflowing. The rest are one click away in the picker.
+ */
+const DEFAULT_ENABLED: WidgetKey[] = [
+  "context",
+  "sessions",
+  "mcp",
+  "model",
+  "git",
+];
 
 const STORAGE_KEY = "conan.widgets.enabled";
 
 /**
- * Persisted set of enabled secondary widgets (US-022). Backed by localStorage
- * so a user's "add widget" choices survive reloads. Default is empty — the
- * main view stays limited to the hero row + pending-approvals until opted in.
+ * Persisted set of enabled hero widgets (US-010). Backed by localStorage so the
+ * user's picker choices survive reloads. A first run (no stored value) shows the
+ * five-widget default; an existing stored set is honored, with any retired keys
+ * (plugins/retry/tools) silently dropped.
  */
 export function useWidgetPrefs() {
   const [enabled, setEnabled] = useState<Set<WidgetKey>>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return new Set();
+      if (raw == null) return new Set(DEFAULT_ENABLED);
       const arr = JSON.parse(raw) as string[];
-      return new Set(arr.filter((k): k is WidgetKey =>
-        (WIDGET_KEYS as readonly string[]).includes(k),
-      ));
+      return new Set(
+        arr.filter((k): k is WidgetKey =>
+          (WIDGET_KEYS as readonly string[]).includes(k),
+        ),
+      );
     } catch {
-      return new Set();
+      return new Set(DEFAULT_ENABLED);
     }
   });
 

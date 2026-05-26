@@ -1,16 +1,14 @@
-// US-022: data source for the opt-in "secondary widgets" backlog. These are the
-// deeper signals deferred from the phase-1 hero row — surfaced only when a user
-// turns them on, so the default view stays uncluttered.
+// US-022 / US-010: data source for the picker-fronted widget area. These are the
+// per-session signals the hero widgets surface when a user turns them on.
 //
-// One read helper assembles every secondary signal for a given session:
+// One read helper assembles every per-session signal for a given session:
 //   - mcp        MCP servers (name + health) from the session's system/init
-//   - plugins    plugins loaded + plugin_errors from system/init
-//   - topTools   most-used tools by PostToolUse count (hook path, US-004)
-//   - apiRetry   api_retry occurrences + per-hour rate over the session's life
 //   - git        branch + dirty-file count for the session's cwd
 //
 // The model + idle widget is derived client-side from the session row (model,
-// status, last_activity) and needs no extra data here.
+// status, last_activity) and needs no extra data here. The Plugins, API-retry,
+// and Top-tools widgets were dropped in US-010 (they added no value), so their
+// reads are gone too.
 //
 // Pure-ish reads (db + a short-lived git child); no broadcasting, so the gateway
 // route is a thin wrapper.
@@ -34,18 +32,10 @@ export interface GitStatus {
   dirty: number;
 }
 
-/** The full secondary-widget payload for one session. */
+/** The per-session widget payload for one session. */
 export interface WidgetData {
   /** null when the session has no system/init event (hook-only session). */
   mcp: McpServer[] | null;
-  /** null when no system/init; otherwise loaded-plugin count + names. */
-  plugins: { count: number; names: string[] } | null;
-  /** Count of plugin load errors from system/init. */
-  pluginErrors: number;
-  /** Tools sorted by PostToolUse invocation count, descending. */
-  topTools: { name: string; count: number }[];
-  /** api_retry occurrences and a per-hour rate over the session's lifetime. */
-  apiRetry: { count: number; perHour: number };
   git: GitStatus;
 }
 
@@ -80,74 +70,6 @@ function parseMcp(init: Record<string, unknown> | null): McpServer[] | null {
   });
 }
 
-/** Normalize the plugins field; entries may be strings or {name} objects. */
-function parsePlugins(
-  init: Record<string, unknown> | null,
-): { count: number; names: string[] } | null {
-  if (!init) return null;
-  const raw = init.plugins;
-  if (!Array.isArray(raw)) return { count: 0, names: [] };
-  const names = raw.map((p) => {
-    if (typeof p === "string") return p;
-    const o = (p ?? {}) as Record<string, unknown>;
-    return typeof o.name === "string" ? o.name : "unknown";
-  });
-  return { count: names.length, names };
-}
-
-/** Count plugin_errors entries from system/init. */
-function countPluginErrors(init: Record<string, unknown> | null): number {
-  if (!init) return 0;
-  return Array.isArray(init.plugin_errors) ? init.plugin_errors.length : 0;
-}
-
-/**
- * Most-used tools for a session by PostToolUse count. The US-004 hook path
- * writes one event per tool completion (hook_event_name='PostToolUse',
- * tool_name set), which is the cleanest invocation signal.
- */
-function topTools(sessionId: string): { name: string; count: number }[] {
-  return getDb()
-    .prepare(
-      `SELECT tool_name AS name, COUNT(*) AS count
-         FROM event
-         WHERE session_id = ?
-           AND hook_event_name = 'PostToolUse'
-           AND tool_name IS NOT NULL
-         GROUP BY tool_name
-         ORDER BY count DESC, name ASC
-         LIMIT 8`,
-    )
-    .all(sessionId) as { name: string; count: number }[];
-}
-
-/**
- * api_retry occurrences for a session plus a per-hour rate. Retries are emitted
- * by the stream parser as system/api_retry events; the rate normalizes the
- * count over the elapsed session lifetime (created_at → last_activity).
- */
-function apiRetryRate(sessionId: string): { count: number; perHour: number } {
-  const count = (
-    getDb()
-      .prepare(
-        `SELECT COUNT(*) AS n FROM event
-           WHERE session_id = ? AND stream_type = 'system/api_retry'`,
-      )
-      .get(sessionId) as { n: number }
-  ).n;
-  const span = getDb()
-    .prepare("SELECT created_at, last_activity FROM session WHERE id = ?")
-    .get(sessionId) as
-    | { created_at: number; last_activity: number }
-    | undefined;
-  let perHour = 0;
-  if (count > 0 && span) {
-    const hours = Math.max(span.last_activity - span.created_at, 60_000) / 3_600_000;
-    perHour = count / hours;
-  }
-  return { count, perHour: Math.round(perHour * 10) / 10 };
-}
-
 /** Run `git` in a cwd, returning trimmed stdout or null on any failure. */
 function git(cwd: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
@@ -171,7 +93,7 @@ async function gitStatus(cwd: string | null): Promise<GitStatus> {
   return { available: true, branch, dirty };
 }
 
-/** Assemble the full secondary-widget payload for one session. */
+/** Assemble the per-session widget payload for one session. */
 export async function readWidgets(sessionId: string): Promise<WidgetData> {
   const init = latestInit(sessionId);
   const row = getDb()
@@ -179,10 +101,6 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
     .get(sessionId) as { cwd?: string } | undefined;
   return {
     mcp: parseMcp(init),
-    plugins: parsePlugins(init),
-    pluginErrors: countPluginErrors(init),
-    topTools: topTools(sessionId),
-    apiRetry: apiRetryRate(sessionId),
     git: await gitStatus(row?.cwd ?? null),
   };
 }

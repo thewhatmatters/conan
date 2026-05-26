@@ -8,11 +8,10 @@ import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
 import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import Dock from "./components/Dock.tsx";
 import SessionBar from "./components/SessionBar.tsx";
-import HeroWidgets from "./components/HeroWidgets.tsx";
+import Widgets from "./components/Widgets.tsx";
 import PendingApprovals from "./components/PendingApprovals.tsx";
 import PulseChart from "./components/PulseChart.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
-import SecondaryWidgets from "./components/SecondaryWidgets.tsx";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
@@ -191,24 +190,18 @@ export default function App() {
             <SettingsView />
           ) : (
           <>
-          <HeroWidgets
+          <Widgets
             sessions={sessions}
             activeSession={activeSession}
             skills={skills}
             usage={usage}
+            data={widgetData}
+            enabled={widgetPrefs.enabled}
+            toggle={widgetPrefs.toggle}
           />
 
           <div className="mt-4">
             <PendingApprovals pending={pending} onDecide={postDecision} />
-          </div>
-
-          <div className="mt-4">
-            <SecondaryWidgets
-              enabled={widgetPrefs.enabled}
-              toggle={widgetPrefs.toggle}
-              data={widgetData}
-              activeSession={activeSession}
-            />
           </div>
 
           <div className="mt-4">

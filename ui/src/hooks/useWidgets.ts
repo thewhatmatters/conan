@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 
-/** Mirrors the WidgetData shape from src/widgets/index.ts (US-022). */
+/** Mirrors the WidgetData shape from src/widgets/index.ts (US-010). */
 export interface WidgetData {
   mcp: { name: string; status: string }[] | null;
-  plugins: { count: number; names: string[] } | null;
-  pluginErrors: number;
-  topTools: { name: string; count: number }[];
-  apiRetry: { count: number; perHour: number };
   git: { available: boolean; branch: string | null; dirty: number };
 }
 
