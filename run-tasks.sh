@@ -58,6 +58,12 @@ target() {
   python3 -c "import json;s=sorted((x for x in json.load(open('$PRD')).get('userStories',[]) if not x.get('passes')),key=lambda x:x.get('priority',0));print(f\"{s[0].get('id','?')}: {s[0].get('title','?')}\" if s else '')"
 }
 
+# Count of stories currently passing — used to tell a completed iteration (count
+# went up) from a real usage-limit halt (count unchanged + a limit banner).
+passing_count() {
+  python3 -c "import json;print(sum(1 for s in json.load(open('$PRD')).get('userStories',[]) if s.get('passes')))" 2>/dev/null || echo 0
+}
+
 # Seconds until a "resets at H[:MM][am/pm]" mentioned in $1; else USAGE_BACKOFF.
 reset_seconds() {
   python3 - "$USAGE_BACKOFF" "$1" <<'PY'
@@ -122,14 +128,26 @@ for ((i = 1; i <= MAX_ITER; i++)); do
   echo "── iteration $i → $tgt ──────────────────────" >&2
   printf '[%s] iteration %d → %s\n' "$(date '+%F %T')" "$i" "$tgt" >> "$PROGRESS"
 
+  passed_before="$(passing_count)"
   out="$(printf '%s\n' "$PROMPT" | $AGENT_CMD 2>&1)" || true
   printf '%s\n' "$out"
+  passed_after="$(passing_count)"
 
   # Usage / rate limit? Surface reset info, wait, then resume the same story.
-  # Match only Claude's REAL limit banner, not stories that merely discuss
-  # limits/usage (US-023 cost ceiling, US-030 usage widget). The "· resets <t>"
-  # middot banner + "hit your … limit" are the distinctive real signals.
-  if printf '%s' "$out" | grep -qiE '·[[:space:]]*resets|hit your (session|usage|account) limit|usage limit reached|reached your (usage|session) limit|too many requests|status 429|http 429'; then
+  # Two guards against false positives from stories that BUILD usage UI (US-004
+  # cost-ceiling removal, US-014/US-030 usage widget, US-015 stats) whose output
+  # renders things like "rate limited · resets in 13m":
+  #   1. Progress guard — if a story flipped to passing this iteration, the agent
+  #      finished; a real limit halts it early, so a completed iteration is never
+  #      a limit. (Count-based, not prose-based, so reading prd.json's already-
+  #      passing stories can't be mistaken for a limit signal.)
+  #   2. Banner shape — Claude's REAL limit banner has a CLOCK-TIME reset
+  #      ("· resets 3pm" / "resets at 9:30am"), not the widget's relative
+  #      "resets in 13m". Match clock-time only, plus the strong "hit your … limit"
+  #      / 429 phrases.
+  if [ "$passed_after" -gt "$passed_before" ]; then
+    : # a story passed this iteration — progress, not a usage limit
+  elif printf '%s' "$out" | grep -qiE 'hit your (session|usage|account) limit|usage limit reached|reached your (usage|session) limit|too many requests|status 429|http 429|·[[:space:]]*resets[[:space:]]+(at[[:space:]]+)?[0-9]{1,2}(:[0-9]{2})?[[:space:]]*[ap]m|resets[[:space:]]+(at[[:space:]]+)?[0-9]{1,2}(:[0-9]{2})?[[:space:]]*[ap]m'; then
     line="$(printf '%s' "$out" | grep -iE 'reset|limit' | head -1 | tr -s ' ' | cut -c1-160)"
     secs="$(reset_seconds "$out")"
     msg="⏳ usage limit — ${line:-no detail}; resuming [$tgt] in ${secs}s"

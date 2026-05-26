@@ -67,7 +67,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Real live /usage % needs anthropic-ratelimit-unified-* response headers, which live in the claude process memory \u2014 Conan only shells out (stream-json), so it can't read them. Honest ceiling = api_retry-derived rateLimited+reset + our own token-consumption trend. User: 'fuck off with Cost Ceiling'."
     },
     {
