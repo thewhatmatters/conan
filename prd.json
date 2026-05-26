@@ -129,7 +129,7 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "RESEARCH: ~/.claude/file-history/<id>/<hash>@vN are full file snapshots; no manifest (order by @vN + mtime). Restore is deferred/risky. v3-backlog item 14 (Tier1)."
     },
     {

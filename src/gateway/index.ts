@@ -20,6 +20,7 @@ import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
+import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -400,6 +401,30 @@ app.get("/api/claude/settings", (_req, res) => {
 // the file mtime for staleness. Read-only; safe empty shape if the file is gone.
 app.get("/api/claude/changelog", (_req, res) => {
   res.json(readChangelog());
+});
+
+// Checkpoints (US-008): list Claude Code's per-session file-history snapshots
+// (~/.claude/file-history/<session>/<hash>@vN), grouped/sorted per session.
+// Read-only and access-modeled like the other GET routes; safe empty shape when
+// file-history is absent.
+app.get("/api/claude/checkpoints", (_req, res) => {
+  res.json(readCheckpoints());
+});
+
+// Fetch a single snapshot's content for preview (read-only). The snapshot is
+// located by scanning the session dir for the requested hash/version, so user
+// input is never joined into a filesystem path. 404 when not found.
+app.get("/api/claude/checkpoints/:sessionId/content", (req, res) => {
+  const { sessionId } = req.params;
+  const hash = typeof req.query.hash === "string" ? req.query.hash : "";
+  const versionRaw = typeof req.query.version === "string" ? req.query.version : "";
+  const version = versionRaw ? parseInt(versionRaw, 10) : null;
+  const snap = readSnapshot(sessionId, hash, Number.isFinite(version as number) ? version : null);
+  if (!snap) {
+    res.status(404).json({ error: "snapshot not found" });
+    return;
+  }
+  res.json(snap);
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to
