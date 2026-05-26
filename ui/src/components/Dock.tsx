@@ -18,8 +18,8 @@ interface DockProps {
   hidden?: boolean;
 }
 
-const MIN_W = 320;
-const MAX_W = 900;
+const MIN_H = 140;
+const MAX_H = 1000;
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
 
 /** A single terminal tab — its `tid` keys an independent pty on the backend. */
@@ -56,8 +56,8 @@ function persistTerms(terms: TermTab[]): void {
 }
 
 /**
- * The right-hand dock: a draggable-width panel with a tabbed surface. It holds N
- * terminal tabs (US-026) plus a Tasks tab. Every terminal stays mounted at all
+ * The bottom dock (US-038): a draggable-height panel stacked under the activity
+ * log, with a tabbed surface. It holds N terminal tabs (US-026) plus a Tasks tab. Every terminal stays mounted at all
  * times (stacked, only the active one on top) so switching tabs never tears down
  * a pty and scrollback is preserved; the Tasks checklist overlays them. Each
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
@@ -69,10 +69,13 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
     kind: "term",
     tid: terms[0]!.tid, // loadTerms() always returns ≥1 tab
   }));
-  const [width, setWidth] = useState<number>(
-    () => Number(localStorage.getItem("conan-dock-w")) || 460,
+  // US-038: the dock is a bottom panel under the activity log; its top-edge
+  // handle resizes the dock's height (the activity-log / terminal boundary),
+  // mirroring the old left-edge width handle. Persisted like the width was.
+  const [height, setHeight] = useState<number>(
+    () => Number(localStorage.getItem("conan-dock-h")) || 360,
   );
-  const widthRef = useRef(width);
+  const heightRef = useRef(height);
   // Per-tab "destroy on unmount" flags. Set just before removing a tab so the
   // Terminal's cleanup sends the backend close frame (US-026 criterion 3).
   const closeFlags = useRef(new Map<string, { current: boolean }>());
@@ -121,15 +124,19 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const onMove = (ev: MouseEvent) => {
-      const w = Math.min(MAX_W, Math.max(MIN_W, window.innerWidth - ev.clientX));
-      widthRef.current = w;
-      setWidth(w);
+      // The dock sits flush against the viewport bottom, so its height is the
+      // distance from the cursor to the bottom edge. Clamp to [MIN_H, MAX_H]
+      // and never taller than the viewport leaves room for the log above.
+      const max = Math.min(MAX_H, window.innerHeight - 160);
+      const h = Math.min(max, Math.max(MIN_H, window.innerHeight - ev.clientY));
+      heightRef.current = h;
+      setHeight(h);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
-      localStorage.setItem("conan-dock-w", String(widthRef.current));
+      localStorage.setItem("conan-dock-h", String(heightRef.current));
     };
     document.body.style.userSelect = "none";
     window.addEventListener("mousemove", onMove);
@@ -138,14 +145,14 @@ export default function Dock({ token, theme, tasks, hidden }: DockProps) {
 
   return (
     <aside
-      style={{ width, display: hidden ? "none" : undefined }}
-      className="relative flex shrink-0 flex-col border-l border-border bg-card"
+      style={{ height, display: hidden ? "none" : undefined }}
+      className="relative flex shrink-0 flex-col border-t border-border bg-card"
     >
-      {/* drag handle on the left edge */}
+      {/* drag handle on the top edge — resizes the activity-log / terminal split */}
       <div
         onMouseDown={startResize}
         title="Drag to resize"
-        className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
+        className="absolute left-0 top-0 z-20 h-1.5 w-full -translate-y-1/2 cursor-row-resize hover:bg-primary/40"
       />
 
       <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">

@@ -234,12 +234,15 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      {/* US-038: the activity log (main) and the Terminal dock are stacked
+          vertically here so the dock's top-edge handle resizes the height
+          boundary between them. */}
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* US-020: top padding lives on the content, not <main>, so the sticky
             widget row (Overview) can pin its opaque background flush to the
             scrollport top with no transparent gap for the timeline to show
             through. Non-Overview routes get the padding back via pt-6. */}
-        <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-6">
           {route === "settings" ? (
             <div className="pt-6">
               <SettingsView

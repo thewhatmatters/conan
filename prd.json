@@ -585,7 +585,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 38,
-      "passes": false,
+      "passes": true,
       "notes": "v3-backlog item 8 (boundary clarified during build if needed). Suggested skills: automate-browser."
     },
     {
