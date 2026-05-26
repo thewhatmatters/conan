@@ -225,7 +225,11 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
           {route === "settings" ? (
             <div className="pt-6">
-              <SettingsView theme={theme} onToggleTheme={toggle} />
+              <SettingsView
+                theme={theme}
+                onToggleTheme={toggle}
+                token={config?.token ?? null}
+              />
             </div>
           ) : route === "agents" ? (
             <div className="pt-6">

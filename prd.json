@@ -447,7 +447,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 29,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-006, US-017. Expands v2 US-020. v3-backlog item 7. Suggested skills: shadcn, automate-browser."
     },
     {
