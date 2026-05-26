@@ -630,7 +630,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 41,
-      "passes": false,
+      "passes": true,
       "notes": "Toaster.tsx currently top-right. v3-backlog item 11. Suggested skills: automate-browser."
     },
     {
