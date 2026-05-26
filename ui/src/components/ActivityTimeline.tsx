@@ -38,6 +38,11 @@ export default function ActivityTimeline({
   // session-scoped here). Filtering is re-derived each render, so new matching
   // events still stream in while a filter is active.
   const [typeFilter, setTypeFilter] = useState<string>(ALL_TYPES);
+  // US-021: sort the timeline by timestamp. Default newest-first ("desc"); the
+  // toggle flips to oldest-first. Applied to display order on each render, so
+  // live-appended events (which useSessionEvents pushes to the end) land at the
+  // correct end for the chosen order, and it composes with the type filter.
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const allEntries = events.filter(isTimelineEntry);
 
   if (allEntries.length === 0) {
@@ -51,10 +56,16 @@ export default function ActivityTimeline({
 
   // Distinct types present (sorted) for the filter chips, plus the filtered set.
   const types = Array.from(new Set(allEntries.map(categoryOf))).sort();
-  const entries =
+  const filtered =
     typeFilter === ALL_TYPES
       ? allEntries
       : allEntries.filter((e) => categoryOf(e) === typeFilter);
+  // Apply the chosen sort direction (id breaks ties for stable ordering). The
+  // nesting walk below consumes this ordered set, so subagent groups attach to
+  // whichever copy of their parent tool-use appears first in display order.
+  const entries = [...filtered].sort((a, b) =>
+    sortDir === "asc" ? a.ts - b.ts || a.id - b.id : b.ts - a.ts || b.id - a.id,
+  );
 
   // A prompt is superseded once a later event cancels/answers its request id.
   const resolvedIds = new Set<string>();
@@ -151,7 +162,10 @@ export default function ActivityTimeline({
 
   return (
     <div className="space-y-3">
-      <TypeFilter types={types} value={typeFilter} onChange={setTypeFilter} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TypeFilter types={types} value={typeFilter} onChange={setTypeFilter} />
+        <SortToggle value={sortDir} onChange={setSortDir} />
+      </div>
       {entries.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
           No <span className="font-medium text-foreground">{typeFilter}</span>{" "}
@@ -236,6 +250,36 @@ function TypeFilter({
         );
       })}
     </div>
+  );
+}
+
+/** Timeline sort direction by timestamp (US-021). */
+export type SortDir = "asc" | "desc";
+
+/**
+ * Newest/oldest-first sort toggle (US-021). A single button that flips the
+ * order and labels the current choice; an arrow glyph rotates to match.
+ */
+function SortToggle({
+  value,
+  onChange,
+}: {
+  value: SortDir;
+  onChange: (v: SortDir) => void;
+}) {
+  const newest = value === "desc";
+  return (
+    <button
+      onClick={() => onChange(newest ? "asc" : "desc")}
+      aria-label={`Sort by time, ${newest ? "newest" : "oldest"} first`}
+      title={`Sorted ${newest ? "newest" : "oldest"} first — click to flip`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+    >
+      <span className={newest ? "" : "rotate-180"}>
+        <Glyph name="arrowDown" size={13} />
+      </span>
+      {newest ? "Newest first" : "Oldest first"}
+    </button>
   );
 }
 
@@ -752,6 +796,7 @@ type GlyphName =
   | "x"
   | "chevronRight"
   | "chevronDown"
+  | "arrowDown"
   | "dot";
 
 const PATHS: Record<GlyphName, React.ReactNode> = {
@@ -856,6 +901,12 @@ const PATHS: Record<GlyphName, React.ReactNode> = {
   ),
   chevronRight: <polyline points="9 18 15 12 9 6" />,
   chevronDown: <polyline points="6 9 12 15 18 9" />,
+  arrowDown: (
+    <>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </>
+  ),
   dot: <circle cx="12" cy="12" r="4" />,
 };
 
