@@ -148,6 +148,17 @@ export function readTranscript(
     return { found: false, sessionId, path: null, messages: [] };
   }
 
+  return { found: true, sessionId, path: file, messages: normalizeTranscriptLines(raw) };
+}
+
+/**
+ * Normalize the raw JSONL body of a Claude Code transcript (the main session
+ * record or a subagent's agent-*.jsonl, US-014) into ordered conversation
+ * messages. Lines that aren't conversation messages (queue-operation,
+ * attachment, file-history-snapshot, summary, …) and malformed JSON are skipped.
+ * Exported so the subagent reader can reuse the same normalization.
+ */
+export function normalizeTranscriptLines(raw: string): TranscriptMessage[] {
   const messages: TranscriptMessage[] = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
@@ -170,8 +181,7 @@ export function readTranscript(
       blocks,
     });
   }
-
-  return { found: true, sessionId, path: file, messages };
+  return messages;
 }
 
 /** Parse an ISO timestamp string to epoch ms; null when absent/invalid. */

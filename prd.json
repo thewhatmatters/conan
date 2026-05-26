@@ -214,7 +214,7 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Extends US-021 live tree (v2) to any session. v3-backlog item 14 (Tier2 #7)."
     },
     {

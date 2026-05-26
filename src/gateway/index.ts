@@ -11,6 +11,7 @@ import { attachTerminal, closeAllTerminals } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills } from "../skills/index.js";
 import { readTranscript } from "../transcript/index.js";
+import { readSubagents } from "../subagents/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
@@ -295,6 +296,18 @@ app.get("/api/claude/sessions/:id/transcript", (req, res) => {
     .prepare("SELECT cwd FROM session WHERE id = ?")
     .get(req.params.id) as { cwd?: string } | undefined;
   res.json(readTranscript(req.params.id, row?.cwd ?? null));
+});
+
+// A session's subagent tree (US-014), reconstructed from disk under
+// ~/.claude/projects/<enc-cwd>/<session-id>/subagents/ — works for any session
+// (past/observed), not just live ones tracked via parent_tool_use_id. The cwd
+// helps resolve the project folder; absent subagents degrade to
+// { found:false, subagents:[] }. Read-only.
+app.get("/api/claude/sessions/:id/subagents", (req, res) => {
+  const row = db
+    .prepare("SELECT cwd FROM session WHERE id = ?")
+    .get(req.params.id) as { cwd?: string } | undefined;
+  res.json(readSubagents(req.params.id, row?.cwd ?? null));
 });
 
 // Time-series throughput for the Pulse chart (US-020): events-per-minute,
