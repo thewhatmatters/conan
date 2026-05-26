@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import Database from "better-sqlite3";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "conan-drive-test-"));
@@ -27,10 +28,15 @@ fs.writeFileSync(
   stub,
   `#!/usr/bin/env node
 import fs from "node:fs";
+import path from "node:path";
 const argv = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(argvLog)}, JSON.stringify(argv) + "\\n");
 const ri = argv.indexOf("--resume");
-const sid = ri !== -1 && argv[ri + 1] ? argv[ri + 1] : ${JSON.stringify(FIXED_ID)};
+// A worktree-isolated run gets a distinct id derived from its cwd so it doesn't
+// collide with the primary FIXED_ID session (US-043).
+const sid = ri !== -1 && argv[ri + 1] ? argv[ri + 1]
+  : process.cwd().includes(".conan-worktrees") ? "wt-" + path.basename(process.cwd())
+  : ${JSON.stringify(FIXED_ID)};
 const init = { type: "system", subtype: "init", session_id: sid, model: "claude-sonnet-4-6", tools: [], cwd: process.cwd() };
 process.stdout.write(JSON.stringify(init) + "\\n");
 // Emit a tool-permission control_request so the driver can answer it (US-012).
@@ -99,6 +105,18 @@ const sessionStatus = () => {
     db.close();
   }
 };
+
+const sessionRow = (id) => {
+  const db = new Database(path.join(dataDir, "conan.db"), { readonly: true });
+  try {
+    return db.prepare("SELECT * FROM session WHERE id = ?").get(id) ?? null;
+  } finally {
+    db.close();
+  }
+};
+
+const git = (cwd, ...args) =>
+  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 
 try {
   // Boot the real gateway in-process.
@@ -188,6 +206,65 @@ try {
   check("session row is running again after resume", sessionStatus() === "running");
   // --- US-042: --fork-session passed through on resume ------------------
   check("resume passes --fork-session", lastLaunch.includes("--fork-session"));
+
+  // --- US-043: worktree-isolated driven session -------------------------
+  // Stand up a real git repo with one commit so `git worktree add` works.
+  const repoDir = path.join(tmp, "repo");
+  fs.mkdirSync(repoDir);
+  git(repoDir, "init", "-q");
+  git(repoDir, "config", "user.email", "test@conan.dev");
+  git(repoDir, "config", "user.name", "Conan Test");
+  fs.writeFileSync(path.join(repoDir, "README.md"), "# repo\n");
+  git(repoDir, "add", "-A");
+  git(repoDir, "commit", "-q", "-m", "init");
+  const baseSha = git(repoDir, "rev-parse", "--short", "HEAD");
+
+  // Start with worktree:true + an --add-dir; assert the worktree was minted,
+  // surfaced on the row, and the session ran inside it (not the repo root).
+  const wtRes = await post("/api/claude/sessions", {
+    cwd: repoDir,
+    worktree: true,
+    add_dir: [tmp],
+  });
+  const wtBody = await wtRes.json();
+  check("worktree start returns 200", wtRes.status === 200);
+  check("worktree start surfaces a worktree", wtBody.worktree && typeof wtBody.worktree.path === "string");
+  check("worktree path is under .conan-worktrees", (wtBody.worktree?.path ?? "").includes(".conan-worktrees"));
+  check("worktree base ref is the HEAD short sha", wtBody.worktree?.baseRef === baseSha);
+  check("worktree dir exists on disk", fs.existsSync(wtBody.worktree?.path ?? "/nope"));
+  check("worktree branch was created", git(repoDir, "branch", "--list", wtBody.worktree?.branch ?? "x").length > 0);
+  check("worktree is a registered git worktree", git(repoDir, "worktree", "list").includes(wtBody.worktree?.path ?? "\0"));
+
+  const wtSid = wtBody.sessionId;
+  check("worktree session captured a distinct id", typeof wtSid === "string" && wtSid !== FIXED_ID);
+
+  const wtArgv = JSON.parse(fs.readFileSync(argvLog, "utf8").trim().split("\n").pop());
+  check("worktree start passed --add-dir <dir>", wtArgv.includes("--add-dir") && wtArgv[wtArgv.indexOf("--add-dir") + 1] === tmp);
+
+  const wtRow = sessionRow(wtSid);
+  check("session row records the worktree cwd", wtRow?.cwd === wtBody.worktree?.path);
+  check("session row records the worktree path", wtRow?.worktree_path === wtBody.worktree?.path);
+  check("session row records the worktree base ref", wtRow?.worktree_base_ref === baseSha);
+
+  // --- US-043: defaults unchanged when worktree unused ------------------
+  const plainRow = sessionRow(FIXED_ID);
+  check("non-worktree session has null worktree_path", plainRow?.worktree_path == null);
+
+  // --- US-043: teardown removes the worktree on stop --------------------
+  const wtStopRes = await post(`/api/claude/sessions/${encodeURIComponent(wtSid)}/stop`, { remove_worktree: true });
+  const wtStopBody = await wtStopRes.json();
+  check("worktree stop returns 200", wtStopRes.status === 200);
+  check("worktree was removed on stop", wtStopBody.worktreeRemoved === true);
+  await sleep(150);
+  check("worktree dir is gone after teardown", !fs.existsSync(wtBody.worktree?.path ?? "/nope"));
+  check("worktree no longer registered with git", !git(repoDir, "worktree", "list").includes(wtBody.worktree?.path ?? "\0"));
+  check("session row worktree path cleared after teardown", sessionRow(wtSid)?.worktree_path == null);
+
+  // --- US-043: worktree on a non-repo cwd is a clean 400 ----------------
+  const nonRepo = path.join(tmp, "not-a-repo");
+  fs.mkdirSync(nonRepo);
+  const badWtRes = await post("/api/claude/sessions", { cwd: nonRepo, worktree: true });
+  check("worktree on non-repo cwd returns 400", badWtRes.status === 400);
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

@@ -35,12 +35,15 @@ export default function SessionBar({
   const [showPrompt, setShowPrompt] = useState(false);
   // --fork-session (US-042): when set, Resume mints a fresh session id.
   const [forkOnResume, setForkOnResume] = useState(false);
+  // Tear down the git worktree when stopping a worktree-isolated session (US-043).
+  const [removeWtOnStop, setRemoveWtOnStop] = useState(false);
 
   const isAll = selectedId === ALL_SESSIONS;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
   // Lifecycle controls only make sense for a concrete session.
   const hasTarget = !!selected;
   const running = selected?.status === "running";
+  const worktree = selected?.worktree_path ?? null;
 
   async function post(path: string, body?: unknown) {
     if (!token) return;
@@ -85,9 +88,14 @@ export default function SessionBar({
 
         <div className="flex flex-wrap items-center gap-1.5">
           <Action
-            label={running ? "Stop" : "Stop"}
+            label="Stop"
             disabled={!hasTarget || !running}
-            onClick={() => selected && post(`/api/claude/sessions/${enc(selected.id)}/stop`)}
+            onClick={() =>
+              selected &&
+              post(`/api/claude/sessions/${enc(selected.id)}/stop`, {
+                remove_worktree: worktree ? removeWtOnStop : false,
+              })
+            }
           />
           <Action
             label="Resume"
@@ -127,6 +135,35 @@ export default function SessionBar({
           />
         </div>
       </div>
+
+      {/* Worktree-isolated session (US-043): show the worktree + base ref it
+          runs in, and offer to tear it down on stop. */}
+      {worktree && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-muted-foreground"
+            title={worktree}
+          >
+            <span aria-hidden>⎇</span>
+            <span className="max-w-[28ch] truncate">{worktree}</span>
+            {selected?.worktree_base_ref && (
+              <span className="text-muted-foreground/70">@ {selected.worktree_base_ref}</span>
+            )}
+          </span>
+          <label
+            className="flex items-center gap-1 text-muted-foreground select-none"
+            title="Run `git worktree remove --force` when stopping this session"
+          >
+            <input
+              type="checkbox"
+              checked={removeWtOnStop}
+              onChange={(e) => setRemoveWtOnStop(e.target.checked)}
+              className="size-3 accent-primary"
+            />
+            Remove on stop
+          </label>
+        </div>
+      )}
 
       {showPrompt && selected && (
         <PromptForm
@@ -270,6 +307,9 @@ function NewSessionForm({
   const [permissionMode, setPermissionMode] = useState("default");
   const [effort, setEffort] = useState("default");
   const [fromPr, setFromPr] = useState("");
+  // Worktree isolation (US-043): run this session in a fresh git worktree.
+  const [worktree, setWorktree] = useState(false);
+  const [worktreeRef, setWorktreeRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -286,6 +326,10 @@ function NewSessionForm({
       // Only send the optional flags when set, so defaults are unchanged.
       if (effort !== "default") body.effort = effort;
       if (fromPr.trim()) body.from_pr = fromPr.trim();
+      if (worktree) {
+        body.worktree = true;
+        if (worktreeRef.trim()) body.worktree_ref = worktreeRef.trim();
+      }
       const res = await fetch("/api/claude/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-conan-token": token },
@@ -329,7 +373,28 @@ function NewSessionForm({
             className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
           />
         </Field>
-        <div className="flex items-end">
+        {/* Worktree isolation (US-043): a checkbox plus an optional base ref. */}
+        <Field label="Isolation">
+          <label className="flex items-center gap-2 py-1 text-xs text-foreground select-none">
+            <input
+              type="checkbox"
+              checked={worktree}
+              onChange={(e) => setWorktree(e.target.checked)}
+              className="size-3.5 accent-primary"
+            />
+            Run in a fresh git worktree
+          </label>
+        </Field>
+        <Field label="Worktree base ref" className="sm:col-span-2">
+          <input
+            value={worktreeRef}
+            onChange={(e) => setWorktreeRef(e.target.value)}
+            disabled={!worktree}
+            placeholder="default: HEAD — e.g. main, a sha, or a tag"
+            className="w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground outline-none focus:border-primary disabled:opacity-40"
+          />
+        </Field>
+        <div className="flex items-end sm:col-start-3">
           <button
             type="submit"
             disabled={busy}

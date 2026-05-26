@@ -574,17 +574,38 @@ app.post("/api/claude/sessions", async (req, res) => {
     });
     return;
   }
-  const result = startSession({
-    cwd: typeof b.cwd === "string" ? b.cwd : undefined,
-    model: typeof b.model === "string" ? b.model : undefined,
-    permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
-    effort: typeof b.effort === "string" ? b.effort : undefined,
-    fromPr: typeof b.from_pr === "string" ? b.from_pr : undefined,
-    bare: b.bare === true,
-    prompt: typeof b.prompt === "string" ? b.prompt : undefined,
-  });
+  // --add-dir accepts a single string or a list of paths (US-043).
+  const addDirs = Array.isArray(b.add_dir)
+    ? b.add_dir.filter((d): d is string => typeof d === "string")
+    : typeof b.add_dir === "string"
+      ? [b.add_dir]
+      : undefined;
+  let result;
+  try {
+    result = startSession({
+      cwd: typeof b.cwd === "string" ? b.cwd : undefined,
+      model: typeof b.model === "string" ? b.model : undefined,
+      permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
+      effort: typeof b.effort === "string" ? b.effort : undefined,
+      fromPr: typeof b.from_pr === "string" ? b.from_pr : undefined,
+      worktree: b.worktree === true,
+      worktreeRef: typeof b.worktree_ref === "string" ? b.worktree_ref : undefined,
+      addDirs,
+      bare: b.bare === true,
+      prompt: typeof b.prompt === "string" ? b.prompt : undefined,
+    });
+  } catch (err) {
+    // The only synchronous failure is worktree creation (e.g. not a git repo).
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
   const sessionId = await awaitSessionId(result.sessionId, 3000);
-  res.json({ ok: true, launchId: result.launchId, sessionId });
+  res.json({
+    ok: true,
+    launchId: result.launchId,
+    sessionId,
+    worktree: result.worktree ?? null,
+  });
 });
 
 app.post("/api/claude/sessions/:id/prompt", async (req, res) => {
@@ -624,8 +645,9 @@ app.post("/api/claude/sessions/:id/permission", (req, res) => {
 
 app.post("/api/claude/sessions/:id/stop", (req, res) => {
   if (!authed(req, res)) return;
-  const stopped = stopSession(req.params.id);
-  res.json({ ok: true, stopped });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const result = stopSession(req.params.id, { removeWorktree: b.remove_worktree === true });
+  res.json({ ok: true, ...result });
 });
 
 app.post("/api/claude/sessions/:id/resume", async (req, res) => {

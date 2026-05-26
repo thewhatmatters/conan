@@ -50,6 +50,8 @@ function migrate(handle: Database.Database): void {
     ["cache_read_input_tokens", "INTEGER"],
     ["cache_creation_input_tokens", "INTEGER"],
     ["context_tokens", "INTEGER"],
+    ["worktree_path", "TEXT"],
+    ["worktree_base_ref", "TEXT"],
   ];
   for (const [name, type] of added) {
     if (!sessionCols.has(name)) {

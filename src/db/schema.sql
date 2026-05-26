@@ -18,7 +18,12 @@ CREATE TABLE IF NOT EXISTS session (
   output_tokens               INTEGER,         -- completion tokens (last turn)
   cache_read_input_tokens     INTEGER,
   cache_creation_input_tokens INTEGER,
-  context_tokens              INTEGER          -- context-window position (input+cache)
+  context_tokens              INTEGER,         -- context-window position (input+cache)
+  -- Worktree isolation for driven sessions (US-043). When a session is launched
+  -- into a fresh git worktree, we record its path and the base ref it was cut
+  -- from so parallel runs are visible and traceable; null for normal launches.
+  worktree_path               TEXT,
+  worktree_base_ref           TEXT
 );
 
 -- Lifecycle + stream events for a session (from hooks and the stream-json parser).

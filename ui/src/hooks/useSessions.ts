@@ -14,6 +14,10 @@ export interface Session {
   input_tokens: number | null;
   output_tokens: number | null;
   context_tokens: number | null;
+  /** Worktree this session runs in (US-043); null for normal launches. */
+  worktree_path: string | null;
+  /** Base ref the worktree branch was cut from (US-043). */
+  worktree_base_ref: string | null;
 }
 
 /**

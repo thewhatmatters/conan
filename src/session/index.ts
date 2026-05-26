@@ -7,6 +7,7 @@ import {
   type NormalizedEvent,
   type UsageUpdate,
 } from "./parser.js";
+import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.js";
 
 /** The `claude` binary to launch headless; override with CONAN_CLAUDE_BIN. */
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
@@ -33,6 +34,16 @@ export interface StartSessionOptions {
   fromPr?: string;
   /** Append --bare for a reproducible, minimal-config launch. */
   bare?: boolean;
+  /**
+   * Run the session in a fresh git worktree cut off `cwd`'s repo (US-043), so
+   * parallel driven runs don't collide. The worktree path becomes the cwd and
+   * is surfaced on the session row. Defaults off — cwd is used as-is.
+   */
+  worktree?: boolean;
+  /** Base ref the worktree branch is cut from when `worktree` is set; default HEAD. */
+  worktreeRef?: string;
+  /** Extra directories granted to the session via `--add-dir <path>` (US-043). */
+  addDirs?: string[];
   /** Optional first prompt. When omitted the session reads prompts over stdin. */
   prompt?: string;
   /** UI session color, persisted onto the session row. */
@@ -49,6 +60,10 @@ export interface ManagedSession {
   cwd: string;
   model?: string;
   permissionMode?: string;
+  /** Worktree this session was launched into (US-043); undefined for normal runs. */
+  worktreePath?: string;
+  /** Base ref the worktree branch was cut from (US-043). */
+  worktreeBaseRef?: string;
   startedAt: number;
   /**
    * Open tool-permission prompts keyed by control_request id (US-012). The CLI
@@ -97,6 +112,8 @@ export interface SessionRow {
   input_tokens: number | null;
   output_tokens: number | null;
   context_tokens: number | null;
+  worktree_path: string | null;
+  worktree_base_ref: string | null;
 }
 
 /**
@@ -109,7 +126,8 @@ export function listSessions(): SessionRow[] {
     .prepare(
       `SELECT id, title, cwd, model, permission_mode, status, color,
               created_at, last_activity, total_cost_usd,
-              input_tokens, output_tokens, context_tokens
+              input_tokens, output_tokens, context_tokens,
+              worktree_path, worktree_base_ref
          FROM session
          ORDER BY last_activity DESC`,
     )
@@ -137,6 +155,9 @@ function buildArgs(opts: StartSessionOptions): string[] {
   if (opts.permissionMode) args.push("--permission-mode", opts.permissionMode);
   if (isValidEffort(opts.effort)) args.push("--effort", opts.effort);
   if (opts.fromPr) args.push("--from-pr", opts.fromPr);
+  for (const dir of opts.addDirs ?? []) {
+    if (dir.trim()) args.push("--add-dir", dir.trim());
+  }
   if (opts.bare) args.push("--bare");
   if (opts.prompt !== undefined) args.push(opts.prompt);
   return args;
@@ -300,20 +321,27 @@ function persistSession(s: ManagedSession): void {
   const now = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO session (id, cwd, model, permission_mode, status, created_at, last_activity)
-         VALUES (@id, @cwd, @model, @permissionMode, 'running', @startedAt, @now)
+      `INSERT INTO session
+         (id, cwd, model, permission_mode, status, created_at, last_activity,
+          worktree_path, worktree_base_ref)
+         VALUES (@id, @cwd, @model, @permissionMode, 'running', @startedAt, @now,
+                 @worktreePath, @worktreeBaseRef)
        ON CONFLICT(id) DO UPDATE SET
          status = 'running',
          last_activity = @now,
          cwd = COALESCE(excluded.cwd, session.cwd),
          model = COALESCE(excluded.model, session.model),
-         permission_mode = COALESCE(excluded.permission_mode, session.permission_mode)`,
+         permission_mode = COALESCE(excluded.permission_mode, session.permission_mode),
+         worktree_path = COALESCE(excluded.worktree_path, session.worktree_path),
+         worktree_base_ref = COALESCE(excluded.worktree_base_ref, session.worktree_base_ref)`,
     )
     .run({
       id: s.sessionId,
       cwd: s.cwd,
       model: s.model ?? null,
       permissionMode: s.permissionMode ?? null,
+      worktreePath: s.worktreePath ?? null,
+      worktreeBaseRef: s.worktreeBaseRef ?? null,
       startedAt: s.startedAt,
       now,
     });
@@ -324,6 +352,8 @@ export interface StartSessionResult {
   child: ChildProcessWithoutNullStreams;
   /** Resolves with the captured session_id once system/init is seen. */
   sessionId: Promise<string>;
+  /** The worktree the session runs in, when launched with `worktree` (US-043). */
+  worktree?: WorktreeInfo;
 }
 
 /** Internal launch config shared by start (US-006) and resume (US-008). */
@@ -331,6 +361,8 @@ interface LaunchConfig {
   cwd: string;
   model?: string;
   permissionMode?: string;
+  /** Worktree the session runs in, surfaced on the row (US-043). */
+  worktree?: WorktreeInfo;
   /**
    * Known session_id, set when resuming. Lets us register the child in
    * `bySessionId` and resolve the id promise immediately so a follow-up
@@ -347,6 +379,7 @@ interface LaunchConfig {
  */
 function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
   const launchId = crypto.randomUUID();
+  const worktree = cfg.worktree;
 
   const child = spawn(CLAUDE_BIN, args, {
     cwd: cfg.cwd,
@@ -361,6 +394,8 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     cwd: cfg.cwd,
     model: cfg.model,
     permissionMode: cfg.permissionMode,
+    worktreePath: cfg.worktree?.path,
+    worktreeBaseRef: cfg.worktree?.baseRef,
     startedAt: Date.now(),
     pending: new Map(),
   };
@@ -453,20 +488,30 @@ function launch(args: string[], cfg: LaunchConfig): StartSessionResult {
     rejectId(new Error("session exited before system/init"));
   });
 
-  return { launchId, child, sessionId };
+  return { launchId, child, sessionId, worktree };
 }
 
 /**
  * Start a headless Claude Code session (US-006). Spawns the stream-json CLI,
  * tracks the child handle, captures the session_id from system/init, and
  * upserts the session row. Returns immediately with a promise for the id.
+ *
+ * With `worktree` set (US-043) the session is run in a fresh git worktree cut
+ * off the requested cwd's repo, so parallel driven runs don't collide; the
+ * worktree path + base ref are surfaced on the session row and the result.
  */
 export function startSession(opts: StartSessionOptions = {}): StartSessionResult {
-  const cwd = opts.cwd ?? PACKAGE_ROOT;
-  return launch(buildArgs(opts), {
+  let cwd = opts.cwd ?? PACKAGE_ROOT;
+  let worktree: WorktreeInfo | undefined;
+  if (opts.worktree) {
+    worktree = createWorktree(cwd, opts.worktreeRef);
+    cwd = worktree.path;
+  }
+  return launch(buildArgs({ ...opts, cwd }), {
     cwd,
     model: opts.model,
     permissionMode: opts.permissionMode,
+    worktree,
   });
 }
 
@@ -567,12 +612,29 @@ export async function sendPrompt(
   return { sessionId: sid, resumed: true };
 }
 
+export interface StopSessionResult {
+  /** Whether a live child process was found and signalled. */
+  stopped: boolean;
+  /**
+   * Teardown outcome for a worktree-isolated session (US-043): true/false when
+   * removal was attempted, null when there was nothing to remove or it wasn't
+   * requested.
+   */
+  worktreeRemoved: boolean | null;
+}
+
 /**
  * Stop a session (US-008): terminate the tracked child (if any) and mark the
- * session row idle. Returns whether a live child was found. Map cleanup is
- * handled by the child's exit handler.
+ * session row idle. Map cleanup is handled by the child's exit handler.
+ *
+ * With `removeWorktree:true` (US-043) and a worktree-isolated session, the
+ * worktree is also torn down with `git worktree remove --force` after the child
+ * is signalled, and its path/base-ref are cleared from the row.
  */
-export function stopSession(sessionId: string): boolean {
+export function stopSession(
+  sessionId: string,
+  opts: { removeWorktree?: boolean } = {},
+): StopSessionResult {
   const live = bySessionId.get(sessionId);
   if (live) {
     try {
@@ -584,7 +646,25 @@ export function stopSession(sessionId: string): boolean {
   getDb()
     .prepare("UPDATE session SET status = 'idle', last_activity = ? WHERE id = ?")
     .run(Date.now(), sessionId);
-  return Boolean(live);
+
+  let worktreeRemoved: boolean | null = null;
+  if (opts.removeWorktree) {
+    const row = getDb()
+      .prepare("SELECT worktree_path FROM session WHERE id = ?")
+      .get(sessionId) as { worktree_path?: string | null } | undefined;
+    const wt = row?.worktree_path;
+    if (wt) {
+      worktreeRemoved = removeWorktree(wt);
+      if (worktreeRemoved) {
+        getDb()
+          .prepare(
+            "UPDATE session SET worktree_path = NULL, worktree_base_ref = NULL WHERE id = ?",
+          )
+          .run(sessionId);
+      }
+    }
+  }
+  return { stopped: Boolean(live), worktreeRemoved };
 }
 
 /**
