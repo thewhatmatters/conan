@@ -338,11 +338,12 @@ app.get("/api/claude/stats", (_req, res) => {
   res.json(readStats());
 });
 
-// MCP server status for the MCP widget (US-003 → US-011). Claude Code keeps no
-// live MCP registry on disk, so we infer connected/needs-auth from the user's
-// configured servers (~/.claude/settings.json mcpServers + project .mcp.json)
-// minus the needs-auth cache, then override per-server with the most-recent
-// live session's captured system/init mcp_servers (the only true signal).
+// MCP server status for the MCP widget (US-003 → US-004 → US-011). Claude Code
+// keeps no live MCP registry on disk, so we infer connected/needs-auth from the
+// user's configured servers — unioned across ~/.claude.json (global mcpServers
+// + projects[*].mcpServers, where most live), ~/.claude/settings.json, and the
+// project .mcp.json — minus the needs-auth cache, then override per-server with
+// the most-recent live session's captured system/init mcp_servers (true signal).
 // Read-only and access-modeled like the other /api/claude/* GET routes;
 // degrades to a safe empty shape when the config files are absent.
 app.get("/api/claude/mcp", (_req, res) => {

@@ -35,6 +35,7 @@ try {
 
   // --- pure helper, all inputs missing -> safe empty shape ----------------
   const empty = readMcpStatus({
+    claudeJsonPath: path.join(tmp, "nope-claude.json"),
     settingsPath: path.join(tmp, "nope-settings.json"),
     needsAuthPath: path.join(tmp, "nope-auth.json"),
     projectMcpPath: path.join(tmp, "nope-mcp.json"),
@@ -44,9 +45,23 @@ try {
   check("missing files -> zero counts", empty.connectedCount === 0 && empty.configuredCount === 0);
 
   // --- configured servers, one needing auth -------------------------------
+  const claudeJson = path.join(fakeHome, ".claude.json");
   const settings = path.join(claudeDir, "settings.json");
   const needsAuth = path.join(claudeDir, "mcp-needs-auth-cache.json");
   const projectMcp = path.join(tmp, ".mcp.json");
+  // US-004: the bulk of servers live in ~/.claude.json (global mcpServers +
+  // the union across projects[*].mcpServers), NOT settings.json.
+  fs.writeFileSync(
+    claudeJson,
+    JSON.stringify({
+      mcpServers: { paper: {} }, // global
+      projects: {
+        "/repo/a": { mcpServers: { figma: {}, mobbin: {} } },
+        "/repo/b": { mcpServers: { mobbin: {}, vercel: {} } }, // mobbin dupes
+        "/repo/c": {}, // no mcpServers -> tolerated
+      },
+    }),
+  );
   fs.writeFileSync(
     settings,
     JSON.stringify({ mcpServers: { obsidian: {}, notion: {} } }),
@@ -61,22 +76,29 @@ try {
   );
 
   const inferred = readMcpStatus({
+    claudeJsonPath: claudeJson,
     settingsPath: settings,
     needsAuthPath: needsAuth,
     projectMcpPath: projectMcp,
   });
-  check("configured count merges settings + project", inferred.configuredCount === 3);
-  check("name-sorted servers", inferred.servers.map((s) => s.name).join(",") === "notion,obsidian,project-tool");
+  // paper, figma, mobbin, vercel (claude.json) + obsidian, notion (settings)
+  // + project-tool (.mcp.json) = 7 distinct, mobbin de-duped across projects.
+  check("configured count unions claude.json + settings + project", inferred.configuredCount === 7);
+  check("name-sorted servers union all sources", inferred.servers.map((s) => s.name).join(",") === "figma,mobbin,notion,obsidian,paper,project-tool,vercel");
+  check("claude.json global server present", inferred.servers.find((s) => s.name === "paper")?.status === "connected");
+  check("claude.json per-project server present", inferred.servers.find((s) => s.name === "figma")?.status === "connected");
+  check("claude.json duplicate project server counted once", inferred.servers.filter((s) => s.name === "mobbin").length === 1);
   check("obsidian inferred connected", inferred.servers.find((s) => s.name === "obsidian").status === "connected");
   check("notion in needs-auth cache -> needs-auth", inferred.servers.find((s) => s.name === "notion").status === "needs-auth");
   check("project server inferred connected", inferred.servers.find((s) => s.name === "project-tool").status === "connected");
-  check("connectedCount = configured minus needs-auth", inferred.connectedCount === 2);
+  check("connectedCount = configured minus needs-auth", inferred.connectedCount === 6);
   check("needsAuthCount counts the cache hit", inferred.needsAuthCount === 1);
   check("no live session -> fromLiveSession false", inferred.fromLiveSession === false);
   check("config source tag", inferred.servers.every((s) => s.source === "config"));
 
   // --- live session overrides the inference -------------------------------
   const live = readMcpStatus({
+    claudeJsonPath: claudeJson,
     settingsPath: settings,
     needsAuthPath: needsAuth,
     projectMcpPath: projectMcp,
@@ -91,11 +113,14 @@ try {
   check("live override: notion -> connected", live.servers.find((s) => s.name === "notion").status === "connected");
   check("live override tagged source=session", live.servers.find((s) => s.name === "notion").source === "session");
   check("untouched project server stays config", live.servers.find((s) => s.name === "project-tool").source === "config");
-  check("connectedCount reflects live override", live.connectedCount === 2); // notion + project-tool
+  // connected: paper, figma, mobbin, vercel (claude.json) + notion (live) +
+  // project-tool (.mcp.json) = 6; obsidian failed (live), notion auth cleared.
+  check("connectedCount reflects live override", live.connectedCount === 6);
   check("needs-auth empty after live clears it", live.needsAuthCount === 0);
 
   // status normalization: anything auth-ish -> needs-auth.
   const authish = readMcpStatus({
+    claudeJsonPath: path.join(tmp, "nope.json"),
     settingsPath: path.join(tmp, "nope.json"),
     needsAuthPath: path.join(tmp, "nope.json"),
     projectMcpPath: null,
@@ -110,9 +135,13 @@ try {
   const res = await fetch(`${BASE}/api/claude/mcp`);
   check("endpoint 200", res.status === 200);
   const mcp = await res.json();
-  check("endpoint reads configured servers", mcp.configuredCount === 2); // obsidian + notion (no project .mcp.json at cwd)
+  // claude.json {paper, figma, mobbin, vercel} + settings {obsidian, notion}
+  // = 6 distinct (no project .mcp.json at the conan repo cwd).
+  check("endpoint unions claude.json + settings", mcp.configuredCount === 6);
+  check("endpoint reads claude.json global server", mcp.servers.some((s) => s.name === "paper"));
+  check("endpoint reads claude.json project server", mcp.servers.some((s) => s.name === "figma"));
   check("endpoint applies needs-auth cache", mcp.servers.find((s) => s.name === "notion")?.status === "needs-auth");
-  check("endpoint connectedCount = 1 (obsidian)", mcp.connectedCount === 1);
+  check("endpoint connectedCount = 5 (6 minus notion auth)", mcp.connectedCount === 5);
   check("endpoint fromLiveSession false (no active session)", mcp.fromLiveSession === false);
   check("endpoint hasData true", mcp.hasData === true);
 } catch (err) {

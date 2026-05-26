@@ -1,12 +1,18 @@
-// US-003: data source for the MCP servers widget (US-011). Claude Code keeps no
-// live "connected" MCP registry on disk, so we infer status from the files it
-// does write, then enrich with the only true per-run signal — a live session's
-// captured system/init mcp_servers array.
+// US-003 / US-004: data source for the MCP servers widget (US-011). Claude Code
+// keeps no live "connected" MCP registry on disk, so we infer status from the
+// files it does write, then enrich with the only true per-run signal — a live
+// session's captured system/init mcp_servers array.
 //
-// Three disk inputs (all optional; any missing file degrades gracefully):
+// Disk inputs (all optional; any missing file degrades gracefully):
+//   - ~/.claude.json                 mcpServers           → global servers
+//                                    projects[*].mcpServers → per-project servers
 //   - ~/.claude/settings.json        mcpServers → the user-configured servers
 //   - <cwd>/.mcp.json                mcpServers → project-scoped servers
 //   - ~/.claude/mcp-needs-auth-cache.json  keys → servers needing (re)auth
+//
+// US-004 root cause: most servers actually live in ~/.claude.json (global
+// mcpServers + the union across projects[*].mcpServers), NOT settings.json —
+// reading only settings.json undercounts to ~1. We union all four sources.
 //
 // Inference: a configured server is assumed "connected" unless it appears in
 // the needs-auth cache, in which case it is "needs-auth". When a live session's
@@ -22,6 +28,7 @@ import { HOME } from "../paths.js";
 import { getDb } from "../db/index.js";
 import type { McpServer } from "../widgets/index.js";
 
+const CLAUDE_JSON_PATH = path.join(HOME, ".claude.json");
 const SETTINGS_PATH = path.join(HOME, ".claude", "settings.json");
 const NEEDS_AUTH_PATH = path.join(HOME, ".claude", "mcp-needs-auth-cache.json");
 
@@ -59,11 +66,33 @@ function readJson(filePath: string): Record<string, unknown> | null {
   }
 }
 
+/** Keys of an `mcpServers`-shaped map, if present. */
+function mapKeys(m: unknown): string[] {
+  return m && typeof m === "object" ? Object.keys(m as object) : [];
+}
+
 /** Extract the keys of a top-level `mcpServers` map, if present. */
 function configuredNames(filePath: string): string[] {
+  return mapKeys(readJson(filePath)?.mcpServers);
+}
+
+/**
+ * Extract MCP server names from ~/.claude.json: the global `mcpServers` map
+ * plus the union of every `projects[<cwd>].mcpServers`. This is where the bulk
+ * of real servers live (settings.json typically holds few/none).
+ */
+function claudeJsonNames(filePath: string): string[] {
   const obj = readJson(filePath);
-  const m = obj?.mcpServers;
-  return m && typeof m === "object" ? Object.keys(m as object) : [];
+  if (!obj) return [];
+  const names: string[] = [...mapKeys(obj.mcpServers)];
+  const projects = obj.projects;
+  if (projects && typeof projects === "object") {
+    for (const proj of Object.values(projects as Record<string, unknown>)) {
+      const pm = (proj as Record<string, unknown> | null)?.mcpServers;
+      names.push(...mapKeys(pm));
+    }
+  }
+  return names;
 }
 
 /**
@@ -80,6 +109,8 @@ function normalizeSessionStatus(raw: string): McpServerStatus["status"] {
 }
 
 export interface ReadMcpOptions {
+  /** Override the ~/.claude.json path (tests). */
+  claudeJsonPath?: string;
   /** Override the ~/.claude/settings.json path (tests). */
   settingsPath?: string;
   /** Override the ~/.claude/mcp-needs-auth-cache.json path (tests). */
@@ -95,6 +126,7 @@ export interface ReadMcpOptions {
  * Pure (apart from the file reads); exported and fixture-driven for testing.
  */
 export function readMcpStatus(opts: ReadMcpOptions = {}): McpStatusPayload {
+  const claudeJsonPath = opts.claudeJsonPath ?? CLAUDE_JSON_PATH;
   const settingsPath = opts.settingsPath ?? SETTINGS_PATH;
   const needsAuthPath = opts.needsAuthPath ?? NEEDS_AUTH_PATH;
   const projectMcpPath =
@@ -102,8 +134,11 @@ export function readMcpStatus(opts: ReadMcpOptions = {}): McpStatusPayload {
       ? path.join(process.cwd(), ".mcp.json")
       : opts.projectMcpPath;
 
-  // 1) Configured servers: settings.json + project .mcp.json (de-duped).
-  const configured = new Set<string>(configuredNames(settingsPath));
+  // 1) Configured servers, de-duped across all sources: ~/.claude.json (global
+  //    + per-project union) + settings.json + project .mcp.json. The bulk live
+  //    in ~/.claude.json (US-004); settings.json alone undercounts.
+  const configured = new Set<string>(claudeJsonNames(claudeJsonPath));
+  for (const n of configuredNames(settingsPath)) configured.add(n);
   if (projectMcpPath) {
     for (const n of configuredNames(projectMcpPath)) configured.add(n);
   }

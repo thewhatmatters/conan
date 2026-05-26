@@ -67,7 +67,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "ROOT CAUSE from research: servers live in ~/.claude.json (global + per-project), not settings.json. v3-backlog item 3."
     },
     {

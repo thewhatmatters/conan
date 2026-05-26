@@ -295,6 +295,65 @@ ultrareview, update). So each is consumed by reading where it *sources* data:
   horizontal strip overflows past ~4 tabs). **Toolbar cwd → directory picker** to
   change the active working directory.
 
+## v3 — multi-project, full capability coverage, real /usage (2026-05-26)
+
+v2 shipped 20/20. v3 = "Conan leverages everything Claude Code can do." Decomposed
+into a fresh `prd.json` (v2 archived). Source backlog + full research verdicts:
+`docs/v3-backlog.md`.
+
+### Locked decisions
+- **Multi-project (global hook).** Install a user-level `~/.claude` hook so ANY
+  `claude` run self-reports; the UI filters/switches by cwd. (Today Conan only sees
+  sessions in repos whose project hook points at it.)
+- **Nav → Overview · Agents · Skills · Settings.** Deliberate expansion past v2's
+  2-item cap; agents/skills are distinct enough surfaces to earn pages.
+- **Everything in one PRD** (~40+ stories), built on a proper **shadcn** foundation
+  (v1/v2 never actually installed it — only used shadcn-compatible tokens).
+
+### Research verdicts (what's readable, and how)
+- **Real `/usage` % — via PTY scrape, not headers.** Live-tested: `claude -p
+  --debug api` does NOT surface `anthropic-ratelimit-unified-*` headers (only
+  request-id/billing/skills). So the real plan-utilization comes from **scraping the
+  `/usage` TUI in a node-pty session** (the only confirmed source), layered over the
+  always-on token-trend baseline (US-004) so the widget is never blank. Debug-log
+  header parsing is a deferred spike.
+- **Settings** persist to `~/.claude/settings.json` (user scope); most TUI toggles
+  are unmaterialized defaults until changed → treat missing-key as default. Authoritative
+  key/type/enum list = `json.schemastore.org/claude-code-settings.json`. Safe to edit:
+  theme, verbose, thinking mode, editor mode, agent push, auto-compact threshold;
+  gate `permissions.defaultMode` (no casual `bypassPermissions`) and `~/.claude.json`
+  writes. Atomic write, preserve unknown keys.
+- **MCP** servers live in `~/.claude.json` (global `mcpServers` + per-project union),
+  not just `settings.json` — v2 counted 1 because it only read settings.json.
+- **Changelog** (`~/.claude/cache/changelog.md`): uniform `## <version>` + flat
+  bullets, no dates → `{version, items[]}`; "what's new" = entries newer than
+  `~/.claude.json` `lastReleaseNotesSeen`.
+- **New on-disk capability sources** (capability audit): live-session registry
+  (`~/.claude/sessions/<pid>.json`), checkpoints/rewind (`~/.claude/file-history/`),
+  per-project metrics (`~/.claude.json` projects[]), plugins (`plugins/installed_plugins.json`),
+  custom agents (`~/.claude/agents/`), background agents (`claude agents --json`),
+  subagent transcripts (`projects/<cwd>/<id>/subagents/agent-*.jsonl`), prompt history
+  (`history.jsonl`), full hook set vs the 9 Conan wires.
+
+### Scope (grouped; see prd.json for the ordered stories)
+- **Foundation:** shadcn init + reusable primitives; multi-project global hook + cwd
+  ingestion; active-cwd state + directory picker backend.
+- **Backend data:** MCP fix; real-/usage PTY scrape; settings mirror (read+safe write);
+  changelog; checkpoints; hooks-coverage; per-project metrics; plugins; custom-agents;
+  background-agents; subagent reconstruction; prompt-history; skills list.
+- **Shell/IA:** 4-item sidebar + routing.
+- **Overview:** widget carousel + cog (4-up, chevrons); scope grouping
+  (session/cwd/global); sticky-on-scroll; sort toggle; timeline-icon opaque fix;
+  widget wiring (MCP/Model/Usage), remove Cost-today, per-project widget.
+- **Pages:** Agents, Skills, Settings-mirror, What's-New feed, Checkpoints/rewind,
+  Plugins, Hooks-coverage, Prompt-history, past-session subagent tree.
+- **Dock/terminal:** term dropdown shows session name+ID; non-destructive show/hide;
+  height drag handle; cwd-conditional Tasks; cwd picker UI; toasts bottom-right.
+- **Drive expansion:** `--effort`/`--fork-session`/`--from-pr`; worktree-isolated
+  sessions; `--json-schema` typed outputs; doctor/update banner; ultrareview trigger;
+  remote-control/Chrome.
+- **Docs:** README.
+
 ## Sources
 
 1. [Claude Agent SDK — Stream responses in real-time](https://code.claude.com/docs/en/agent-sdk/streaming-output) — Anthropic docs
