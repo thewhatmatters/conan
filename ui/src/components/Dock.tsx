@@ -9,6 +9,13 @@ interface DockProps {
   token: string | null;
   theme: Theme;
   tasks: TasksState | null;
+  /**
+   * Hide the dock without unmounting it (US-037). Toggling the terminal off
+   * sets this true: the aside is display:none'd but every Terminal stays
+   * mounted, so its pty + WS survive untouched and re-showing restores the
+   * live session + scrollback. Only an explicit tab-close kills a pty.
+   */
+  hidden?: boolean;
 }
 
 const MIN_W = 320;
@@ -56,7 +63,7 @@ function persistTerms(terms: TermTab[]): void {
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
  * that pty (and its terminal_session row) via an explicit close frame.
  */
-export default function Dock({ token, theme, tasks }: DockProps) {
+export default function Dock({ token, theme, tasks, hidden }: DockProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [active, setActive] = useState<Active>(() => ({
     kind: "term",
@@ -131,7 +138,7 @@ export default function Dock({ token, theme, tasks }: DockProps) {
 
   return (
     <aside
-      style={{ width }}
+      style={{ width, display: hidden ? "none" : undefined }}
       className="relative flex shrink-0 flex-col border-l border-border bg-card"
     >
       {/* drag handle on the left edge */}

@@ -358,9 +358,15 @@ export default function App() {
           )}
         </main>
 
-        {dockOpen && (
-          <Dock token={config?.token ?? null} theme={theme} tasks={tasks} />
-        )}
+        {/* The Dock stays mounted even when hidden so toggling the terminal off
+            keeps every pty + WS alive (US-037): hide is purely visual, never a
+            detach/kill. Only an explicit tab-close kills a pty. */}
+        <Dock
+          token={config?.token ?? null}
+          theme={theme}
+          tasks={tasks}
+          hidden={!dockOpen}
+        />
       </div>
       </div>
     </div>

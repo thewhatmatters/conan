@@ -570,7 +570,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 37,
-      "passes": false,
+      "passes": true,
       "notes": "CONFIRMED: App.tsx unmounts Dock on hide \u2192 30s grace-kill (src/terminal DETACH_GRACE_MS). v3-backlog item 12. Suggested skills: automate-browser."
     },
     {
