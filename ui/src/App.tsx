@@ -21,6 +21,7 @@ import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import ActivityTimeline from "./components/ActivityTimeline.tsx";
 import TranscriptViewer from "./components/TranscriptViewer.tsx";
 import { useTranscript } from "./hooks/useTranscript.ts";
+import { useSubagents } from "./hooks/useSubagents.ts";
 import Toaster from "./components/Toaster.tsx";
 import Sidebar from "./components/Sidebar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
@@ -115,6 +116,14 @@ export default function App() {
   const transcript = useTranscript(
     isAll ? null : selectedId,
     effectiveTab === "transcript",
+  );
+  // US-035: subagent tree reconstructed from disk for the selected session,
+  // fetched while the Activity tab is open. When present it supersedes the live
+  // parent_tool_use_id grouping in the timeline; absent, the timeline falls
+  // back to the live tree.
+  const subagents = useSubagents(
+    isAll ? null : selectedId,
+    effectiveTab === "activity",
   );
   // US-013: every pending permission prompt across sessions, kept live by WS.
   const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
@@ -339,6 +348,7 @@ export default function App() {
               <ActivityTimeline
                 events={timelineEvents}
                 onDecide={decidePermission}
+                subagents={subagents.subagents}
               />
             ) : (
               <TranscriptViewer state={transcript} />

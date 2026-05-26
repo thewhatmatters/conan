@@ -539,7 +539,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 35,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-014. Extends v2 US-021. v3-backlog item 14 (Tier2 #7). Suggested skills: automate-browser."
     },
     {

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { TimelineEvent } from "../hooks/useSessionEvents.ts";
+import type { SubagentNode } from "../hooks/useSubagents.ts";
+import type { TranscriptBlock, TranscriptMessage } from "../hooks/useTranscript.ts";
 
 /** Operator choice for a tool-permission prompt (US-012). */
 export type PermissionChoice = "allow" | "deny";
@@ -8,6 +10,15 @@ interface ActivityTimelineProps {
   events: TimelineEvent[];
   /** Send an approve/deny decision for a prompt to the gateway (US-012). */
   onDecide?: (requestId: string | null, choice: PermissionChoice) => void;
+  /**
+   * Subagent tree reconstructed from disk for the selected session (US-035).
+   * When present (and non-empty) it is the authoritative view: each spawned
+   * subagent renders as a node carrying its own per-subagent transcript, nested
+   * by the real spawn relationship — works for any session, not just live ones.
+   * When empty/absent the timeline falls back to grouping live events by their
+   * parent_tool_use_id.
+   */
+  subagents?: SubagentNode[];
 }
 
 /**
@@ -26,6 +37,7 @@ interface ActivityTimelineProps {
 export default function ActivityTimeline({
   events,
   onDecide,
+  subagents = [],
 }: ActivityTimelineProps) {
   // Locally-recorded decisions (request id or `event-<id>` key → choice) so the
   // control disappears the instant a choice is made, before the WS round-trip.
@@ -138,24 +150,68 @@ export default function ActivityTimeline({
     );
   };
 
+  // US-035: disk-reconstructed subagent roots, keyed by the parent Task tool_use
+  // id that spawned each. When the session has on-disk subagents (US-014) this
+  // tree is authoritative — it shows each subagent's own transcript and real
+  // nesting, for any session, not just live ones. Roots whose spawn id is null
+  // or whose spawning event isn't in the current view are appended as orphans
+  // after the walk so nothing is dropped.
+  const hasDisk = subagents.length > 0;
+  const diskRootByToolUseId = new Map<string, SubagentNode>();
+  for (const r of subagents) {
+    if (r.toolUseId && !diskRootByToolUseId.has(r.toolUseId)) {
+      diskRootByToolUseId.set(r.toolUseId, r);
+    }
+  }
+  const toggleKey = (key: string) =>
+    setCollapsed((c) => ({ ...c, [key]: !(c[key] ?? false) }));
+  const renderDiskSubagent = (node: SubagentNode) => (
+    <DiskSubagentGroup
+      key={`disk-${node.agentId}`}
+      node={node}
+      collapsed={collapsed}
+      onToggle={toggleKey}
+    />
+  );
+
   // Walk events in order: render top-level rows, nesting each subagent group
-  // right after the parent that spawned it; render an orphaned group (parent not
-  // shown) at the position of its first child. Each group renders exactly once.
+  // right after the parent that spawned it. With disk data the reconstructed
+  // node (its transcript + children) is rendered; otherwise the live
+  // parent_tool_use_id grouping is used, and an orphaned group (parent not
+  // shown) renders at the position of its first child. Each group renders once.
   const rendered = new Set<string>();
+  const renderedDisk = new Set<string>();
   const nodes: React.ReactNode[] = [];
   for (const e of entries) {
     if (!e.parent_tool_use_id) {
       nodes.push(renderRow(e));
       const tid = toolUseId(e);
-      if (tid && childrenByParent.has(tid) && !rendered.has(tid)) {
+      if (!tid) continue;
+      const diskRoot = diskRootByToolUseId.get(tid);
+      if (diskRoot && !renderedDisk.has(diskRoot.agentId)) {
+        renderedDisk.add(diskRoot.agentId);
+        nodes.push(renderDiskSubagent(diskRoot));
+      } else if (!hasDisk && childrenByParent.has(tid) && !rendered.has(tid)) {
         rendered.add(tid);
         nodes.push(renderSubagent(tid, childrenByParent.get(tid)!));
       }
-    } else {
+    } else if (!hasDisk) {
+      // Live child event: nest the orphan group when its parent isn't shown.
+      // With disk data present the reconstructed transcript is authoritative,
+      // so live child rows are subsumed by the disk node above.
       const pid = e.parent_tool_use_id;
       if (!topLevelToolUseIds.has(pid) && !rendered.has(pid)) {
         rendered.add(pid);
         nodes.push(renderSubagent(pid, childrenByParent.get(pid)!));
+      }
+    }
+  }
+  // Append any disk roots not anchored to a visible spawn event (orphans).
+  if (hasDisk) {
+    for (const r of subagents) {
+      if (!renderedDisk.has(r.agentId)) {
+        renderedDisk.add(r.agentId);
+        nodes.push(renderDiskSubagent(r));
       }
     }
   }
@@ -384,6 +440,172 @@ function SubagentGroup({
       )}
     </li>
   );
+}
+
+/**
+ * A disk-reconstructed subagent node (US-035): the same collapsible visual as a
+ * live subagent group, but its body is the subagent's own transcript (read from
+ * agent-<id>.jsonl) plus any subagents it spawned, nested recursively. Works for
+ * past/observed sessions Conan never launched. Collapse state is shared via the
+ * timeline's `collapsed` map, keyed `disk-<agentId>`.
+ */
+function DiskSubagentGroup({
+  node,
+  collapsed,
+  onToggle,
+}: {
+  node: SubagentNode;
+  collapsed: Record<string, boolean>;
+  onToggle: (key: string) => void;
+}) {
+  const key = `disk-${node.agentId}`;
+  const isCollapsed = collapsed[key] ?? false;
+  const ts = node.transcript.find((m) => m.ts != null)?.ts ?? null;
+  const label = node.agentType ? `Subagent · ${node.agentType}` : "Subagent";
+  const count = node.transcript.length;
+  return (
+    <li className="relative">
+      <div className="flex items-start gap-3 py-1.5">
+        <span className="relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-background text-primary before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-primary/10">
+          <Glyph name="bot" />
+        </span>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <button
+              onClick={() => onToggle(key)}
+              aria-expanded={!isCollapsed}
+              className="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-primary"
+            >
+              <Glyph name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
+              {label}
+            </button>
+            <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {node.agentId}
+            </span>
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              {count} {count === 1 ? "message" : "messages"}
+            </span>
+            {ts != null && (
+              <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70">
+                {fmtTime(ts)}
+              </span>
+            )}
+          </div>
+          {node.description && (
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+              {node.description}
+            </div>
+          )}
+        </div>
+      </div>
+      {!isCollapsed && (
+        <ol className="relative ml-4 space-y-2 border-l border-dashed border-border pl-4">
+          {node.transcript.length === 0 ? (
+            <li className="py-1 text-xs text-muted-foreground">
+              No transcript recorded for this subagent.
+            </li>
+          ) : (
+            node.transcript.map((m, i) => (
+              <MiniMessage key={m.uuid ?? i} message={m} />
+            ))
+          )}
+          {node.children.map((child) => (
+            <DiskSubagentGroup
+              key={`disk-${child.agentId}`}
+              node={child}
+              collapsed={collapsed}
+              onToggle={onToggle}
+            />
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
+/** Compact transcript message inside a disk subagent node (US-035). */
+function MiniMessage({ message }: { message: TranscriptMessage }) {
+  const meta = miniRoleMeta(message.role);
+  return (
+    <li className="rounded-md border border-border bg-card/60 p-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span
+          className={
+            "rounded px-1.5 py-0.5 text-[10px] font-medium " + meta.badge
+          }
+        >
+          {meta.label}
+        </span>
+        {message.ts != null && (
+          <time className="font-mono text-[10px] text-muted-foreground">
+            {fmtTime(message.ts)}
+          </time>
+        )}
+      </div>
+      <div className="space-y-1">
+        {message.blocks.map((b, i) => (
+          <MiniBlock key={i} block={b} />
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function MiniBlock({ block }: { block: TranscriptBlock }) {
+  switch (block.type) {
+    case "text":
+      return (
+        <p className="whitespace-pre-wrap text-xs text-foreground">
+          {clip(block.text)}
+        </p>
+      );
+    case "thinking":
+      return (
+        <p className="whitespace-pre-wrap border-l-2 border-border pl-2 text-xs italic text-muted-foreground">
+          {clip(block.text)}
+        </p>
+      );
+    case "tool_use":
+      return (
+        <div className="font-mono text-xs text-muted-foreground">
+          → {block.name}
+        </div>
+      );
+    case "tool_result":
+      return (
+        <div
+          className={
+            "font-mono text-xs " +
+            (block.isError ? "text-destructive" : "text-muted-foreground")
+          }
+        >
+          {block.isError ? "✗ " : "✓ "}
+          {clip(block.text, 200)}
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+function miniRoleMeta(role: TranscriptMessage["role"]): {
+  label: string;
+  badge: string;
+} {
+  switch (role) {
+    case "user":
+      return { label: "User", badge: "bg-primary/15 text-primary" };
+    case "assistant":
+      return { label: "Assistant", badge: "bg-muted text-foreground" };
+    case "tool":
+      return { label: "Tool result", badge: "bg-muted/60 text-muted-foreground" };
+  }
+}
+
+/** Collapse whitespace and cap length for a compact transcript line. */
+function clip(s: string, max = 280): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
 /**
