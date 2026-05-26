@@ -25,6 +25,7 @@ import { readHooksCoverage } from "../hooks-coverage/index.js";
 import { readProjectMetrics } from "../project-metrics/index.js";
 import { readPlugins } from "../plugins/index.js";
 import { readAgents } from "../agents/index.js";
+import { readBackgroundAgents } from "../background-agents/index.js";
 import {
   installGlobalHooks,
   uninstallGlobalHooks,
@@ -463,6 +464,16 @@ app.get("/api/claude/plugins", (_req, res) => {
 // (SOUL.md / <name>.md). Read-only; missing dirs degrade to an empty list.
 app.get("/api/claude/agents", (_req, res) => {
   res.json(readAgents());
+});
+
+// Live background agents (US-013): shells out to `claude agents --json` (bounded
+// timeout) and returns the parsed live background-agent list. Token-gated — it
+// spawns a process — and accepts an optional ?cwd= filter (CLI `--cwd`). A
+// non-zero exit / empty list / missing binary degrade to a safe empty payload.
+app.get("/api/claude/background-agents", async (req, res) => {
+  if (!authed(req, res)) return;
+  const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
+  res.json(await readBackgroundAgents({ cwd }));
 });
 
 // Token-gated safe write: persists ONE allowlisted preference key to

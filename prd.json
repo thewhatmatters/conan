@@ -200,7 +200,7 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "RESEARCH: `claude agents --json` prints live sessions as JSON (schema to confirm at build). Feeds Agents page. v3-backlog item 17."
     },
     {
