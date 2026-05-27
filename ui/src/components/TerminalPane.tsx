@@ -1,25 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
-import {
-  useTerminals,
-  terminalLabel,
-  type TerminalInfo,
-} from "../hooks/useTerminals.ts";
+import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu.tsx";
 
 // Tab-trigger styling tuned to match the flat header controls (no pill list,
 // active = bg-muted) rather than shadcn's default card-with-shadow look.
 const TAB_TRIGGER =
-  "rounded-md px-2.5 py-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
+  "group shrink-0 max-w-44 rounded-md py-1 pl-2.5 pr-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 interface TerminalPaneProps {
   token: string | null;
@@ -60,8 +49,9 @@ function persistTerms(terms: TermTab[]): void {
 
 /**
  * The primary surface (US-003 terminal-wrapper reshape): the Claude Code
- * terminal filling the main area. Holds N terminal tabs behind a `Term ▾`
- * dropdown (US-026); every terminal stays mounted at all times (stacked, only
+ * terminal filling the main area. Holds N terminal tabs in a real tab strip
+ * (US-009, replacing the old `Term ▾` dropdown); every terminal stays mounted
+ * at all times (stacked, only
  * the active one on top) so switching tabs never tears down a pty and
  * scrollback is preserved (US-037: a tab switch is visual, never a kill). Each
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
@@ -152,18 +142,51 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
   return (
     <section className="relative flex min-w-0 flex-1 flex-col bg-card">
       <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <Tabs value="term">
-          <TabsList className="h-auto justify-start gap-1 rounded-none bg-transparent p-0">
-            <TermDropdown
-              terms={terms}
-              activeTid={activeTid}
-              byTid={byTid}
-              onSelect={setActiveTid}
-              onClose={closeTerm}
-              onNew={addTerm}
-            />
+        <Tabs
+          value={activeTid}
+          onValueChange={setActiveTid}
+          className="min-w-0 flex-1"
+        >
+          {/* A real tab strip (US-009): one trigger per terminal, scrolling
+              horizontally when many are open (no wrap). */}
+          <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {terms.map((t, i) => (
+              <TabsTrigger
+                key={t.tid}
+                value={t.tid}
+                title={terminalLabel(byTid.get(t.tid), i)}
+                className={TAB_TRIGGER}
+              >
+                <span className="truncate">
+                  {terminalLabel(byTid.get(t.tid), i)}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Close terminal"
+                  title="Close terminal"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    // Don't let the close click bubble into the tab's select.
+                    e.stopPropagation();
+                    closeTerm(t.tid);
+                  }}
+                  className="ml-1 inline-flex rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 group-data-[state=active]:opacity-100"
+                >
+                  <CloseIcon />
+                </span>
+              </TabsTrigger>
+            ))}
           </TabsList>
         </Tabs>
+        <button
+          onClick={addTerm}
+          title="New terminal"
+          aria-label="New terminal"
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Plus className="size-4" />
+        </button>
       </div>
 
       <div className="relative min-h-0 flex-1">
@@ -198,88 +221,6 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
         )}
       </div>
     </section>
-  );
-}
-
-/**
- * "Term ▾" dropdown (US-018): lists Term 1..N (the active one marked), each row
- * carrying a close button that kills its pty, plus a "+ New terminal" action.
- * The terminals themselves stay mounted in the body below — this only picks
- * which one is on top, so scrollback is preserved.
- */
-function TermDropdown({
-  terms,
-  activeTid,
-  byTid,
-  onSelect,
-  onClose,
-  onNew,
-}: {
-  terms: TermTab[];
-  activeTid: string;
-  byTid: Map<string, TerminalInfo>;
-  onSelect: (tid: string) => void;
-  onClose: (tid: string) => void;
-  onNew: () => void;
-}) {
-  const labelIdx = terms.findIndex((t) => t.tid === activeTid);
-  const label =
-    labelIdx >= 0 ? terminalLabel(byTid.get(activeTid), labelIdx) : "Term";
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <TabsTrigger
-          value="term"
-          title="Terminals"
-          className={TAB_TRIGGER + " max-w-44 gap-1"}
-        >
-          <span className="truncate">{label}</span>
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-        </TabsTrigger>
-      </DropdownMenuTrigger>
-
-      <DropdownMenuContent align="start" className="min-w-44">
-        {terms.map((t, i) => {
-          const on = activeTid === t.tid;
-          return (
-            <DropdownMenuItem
-              key={t.tid}
-              onSelect={() => onSelect(t.tid)}
-              className="group text-xs"
-            >
-              <span
-                className={
-                  "size-1.5 rounded-full " +
-                  (on ? "bg-primary" : "bg-transparent")
-                }
-              />
-              <span className="flex-1 truncate">
-                {terminalLabel(byTid.get(t.tid), i)}
-              </span>
-              <button
-                onClick={(e) => {
-                  // Don't let the close button bubble into the item's select.
-                  e.stopPropagation();
-                  onClose(t.tid);
-                }}
-                title="Close terminal"
-                className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-              >
-                <CloseIcon />
-              </button>
-            </DropdownMenuItem>
-          );
-        })}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={onNew}
-          className="text-xs text-muted-foreground"
-        >
-          <span className="text-sm leading-none">+</span> New terminal
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

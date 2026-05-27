@@ -144,7 +144,7 @@
         "Verify in browser using automate-browser skill (open 3+ terminals; switch/close/add; light + dark)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Presentation-only — terms[]/addTerm/closeTerm/activeTid/byTid + sessionStorage reattach already exist. Suggested skills: automate-browser."
     },
     {
