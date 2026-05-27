@@ -128,6 +128,27 @@ existing React + `xterm.js` UI, with the **Node gateway bundled as a Tauri
 sidecar** (it stays the PTY host _and_ the `/api/claude/*` data source for the
 widgets — so near-zero rewrite of the core). See `docs/v4.1-backlog.md`.
 
+### Desktop app (Tauri)
+
+The shipped product is a native macOS app: `src-tauri/` (a Tauri v2 crate at the
+repo root) opens a 1400×900 window onto the same React + `xterm.js` UI and spawns
+the **gateway sidecar** on launch (`CONAN_PORT=3747`), killing it on quit so the
+single-instance port frees for the next run. The gateway is packaged as a
+bundled-node launcher (`src-tauri/binaries/conan-gateway-<triple>` + a `runtime/`
+tree carrying Node and the `better-sqlite3` / `node-pty` native addons as real
+files — the reliable route for native modules).
+
+```bash
+npm run tauri:dev              # dev: Vite (:5173) + native window + live sidecar
+npm run build:sidecar          # (re)build the gateway sidecar binary + runtime/
+npm run test:sidecar           # prove better-sqlite3 + node-pty work from the binary
+CI=true npm run tauri:build    # bundle Conan.app + .dmg (CI=true for headless DMG)
+```
+
+Artifacts land in `src-tauri/target/release/bundle/{macos,dmg}/`. The local build
+is **ad-hoc signed**; the Developer-ID sign + notarize path for distribution and
+the `CI=true` headless-DMG note are in **`docs/tauri-desktop.md`**.
+
 ## Backlog & build loop
 
 Conan is built by an autonomous loop, and its own backlog lives in the repo:

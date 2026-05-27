@@ -902,3 +902,16 @@ function shutdown(): void {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// Stdin-EOF watchdog (Tauri sidecar belt-and-suspenders, research §2). When run
+// as the Tauri-spawned gateway sidecar (CONAN_SIDECAR=1), the host pipes our
+// stdin; if the desktop app dies/quits without RunEvent::ExitRequested landing a
+// child.kill() (observed on macOS Apple-event quit), that pipe's write end closes
+// and we get EOF here. Self-terminate so :3747 frees for the next launch (the
+// gateway is single-instance and refuses to start on a bound port). Gated on the
+// env so interactive runs (npm start, a TTY) are unaffected.
+if (process.env.CONAN_SIDECAR === "1") {
+  process.stdin.on("end", shutdown);
+  process.stdin.on("close", shutdown);
+  process.stdin.resume();
+}

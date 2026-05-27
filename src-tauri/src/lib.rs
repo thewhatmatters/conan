@@ -37,7 +37,11 @@ pub fn run() {
         .shell()
         .sidecar("conan-gateway")?
         .env("CONAN_PORT", "3747")
-        .env("CONAN_ALLOWED_ORIGINS", ALLOWED_ORIGINS);
+        .env("CONAN_ALLOWED_ORIGINS", ALLOWED_ORIGINS)
+        // Arms the gateway's stdin-EOF watchdog: if this app dies/quits without
+        // the ExitRequested kill landing (seen on macOS Apple-event quit), the
+        // closed stdin pipe lets the sidecar self-terminate and free :3747.
+        .env("CONAN_SIDECAR", "1");
       // In dev, Tauri copies only the triple-stripped binary to target/debug/,
       // leaving its runtime/ tree behind in src-tauri/binaries/. Point the
       // launcher at the real runtime dir so it can exec node + gateway.cjs.

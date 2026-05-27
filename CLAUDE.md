@@ -133,6 +133,23 @@ npm run typecheck           # tsc --noEmit (gateway)
    Conan instance on another port) and use this dashboard to **observe**.
 
 ## Status (2026-05-26)
+**v4.1 done (10/10, `loop/conan-v4.1`).** Pivoted Conan from a web dashboard to a
+**terminal-primary native desktop app shipped via Tauri v2**. Stripped the v2/v3
+IA (sidebar nav + route views, then the timeline Overview); reshaped to a
+terminal-primary layout with a DevTools-style HUD (exactly Context + Usage widgets
++ the Pulse graph); scaffolded `src-tauri/` (Tauri v2 at repo root) with a
+Tauri-aware absolute gateway-base resolver (`ui/src/lib/gateway.ts`), the WS
+Origin allowlist + CSP extended for `tauri://localhost`; packaged the Node gateway
+as a **bundled-node sidecar** (`scripts/build-sidecar.mjs` → a relocatable C
+launcher + `runtime/` tree with Node + `better-sqlite3`/`node-pty` as real files,
+ad-hoc codesigned), spawned/killed from `src-tauri/src/lib.rs`; and **bundled
+`Conan.app` + `.dmg`** (`bundle.resources` copies `runtime/` into
+`Contents/Resources`; `CI=true npm run tauri:build` for headless DMG). The
+gateway carries a **stdin-EOF watchdog** (`CONAN_SIDECAR=1`) so it self-terminates
+and frees :3747 when the app quits without the `ExitRequested` kill landing
+(observed on macOS Apple-event quit). Build/run + Developer-ID sign + notarize:
+`docs/tauri-desktop.md`. Research: `docs/v4.1-research.md`.
+
 **v4 done (13/13, `loop/conan-v4`).** v4 folded the six QA items from
 `docs/v4-backlog.md` into a build loop: shared-component extraction (SortToggle,
 status dot, two-tier card, time-ago, scope badge) + transcript sort toggle;

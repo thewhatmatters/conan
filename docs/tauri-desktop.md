@@ -51,3 +51,52 @@ the fixed Vite dev server at `http://localhost:5173`
   for the optional explicit `connect-src` policy)
 
 `src-tauri/target/` is gitignored.
+
+## Bundling the macOS app (US-010)
+
+The desktop app ships the gateway as a **bundled-node sidecar** (research §3
+approach (d)): `src-tauri/binaries/conan-gateway-<triple>` is a tiny relocatable
+launcher that execs `runtime/node runtime/gateway.cjs`; the `runtime/` tree
+(Node binary + esbuild'd gateway + the two native addons as real files) is copied
+into the `.app` via `bundle.resources` so the launcher finds it at
+`Contents/Resources/runtime` (`../Resources/runtime` from `Contents/MacOS`).
+
+```bash
+npm run build:sidecar          # 1. (re)build src-tauri/binaries/conan-gateway-<triple> + runtime/
+npm run test:sidecar           # 2. prove better-sqlite3 + node-pty work from the packaged binary
+CI=true npm run tauri:build    # 3. bundle Conan.app + Conan_<ver>_<arch>.dmg
+```
+
+Artifacts land under `src-tauri/target/release/bundle/{macos,dmg}/`
+(`Conan.app` ≈ 189 MB, `Conan_0.1.0_aarch64.dmg` ≈ 56 MB).
+
+- **`CI=true` is required for headless/non-GUI bundling.** The `.dmg` step runs
+  `bundle_dmg.sh`, which drives Finder via AppleScript to lay out the volume
+  window; with no interactive GUI session that times out (`AppleEvent timed out
+  (-1712)`). `CI=true` makes Tauri pass `--sandbox-safe`, skipping the cosmetic
+  AppleScript (the DMG still works — it just has no custom icon layout). On a
+  normal desktop session you can omit `CI=true` to get the styled DMG.
+- **Rebuild the sidecar before bundling** if `src/` changed — `beforeBuildCommand`
+  only rebuilds the UI, not `conan-gateway`.
+
+## Signing & notarization
+
+- **Local run (ad-hoc):** `build-sidecar.mjs` ad-hoc-signs the launcher + the
+  embedded `node` (`codesign -s -`) so the arm64 kernel doesn't kill them, and
+  `tauri build` ad-hoc-signs the `.app`. This is enough to launch on the build
+  machine. (`codesign --verify --deep --strict` reports a stale resource seal
+  because `runtime/` is added as a bundle resource after the linker signature —
+  harmless for local ad-hoc launch; a real Developer-ID re-sign reseals it.)
+- **Distribution (Developer ID + notarize):** required or users get
+  "damaged/unverified". Set the env Tauri reads and rebuild:
+  ```bash
+  export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+  export APPLE_ID="you@example.com"
+  export APPLE_PASSWORD="app-specific-password"   # or APPLE_API_KEY/_ISSUER
+  export APPLE_TEAM_ID="TEAMID"
+  npm run tauri:build
+  ```
+  Tauri signs the `.app` (and the embedded sidecar/`node`) with the Developer ID
+  and notarizes the bundle. Verify E2E that the **notarized** app still spawns the
+  gateway after Gatekeeper validation (research §5). The sidecar's `node` +
+  launcher are Mach-O specifically so they can carry a real signature.

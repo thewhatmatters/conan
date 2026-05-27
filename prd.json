@@ -172,7 +172,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Final story — the full bundle. Heavy (needs the Rust/Tauri toolchain + a real tauri build). If the build host can't complete a full bundle, produce the config/scripts and document the exact build+sign commands, and record the gap in progress.txt rather than falsely passing. docs/v4.1-research.md §5. The 'beautiful sequence' (CLAUDE.md/memory/README/commit) lands here."
     }
   ]
