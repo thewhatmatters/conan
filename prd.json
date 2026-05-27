@@ -91,7 +91,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Anchors + exact config in docs/v4.1-research.md §1. The sidecar (US-008/009) and origin/CSP (US-007) come later; this story is just scaffolding. Keep .gitignore'ing src-tauri/target. No browser-verify (native shell)."
     },
     {
