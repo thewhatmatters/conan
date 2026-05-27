@@ -21,7 +21,7 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
-import { readClaudeConfig } from "../config/index.js";
+import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 
@@ -273,13 +273,27 @@ app.get("/api/claude/skills", (req, res) => {
   res.json(readSkills(getActiveCwd()));
 });
 
-// Read-only mirror of Claude Code's /config (US-007): the confidently-mapped
-// settings rows read from ~/.claude/settings.json, <cwd>/.claude/settings.json,
-// and the CLI-state ~/.claude.json — each value tagged with the file it came
-// from (project > user precedence). Token-gated, read-only; editing is deferred.
+// Mirror of Claude Code's /config (US-007): the confidently-mapped settings rows
+// read from ~/.claude/settings.json, <cwd>/.claude/settings.json, and the
+// CLI-state ~/.claude.json — each value tagged with the file it came from
+// (project > user precedence). US-002 also returns `schema`: the editable-key
+// type metadata (kind + enum allowed-values extracted from the claude binary) so
+// the Settings UI can render the right control per key. Token-gated.
 app.get("/api/claude/config", (req, res) => {
   if (!authed(req, res)) return;
-  res.json(readClaudeConfig(getActiveCwd()));
+  res.json({ ...readClaudeConfig(getActiveCwd()), schema: configSchema() });
+});
+
+// Editable Claude-config write (US-002): write a single key via read-modify-write
+// to ~/.claude/settings.json (settings keys) or ~/.claude.json (global keys),
+// preserving every other key. Token-gated. Rejects unknown keys and
+// type-mismatched values with a 4xx; never writes a key outside the editable
+// schema. Changes apply to Claude's config (may only take effect next session).
+app.post("/api/claude/config", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const result = writeConfigKey(body.key, body.value);
+  res.status(result.status).json(result);
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

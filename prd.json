@@ -36,7 +36,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Backend foundation for editable Settings (US-010). Read-modify-write preserving all other keys is the proven-safe pattern (v4.3 theme write). Anchors: readClaudeConfig + SETTINGS_KEYS/GLOBAL_KEYS in src/config/index.ts, GET /api/claude/config in src/gateway/index.ts."
     },
     {
