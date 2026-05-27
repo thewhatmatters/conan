@@ -1,218 +1,228 @@
 {
-  "project": "Conan — v4.2: Tremor charting + aggressive Tauri-only cleanup",
-  "branchName": "loop/conan-v4.2",
-  "description": "v4.2 does two things to the Tauri terminal-wrapper: (1) an aggressive Tauri-only cleanup — trim the gateway to only the routes the app calls (health, config, tasks, terminals, sessions list, sessions/:id/widgets, usage, pulse, events ingestion, the two WebSockets) and delete everything else (the observe/drive route surface, the browser/web-served + TLS/remote-access + pm2 path, and the v1→v4 planning history); and (2) adopt Tremor (Tremor Raw, the Tailwind-v4-native copy-in components — NOT @tremor/react) as the charting library going forward, migrating the Pulse stacked-area chart and the Context % ring. Cleanup (subtraction) is sequenced before Tremor (addition) so the surface is small first; the build stays green at every story. Source: docs/v4.2-backlog.md. Charting research (the resolved Tailwind-v4 risk): docs/v4.2-research.md. Note: going Tauri-only drops the gateway's browser SPA serving, so UI verification shifts to the Vite dev server at http://localhost:5173 (run `cd ui && npm run dev` alongside a gateway started with `npm start`).",
+  "project": "Conan — v4.3: HUD/UX expansion (Plan widget + observability + UI lifts)",
+  "branchName": "loop/conan-v4.3",
+  "description": "v4.3 expands the Tauri terminal-wrapper's HUD/UX: land the finished context-accuracy fixes and make the /context auto-refresh adaptive (observer-effect aware); add a conditional Plan tab (from TodoWrite/ExitPlanMode/build-loop) and a Skills tab (VS Code-extensions-style, from SKILL.md frontmatter); add a read-only Settings surface mirroring Claude's /config; and a run of UI lifts — real terminal tabs (drop the Term dropdown), a bottom status bar (cwd / branch / gateway, moved out of the HUD), a View > Theme submenu that drives Conan's app theme AND mirrors Claude's terminal /theme, a context-pressure action bar (Compact -> /handoff in the correlated pty), and flush/panel-native widget content (no card chrome). Backend before UI; build stays green at every story. Source: docs/v4.3-backlog.md. Resolved decisions (2026-05-27): the US-013 follow-up folded as the first story (not pre-committed); chrome = bottom bar; Settings = read-only only this loop; Theme = include the Claude /theme mirror.",
   "generatedAt": "2026-05-27",
-  "sourcePrd": "docs/v4.2-backlog.md + docs/v4.2-research.md",
+  "sourcePrd": "docs/v4.3-backlog.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Delete the v1→v4 planning history + legacy multi-version PRD; collapse docs to the current spec",
-      "description": "As the product owner, I want the dashboard-era planning docs gone so the repo reflects only the current Tauri terminal-wrapper, with one coherent set of current docs.",
+      "title": "Land the context-accuracy fixes (1M window + /context auto-refresh + hook token + sidecar-test)",
+      "description": "As a Conan user, I want the Context widget to be accurate on 1M-context sessions and to stay current, so the HUD reflects reality.",
       "acceptanceCriteria": [
-        "Delete the legacy planning/history files: prd-claude-code-dashboard.md, research-claude-code-always-on-dashboard.md, docs/v2-backlog.md, docs/v3-backlog.md, docs/v4-backlog.md, docs/v4-research.md, docs/v4.1-backlog.md, docs/v4.1-research.md, and the archive/ directory",
-        "Keep the current docs: docs/v4.2-backlog.md, docs/v4.2-research.md, docs/tauri-desktop.md, README.md, CLAUDE.md",
-        "Update CLAUDE.md and README.md so no link or reference points at a deleted file; fold any still-relevant one-liners (e.g. the validate command) into CLAUDE.md/README directly",
-        "Grep the repo for references to the deleted filenames (prd-claude-code-dashboard, research-claude-code-always-on, v2-backlog, v3-backlog, v4-backlog, v4-research, v4.1-backlog, v4.1-research, archive/) — none remain except in prd.json/progress.txt history",
-        "No source code changes; the app is unaffected",
+        "resolveContextWindow returns a 1M window when: the model slug carries a 1m marker, OR a sibling session on the SAME base model reports 1m, OR measured used tokens exceed the 200k default; otherwise 200k (unit-tested in scripts/test-context.mjs)",
+        "A 1M-context session (e.g. claude-opus-4-7[1m]) shows the correct low % in the Context widget, not ~99%",
+        "autoRefreshContextOnStop injects /context on the Stop hook, throttled per session, and is a no-op when the session has no live correlated pty or when CONAN_CONTEXT_AUTOREFRESH=0",
+        "scripts/hooks/send-event.mjs resolves the auth token from CONAN_DATA_DIR so events from the Tauri-app-spawned gateway are not 401'd",
+        "scripts/test-sidecar.mjs uses a parent-held stdin pipe (not /dev/null) so the EOF watchdog doesn't cause a false health-check failure",
+        "npm test passes all suites",
         "Typecheck passes",
-        "cd ui && npm run build is clean"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (a 1M-context session shows the correct low % in the Context widget)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Pure doc subtraction, zero code risk — safe first story. prd.json's sourcePrd already points at docs/v4.2-*.md, not the deleted PRD. Don't touch run-tasks.sh / prd.json / progress.txt (build-loop infra stays)."
+      "passes": false,
+      "notes": "This is the finished-but-uncommitted US-013 follow-up, folded in as the first story (per the 2026-05-27 decision) — verify the behaviors hold and the tree is green; the runner commits it. The em-dash re-encoding noise in the old prd.json is superseded by this v4.3 rewrite. Suggested skills: automate-browser (confirm the Context % in the running UI)."
     },
     {
       "id": "US-002",
-      "title": "Drop the browser/web-served + TLS/remote-access + pm2 path (Tauri-only)",
-      "description": "As the product owner, I want the web-deployment surface removed so Conan is strictly the Tauri desktop app + its loopback sidecar — no browser SPA serving, no TLS/remote access, no pm2.",
+      "title": "Make the /context auto-refresh adaptive (delta-triggered, not every turn)",
+      "description": "As a Conan user, I don't want self-measurement to inflate or burn my context, so /context should refresh only when context has likely moved a lot.",
       "acceptanceCriteria": [
-        "Remove the gateway's static SPA serving of ui/dist for browsers in src/gateway/index.ts (the express.static / SPA-fallback for the built UI) — the Tauri webview loads the bundled frontend, and dev uses Vite, so the gateway no longer needs to serve HTML",
-        "Delete src/gateway/tls.ts + its wiring in index.ts (HTTPS/wss + CONAN_TLS_*/CONAN_HOST refusal), docs/remote-access.md, docs/remote-control-sessions.md, docs/worktree-sessions.md, and the relevant test (scripts/test-tls.mjs)",
-        "Delete pm2 deployment: ecosystem.config.cjs, the ops:* npm scripts in package.json, docs/ops.md",
-        "The gateway still binds loopback :3747, serves the JSON API + the two WebSockets, and the sidecar still works; the Tauri app and Vite dev (:5173) are unaffected",
-        "Update CLAUDE.md/README to drop the removed remote-access/pm2/web-serving sections",
+        "The auto-refresh replaces the fixed once-per-Stop cadence with a delta trigger: it injects /context only after cumulative output since the last capture (PostToolUse tool_response sizes + assistant message length) crosses a meaningful threshold",
+        "A hard floor (>= the existing min spacing) AND a ceiling are enforced, so tiny turns don't refresh and a slow session still refreshes eventually",
+        "Manual refresh and passive capture remain always-available cheap paths; CONAN_CONTEXT_AUTOREFRESH=0 still disables auto-refresh",
+        "The Context widget's live face notes that refreshing consumes context (honest cost)",
+        "Behavior of the delta trigger is unit-covered (threshold/floor/ceiling)",
         "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify with automate-browser at http://localhost:5173 (start the gateway with `npm start`, then `cd ui && npm run dev`): the app loads, gateway shows connected, and a terminal opens"
+        "Verify in browser using automate-browser skill"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Footgun #1: run the loop agent OUTSIDE the in-dock session (gateway edits). Keep the auth/Origin module (auth.ts) — only TLS goes. The Origin allowlist + tauri://localhost stay."
+      "passes": false,
+      "notes": "Observer-effect fix (a /context dump is ~4-6k tokens). Refines US-001's autoRefreshContextOnStop. Settled: a hidden/background window can't report the visible session's context (different process). Long-term alternative noted in the backlog: compute the breakdown ourselves and drop the inject. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
-      "title": "Remove the session-drive route surface + its modules + tests",
-      "description": "As the product owner, I want the launch/steer (drive) routes gone since the terminal-wrapper observes via the pty, not by driving headless sessions through the gateway.",
+      "title": "Backend: derive per-session plan-state from the event stream + expose a route",
+      "description": "As a developer, I need the active session's plan available to the UI, derived from hook events already on the wire.",
       "acceptanceCriteria": [
-        "Remove the drive routes from src/gateway/index.ts: POST /api/claude/sessions, POST /api/claude/sessions/:id/{prompt,resume,stop,permission}, and GET /api/claude/sessions/:id/{events,subagents,transcript}",
-        "Delete the src/** modules that exclusively back those routes (e.g. the headless drive/launch + permission-decision + subagents/transcript-serving code) and their scripts/test-*.mjs (e.g. test-drive, test-subagents, and any transcript/permission drive tests) — verify each is unreferenced by a KEPT route before deleting",
-        "KEEP GET /api/claude/sessions (the list) and GET /api/claude/sessions/:id/widgets (Context) working, plus the session tracking + liveness reaper + pty↔session correlation they depend on",
-        "GET /api/claude/sessions and /api/claude/sessions/:id/widgets still return 200 with data after the deletions",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "npm test passes for the remaining suites (drive/subagents tests removed, not left broken)"
+        "Reduce the persisted event stream into per-session plan-state: latest-wins TodoWrite todos ([{content, status, activeForm}]) + the last ExitPlanMode plan markdown",
+        "Expose GET /api/claude/sessions/:id/plan (token-gated) that rehydrates from the persisted event table so a reconnect restores the current plan",
+        "isActive is true when the session has a non-empty TodoWrite list with at least one non-completed item, OR a recent ExitPlanMode plan, OR an active build loop; false otherwise",
+        "Reducer logic is unit-tested",
+        "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "The transcript PARSER may still be needed by the widgets route (context usage from the latest assistant turn) — keep parser bits the widgets route uses; only delete the transcript-SERVING route + drive code. Build + the kept-route checks are the gate. Gateway edits → run outside the in-dock session."
+      "passes": false,
+      "notes": "No new capture — the forwarder already passes the full tool_input. Precedence: live TodoWrite -> ExitPlanMode seed -> build-loop. See docs/v4.3-backlog.md Plan-widget section."
     },
     {
       "id": "US-004",
-      "title": "Remove the unused read-only catalog/config routes + modules + tests (preserve the Context-widget deps)",
-      "description": "As the product owner, I want every /api/claude/* and /api/* route the trimmed UI never calls deleted, leaving only the terminal-wrapper's data surface.",
+      "title": "Frontend: usePlan hook + PlanWidget + conditional Plan HUD tab",
+      "description": "As a Conan user, I want to see the active session's plan in the HUD when there is one, and have it stay out of the way otherwise.",
       "acceptanceCriteria": [
-        "Remove these routes + their exclusively-backing src/** modules + scripts/test-*.mjs: /api/claude/{agents,background-agents,changelog,checkpoints,doctor,hooks-coverage,permissions,plugins,project-metrics,prompt-history,skills,skills/list,stats,settings}, POST /api/claude/hooks/install-global, /api/settings, /api/cwd, /api/cwd/git, /api/fs/dirs",
-        "PRESERVE the helpers the Context widgets route (sessions/:id/widgets) reconstructs its breakdown from — the on-disk MCP / skills / memory size readers. If those live in a module otherwise being deleted (e.g. src/mcp, src/skills), keep the needed functions (move/inline them) rather than deleting them. The /api/claude/mcp ROUTE is removed but its reader used by the breakdown stays.",
-        "After deletion, the KEPT routes all still return 200 with correct data: /api/health, /api/config, /api/tasks, /api/terminals, /api/claude/sessions, /api/claude/sessions/:id/widgets (with its context breakdown intact), /api/claude/usage (+?probe=1), /api/claude/pulse, POST /api/claude/events, and the /ws + /ws/terminal upgrades",
-        "No dangling imports anywhere in src/**",
+        "usePlan hook reduces TodoWrite/ExitPlanMode events for the active session into { todos, proposedPlan, source, isActive }",
+        "PlanWidget renders the checklist (per-item status icon + a progress count) and/or the proposed-plan markdown; falls back to the build-loop tasks feed when no interactive plan is live",
+        "A conditional 4th HUD tab (Plan) is shown/enabled only when isActive, and greyed/disabled/hidden when there's no active plan or all TodoWrite items are completed",
         "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "npm test passes for the remaining suites",
-        "Verify with automate-browser at http://localhost:5173 that Context, Usage, and Pulse still render real data (or honest empty states) and the terminal works"
+        "Verify in browser using automate-browser skill (plan appears with todos present, hides/greys when none; light + dark)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "The riskiest cleanup story — the widgets context breakdown (Widgets.tsx ContextBreakdownBar / useWidgets) depends on MCP+skills+memory sizes computed server-side. Trim surgically; the kept-route 200 checks + the browser render are the gate. Gateway edits → run outside the in-dock session."
+      "passes": false,
+      "notes": "Consumes US-003. HUD tabs live in ui/src/components/Hud.tsx:89-130. Suggested skills: automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Rebuild + verify the trimmed gateway sidecar end-to-end",
-      "description": "As a user, I want the packaged sidecar to reflect the smaller gateway and still boot the Tauri app with the Terminal + Context/Usage/Pulse working.",
+      "title": "Backend: skills frontmatter reader + GET /api/claude/skills",
+      "description": "As a developer, I need installed skills with their descriptions available to the UI.",
       "acceptanceCriteria": [
-        "Run npm run build:sidecar so src-tauri/binaries/conan-gateway-<triple> + runtime/ reflect the trimmed gateway; ad-hoc codesign as before",
-        "npm run test:sidecar passes (DB open via better-sqlite3 + pty spawn via node-pty) against the rebuilt binary",
-        "Running the rebuilt sidecar binary directly serves GET /api/health 200 and the kept /api/claude/{sessions,usage,pulse} routes 200",
-        "tauri dev (or the built app) launches: window opens, gateway connects, a terminal spawns a live pty, and the Context/Usage/Pulse HUD renders; quitting frees :3747 (the stdin-EOF watchdog)",
-        "Update docs/tauri-desktop.md + CLAUDE.md route list to the trimmed surface",
-        "Typecheck passes",
-        "cd ui && npm run build is clean"
+        "Extend the existing skill-dir walk (skillTokens in src/widgets/index.ts) into a frontmatter parser returning [{ name, description, source }] for user (~/.claude/skills), project (<cwd>/.claude/skills), and plugin skills",
+        "Expose GET /api/claude/skills (token-gated)",
+        "Built-in skills with no readable SKILL.md are listed name-only (source = Built-in) with no fabricated description",
+        "Frontmatter parsing is unit-tested",
+        "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Gate before adding Tremor — proves the subtraction didn't break the packaged app. If the Rust/Tauri toolchain can't run a full launch on the build host, verify the rebuilt binary + test:sidecar and note the manual app-launch step in progress.txt. docs/v4.1-research.md §2-3 covers the sidecar mechanics."
+      "passes": false,
+      "notes": "Descriptions are NOT in /context (only names + sizes) — they live in each SKILL.md frontmatter. Keep dependency-light like the other readers."
     },
     {
       "id": "US-006",
-      "title": "Add the Tremor Raw charting foundation (Tailwind-v4-native), themed to our tokens",
-      "description": "As a developer, I want Tremor Raw's chart components vendored into the UI and wired to our semantic chart tokens, so the chart migrations build on one themed foundation.",
+      "title": "Frontend: useSkills hook + Skills HUD tab (VS Code-extensions style)",
+      "description": "As a Conan user, I want to browse my installed skills and their descriptions in the HUD.",
       "acceptanceCriteria": [
-        "cd ui && npm i recharts tailwind-variants — do NOT install @tremor/react (it requires Tailwind v3 and won't render on this CSS-first v4 setup)",
-        "Vendor Tremor Raw sources into ui/src/components/ (e.g. charts/AreaChart.tsx, charts/ProgressCircle.tsx) + ui/src/lib/chartUtils.ts, rewiring their imports to the repo's cn() helper",
-        "Rewrite chartUtils.ts color map so chart colors resolve to the existing CSS vars (chart1..chart5 → fill/stroke/bg/text using var(--color-chart-1..5)); ProgressCircle's variant class map uses var(--color-chart-1)/--primary (default), --destructive (error), and a muted track — so charts honor light default + the .dark toggle automatically",
-        "No Tailwind config changes are needed (v4 auto-scans ui/src/**); confirm npm run build emits no React 19 peer-dependency error from recharts",
-        "The new components compile and are exported but not yet consumed (migrations are US-007/US-008); no visual change yet",
+        "useSkills hook fetches + caches GET /api/claude/skills",
+        "A Skills HUD tab renders rows like the VS Code Extensions panel: bold name, clamped description, source badge (User / Project / Plugin (name) / Built-in), with an empty state",
+        "The flat HUD tab bar still reads well at the 320px min width with the added tab(s) (Context | Usage | Pulse | Plan | Skills) — confirm fit or apply overflow handling",
         "Typecheck passes",
-        "cd ui && npm run build is clean"
+        "Verify in browser using automate-browser skill (light + dark)"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "docs/v4.2-research.md §4-6. Tremor Raw = copy-in (shadcn-style), Apache-2.0; deps recharts + tailwind-variants (clsx/tailwind-merge/radix already present). Chart tokens live in ui/src/index.css (~lines 36-40 light, 75-79 dark)."
+      "passes": false,
+      "notes": "Consumes US-005. Reuse the flush/no-card treatment (US-014). Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
-      "title": "Migrate the Pulse chart to Tremor AreaChart (stacked)",
-      "description": "As a user, I want the Pulse activity graph rendered with Tremor's AreaChart so it gains real tooltips/legend/responsiveness while keeping its categories, ranges, and theming.",
+      "title": "Backend: read-only Settings mirror of Claude's /config + GET /api/claude/config",
+      "description": "As a developer, I need Claude Code's settings readable so Conan can display them.",
       "acceptanceCriteria": [
-        "Replace the hand-rolled SVG in ui/src/components/PulseChart.tsx with Tremor's AreaChart (type=stacked), reshaping the usePulse buckets (PulseSeries/PulseCategory) into flat rows ({t, <category>: n, …}) keyed by the same activity categories mapped to --color-chart-1..5",
-        "Keep the 15m/1h/6h/24h range buttons and the category legend; the chart stays inside the HUD Pulse tab and fills it responsively",
-        "Colors come from the themed chartUtils (US-006) so the chart matches the palette in light + dark",
-        "No charting regression: the same data renders, empty state is handled, and switching ranges refetches/redraws",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify with automate-browser at http://localhost:5173 in BOTH light and dark that the Pulse area chart renders with correct colors, legend, tooltip on hover, and range switching"
+        "Read Claude Code config from ~/.claude/settings.json, the global ~/.claude.json, and project <cwd>/.claude/settings.json into a known key/value set, each value tagged with its source",
+        "Expose GET /api/claude/config (token-gated), read-only",
+        "Document the discovered /config-row -> file -> key mapping in code comments; rows that cannot be confidently mapped are omitted (never fabricated)",
+        "Reader logic is unit-tested",
+        "Typecheck passes"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "docs/v4.2-research.md §5. The token-overlay line + api_retry rail can stay as a thin hand-rolled SVG overlay on top of the AreaChart if worth keeping, or drop if Tremor's tooltip covers it. usePulse + the /api/claude/pulse shape are unchanged."
+      "passes": false,
+      "notes": "Read-only this loop (decision 2026-05-27); editing deferred to a later version. Optionally cross-check against a captured /config frame (same infra as src/usage/probe.ts + src/context/index.ts), but disk-read is the structured source."
     },
     {
       "id": "US-008",
-      "title": "Migrate the Context ring to Tremor ProgressCircle",
-      "description": "As a user, I want the Context %-used gauge rendered with Tremor's ProgressCircle, preserving the over-80% warning, while the category breakdown stays as-is.",
+      "title": "Frontend: top-level Settings view mirroring Claude's config (read-only)",
+      "description": "As a Conan user, I want a Settings screen that shows Claude Code's current configuration.",
       "acceptanceCriteria": [
-        "Replace the hand-rolled SVG Ring in ui/src/components/Widgets.tsx (ContextWidget) with Tremor's ProgressCircle driven by the existing ctxPct, preserving the >=80% → destructive color rule and the center % label",
-        "The ContextBreakdownBar (stacked mini-bar + legend) stays hand-rolled — Tremor adds nothing there",
-        "ProgressCircle colors come from the themed variant map (US-006) and read correctly in light + dark; the 'no session'/'no usage yet' empty states are preserved",
+        "A top-level Settings view/modal opens from a native Conan menu item (Conan > Settings, accelerator Cmd+,) and renders the settings from GET /api/claude/config",
+        "Grouped read-only list with a search box (like Claude's /config screen); each value shows its source and a 'managed by Claude Code' affordance",
         "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify with automate-browser at http://localhost:5173 in light + dark that the Context gauge renders the % ring (and turns destructive past 80%) with the breakdown bar below it unchanged"
+        "Verify in browser using automate-browser skill (light + dark)"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "docs/v4.2-research.md §5 (ProgressCircle, not DonutChart — it's a single %). After this the hand-rolled Ring helper in Widgets.tsx is removed if orphaned."
+      "passes": false,
+      "notes": "Consumes US-007. Native menu wiring in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
-      "title": "Capture the real /context breakdown from the live pty into the Context widget",
-      "description": "As a user, I want the Context widget to show the exact /context information for my live session — model header, total/window %, and the per-category breakdown including Free space — captured from the terminal, not just estimated from disk.",
+      "title": "UI lift: real terminal tabs (drop the Term dropdown)",
+      "description": "As a Conan user, I want a native tab strip for terminals instead of a dropdown.",
       "acceptanceCriteria": [
-        "Add a /context capture for the correlated live session: parse Claude Code's rendered /context frame from the terminal pty (strip ANSI as in src/usage/probe.ts) into a typed result — model slug + display name, total/context-window tokens + %, and per-category tokens+% for System prompt, System tools, MCP tools, Memory files, Skills, Messages, and Free space",
-        "PASSIVE capture: when a /context frame appears in the correlated pty's output stream (the user ran it themselves), detect + parse + cache it for that session WITHOUT injecting anything",
-        "On-demand refresh: a control on the Context widget injects `/context` into the correlated pty (reusing the v4 keystroke-injection path) and captures the resulting frame; the control is hidden/disabled when no live pty is correlated",
-        "The frame parser is pure, exported, and unit-tested against a captured sample /context frame (scripts/test-context.mjs), mirroring parseUsageFrame in src/usage/probe.ts",
-        "Surface via the gateway (extend the widgets payload or add GET /api/claude/context) consumed by ContextWidget; the widget renders the exact categories + model header + Free space row matching the /context layout, labeled 'live · from /context'",
-        "Fall back to the existing on-disk estimate (labeled '≈ estimated') when no captured frame exists for the session — never blank",
+        "Replace TermDropdown (TerminalPane.tsx:204-284) and its DropdownMenu imports with a tab strip: one TabsTrigger per terminal, label from terminalLabel(byTid…), active highlighted, wired to setActiveTid",
+        "Each tab has a hover close (x) that calls closeTerm with stopPropagation; closing the active tab falls back to the last remaining terminal",
+        "A trailing + button at the right end calls addTerm (title 'New terminal')",
+        "Many tabs overflow via horizontal scroll or label truncation (no wrap)",
+        "Switching tabs preserves the pty/scrollback (no kill), and the native File > New/Close Terminal menu bridge still works",
         "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify with automate-browser at http://localhost:5173 that after a /context run (or Refresh) the widget shows the exact categories/tokens/% including Free space + the model header, and that with no live session it falls back to the estimate"
+        "Verify in browser using automate-browser skill (open 3+ terminals; switch/close/add; light + dark)"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "/context is SESSION-SPECIFIC, so it must come from the correlated live pty (not a throwaway claude like the /usage probe). Anchors: src/usage/probe.ts (ANSI strip + bounded scrape + pure testable parser), src/terminal/correlate.ts (pty↔session correlation + the v4 keystroke injection), Widgets.tsx ContextWidget + ContextBreakdownBar, useWidgets. Depends on US-008 (ProgressCircle gauge). The disk estimate stays as the fallback — US-004 preserves its MCP/skills/memory readers. Gateway/terminal edits → run outside the in-dock session (footgun #1)."
+      "passes": false,
+      "notes": "Presentation-only — terms[]/addTerm/closeTerm/activeTid/byTid + sessionStorage reattach already exist. Suggested skills: automate-browser."
     },
     {
       "id": "US-010",
-      "title": "Capture the full /usage screen (Session stats + all 3 rate-limit windows) into the Usage widget",
-      "description": "As a user, I want the Usage widget to show the exact /usage information — the Session block (cost, API/wall duration, code changes, per-model usage) and all three rate-limit windows (Current session, Current week all-models, Current week Sonnet-only) — matching what I'd see running /usage.",
+      "title": "UI lift: bottom status bar (cwd / branch / gateway), move gateway chip out of the HUD",
+      "description": "As a Conan user, I want the working directory always visible, with branch and gateway status alongside.",
       "acceptanceCriteria": [
-        "Parse the FULL /usage frame: (a) the Session block — Total cost, Total duration (API) + (wall), Total code changes (lines added/removed), and Usage by model (per model: input / output / cache-read / cache-write tokens + cost); and (b) all THREE rate-limit windows — Current session, Current week (all models), and Current week (Sonnet only) — each with % used + reset label",
-        "The SESSION-SPECIFIC Session block is captured from the correlated live pty (passive when a /usage frame appears, plus an on-demand Refresh that injects `/usage`), since a throwaway probe has no real session cost — mirror the US-009 /context capture path (reuse src/terminal/correlate.ts keystroke injection); hide/disable Refresh when no live pty",
-        "Extend the existing throwaway-probe parser in src/usage/probe.ts from 2 to all 3 windows (add Current week Sonnet-only); it remains the account-global windows fallback when no live session",
-        "The frame parser is pure, exported, and unit-tested against a captured sample /usage frame (extend scripts/test-usage.mjs) covering the Session block + 3 windows",
-        "Surface via the usage route consumed by UsageWidget; the widget renders the Session stats + all three windows matching the /usage layout, labeled by source (live · from /usage vs plan · probe vs ≈ approx)",
-        "Source precedence, never blank: live captured frame → throwaway-probe windows → the US-004 token-trend baseline",
+        "A slim status bar on the TerminalPane shows cwd, git branch (and dirty count), and gateway status (connected gateway :PORT / connecting / offline)",
+        "cwd comes from GET /api/config (and the active terminal's cwd when available); branch/dirty from WidgetData.git (useWidgets)",
+        "The gateway ConnectionStatus is removed from the HUD tab bar (Hud.tsx) and its props are unplumbed from App.tsx — gateway status now shows only in the status bar",
+        "Themed with semantic tokens; updates on branch/connection change",
         "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify with automate-browser at http://localhost:5173 that after a /usage run (or Refresh) the widget shows the Session block (cost/durations/code/by-model) + all three windows with % and resets, and that with no live session it falls back to the probe windows"
+        "Verify in browser using automate-browser skill (cwd/branch render; gateway chip reflects connect/disconnect; light + dark)"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Parallels US-009. src/usage/probe.ts already does the ANSI-strip + window parse (parseUsageFrame) for 2 windows + caches the throwaway probe — extend it to 3 windows and add the Session-block parse, and add the live-pty capture for the session-specific block. The rate-limit windows are account-global (throwaway probe is fine); the Session block is session-specific (live pty only). Gateway/terminal edits → run outside the in-dock session (footgun #1)."
+      "passes": false,
+      "notes": "Decision 2026-05-27: bottom bar (Option B), not an ASCII header. Suggested skills: automate-browser."
     },
     {
       "id": "US-011",
-      "title": "Native OS notifications surfacing Claude's prompts (from the Notification hook) for the user to acknowledge",
-      "description": "As a user working in another app, I want a native macOS notification when a Claude session in Conan needs me — a permission prompt or waiting for input — so I'm pulled back to acknowledge/answer it instead of missing it.",
+      "title": "UI lift: View > Theme submenu driving Conan's app theme",
+      "description": "As a Conan user, I want a Theme submenu (not just a toggle) that themes the whole app.",
       "acceptanceCriteria": [
-        "Add the Tauri notification plugin: @tauri-apps/plugin-notification (JS) + tauri-plugin-notification (Cargo) registered in src-tauri/src/lib.rs, a notification capability in src-tauri/capabilities/default.json, and request permission on first use (isPermissionGranted/requestPermission); respect denial gracefully",
-        "Trigger from the app WS: when a `Notification` hook event arrives (already ingested via POST /api/claude/events and broadcast over /ws as {type:'event'} with hook_event_name='Notification'), fire a native OS notification whose title identifies the session (name/short id or cwd) and whose body is the hook payload's `message` (e.g. 'Claude needs your permission to use …' / 'waiting for your input')",
-        "Only fire when the user would otherwise miss it: suppress when the Conan window is focused AND the correlated terminal is visible; de-dupe/throttle repeat Notification events for the same session so it never spams",
-        "Clicking the notification brings Conan to the foreground (and, if feasible, selects the correlated terminal tab) so the user can acknowledge/answer the prompt in the terminal",
-        "Guard everything with isTauri(); in the browser dev view fall back to the existing in-app Toaster (no native API)",
-        "Native notifications can't be verified headlessly — gate on typecheck + ui build green + the wiring, and document the manual check (trigger a permission prompt → a macOS banner appears with the prompt text → clicking focuses Conan) in progress.txt",
+        "Replace the single View toggle (appMenu.ts:80-91) with a View > Theme radio submenu, a checkmark on the active option, wired to useTheme.setTheme; the menu rebuilds on theme change so the check follows",
+        "Options include Light, Dark, and 'Auto — match system' (prefers-color-scheme); extend useTheme + index.css token handling as needed",
+        "Switching the theme recolors the HUD + charts + terminal background in lockstep (xterm derives from the same tokens)",
         "Typecheck passes",
-        "cd ui && npm run build is clean"
+        "Verify in browser using automate-browser skill (light, dark, auto)"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "Trigger source verified: the `Notification` hook is already installed (.claude/settings.json → scripts/hooks/send-event.mjs → POST /api/claude/events → /ws), and its payload carries `message`. Surfacing it over the WS is read-only — no new gateway route. Adding the plugin regenerates src-tauri/gen/schemas + needs a tauri dev restart (Rust recompile). STRETCH (note only, not required): interactive Allow/Deny notification actions that route the answer to the correlated pty via the v4 keystroke-injection path (src/terminal/correlate.ts) — macOS notification action-button support is limited, so base scope is notify + click-to-focus. Run Rust/gateway/terminal edits outside the in-dock session (footgun #1)."
+      "passes": false,
+      "notes": "This is the layer that 'trickles to the HUD'. Suggested skills: automate-browser."
     },
     {
       "id": "US-012",
-      "title": "Docs + memory: v4.2 wrap-up (Tremor standard + Tauri-only cleanup)",
-      "description": "As the product owner, I want CLAUDE.md, README, and the auto-memory updated so future sessions know Tremor is the charting standard and the gateway/repo is the trimmed Tauri-only surface.",
+      "title": "Mirror the theme choice into Claude's terminal /theme",
+      "description": "As a Conan user, I want the in-terminal text theme to harmonize with the app theme.",
       "acceptanceCriteria": [
-        "CLAUDE.md reflects the trimmed gateway route list, the Tauri-only model (no web-serving/TLS/pm2), and that Tremor (Tremor Raw, recharts-based) is the charting standard — replacing the old 'zero charting deps, hand-rolled SVG' convention",
-        "README reflects the same (charts via Tremor; the minimal route surface; build/run via the Tauri app + Vite dev for development)",
-        "Update the persistent auto-memory: note Tremor as the charting library + the v4.2 cleanup, and correct any memory that still claims hand-rolled-only charts",
-        "No references remain to deleted features/files",
+        "On a Conan theme change, the choice is mirrored into Claude Code's terminal /theme via the reliable mechanism (research config-write vs keystroke-inject; choose the non-fragile one and document why)",
+        "The terminal-theme control is presented as a separate, clearly-labeled menu group ('Terminal text theme') so the two theme layers aren't conflated",
+        "The mirror is a safe no-op when its precondition isn't met (no live pty for the inject path, or a missing config path for the file path) and that state is reflected in the UI",
         "Typecheck passes",
-        "cd ui && npm run build is clean"
+        "Verify in browser using automate-browser skill"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "The 'beautiful sequence' close-out (CLAUDE.md, memory, README). Also note the exact /context (US-009) + /usage (US-010) captures and the native OS notifications (US-011). Memory dir: /Users/digitalalchemist/.claude/projects/-Users-digitalalchemist-Development-conan/memory/."
+      "passes": false,
+      "notes": "Decision 2026-05-27: include the mirror. Mechanism research required; relates to the keystroke-injection path in src/terminal/index.ts. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-013",
+      "title": "Context-pressure action bar (Compact -> /handoff in the correlated pty)",
+      "description": "As a Conan user, when context is filling up I want a quick way to checkpoint and compact the session.",
+      "acceptanceCriteria": [
+        "In the Context HUD tab, a bottom action bar appears conditionally when ctxPct >= 80% (matching the destructive-ring threshold), with two actions: Cancel and Compact",
+        "Cancel hides the bar until a higher threshold is crossed (no nagging every render)",
+        "Compact injects /handoff (then optionally /compact) into the correlated pty via the existing keystroke-injection path; it is disabled/hidden when the session has no live correlated pty",
+        "The action is labeled so it's clear it runs in the terminal session and that HANDOFF.md is written by the session (not by Conan)",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill (bar appears past threshold; Cancel hides it; Compact disabled with no live pty; light + dark)"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Decided: write HANDOFF.md, not CLAUDE.md (CLAUDE.md auto-loads into every future session). Conan can't author the handoff itself — it must inject so the session does. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-014",
+      "title": "UI lift: flush, panel-native HUD content (no card chrome)",
+      "description": "As a Conan user, I want the HUD tabs to read as one continuous panel, not cards floating inside it.",
+      "acceptanceCriteria": [
+        "Flatten the Context + Usage section containers in Widgets.tsx: no rounded corners, no box-borders, no inset background panels around sub-sections; keep the data viz (progress ring, stacked bars, category dots)",
+        "Sections are separated by full-width border-t dividers (edge-to-edge), like the PulseChart compact rule; no border radius anywhere in the tab body",
+        "The Pulse tab uses the flush/no-radius treatment too (render compact or equivalent) so Context | Usage | Pulse | Plan | Skills share one continuous surface",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill (all tabs read as one panel a la Linear; light + dark)"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Run last so it harmonizes the new tabs too. Reference: PulseChart compact rule (PulseChart.tsx:103-108). Suggested skills: automate-browser."
     }
   ]
 }
