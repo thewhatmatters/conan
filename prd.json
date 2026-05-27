@@ -139,7 +139,7 @@
         "Verify with automate-browser at http://localhost:5173 in light + dark that the Context gauge renders the % ring (and turns destructive past 80%) with the breakdown bar below it unchanged"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "docs/v4.2-research.md §5 (ProgressCircle, not DonutChart — it's a single %). After this the hand-rolled Ring helper in Widgets.tsx is removed if orphaned."
     },
     {

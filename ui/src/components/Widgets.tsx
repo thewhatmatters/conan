@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState, UsageWindow } from "../hooks/useUsage.ts";
 import type { ContextCategory, WidgetData } from "../hooks/useWidgets.ts";
+import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import StatCard from "./StatCard.tsx";
 
 /* ---- widget cells -------------------------------------------------------- */
@@ -35,15 +36,25 @@ export function ContextWidget({
   return (
     <StatCard label="Context" sub={sub}>
       <div className="flex items-center gap-3">
-        <Ring pct={ctxPct} />
-        <div className="min-w-0">
-          <div className="text-xl font-semibold text-foreground">
+        <ProgressCircle
+          value={ctxPct ?? 0}
+          radius={26}
+          strokeWidth={5}
+          variant={ctxPct != null && ctxPct >= 80 ? "error" : "default"}
+          className="shrink-0"
+        >
+          <span className="text-sm font-semibold tabular-nums text-foreground">
             {ctxPct != null ? `${Math.round(ctxPct)}%` : "—"}
+          </span>
+        </ProgressCircle>
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">
+            {ctxPct != null ? "context used" : "no usage yet"}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
             {ctxTokens != null
               ? `${fmtTokens(ctxTokens)} / ${fmtTokens(ctxWindow)}`
-              : "no usage yet"}
+              : "—"}
           </div>
         </div>
       </div>
@@ -294,36 +305,6 @@ function ApproxTag() {
 }
 
 /* ---- shared bits --------------------------------------------------------- */
-
-/** A small SVG progress ring for the context gauge (semantic tokens only). */
-function Ring({ pct }: { pct: number | null }) {
-  const r = 14;
-  const c = 2 * Math.PI * r;
-  const filled = pct != null ? (pct / 100) * c : 0;
-  return (
-    <svg width="36" height="36" viewBox="0 0 36 36" className="shrink-0">
-      <circle
-        cx="18"
-        cy="18"
-        r={r}
-        fill="none"
-        strokeWidth="4"
-        className="stroke-muted-foreground/20"
-      />
-      <circle
-        cx="18"
-        cy="18"
-        r={r}
-        fill="none"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeDasharray={`${filled} ${c}`}
-        transform="rotate(-90 18 18)"
-        className={pct != null && pct >= 80 ? "stroke-destructive" : "stroke-primary"}
-      />
-    </svg>
-  );
-}
 
 /** Compact "1h 02m" / "12m 30s" / "45s" duration for the reset countdown. */
 function fmtDuration(ms: number): string {
