@@ -11,6 +11,8 @@ import {
   injectUsageRefresh,
   injectHandoff,
   autoRefreshContextOnStop,
+  getContextAutoRefresh,
+  setContextAutoRefresh,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
@@ -303,6 +305,27 @@ app.post("/api/claude/config", (req, res) => {
 app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
   if (!authed(req, res)) return;
   res.json({ ok: injectContextRefresh(req.params.id) });
+});
+
+// Adaptive /context auto-refresh toggle (US-006): the runtime-settable gate for
+// autoRefreshContextOnStop, lifting the CONAN_CONTEXT_AUTOREFRESH env var to a UI
+// control so the user owns the observer-effect tradeoff (Auto spends context to
+// measure context). GET reads the flag; POST {enabled:boolean} sets it. The flag
+// lives in gateway memory and defaults from the env var on boot, so a UI reload
+// re-reads the same value. Token-gated.
+app.get("/api/claude/context/autorefresh", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ enabled: getContextAutoRefresh() });
+});
+app.post("/api/claude/context/autorefresh", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof body.enabled !== "boolean") {
+    res.status(400).json({ ok: false, error: "`enabled` must be a boolean" });
+    return;
+  }
+  setContextAutoRefresh(body.enabled);
+  res.json({ ok: true, enabled: getContextAutoRefresh() });
 });
 
 // On-demand /usage refresh (US-010): inject `/usage` into the session's live pty

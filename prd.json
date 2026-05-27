@@ -104,7 +104,7 @@
         "Verify in browser using automate-browser skill (toggle + button render inline; ON re-enables auto-refresh, OFF stops auto-injects while manual refresh still works), light + dark"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Surfaces an existing capability. Anchors: autoRefreshContextOnStop + CONAN_CONTEXT_AUTOREFRESH in src/terminal/index.ts (fired from the Stop branch in src/gateway/index.ts); manual button + ContextWidget in ui/src/components/Widgets.tsx; route POST /api/claude/sessions/:id/context/refresh. Decide global vs per-session scope at implementation; a small runtime flag endpoint is acceptable. Suggested skills: automate-browser."
     },
     {

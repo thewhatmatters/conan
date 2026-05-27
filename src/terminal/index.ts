@@ -279,9 +279,25 @@ export function injectHandoff(sessionId: string): boolean {
   }
 }
 
-/** Off when CONAN_CONTEXT_AUTOREFRESH=0 (the auto-inject prints to the pty). */
-const CONTEXT_AUTOREFRESH_ENABLED =
-  process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";
+/**
+ * Whether the adaptive /context auto-refresh is enabled (US-006). Defaults from
+ * the CONAN_CONTEXT_AUTOREFRESH env var (off only when explicitly "0") but is
+ * runtime-settable from the UI's Context-tab "Auto" toggle, so the user owns the
+ * observer-effect tradeoff without an env var. Held in gateway memory — resets to
+ * the env default on restart.
+ */
+let contextAutoRefreshEnabled = process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";
+
+/** Current state of the adaptive /context auto-refresh gate (US-006). */
+export function getContextAutoRefresh(): boolean {
+  return contextAutoRefreshEnabled;
+}
+
+/** Turn the adaptive /context auto-refresh gate on/off at runtime (US-006). */
+export function setContextAutoRefresh(enabled: boolean): void {
+  contextAutoRefreshEnabled = enabled;
+}
+
 const lastAutoContextRefresh = new Map<string, number>();
 
 /**
@@ -298,7 +314,7 @@ const lastAutoContextRefresh = new Map<string, number>();
  * output accumulator is reset so the next delta is measured from here.
  */
 export function autoRefreshContextOnStop(sessionId: string): boolean {
-  if (!CONTEXT_AUTOREFRESH_ENABLED) return false;
+  if (!contextAutoRefreshEnabled) return false;
   const now = Date.now();
   // A recent passive capture already measured context within the floor window.
   const cap = getCapturedContext(sessionId);

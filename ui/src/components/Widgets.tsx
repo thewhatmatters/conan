@@ -56,6 +56,48 @@ export function ContextWidget({
   const liveCtx = data?.liveContext ?? null;
   const hasLivePty = data?.hasLivePty ?? false;
 
+  // Adaptive /context auto-refresh flag (US-006): the gateway holds the runtime
+  // gate for autoRefreshContextOnStop (defaulting from CONAN_CONTEXT_AUTOREFRESH),
+  // so reading it on mount reflects the persisted setting across reloads. `null`
+  // until the fetch resolves, so the toggle stays hidden rather than flashing a
+  // wrong state.
+  const [autoOn, setAutoOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    fetch(apiBase() + "/api/claude/context/autorefresh", {
+      headers: { "x-conan-token": token },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.enabled === "boolean") setAutoOn(d.enabled);
+      })
+      .catch(() => {
+        /* leave the toggle hidden if the gateway is unreachable */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const toggleAuto = async () => {
+    if (!token || autoOn == null) return;
+    const next = !autoOn;
+    setAutoOn(next); // optimistic
+    try {
+      const r = await fetch(apiBase() + "/api/claude/context/autorefresh", {
+        method: "POST",
+        headers: { "x-conan-token": token, "content-type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const d = r.ok ? await r.json() : null;
+      if (d && typeof d.enabled === "boolean") setAutoOn(d.enabled);
+      else setAutoOn(!next); // revert on a non-OK response
+    } catch {
+      setAutoOn(!next); // revert on failure
+    }
+  };
+
   // On-demand refresh: inject `/context` into the correlated pty (US-009), then
   // poll the widgets payload a few times so the passively-captured frame surfaces.
   const refresh = async () => {
@@ -82,18 +124,43 @@ export function ContextWidget({
     }, 700);
   };
 
-  // Refresh control: only when a live pty is correlated (it types into it).
-  const refreshBtn = hasLivePty ? (
-    <button
-      type="button"
-      onClick={refresh}
-      disabled={refreshing}
-      title="Run /context in the live terminal and capture the exact breakdown — note: each refresh consumes a few thousand tokens of context"
-      className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-    >
-      {refreshing ? "capturing…" : "↻ /context"}
-    </button>
-  ) : null;
+  // Refresh controls (US-006): one inline control group — the "Auto" toggle (the
+  // adaptive auto-inject gate) alongside the manual ↻ /context button. The toggle
+  // shows once its state loads; the manual button only when a live pty is
+  // correlated (it types into it). Both are honest about the token cost.
+  const refreshBtn =
+    autoOn != null || hasLivePty ? (
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {autoOn != null && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoOn}
+            onClick={toggleAuto}
+            title="Auto-track context: when on, Conan runs /context on a turn boundary (delta-triggered, not every turn) to keep this breakdown exact — which itself spends a few thousand tokens of context to measure context. When off, only the manual ↻ refresh updates it."
+            className={
+              "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors " +
+              (autoOn
+                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                : "text-muted-foreground hover:bg-muted")
+            }
+          >
+            {autoOn ? "Auto ✓" : "Auto ○"}
+          </button>
+        )}
+        {hasLivePty && (
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            title="Run /context in the live terminal and capture the exact breakdown — note: each refresh consumes a few thousand tokens of context"
+            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {refreshing ? "capturing…" : "↻ /context"}
+          </button>
+        )}
+      </div>
+    ) : null;
 
   // Build the scrollable content (live face if we have a /context capture, else
   // the on-disk estimate) plus the pct that drives the pinned action toolbar.
