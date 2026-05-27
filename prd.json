@@ -83,7 +83,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Descriptions are NOT in /context (only names + sizes) — they live in each SKILL.md frontmatter. Keep dependency-light like the other readers."
     },
     {

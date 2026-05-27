@@ -19,6 +19,7 @@ import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage
 import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
+import { readSkills } from "../skills/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 
@@ -248,6 +249,16 @@ app.get("/api/claude/sessions/:id/plan", (req, res) => {
   const tasks = readTasks();
   const buildLoopActive = tasks.exists && tasks.currentId !== null;
   res.json(readPlanState(req.params.id, buildLoopActive));
+});
+
+// Installed skills for the Skills HUD tab (US-005): user + project + plugin
+// skills with their SKILL.md frontmatter descriptions (descriptions aren't in
+// /context — they live in each SKILL.md). Token-gated, read-only. Built-in
+// harness slash-commands have no on-disk SKILL.md and aren't enumerable from the
+// gateway, so none are listed (the reader supports them name-only when supplied).
+app.get("/api/claude/skills", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(readSkills(getActiveCwd()));
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

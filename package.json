@@ -12,7 +12,7 @@
     "start": "tsx src/gateway/index.ts",
     "postinstall": "node scripts/fix-node-pty.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-terminal.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-context.mjs && tsx scripts/test-plan.mjs && tsx scripts/test-reaper.mjs",
+    "test": "tsx scripts/test-terminal.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-context.mjs && tsx scripts/test-plan.mjs && tsx scripts/test-skills.mjs && tsx scripts/test-reaper.mjs",
     "hooks:install-global": "tsx scripts/install-global-hooks.mjs",
     "build:ui": "npm --prefix ui run build",
     "build": "npm run typecheck && npm run build:ui",
