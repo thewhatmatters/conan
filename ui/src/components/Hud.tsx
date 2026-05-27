@@ -1,19 +1,21 @@
 import { useCallback, useRef, useState } from "react";
 import { ContextWidget, UsageWidget } from "./Widgets.tsx";
 import PlanWidget from "./PlanWidget.tsx";
+import SkillsWidget from "./SkillsWidget.tsx";
 import PulseChart from "./PulseChart.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
 import type { PlanState } from "../hooks/usePlan.ts";
+import type { SkillEntry } from "../hooks/useSkills.ts";
 import type { ConnStatus, TasksState } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
 // DevTools-style flat tab triggers (no pill shell, active = bg-muted) — matches
 // the terminal pane's `Term ▾` control so the two panes read as one chrome.
 const TAB_TRIGGER =
-  "rounded-md px-2.5 py-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
+  "shrink-0 rounded-md px-2.5 py-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 const MIN_W = 320;
 const MAX_W = 900;
@@ -46,6 +48,8 @@ interface HudProps {
   plan?: PlanState;
   /** Build-loop tasks feed — the Plan widget's fallback source. */
   tasks?: TasksState | null;
+  // — Skills widget (US-006): VS Code-extensions-style list, always present —
+  skills?: SkillEntry[];
 }
 
 /**
@@ -70,6 +74,7 @@ export default function Hud({
   onPulseRange,
   plan,
   tasks,
+  skills,
 }: HudProps) {
   // US-004: the Plan tab only exists when the active session has a live plan
   // (open TodoWrite items, a recent ExitPlanMode plan, or an active build loop).
@@ -111,7 +116,9 @@ export default function Hud({
 
       <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-          <TabsList className="h-auto justify-start gap-1 rounded-none bg-transparent p-0">
+          {/* Tabs scroll horizontally so the bar still reads at the 320px min
+              width once Plan + Skills join Context | Usage | Pulse (US-006). */}
+          <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
             <TabsTrigger value="context" className={TAB_TRIGGER}>
               Context
             </TabsTrigger>
@@ -126,8 +133,11 @@ export default function Hud({
                 Plan
               </TabsTrigger>
             )}
+            <TabsTrigger value="skills" className={TAB_TRIGGER}>
+              Skills
+            </TabsTrigger>
           </TabsList>
-          <div className="ml-auto pr-1">
+          <div className="ml-auto shrink-0 pl-1 pr-1">
             <ConnectionStatus status={status} port={port} />
           </div>
         </div>
@@ -176,6 +186,10 @@ export default function Hud({
             <PlanWidget plan={plan} tasks={tasks ?? null} />
           </TabsContent>
         )}
+
+        <TabsContent value="skills" className="mt-0 min-h-0 flex-1 overflow-auto">
+          <SkillsWidget skills={skills ?? []} />
+        </TabsContent>
       </Tabs>
     </aside>
   );

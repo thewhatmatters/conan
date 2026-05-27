@@ -98,7 +98,7 @@
         "Verify in browser using automate-browser skill (light + dark)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Consumes US-005. Reuse the flush/no-card treatment (US-014). Suggested skills: automate-browser."
     },
     {

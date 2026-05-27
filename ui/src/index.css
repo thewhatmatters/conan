@@ -135,3 +135,12 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* HUD tab strip scrolls horizontally at narrow widths (US-006) without showing
+   a scrollbar — the bar stays a clean single row of tab chips. */
+.hud-tabs {
+  scrollbar-width: none;
+}
+.hud-tabs::-webkit-scrollbar {
+  display: none;
+}

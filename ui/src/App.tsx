@@ -8,6 +8,7 @@ import TerminalPane from "./components/TerminalPane.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { usePlan } from "./hooks/usePlan.ts";
+import { useSkills } from "./hooks/useSkills.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import { apiBase } from "./lib/gateway.ts";
@@ -83,6 +84,8 @@ export default function App() {
   // US-004: the active session's reduced plan-state (TodoWrite/ExitPlanMode,
   // with a build-loop fallback) for the conditional Plan HUD tab.
   const plan = usePlan(activeSession?.id ?? null, wsTrigger, config?.token ?? null);
+  // US-006: installed skills (name + description + source) for the Skills tab.
+  const skills = useSkills(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).
@@ -146,6 +149,7 @@ export default function App() {
         onPulseRange={setPulseMinutes}
         plan={plan}
         tasks={tasks}
+        skills={skills}
       />
     </div>
   );
