@@ -1,9 +1,12 @@
-import TwoTierCard from "./shared/TwoTierCard.tsx";
-
 /**
- * Two-tier stat card: muted shell + bordered inner panel. The shared visual
- * primitive for the HUD widget cells (Context + Usage, US-004). Composes the
- * shared TwoTierCard primitive. Semantic tokens only.
+ * Flush, panel-native widget section (US-014). The shared visual primitive for
+ * the HUD widget cells (Context, Usage, Plan). Originally a two-tier "card"
+ * (muted shell + bordered inner panel); flattened so the HUD tabs read as one
+ * continuous surface à la Linear — no rounded corners, no box-border, no inset
+ * background panel. It owns its own padding (the tab body no longer pads), and a
+ * full-width `border-b` divider (edge-to-edge, suppressed on the last section)
+ * separates stacked sections like the PulseChart compact rule. Semantic tokens
+ * only.
  */
 export default function StatCard({
   label,
@@ -15,7 +18,7 @@ export default function StatCard({
   children: React.ReactNode;
 }) {
   return (
-    <TwoTierCard>
+    <section className="border-b border-border px-3 py-3 last:border-b-0">
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-xs text-muted-foreground">{label}</span>
@@ -27,6 +30,6 @@ export default function StatCard({
         )}
       </div>
       <div className="mt-2">{children}</div>
-    </TwoTierCard>
+    </section>
   );
 }

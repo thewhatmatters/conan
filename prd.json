@@ -221,8 +221,8 @@
         "Verify in browser using automate-browser skill (all tabs read as one panel a la Linear; light + dark)"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": "Run last so it harmonizes the new tabs too. Reference: PulseChart compact rule (PulseChart.tsx:103-108). Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Run last so it harmonizes the new tabs too. Reference: PulseChart compact rule (PulseChart.tsx:103-108). Suggested skills: automate-browser. DONE: flattened StatCard (the Context/Usage/Plan primitive) from the two-tier card into a flush panel-native section — dropped TwoTierCard's rounded-xl/bg-muted shell + bordered bg-card inner, kept the data viz (ProgressCircle, stacked bars, category dots); StatCard now owns its px-3 py-3 and a full-width border-b (last:border-b-0). The sub-section dividers (ContextActionBar, the live /usage SESSION block) made edge-to-edge via -mx-3 px-3. Hud.tsx context/usage/plan tab bodies no longer pad (StatCard owns it); Pulse renders compact, and compact lost its now-redundant top border-t so it reads flush under the tab bar. Verified: typecheck + ui build clean; automate-browser confirmed Context/Usage/Pulse read as one continuous panel (no card chrome, edge-to-edge dividers, no container radius) in light + dark, matching the already-flush Skills tab."
     }
   ]
 }

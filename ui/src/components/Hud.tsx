@@ -136,7 +136,7 @@ export default function Hud({
 
         <TabsContent
           value="context"
-          className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
+          className="mt-0 min-h-0 flex-1 overflow-auto"
         >
           <ContextWidget
             session={activeSession}
@@ -149,7 +149,7 @@ export default function Hud({
 
         <TabsContent
           value="usage"
-          className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
+          className="mt-0 min-h-0 flex-1 overflow-auto"
         >
           <UsageWidget
             usage={usage}
@@ -166,6 +166,7 @@ export default function Hud({
               series={pulse ?? null}
               minutes={pulseMinutes}
               onRange={onPulseRange}
+              compact
             />
           )}
         </TabsContent>
@@ -173,7 +174,7 @@ export default function Hud({
         {planActive && plan && (
           <TabsContent
             value="plan"
-            className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
+            className="mt-0 min-h-0 flex-1 overflow-auto"
           >
             <PlanWidget plan={plan} tasks={tasks ?? null} />
           </TabsContent>

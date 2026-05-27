@@ -103,7 +103,7 @@ export default function PulseChart({
       className={
         "flex h-full flex-col " +
         (compact
-          ? "border-t border-border bg-card px-3 py-2"
+          ? "bg-card px-3 py-3"
           : "rounded-xl border border-border bg-card p-4")
       }
     >

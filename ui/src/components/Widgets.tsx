@@ -221,7 +221,7 @@ function ContextActionBar({
   };
 
   return (
-    <div className="mt-2 border-t border-destructive/30 pt-2">
+    <div className="-mx-3 mt-2 border-t border-destructive/30 px-3 pt-2">
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-medium text-destructive">
           Context {Math.round(ctxPct)}% — running low
@@ -644,7 +644,7 @@ function LiveUsageView({
 
       {/* session-specific Session block */}
       {s && (
-        <div className="mt-2 border-t border-border pt-1.5">
+        <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5">
           <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Session
           </div>
