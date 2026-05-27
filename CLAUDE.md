@@ -61,8 +61,33 @@ npm run typecheck           # tsc --noEmit (gateway)
 - DB (`src/db/`): SQLite WAL at `.data/conan.db`; tables `session`, `event`,
   `terminal_session`. Idempotent init on boot.
 - Tasks (`src/tasks/index.ts`): reads prd.json/progress.txt + fs.watch -> WS broadcast.
+- Preview (`src/preview/index.ts`, US-010–012): runs the active cwd's dev server
+  on demand so the project being edited renders live inside the dock. Mirrors the
+  TermSession abstraction (one managed child, capped stdout ring buffer, onExit)
+  but for a long-lived dev server. Discovers candidate commands from the cwd's
+  `package.json` scripts (`dev` → `start` → `preview`). Vite-style commands spawn
+  with `--base /preview/<id>/ --strictPort --host 127.0.0.1` on a pinned free port
+  (with a `Local: http://…` stdout regex as the non-Vite fallback). Lifecycle is
+  **decoupled** from the pty layer and the gateway watch restart (footgun #1): it
+  stops itself on `onCwdChange` and is killed only on explicit stop / graceful
+  shutdown. REST: `GET /api/preview/status` (discovery + run state), `POST
+  /api/preview/start|stop`, `GET /api/preview/log`.
+  - **Reverse proxy** (US-011): `http-proxy-middleware` mounts `/preview/:id` →
+    `http://127.0.0.1:<devport>`. In `proxyRes` it deletes `x-frame-options` and
+    strips `frame-ancestors` from CSP so the page frames in an iframe. The proxy
+    runs with `ws:true`; a `pathname.startsWith('/preview/')` branch in the
+    `server.on('upgrade')` router (before the catch-all `socket.destroy()`) routes
+    HMR upgrades through it, inheriting the existing `verifyUpgrade` auth+Origin
+    gate. Vite HMR is pointed back through Conan's port via
+    `scripts/preview-vite-config.mjs` (`server.hmr.clientPort`/`path`, `wss` under
+    TLS) injected by flags/env — never by editing the user's vite config.
+  - **Security floor:** the `/preview/` HTTP path is *not* token-checked per
+    request (an iframe `src` can't send `x-conan-token`); it relies on same-origin
+    + loopback + the Origin-checked WS upgrade. Documented in `src/gateway/index.ts`
+    around the proxy mount.
 - UI: `App.tsx` shell (hero-widget placeholders + cwd in toolbar),
-  `components/Dock.tsx` (tabbed Terminal|Tasks, drag-resize), `components/Terminal.tsx`,
+  `components/Dock.tsx` (tabbed Terminal|Tasks|Preview + bottom Pulse strip,
+  drag-resize), `components/Terminal.tsx`, `components/Preview.tsx`,
   `components/TaskChecklist.tsx`, `hooks/{useTheme,useTasks}.ts`,
   `lib/terminalTheme.ts`.
 
@@ -108,11 +133,23 @@ npm run typecheck           # tsc --noEmit (gateway)
    Conan instance on another port) and use this dashboard to **observe**.
 
 ## Status (2026-05-26)
-**v3 done (48/48), now QA'ing. v4 backlog open for capture.** v3 (`loop/conan-v3`)
-shipped multi-project global hook, Overview/Agents/Skills/Settings nav, a real shadcn
-foundation, and broad Claude Code data from disk + CLI. **QA findings (bugs + feature
-asks) go in `docs/v4-backlog.md`** — same flow as v2/v3: capture → research → PRD →
-decompose into a fresh `prd.json` → run the loop. v1/v2 history below.
+**v4 done (13/13, `loop/conan-v4`).** v4 folded the six QA items from
+`docs/v4-backlog.md` into a build loop: shared-component extraction (SortToggle,
+status dot, two-tier card, time-ago, scope badge) + transcript sort toggle;
+**finished the shadcn migration v3 started** (Dock, SessionBar, Sidebar,
+PendingApprovals now on `ui/*` primitives); relocated Pulse into the dock as a
+bottom strip and dropped the tokens/cost toggle; made the Context widget honest
+(pty-correlated live session + total %) and added an on-disk category breakdown;
+a permission honesty floor (surface `delivered:false`, render real
+`permission_suggestions`) plus keystroke injection to answer interactive TUI
+prompts via the correlated pty; and the marquee feature — **live in-cwd app
+preview** (`src/preview/` dev-server manager + `/preview/:id` reverse proxy with
+framing-header strip + HMR upgrade branch + Preview dock tab). Decisions:
+`docs/v4-research.md`.
+
+**v3 done (48/48, `loop/conan-v3`)** — multi-project global hook,
+Overview/Agents/Skills/Settings nav, a real shadcn foundation, and broad Claude
+Code data from disk + CLI. v1/v2 history below.
 
 **v1 done (30/30), v2 done (20/20).** v1 (US-001→030, branch
 `loop/claude-code-dashboard`) shipped via `run-tasks.sh`; archived to

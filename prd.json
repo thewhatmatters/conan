@@ -222,7 +222,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog wrap-up + the user's 'beautiful sequence' (docs/memory/README; commit/push happens separately when asked). Suggested skills: none (docs)."
     }
   ]

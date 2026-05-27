@@ -102,10 +102,30 @@ nav routes are:
 - **What's New** — changelog feed with a new-since-last-seen nav badge.
 - **Settings** — mirrors Claude Code `/settings` with typed controls + search.
 
-A docked panel (drag-resizable, non-destructive show/hide) carries a tabbed
-**Terminal** (`xterm.js`, dropdown shows session name + short id) and **Tasks**
-(shown when the cwd has a task source). A cwd directory picker lives in the
-toolbar; toasts surface bottom-right.
+A docked panel (drag-resizable, non-destructive show/hide) carries tabbed
+**Terminal** (`xterm.js`, dropdown shows session name + short id), **Tasks**
+(shown when the cwd has a task source), and **Preview** (the live app for the
+current cwd — see below), with the global **Pulse** activity strip pinned at the
+bottom of the column. A cwd directory picker lives in the toolbar; toasts
+surface bottom-right.
+
+## Live preview
+
+Conan can run the current cwd's dev server and render the result live inside the
+dock, so you watch Claude's edits hot-reload in one window. Open the **Preview**
+tab, pick a dev command (auto-discovered from the cwd's `package.json` scripts —
+`dev` → `start` → `preview`, overridable), and hit start. Conan spawns the dev
+server on a pinned loopback port and serves it **same-origin** at `/preview/:id`
+via a reverse proxy, so it inherits Conan's auth, works under TLS, frames cleanly
+(framing headers are stripped), and keeps Vite HMR alive through Conan's port.
+
+The preview process is decoupled from the gateway's watch restart and stops
+itself when you switch cwd. Endpoints: `GET /api/preview/status`,
+`POST /api/preview/start|stop`, `GET /api/preview/log`. The `/preview/` HTTP path
+isn't token-checked per request (an iframe `src` can't send a token) — it relies
+on the same-origin + loopback + Origin-checked WS-upgrade floor the rest of Conan
+uses. v1 scope is run + proxy + preview (no container sandbox); a spawned dev
+server executes project code on the host, bounded by Conan being loopback-only.
 
 > **"Session"** in Conan means one Claude Code _run_ (an agent conversation),
 > keyed by `session_id` — observed (self-reporting) or driven (launched by
@@ -130,7 +150,8 @@ python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
 ```
 
 Full spec: `prd-claude-code-dashboard.md`. Backlogs: `docs/v2-backlog.md`,
-`docs/v3-backlog.md`. Ops/PM2: `docs/ops.md`.
+`docs/v3-backlog.md`, `docs/v4-backlog.md` (+ `docs/v4-research.md`).
+Ops/PM2: `docs/ops.md`.
 
 ## Gotchas
 
