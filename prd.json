@@ -127,7 +127,7 @@
         "Verify in browser using automate-browser skill (light + dark)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Consumes US-007. Native menu wiring in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
     },
     {

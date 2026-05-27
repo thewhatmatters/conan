@@ -9,8 +9,10 @@ import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { usePlan } from "./hooks/usePlan.ts";
 import { useSkills } from "./hooks/useSkills.ts";
+import { useConfig } from "./hooks/useConfig.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
+import SettingsView from "./components/SettingsView.tsx";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
 import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
@@ -31,6 +33,8 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [hudOpen, setHudOpen] = useState(true);
+  // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
@@ -86,6 +90,8 @@ export default function App() {
   const plan = usePlan(activeSession?.id ?? null, wsTrigger, config?.token ?? null);
   // US-006: installed skills (name + description + source) for the Skills tab.
   const skills = useSkills(config?.token ?? null);
+  // US-008: Claude Code's read-only config mirror for the Settings view.
+  const claudeConfig = useConfig(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).
@@ -123,6 +129,15 @@ export default function App() {
     }).catch(() => {});
   }, [theme, hudOpen, toggle]);
 
+  // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
+  // (same window-event bridge the File items use). Listening here keeps the menu
+  // decoupled from React state and lets the browser dev build open it too.
+  useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener("conan:open-settings", open);
+    return () => window.removeEventListener("conan:open-settings", open);
+  }, []);
+
   return (
     // Terminal-primary shell (US-003): no top toolbar — the Claude Code terminal
     // fills the main area and the DevTools-style HUD docks to its right
@@ -150,6 +165,11 @@ export default function App() {
         plan={plan}
         tasks={tasks}
         skills={skills}
+      />
+      <SettingsView
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        config={claudeConfig}
       />
     </div>
   );

@@ -41,6 +41,16 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     items: [
       await about(),
       await sep(),
+      // US-008: open the read-only Settings view. Dispatches a window event App
+      // listens for (same bridge as the File items) rather than calling React
+      // state directly, so the menu stays decoupled and the browser build works.
+      await MenuItem.new({
+        text: "Settings…",
+        accelerator: "CmdOrCtrl+,",
+        action: () =>
+          window.dispatchEvent(new CustomEvent("conan:open-settings")),
+      }),
+      await sep(),
       await PredefinedMenuItem.new({ item: "Hide" }),
       await sep(),
       await PredefinedMenuItem.new({ item: "Quit" }),
