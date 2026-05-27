@@ -8,10 +8,12 @@ import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
-// Tab-trigger styling tuned to match the flat header controls (no pill list,
-// active = bg-muted) rather than shadcn's default card-with-shadow look.
+// VS Code–style tabs: flat (no pill/filled background); the active tab is marked
+// by a subtle top accent border + bolder foreground text instead of a bg fill.
+// border-t-2 border-transparent reserves the space on every tab so the accent
+// doesn't shift layout when it appears.
 const TAB_TRIGGER =
-  "group shrink-0 max-w-44 rounded-md py-1 pl-2.5 pr-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
+  "group shrink-0 max-w-44 rounded-none border-t border-transparent py-1.5 pl-3 pr-2 text-xs font-normal text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-muted data-[state=active]:border-primary data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 interface TerminalPaneProps {
   token: string | null;
@@ -159,15 +161,16 @@ export default function TerminalPane({
 
   return (
     <section className="relative flex min-w-0 flex-1 flex-col bg-card">
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+      <div className="flex items-center border-b border-border">
         <Tabs
           value={activeTid}
           onValueChange={setActiveTid}
           className="min-w-0 flex-1"
         >
           {/* A real tab strip (US-009): one trigger per terminal, scrolling
-              horizontally when many are open (no wrap). */}
-          <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              horizontally when many are open (no wrap). Flush, contiguous tabs
+              (no gap/padding) so the active fill + 1px top accent read as a tab. */}
+          <TabsList className="flex h-auto w-full justify-start overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {terms.map((t, i) => (
               <TabsTrigger
                 key={t.tid}
@@ -201,7 +204,7 @@ export default function TerminalPane({
           onClick={addTerm}
           title="New terminal"
           aria-label="New terminal"
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="mx-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Plus className="size-4" />
         </button>

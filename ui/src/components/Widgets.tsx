@@ -95,93 +95,104 @@ export function ContextWidget({
     </button>
   ) : null;
 
+  // Build the scrollable content (live face if we have a /context capture, else
+  // the on-disk estimate) plus the pct that drives the pinned action toolbar.
+  let content: ReactNode;
+  let barPct: number | null;
+
   // --- live face: the EXACT /context capture (US-009) -----------------------
   if (liveCtx) {
-    const livePct =
+    barPct =
       liveCtx.usedPct ??
       (liveCtx.usedTokens != null && liveCtx.windowTokens
         ? Math.min(100, (liveCtx.usedTokens / liveCtx.windowTokens) * 100)
         : null);
-    return (
-      <LiveContextView
-        live={liveCtx}
-        refreshBtn={refreshBtn}
-        actionBar={
-          <ContextActionBar
-            ctxPct={livePct}
-            session={session}
-            token={token}
-            hasLivePty={hasLivePty}
-          />
-        }
-      />
+    content = <LiveContextView live={liveCtx} refreshBtn={refreshBtn} />;
+  } else {
+    // --- fallback: the on-disk estimate (US-007/US-013) ---------------------
+    const ctx = data?.context ?? null;
+    const ctxTokens = ctx?.used ?? session?.context_tokens ?? null;
+    // Prefer the gateway-computed window (it resolves the 1M beta across
+    // sessions); fall back to the local resolver when there's no transcript.
+    const ctxWindow =
+      ctx?.windowTokens ??
+      resolveContextWindow(
+        ctx?.model ?? session?.model ?? null,
+        ctxTokens,
+        sessions ?? (session ? [session] : []),
+      );
+    barPct =
+      ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
+    const sub = session ? "≈ estimated" : "no session";
+    const breakdown = data?.contextBreakdown ?? null;
+    content = (
+      <StatCard label="Context" sub={sub}>
+        <div className="flex items-center gap-3">
+          <ProgressCircle
+            value={barPct ?? 0}
+            radius={26}
+            strokeWidth={5}
+            variant={barPct != null && barPct >= 80 ? "error" : "default"}
+            className="shrink-0"
+          >
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {barPct != null ? `${Math.round(barPct)}%` : "—"}
+            </span>
+          </ProgressCircle>
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              {barPct != null ? "context used" : "no usage yet"}
+            </div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              {ctxTokens != null
+                ? `${fmtTokens(ctxTokens)} / ${fmtTokens(ctxWindow)}`
+                : "—"}
+            </div>
+          </div>
+          {refreshBtn}
+        </div>
+        {breakdown && breakdown.categories.length > 0 && (
+          <ContextBreakdownBar breakdown={breakdown} />
+        )}
+      </StatCard>
     );
   }
 
-  // --- fallback: the on-disk estimate (US-007/US-013) -----------------------
-  const ctx = data?.context ?? null;
-  const ctxTokens = ctx?.used ?? session?.context_tokens ?? null;
-  // Prefer the gateway-computed window (it resolves the 1M beta across sessions);
-  // fall back to the local resolver when there's no transcript context payload.
-  const ctxWindow =
-    ctx?.windowTokens ??
-    resolveContextWindow(
-      ctx?.model ?? session?.model ?? null,
-      ctxTokens,
-      sessions ?? (session ? [session] : []),
-    );
-  const ctxPct =
-    ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
-  const sub = session ? "≈ estimated" : "no session";
-  const breakdown = data?.contextBreakdown ?? null;
+  // The Context tab is a flex column: the action toolbar is PINNED to the top
+  // (just under the tab strip) so its actions stay in view no matter how far the
+  // breakdown below it scrolls (the bar is always present now; its actions are
+  // disabled until context crosses the pressure threshold).
   return (
-    <StatCard label="Context" sub={sub}>
-      <div className="flex items-center gap-3">
-        <ProgressCircle
-          value={ctxPct ?? 0}
-          radius={26}
-          strokeWidth={5}
-          variant={ctxPct != null && ctxPct >= 80 ? "error" : "default"}
-          className="shrink-0"
-        >
-          <span className="text-sm font-semibold tabular-nums text-foreground">
-            {ctxPct != null ? `${Math.round(ctxPct)}%` : "—"}
-          </span>
-        </ProgressCircle>
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-foreground">
-            {ctxPct != null ? "context used" : "no usage yet"}
-          </div>
-          <div className="truncate text-[11px] text-muted-foreground">
-            {ctxTokens != null
-              ? `${fmtTokens(ctxTokens)} / ${fmtTokens(ctxWindow)}`
-              : "—"}
-          </div>
-        </div>
-        {refreshBtn}
-      </div>
-      {breakdown && breakdown.categories.length > 0 && (
-        <ContextBreakdownBar breakdown={breakdown} />
-      )}
+    <div className="flex h-full min-h-0 flex-col">
       <ContextActionBar
-        ctxPct={ctxPct}
+        ctxPct={barPct}
         session={session}
         token={token}
         hasLivePty={hasLivePty}
       />
-    </StatCard>
+      <div className="min-h-0 flex-1 overflow-auto">{content}</div>
+    </div>
   );
 }
 
 /**
- * Context-pressure action bar (US-013). When the session is filling its context
- * window (ctxPct >= the 80% destructive-ring threshold) a bottom bar offers a
- * quick checkpoint: Cancel (dismiss until pressure climbs further, so it doesn't
- * nag every render) and Compact. Compact injects `/handoff` into the correlated
- * pty so the SESSION writes HANDOFF.md (Conan can't author it — only the live
- * conversation knows its own state), and is disabled when there's no live pty.
+ * Context-pressure action toolbar (US-013). A fixed bar pinned to the TOP of the
+ * Context tab (just under the tab strip) — always visible so the checkpoint
+ * actions stay in view however far the breakdown below scrolls (intentionally
+ * always-on while we iterate on the design). Two pressure thresholds gate it:
+ *
+ *  - **< 80%** — calm/neutral; both actions inert.
+ *  - **80–95% (armed)** — destructive-red "running low"; "Remind me later"
+ *    snoozes the prompt back to calm until 95%, and Compact is available.
+ *  - **≥ 95% (critical)** — forced urgent (snooze no longer applies); "Remind me
+ *    later" is disabled, leaving Compact as the only way out.
+ *
+ * Compact injects `/handoff` into the correlated pty so the SESSION writes
+ * HANDOFF.md (Conan can't author it — only the live conversation knows its own
+ * state); it also needs a live correlated pty to type into.
  */
-const CTX_ACTION_THRESHOLD = 80;
+const CTX_ARM_THRESHOLD = 80;
+const CTX_CRITICAL_THRESHOLD = 95;
 function ContextActionBar({
   ctxPct,
   session,
@@ -193,24 +204,31 @@ function ContextActionBar({
   token?: string | null;
   hasLivePty: boolean;
 }) {
-  // The pct at which the user last dismissed; the bar stays hidden until pressure
-  // climbs meaningfully past it (no nagging every render).
-  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  // "Remind me later" snoozes the urgent prompt back to calm until context
+  // climbs to the critical threshold, where the snooze no longer applies.
+  const [snoozed, setSnoozed] = useState(false);
 
-  if (ctxPct == null || ctxPct < CTX_ACTION_THRESHOLD) return null;
-  // Re-show only once context has climbed >=5 points past the dismissal point.
-  if (dismissedAt != null && ctxPct < dismissedAt + 5) return null;
+  const pressured = ctxPct != null && ctxPct >= CTX_ARM_THRESHOLD;
+  const critical = ctxPct != null && ctxPct >= CTX_CRITICAL_THRESHOLD;
+  // Urgent (red) whenever pressured, unless the user snoozed and we're not yet
+  // critical. At/above critical the prompt is forced on regardless of snooze.
+  const urgent = pressured && (critical || !snoozed);
+  // "Remind me later" only acts while armed-but-not-critical and not already snoozed.
+  const canRemind = pressured && !critical && !snoozed;
+  // Compact is the real action — available whenever the prompt is urgent and a
+  // live pty exists to type `/handoff` into.
+  const canCompact = urgent && !!session && !!token && hasLivePty && !busy;
 
   const compact = async () => {
-    if (!session || !token || busy || !hasLivePty) return;
+    if (!canCompact) return;
     setBusy(true);
     try {
       await fetch(
         apiBase() +
-          `/api/claude/sessions/${encodeURIComponent(session.id)}/handoff`,
-        { method: "POST", headers: { "x-conan-token": token } },
+          `/api/claude/sessions/${encodeURIComponent(session!.id)}/handoff`,
+        { method: "POST", headers: { "x-conan-token": token! } },
       );
       setSent(true);
     } catch {
@@ -220,29 +238,49 @@ function ContextActionBar({
     }
   };
 
+  const compactTitle = !urgent
+    ? "Available once context is running low (≥80%)"
+    : hasLivePty
+      ? "Runs /handoff in the live terminal session — the session writes HANDOFF.md, then you can /compact"
+      : "No live terminal correlated with this session";
+  const remindTitle = critical
+    ? "Context is critical (≥95%) — compact now"
+    : canRemind
+      ? "Snooze this reminder until context reaches 95%"
+      : "Available once context is running low (≥80%)";
+
   return (
-    <div className="-mx-3 mt-2 border-t border-destructive/30 px-3 pt-2">
+    <div
+      className={
+        "shrink-0 border-b px-3 py-2 " +
+        (urgent ? "border-destructive/30 bg-destructive/5" : "border-border")
+      }
+    >
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-medium text-destructive">
-          Context {Math.round(ctxPct)}% — running low
+        <span
+          className={
+            "text-[11px] font-medium " +
+            (urgent ? "text-destructive" : "text-muted-foreground")
+          }
+        >
+          {ctxPct != null ? `Context ${Math.round(ctxPct)}%` : "Context —"}
+          {urgent ? (critical ? " — critical" : " — running low") : ""}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setDismissedAt(ctxPct)}
-            className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted"
+            onClick={() => setSnoozed(true)}
+            disabled={!canRemind}
+            title={remindTitle}
+            className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
           >
-            Cancel
+            Remind me later
           </button>
           <button
             type="button"
             onClick={compact}
-            disabled={busy || !hasLivePty}
-            title={
-              hasLivePty
-                ? "Runs /handoff in the live terminal session — the session writes HANDOFF.md, then you can /compact"
-                : "No live terminal correlated with this session"
-            }
+            disabled={!canCompact}
+            title={compactTitle}
             className="rounded bg-destructive px-2 py-0.5 text-[11px] font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
           >
             {busy ? "sending…" : sent ? "sent ✓" : "Compact"}
@@ -278,11 +316,9 @@ const LIVE_CAT_COLOR: Record<LiveContextCategory["key"], string> = {
 function LiveContextView({
   live,
   refreshBtn,
-  actionBar,
 }: {
   live: LiveContext;
   refreshBtn: ReactNode;
-  actionBar?: ReactNode;
 }) {
   const pct =
     live.usedPct ??
@@ -348,7 +384,6 @@ function LiveContextView({
         Refreshing runs /context in the session and consumes a few thousand
         tokens; auto-refresh only fires when context has moved a lot.
       </p>
-      {actionBar}
     </StatCard>
   );
 }

@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
-import { useTerminalTheme } from "./hooks/useTerminalTheme.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useUsage } from "./hooks/useUsage.ts";
@@ -37,10 +36,6 @@ export default function App() {
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, preference, setTheme } = useTheme();
-  // US-012: the "Terminal text theme" layer — mirrors the resolved Conan theme
-  // into Claude Code's /theme (config-write via the gateway). Kept separate from
-  // useTheme so the app-theme and terminal-text-theme layers stay distinct.
-  const terminalTheme = useTerminalTheme(config?.token ?? null);
   const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
     [],
@@ -106,15 +101,33 @@ export default function App() {
     visibleSessionId: correlatedSession?.id ?? null,
   });
 
+  // Bootstrap health + config. RETRY until the gateway answers: under `tauri
+  // dev` the webview can load before the sidecar finishes booting, so a one-shot
+  // fetch hits ECONNREFUSED and the app would hang on "connecting" forever (the
+  // token never arrives, so the WS can't auth). Poll until config lands, then stop.
   useEffect(() => {
-    fetch(apiBase() + "/api/health")
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setHealth(null));
-    fetch(apiBase() + "/api/config")
-      .then((r) => r.json())
-      .then(setConfig)
-      .catch(() => setConfig(null));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const attempt = () => {
+      fetch(apiBase() + "/api/health")
+        .then((r) => r.json())
+        .then((h) => !cancelled && setHealth(h))
+        .catch(() => {});
+      fetch(apiBase() + "/api/config")
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((c) => {
+          if (cancelled) return;
+          setConfig(c); // got the token — stop retrying
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(attempt, 1000); // gateway not up yet
+        });
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Native macOS menu bar (Tauri only) — File/Edit/View/Help. The View controls
@@ -132,30 +145,8 @@ export default function App() {
         window.dispatchEvent(new CustomEvent("conan:new-terminal")),
       onCloseTerminal: () =>
         window.dispatchEvent(new CustomEvent("conan:close-terminal")),
-      terminalTheme: terminalTheme.theme,
-      terminalThemeAvailable: terminalTheme.available,
-      onSetTerminalTheme: terminalTheme.mirror,
     }).catch(() => {});
-  }, [
-    preference,
-    hudOpen,
-    setTheme,
-    terminalTheme.theme,
-    terminalTheme.available,
-    terminalTheme.mirror,
-  ]);
-
-  // US-012: mirror the resolved Conan theme into Claude's terminal /theme on a
-  // theme *change* (not the initial mount — loading the app must not clobber the
-  // user's Claude theme). The separate menu group above lets the user override.
-  const mirroredOnce = useRef(false);
-  useEffect(() => {
-    if (!mirroredOnce.current) {
-      mirroredOnce.current = true;
-      return;
-    }
-    terminalTheme.mirror(theme);
-  }, [theme, terminalTheme.mirror]);
+  }, [preference, hudOpen, setTheme]);
 
   // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
   // (same window-event bridge the File items use). Listening here keeps the menu

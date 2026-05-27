@@ -105,55 +105,6 @@ try {
   const nullCwd = readClaudeConfig(null);
   check("readClaudeConfig(null) returns a shape without throwing",
     Array.isArray(nullCwd.entries) && Array.isArray(nullCwd.files));
-
-  // --- US-012: terminal /theme mirror -----------------------------------
-  const { nextClaudeTheme, writeClaudeTheme, readClaudeTheme } = await import(
-    "../src/config/index.ts"
-  );
-
-  // nextClaudeTheme: flip the base polarity, preserve a matching variant.
-  check("nextClaudeTheme flips light->dark", nextClaudeTheme("light", "dark") === "dark");
-  check("nextClaudeTheme flips dark->light", nextClaudeTheme("dark", "light") === "light");
-  check("nextClaudeTheme preserves dark-daltonized on dark",
-    nextClaudeTheme("dark-daltonized", "dark") === "dark-daltonized");
-  check("nextClaudeTheme replaces dark-daltonized on light",
-    nextClaudeTheme("dark-daltonized", "light") === "light");
-  check("nextClaudeTheme handles a missing/non-string current",
-    nextClaudeTheme(undefined, "dark") === "dark" && nextClaudeTheme(42, "light") === "light");
-
-  // writeClaudeTheme over a temp settings.json: write, preserve, no-op cases.
-  const tdir = fs.mkdtempSync(path.join(os.tmpdir(), "conan-theme-"));
-  const tfile = path.join(tdir, "settings.json");
-  fs.writeFileSync(tfile, JSON.stringify({ theme: "light", verbose: true, env: { A: "1" } }));
-
-  const w1 = writeClaudeTheme("dark", tfile);
-  const after1 = JSON.parse(fs.readFileSync(tfile, "utf8"));
-  check("writeClaudeTheme flips the theme on disk", w1.ok && w1.theme === "dark" && after1.theme === "dark");
-  check("writeClaudeTheme preserves the other keys", after1.verbose === true && after1.env?.A === "1");
-
-  // already in sync => ok, no rewrite needed
-  const w2 = writeClaudeTheme("dark", tfile);
-  check("writeClaudeTheme is an ok no-op when already in sync", w2.ok && w2.theme === "dark");
-
-  // preserves a daltonized variant on a same-polarity mirror
-  fs.writeFileSync(tfile, JSON.stringify({ theme: "dark-daltonized" }));
-  const w3 = writeClaudeTheme("dark", tfile);
-  check("writeClaudeTheme keeps a same-polarity accessibility variant",
-    w3.ok && w3.theme === "dark-daltonized");
-
-  // missing file => safe no-op, reflected as not-available
-  const missing = path.join(tdir, "nope.json");
-  const w4 = writeClaudeTheme("dark", missing);
-  check("writeClaudeTheme on a missing config is a safe no-op", w4.ok === false && w4.reason === "no-config");
-  check("writeClaudeTheme does not create a missing config", !fs.existsSync(missing));
-
-  // readClaudeTheme reports value + availability
-  const r1 = readClaudeTheme(tfile);
-  check("readClaudeTheme reports the on-disk theme + available", r1.theme === "dark-daltonized" && r1.available === true);
-  const r2 = readClaudeTheme(missing);
-  check("readClaudeTheme reports unavailable for a missing config", r2.theme === null && r2.available === false);
-
-  fs.rmSync(tdir, { recursive: true, force: true });
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

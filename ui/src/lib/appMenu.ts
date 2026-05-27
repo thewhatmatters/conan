@@ -9,12 +9,6 @@ export interface AppMenuActions {
   onToggleHud: () => void;
   onNewTerminal: () => void;
   onCloseTerminal: () => void;
-  /** US-012: Claude Code's current terminal /theme value (null when unknown). */
-  terminalTheme: string | null;
-  /** Whether Claude's config exists — false greys the terminal-theme group. */
-  terminalThemeAvailable: boolean;
-  /** Mirror a light/dark polarity into Claude's terminal /theme. */
-  onSetTerminalTheme: (t: "light" | "dark") => void;
 }
 
 const ABOUT = { name: "Conan", version: "0.1.0" };
@@ -113,40 +107,10 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     ],
   });
 
-  // US-012: a SEPARATE, clearly-labeled group for Claude Code's in-terminal text
-  // theme (its /theme), kept distinct from Conan's app theme above so the two
-  // layers aren't conflated. Selecting a polarity mirrors it into Claude's config
-  // (config-write — see src/config/index.ts). The check follows Claude's current
-  // theme by polarity (so a "dark-daltonized" still reads as Dark). When Claude's
-  // config is absent the whole group is disabled and says so — reflecting that the
-  // mirror is a no-op rather than silently doing nothing.
-  const termThemeItem = (text: string, value: "light" | "dark") =>
-    CheckMenuItem.new({
-      text,
-      checked: !!a.terminalTheme && a.terminalTheme.startsWith(value),
-      enabled: a.terminalThemeAvailable,
-      action: () => a.onSetTerminalTheme(value),
-    });
-  const terminalThemeMenu = await Submenu.new({
-    text: "Terminal text theme",
-    items: [
-      await MenuItem.new({
-        text: a.terminalThemeAvailable
-          ? "Mirrors Claude Code’s /theme (applies next session)"
-          : "No Claude config found — nothing to mirror",
-        enabled: false,
-      }),
-      await sep(),
-      await termThemeItem("Light", "light"),
-      await termThemeItem("Dark", "dark"),
-    ],
-  });
-
   const viewMenu = await Submenu.new({
     text: "View",
     items: [
       themeMenu,
-      terminalThemeMenu,
       await sep(),
       await MenuItem.new({
         text: a.hudOpen ? "Hide HUD" : "Show HUD",

@@ -12,10 +12,11 @@ import type { SkillEntry } from "../hooks/useSkills.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
-// DevTools-style flat tab triggers (no pill shell, active = bg-muted) — matches
-// the terminal pane's `Term ▾` control so the two panes read as one chrome.
+// VS Code–style tabs: flat, the active tab marked by a top accent border (not a
+// filled pill) — matches the terminal tab strip so the two panes read as one
+// chrome. border-t-2 border-transparent reserves the space so nothing shifts.
 const TAB_TRIGGER =
-  "shrink-0 rounded-md px-2.5 py-1 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted/60 data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
+  "shrink-0 rounded-none border-t border-transparent px-3 py-1.5 text-xs font-normal text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-muted data-[state=active]:border-primary data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 const MIN_W = 320;
 const MAX_W = 900;
@@ -110,10 +111,11 @@ export default function Hud({
       />
 
       <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
-        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <div className="flex items-center border-b border-border">
           {/* Tabs scroll horizontally so the bar still reads at the 320px min
-              width once Plan + Skills join Context | Usage | Pulse (US-006). */}
-          <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
+              width once Plan + Skills join Context | Usage | Pulse (US-006).
+              Flush, contiguous (no gap/padding) so they read as real tabs. */}
+          <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start overflow-x-auto rounded-none bg-transparent p-0">
             <TabsTrigger value="context" className={TAB_TRIGGER}>
               Context
             </TabsTrigger>
@@ -136,7 +138,7 @@ export default function Hud({
 
         <TabsContent
           value="context"
-          className="mt-0 min-h-0 flex-1 overflow-auto"
+          className="mt-0 flex min-h-0 flex-1 flex-col"
         >
           <ContextWidget
             session={activeSession}
