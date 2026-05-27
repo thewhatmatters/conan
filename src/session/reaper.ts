@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { getDb } from "../db/index.js";
 import { HOME } from "../paths.js";
-import { listManagedSessions } from "./index.js";
 
 /**
  * Session-liveness reaper (US-001).
@@ -93,8 +92,7 @@ export interface ReaperOptions {
   /** Injectable clock for tests. */
   now?: number;
   /**
-   * Pre-computed live session_ids. When omitted, read from the marker dir and
-   * union with the manager's still-open driven children.
+   * Pre-computed live session_ids. When omitted, read from the marker dir.
    */
   liveIds?: Set<string>;
 }
@@ -127,12 +125,9 @@ export function reconcileSessions(opts: ReaperOptions = {}): ReapResult {
   const windowMs = opts.windowMs ?? DEFAULT_WINDOW_MS;
   const cutoff = now - windowMs;
 
+  // Liveness comes from Claude Code's per-process marker files (US-003 removed
+  // the driven-child path, so there are no in-process sessions to union in).
   const live = opts.liveIds ?? readLiveSessionIds();
-  // Conan-driven sessions whose child we still hold open are alive regardless of
-  // any marker file (a driven `claude -p` need not write one).
-  for (const m of listManagedSessions()) {
-    if (m.sessionId && !m.child.killed) live.add(m.sessionId);
-  }
 
   const db = getDb();
   const rows = db

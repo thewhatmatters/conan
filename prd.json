@@ -54,7 +54,7 @@
         "npm test passes for the remaining suites (drive/subagents tests removed, not left broken)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "The transcript PARSER may still be needed by the widgets route (context usage from the latest assistant turn) — keep parser bits the widgets route uses; only delete the transcript-SERVING route + drive code. Build + the kept-route checks are the gate. Gateway edits → run outside the in-dock session."
     },
     {

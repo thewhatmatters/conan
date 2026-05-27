@@ -4,8 +4,8 @@
 //   - available: how many skills exist on this machine (user + project scopes),
 //     counted by scanning the skill directories for SKILL.md files.
 //   - loaded(sessionId): how many slash commands / skills a given session has
-//     loaded, derived from that session's `system/init` event (the stream-json
-//     parser stores `slash_commands` in the payload — see src/session/parser.ts).
+//     loaded, derived from that session's `system/init` event (the hook ingest
+//     stores `slash_commands` in the event payload).
 //
 // Pure-ish read helpers (fs + db reads), no broadcasting, so the gateway route
 // is a thin wrapper.

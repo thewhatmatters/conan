@@ -9,12 +9,9 @@ import {
   closeAllTerminals,
   listTerminalSessions,
   liveTerminalSessionIds,
-  answerInteractivePermission,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { readSkills, listSkills } from "../skills/index.js";
-import { readTranscript } from "../transcript/index.js";
-import { readSubagents } from "../subagents/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets, gitStatus } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
@@ -44,19 +41,11 @@ import {
   globalSettingsPath,
 } from "../hooks/install.js";
 import {
-  startSession,
-  sendPrompt,
-  stopSession,
-  resumeSession,
-  decidePermission,
   listSessions,
   listEvents,
   listAllEvents,
   listPendingPermissions,
   listInteractivePermissions,
-  onSessionEvent,
-  isValidEffort,
-  EFFORT_LEVELS,
 } from "../session/index.js";
 import { startReaper } from "../session/reaper.js";
 
@@ -187,15 +176,6 @@ function authed(req: express.Request, res: express.Response): boolean {
   return true;
 }
 
-// Await a session_id without blocking the response forever: resolves with the
-// captured id, or null if the stream doesn't surface system/init in time.
-function awaitSessionId(p: Promise<string>, ms: number): Promise<string | null> {
-  return Promise.race([
-    p.catch(() => null),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
-}
-
 // Ingest a Claude Code lifecycle event (US-003). Posted by the hook scripts in
 // .claude/hooks; persisted to SQLite and broadcast over /ws (US-005).
 const IDLE_EVENTS = new Set(["Stop", "SessionEnd"]);
@@ -310,41 +290,12 @@ app.get("/api/claude/sessions", (_req, res) => {
   res.json(listSessions());
 });
 
-// A session's event history for the ActivityTimeline (US-011). Read-only; live
-// updates arrive over /ws as {type:'event'}. Newest activity is appended there.
-app.get("/api/claude/sessions/:id/events", (req, res) => {
-  res.json(listEvents(req.params.id));
-});
-
 // The timeline's "All sessions" view (US-007): recent events across every
 // session, oldest-first. Read-only; live updates arrive over /ws. Optional
 // `?cwd=` scopes to one working directory (US-002 multi-project observatory).
 app.get("/api/claude/events", (req, res) => {
   const cwd = typeof req.query.cwd === "string" && req.query.cwd ? req.query.cwd : undefined;
   res.json(listAllEvents(1000, cwd));
-});
-
-// A session's full conversation transcript (US-014), read straight from the
-// Claude Code JSONL under ~/.claude (not duplicated into SQLite). The cwd lets
-// us resolve the per-project transcript folder; a missing file degrades to
-// { found:false, messages:[] }. Read-only.
-app.get("/api/claude/sessions/:id/transcript", (req, res) => {
-  const row = db
-    .prepare("SELECT cwd FROM session WHERE id = ?")
-    .get(req.params.id) as { cwd?: string } | undefined;
-  res.json(readTranscript(req.params.id, row?.cwd ?? null));
-});
-
-// A session's subagent tree (US-014), reconstructed from disk under
-// ~/.claude/projects/<enc-cwd>/<session-id>/subagents/ — works for any session
-// (past/observed), not just live ones tracked via parent_tool_use_id. The cwd
-// helps resolve the project folder; absent subagents degrade to
-// { found:false, subagents:[] }. Read-only.
-app.get("/api/claude/sessions/:id/subagents", (req, res) => {
-  const row = db
-    .prepare("SELECT cwd FROM session WHERE id = ?")
-    .get(req.params.id) as { cwd?: string } | undefined;
-  res.json(readSubagents(req.params.id, row?.cwd ?? null));
 });
 
 // Time-series throughput for the Pulse chart (US-020): events-per-minute,
@@ -616,145 +567,11 @@ app.put("/api/claude/settings", (req, res) => {
   res.json({ ok: true, key: b.key, value: result.value });
 });
 
-// --- Session control plane (US-008): start / sendPrompt / stop / resume.
-// All behind the same auth token as the WS layer.
-
-app.post("/api/claude/sessions", async (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  if (b.effort !== undefined && !isValidEffort(b.effort)) {
-    res.status(400).json({
-      error: `invalid effort '${String(b.effort)}' (expected one of ${EFFORT_LEVELS.join(", ")})`,
-    });
-    return;
-  }
-  // --add-dir accepts a single string or a list of paths (US-043).
-  const addDirs = Array.isArray(b.add_dir)
-    ? b.add_dir.filter((d): d is string => typeof d === "string")
-    : typeof b.add_dir === "string"
-      ? [b.add_dir]
-      : undefined;
-  let result;
-  try {
-    result = startSession({
-      cwd: typeof b.cwd === "string" ? b.cwd : undefined,
-      model: typeof b.model === "string" ? b.model : undefined,
-      permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
-      effort: typeof b.effort === "string" ? b.effort : undefined,
-      fromPr: typeof b.from_pr === "string" ? b.from_pr : undefined,
-      // US-047: --remote-control [name] (true = unnamed, string = named) and --chrome.
-      remoteControl:
-        b.remote_control === true
-          ? true
-          : typeof b.remote_control === "string"
-            ? b.remote_control
-            : undefined,
-      chrome: b.chrome === true,
-      worktree: b.worktree === true,
-      worktreeRef: typeof b.worktree_ref === "string" ? b.worktree_ref : undefined,
-      addDirs,
-      // US-044: a plausible JSON schema constrains + validates the result; a
-      // missing or malformed one is ignored, leaving output at its default.
-      jsonSchema: b.json_schema,
-      bare: b.bare === true,
-      prompt: typeof b.prompt === "string" ? b.prompt : undefined,
-    });
-  } catch (err) {
-    // The only synchronous failure is worktree creation (e.g. not a git repo).
-    res.status(400).json({ error: (err as Error).message });
-    return;
-  }
-  const sessionId = await awaitSessionId(result.sessionId, 3000);
-  res.json({
-    ok: true,
-    launchId: result.launchId,
-    sessionId,
-    worktree: result.worktree ?? null,
-  });
-});
-
-app.post("/api/claude/sessions/:id/prompt", async (req, res) => {
-  if (!authed(req, res)) return;
-  const text = (req.body ?? {}).text;
-  if (typeof text !== "string" || text.length === 0) {
-    res.status(400).json({ error: "text required" });
-    return;
-  }
-  try {
-    const result = await sendPrompt(req.params.id, text);
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-// Answer a tool-permission prompt from the timeline (US-012/US-009). A driven
-// session is answered over the stream-json control protocol (stdin); an
-// interactive/observed session — surfaced with a synthetic `notif-<id>` request
-// id by listInteractivePermissions — has no control_request to answer, so its
-// decision is typed into the correlated pty as a numbered menu choice (US-009).
-// Either path reports an honest `delivered` flag so the UI never fakes success.
-app.post("/api/claude/sessions/:id/permission", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  if (b.decision !== "allow" && b.decision !== "deny") {
-    res.status(400).json({ error: "decision must be 'allow' or 'deny'" });
-    return;
-  }
-  const requestId = typeof b.request_id === "string" ? b.request_id : null;
-
-  // US-009: interactive/observed prompt → keystroke delivery into the pty. The
-  // TUI renders a numbered menu (1=Yes, 2=No/…); allow→1, deny→2 by default,
-  // overridable with an explicit option_number. A `false` return (no live pty
-  // correlated) falls through to US-008's honest non-deliverable state.
-  if (requestId && requestId.startsWith("notif-")) {
-    const optionNumber =
-      typeof b.option_number === "number"
-        ? b.option_number
-        : b.decision === "allow"
-          ? 1
-          : 2;
-    const delivered = answerInteractivePermission(req.params.id, optionNumber);
-    res.json({ ok: true, delivered, requestId, delivery: "keystroke" });
-    return;
-  }
-
-  const result = decidePermission(req.params.id, requestId, {
-    decision: b.decision,
-    message: typeof b.message === "string" ? b.message : undefined,
-    updatedPermissions: Array.isArray(b.updated_permissions)
-      ? b.updated_permissions
-      : undefined,
-  });
-  res.json({ ok: true, ...result, delivery: "stdin" });
-});
-
-app.post("/api/claude/sessions/:id/stop", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const result = stopSession(req.params.id, { removeWorktree: b.remove_worktree === true });
-  res.json({ ok: true, ...result });
-});
-
-app.post("/api/claude/sessions/:id/resume", async (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  if (b.effort !== undefined && !isValidEffort(b.effort)) {
-    res.status(400).json({
-      error: `invalid effort '${String(b.effort)}' (expected one of ${EFFORT_LEVELS.join(", ")})`,
-    });
-    return;
-  }
-  const result = resumeSession(req.params.id, {
-    model: typeof b.model === "string" ? b.model : undefined,
-    permissionMode: typeof b.permission_mode === "string" ? b.permission_mode : undefined,
-    effort: typeof b.effort === "string" ? b.effort : undefined,
-    forkSession: b.fork_session === true,
-    prompt: typeof b.prompt === "string" ? b.prompt : undefined,
-  });
-  const sessionId = await awaitSessionId(result.sessionId, 3000);
-  res.json({ ok: true, launchId: result.launchId, sessionId });
-});
+// Session DRIVING (start / sendPrompt / stop / resume / permission decisions)
+// was removed in v4.2 (US-003): Conan is Tauri-only and observes sessions via
+// the pty + hooks rather than launching/steering headless `claude -p` runs
+// through the gateway. The session GET routes (list + widgets) and the read
+// helpers above are what remain.
 
 
 // The Tauri webview loads the bundled frontend and dev uses the Vite server
@@ -827,14 +644,6 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 // status='running'. The session grid (GET /api/claude/sessions) reads the table,
 // so its reconciled status flows to the UI on the next refetch.
 const stopReaper = startReaper();
-
-// Live-stream parser-persisted events (US-007) to app clients so headless
-// sessions surface in the timeline (US-011) the same way hook events do. Cost is
-// folded onto the session row by the parser; usage is now framed around plan
-// limits + token consumption (US-004), not a dollar ceiling.
-onSessionEvent((row) => {
-  broadcast({ type: "event", payload: row });
-});
 
 // Stream ultrareview output (US-046) to app clients as it arrives so the
 // findings panel renders live without polling — same broadcast bus as events.
