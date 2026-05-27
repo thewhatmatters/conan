@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
@@ -104,11 +104,27 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
     });
   }, []);
 
+  // Bridge the native menu's File ▸ New/Close Terminal (App dispatches these
+  // window events) to the local tab state. Close acts on the active terminal.
+  // A ref keeps the listener bound to the live active tid without rebinding.
+  const activeTidRef = useRef(activeTid);
+  activeTidRef.current = activeTid;
+  useEffect(() => {
+    const onNew = () => addTerm();
+    const onClose = () => closeTerm(activeTidRef.current);
+    window.addEventListener("conan:new-terminal", onNew);
+    window.addEventListener("conan:close-terminal", onClose);
+    return () => {
+      window.removeEventListener("conan:new-terminal", onNew);
+      window.removeEventListener("conan:close-terminal", onClose);
+    };
+  }, [addTerm, closeTerm]);
+
   return (
     <section className="relative flex min-w-0 flex-1 flex-col bg-card">
-      <Tabs value="term">
-        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-          <TabsList className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0">
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <Tabs value="term">
+          <TabsList className="h-auto justify-start gap-1 rounded-none bg-transparent p-0">
             <TermDropdown
               terms={terms}
               activeTid={activeTid}
@@ -117,8 +133,8 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
               onNew={addTerm}
             />
           </TabsList>
-        </div>
-      </Tabs>
+        </Tabs>
+      </div>
 
       <div className="relative min-h-0 flex-1">
         {/* Every terminal stays mounted and sized (stacked, absolute inset-0) so

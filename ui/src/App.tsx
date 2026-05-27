@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
-import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
+import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useUsage } from "./hooks/useUsage.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
@@ -10,6 +10,7 @@ import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import { apiBase } from "./lib/gateway.ts";
+import { installAppMenu } from "./lib/appMenu.ts";
 
 interface Health {
   status: string;
@@ -79,94 +80,44 @@ export default function App() {
       .catch(() => setConfig(null));
   }, []);
 
+  // Native macOS menu bar (Tauri only) — File/Edit/View/Help. The View toggles
+  // (theme, HUD) live here now that the top toolbar is gone; File items dispatch
+  // window events TerminalPane handles. Rebuilt on theme/HUD change so the
+  // toggle labels stay accurate. No-op in the browser dev/web view.
+  useEffect(() => {
+    installAppMenu({
+      theme,
+      hudOpen,
+      onToggleTheme: toggle,
+      onToggleHud: () => setHudOpen((v) => !v),
+      onNewTerminal: () =>
+        window.dispatchEvent(new CustomEvent("conan:new-terminal")),
+      onCloseTerminal: () =>
+        window.dispatchEvent(new CustomEvent("conan:close-terminal")),
+    }).catch(() => {});
+  }, [theme, hudOpen, toggle]);
+
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
+    // Terminal-primary shell (US-003): no top toolbar — the Claude Code terminal
+    // fills the main area and the DevTools-style HUD docks to its right
+    // (drag-resizable, width persisted). View/theme/HUD controls live in the
+    // native macOS menu bar (installAppMenu above); the gateway status lives in
+    // the HUD tab bar. The HUD stays mounted when hidden so its tab state
+    // survives the toggle; terminals always stay mounted so ptys survive.
+    <div className="flex h-full bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-          Conan
-        </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs">
-          <ConnectionStatus status={status} port={health?.port ?? config?.port} />
-          <button
-            onClick={toggle}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            className="rounded-md border border-border px-2 py-1 text-muted-foreground hover:bg-muted"
-          >
-            {theme === "dark" ? "☾ Dark" : "☀ Light"}
-          </button>
-          <button
-            onClick={() => setHudOpen((v) => !v)}
-            title="Toggle the widget HUD"
-            className="rounded-md border border-border px-2 py-1 text-muted-foreground hover:bg-muted"
-          >
-            {hudOpen ? "Hide HUD" : "Show HUD"}
-          </button>
-        </div>
-      </header>
-
-      {/* Terminal-primary shell (US-003): the Claude Code terminal fills the
-          main area; the DevTools-style HUD docks to its right (drag-resizable,
-          width persisted). The HUD stays mounted when hidden so its tab state
-          survives the toggle; terminals always stay mounted so ptys survive. */}
-      <div className="flex min-h-0 flex-1">
-        <TerminalPane token={config?.token ?? null} theme={theme} />
-        <Hud
-          hidden={!hudOpen}
-          activeSession={activeSession}
-          data={widgetData}
-          usage={usage}
-          pulse={pulse}
-          pulseMinutes={pulseMinutes}
-          onPulseRange={setPulseMinutes}
-        />
-      </div>
+      <TerminalPane token={config?.token ?? null} theme={theme} />
+      <Hud
+        hidden={!hudOpen}
+        status={status}
+        port={health?.port ?? config?.port}
+        activeSession={activeSession}
+        data={widgetData}
+        usage={usage}
+        pulse={pulse}
+        pulseMinutes={pulseMinutes}
+        onPulseRange={setPulseMinutes}
+      />
     </div>
-  );
-}
-
-/**
- * Live WebSocket connection indicator (US-018). Reflects the self-healing app
- * socket: connected (green), connecting/reconnecting (amber, pulsing), or
- * offline (red) after backoff has given up reaching the gateway.
- */
-function ConnectionStatus({
-  status,
-  port,
-}: {
-  status: ConnStatus;
-  port?: number;
-}) {
-  const meta: Record<ConnStatus, { dot: string; text: string; label: string }> = {
-    connected: {
-      dot: "bg-primary",
-      text: "text-primary",
-      label: port ? `gateway :${port}` : "connected",
-    },
-    connecting: {
-      dot: "bg-amber-500 animate-pulse",
-      text: "text-muted-foreground",
-      label: "connecting…",
-    },
-    reconnecting: {
-      dot: "bg-amber-500 animate-pulse",
-      text: "text-muted-foreground",
-      label: "reconnecting…",
-    },
-    offline: {
-      dot: "bg-red-500",
-      text: "text-red-500",
-      label: "offline",
-    },
-  };
-  const m = meta[status];
-  return (
-    <span
-      title={`Gateway connection: ${status}`}
-      className={"inline-flex items-center gap-1.5 " + m.text}
-    >
-      <span className={"size-2 rounded-full " + m.dot} />
-      {m.label}
-    </span>
   );
 }

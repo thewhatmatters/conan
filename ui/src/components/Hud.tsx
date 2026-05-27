@@ -5,6 +5,7 @@ import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
+import type { ConnStatus } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
 // DevTools-style flat tab triggers (no pill shell, active = bg-muted) — matches
@@ -17,8 +18,11 @@ const MAX_W = 900;
 const WIDTH_KEY = "conan-hud-w";
 
 interface HudProps {
-  /** Hidden without unmounting (the header HUD toggle) — content state survives. */
+  /** Hidden without unmounting (the View ▾ HUD toggle) — content state survives. */
   hidden?: boolean;
+  /** Gateway WS connection status, shown in the tab bar (replaces the toolbar). */
+  status: ConnStatus;
+  port?: number;
   // — Context widget (session-scoped) —
   activeSession: Session | null;
   data: WidgetData | null;
@@ -38,6 +42,8 @@ interface HudProps {
  */
 export default function Hud({
   hidden,
+  status,
+  port,
   activeSession,
   data,
   usage,
@@ -82,7 +88,7 @@ export default function Hud({
 
       <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-          <TabsList className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0">
+          <TabsList className="h-auto justify-start gap-1 rounded-none bg-transparent p-0">
             <TabsTrigger value="context" className={TAB_TRIGGER}>
               Context
             </TabsTrigger>
@@ -93,6 +99,9 @@ export default function Hud({
               Pulse
             </TabsTrigger>
           </TabsList>
+          <div className="ml-auto pr-1">
+            <ConnectionStatus status={status} port={port} />
+          </div>
         </div>
 
         <TabsContent
@@ -120,5 +129,52 @@ export default function Hud({
         </TabsContent>
       </Tabs>
     </aside>
+  );
+}
+
+/**
+ * Live WebSocket connection indicator (US-018), now docked in the HUD tab bar
+ * rather than a top toolbar. Reflects the self-healing app socket: connected
+ * (green, "gateway :PORT"), connecting/reconnecting (amber, pulsing), or offline
+ * (red) after backoff has given up reaching the gateway.
+ */
+function ConnectionStatus({
+  status,
+  port,
+}: {
+  status: ConnStatus;
+  port?: number;
+}) {
+  const meta: Record<ConnStatus, { dot: string; text: string; label: string }> = {
+    connected: {
+      dot: "bg-primary",
+      text: "text-primary",
+      label: port ? `gateway :${port}` : "connected",
+    },
+    connecting: {
+      dot: "bg-amber-500 animate-pulse",
+      text: "text-muted-foreground",
+      label: "connecting…",
+    },
+    reconnecting: {
+      dot: "bg-amber-500 animate-pulse",
+      text: "text-muted-foreground",
+      label: "reconnecting…",
+    },
+    offline: {
+      dot: "bg-red-500",
+      text: "text-red-500",
+      label: "offline",
+    },
+  };
+  const m = meta[status];
+  return (
+    <span
+      title={`Gateway connection: ${status}`}
+      className={"inline-flex items-center gap-1.5 text-xs " + m.text}
+    >
+      <span className={"size-2 rounded-full " + m.dot} />
+      {m.label}
+    </span>
   );
 }

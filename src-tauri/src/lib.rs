@@ -30,6 +30,15 @@ pub fn run() {
         )?;
       }
 
+      // Pin the gateway's data dir to a stable, writable, per-user location.
+      // Without this, paths.ts derives DATA_DIR from the bundled gateway.cjs
+      // location — landing it inside the read-only .app bundle (wiped on every
+      // update) in release, and inside src-tauri/binaries in dev (split-brain
+      // with the repo-root .data). app_data_dir is the desktop-correct home
+      // (~/Library/Application Support/<bundle-id>) and survives updates.
+      let data_dir = app.path().app_data_dir()?;
+      std::fs::create_dir_all(&data_dir)?;
+
       // Spawn the bundled gateway sidecar. CONAN_PORT pins the loopback port the
       // webview's hard-coded base (ui/src/lib/gateway.ts) expects;
       // CONAN_ALLOWED_ORIGINS lets the WS upgrade accept the Tauri origin.
@@ -38,6 +47,7 @@ pub fn run() {
         .sidecar("conan-gateway")?
         .env("CONAN_PORT", "3747")
         .env("CONAN_ALLOWED_ORIGINS", ALLOWED_ORIGINS)
+        .env("CONAN_DATA_DIR", data_dir.to_string_lossy().to_string())
         // Arms the gateway's stdin-EOF watchdog: if this app dies/quits without
         // the ExitRequested kill landing (seen on macOS Apple-event quit), the
         // closed stdin pipe lets the sidecar self-terminate and free :3747.
