@@ -21,7 +21,7 @@
         "Verify in browser using automate-browser skill (a 1M-context session shows the correct low % in the Context widget)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "This is the finished-but-uncommitted US-013 follow-up, folded in as the first story (per the 2026-05-27 decision) — verify the behaviors hold and the tree is green; the runner commits it. The em-dash re-encoding noise in the old prd.json is superseded by this v4.3 rewrite. Suggested skills: automate-browser (confirm the Context % in the running UI)."
     },
     {
