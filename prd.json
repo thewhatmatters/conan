@@ -106,7 +106,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "docs/v4.2-research.md §4-6. Tremor Raw = copy-in (shadcn-style), Apache-2.0; deps recharts + tailwind-variants (clsx/tailwind-merge/radix already present). Chart tokens live in ui/src/index.css (~lines 36-40 light, 75-79 dark)."
     },
     {
