@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import type { PulseSeries, PulseCategory } from "../hooks/usePulse.ts";
+import { AreaChart } from "./charts/AreaChart.tsx";
+import type { AvailableChartColorsKeys } from "../lib/chartUtils.ts";
 
 type Range = { label: string; minutes: number };
 const RANGES: Range[] = [
@@ -11,15 +13,22 @@ const RANGES: Range[] = [
 
 /**
  * Activity categories the area stacks by (bottom → top), mapped 1:1 onto the
- * --color-chart-1..5 theme tokens (US-005). Mirrors PULSE_CATEGORIES on the
- * backend (src/pulse/index.ts).
+ * --color-chart-1..5 theme tokens (US-006 chartUtils). Mirrors PULSE_CATEGORIES
+ * on the backend (src/pulse/index.ts). The display `label` is the data key fed
+ * to the AreaChart so it doubles as the legend/tooltip label; `color` selects
+ * the matching themed chart color.
  */
-const CATEGORIES: { key: PulseCategory; label: string; varName: string }[] = [
-  { key: "tool", label: "Tools", varName: "--color-chart-1" },
-  { key: "assistant", label: "Assistant", varName: "--color-chart-2" },
-  { key: "prompt", label: "Prompts", varName: "--color-chart-3" },
-  { key: "session", label: "Session", varName: "--color-chart-4" },
-  { key: "other", label: "Other", varName: "--color-chart-5" },
+const CATEGORIES: {
+  key: PulseCategory;
+  label: string;
+  color: AvailableChartColorsKeys;
+  varName: string;
+}[] = [
+  { key: "tool", label: "Tools", color: "chart1", varName: "--color-chart-1" },
+  { key: "assistant", label: "Assistant", color: "chart2", varName: "--color-chart-2" },
+  { key: "prompt", label: "Prompts", color: "chart3", varName: "--color-chart-3" },
+  { key: "session", label: "Session", color: "chart4", varName: "--color-chart-4" },
+  { key: "other", label: "Other", color: "chart5", varName: "--color-chart-5" },
 ];
 
 interface PulseChartProps {
@@ -27,26 +36,21 @@ interface PulseChartProps {
   minutes: number;
   onRange: (minutes: number) => void;
   /**
-   * US-004: render as a flush bottom strip inside the Dock (shorter plot, no
-   * card chrome) instead of the standalone Overview panel.
+   * Render as a flush bottom strip inside the Dock (shorter plot, no card
+   * chrome) instead of the standalone HUD panel.
    */
   compact?: boolean;
 }
 
-const PAD_BOTTOM = 18; // room for the retry tick rail
-
 /**
- * US-016: the Pulse / throughput chart — a hand-rolled SVG stacked-area
- * time-series. Each band is an activity category (tool/assistant/prompt/...)
- * bucketed across all sessions over the selected window; the overlaid line is
- * token burn over the same window; red ticks on the bottom rail mark buckets
- * that contained an api_retry. Distinct from the snapshot hero cards (US-010).
- * Zero charting deps, semantic/chart tokens only; geometry is measured so the
- * SVG stays crisp at any width.
- *
- * US-004: lives pinned to the bottom of the Dock column (`compact`) and always
- * plots tokens — the tokens↔cost toggle was removed (cost is meaningless on a
- * token-based plan), though the underlying pulse payload still carries `cost`.
+ * US-007: the Pulse / throughput chart — migrated from a hand-rolled SVG to
+ * Tremor's stacked AreaChart (recharts-based) so it gains real tooltips, a
+ * legend, and responsive resizing while keeping its activity categories, time
+ * ranges, and token-token theming. Each band is an activity category
+ * (tool/assistant/prompt/...) bucketed across all sessions over the selected
+ * window, mapped onto --color-chart-1..5 via chartUtils so the palette matches
+ * in light + dark automatically. The usePulse buckets are reshaped into the
+ * flat per-bucket rows ({t, <category>: n, …}) the AreaChart consumes.
  */
 export default function PulseChart({
   series,
@@ -54,79 +58,29 @@ export default function PulseChart({
   onRange,
   compact = false,
 }: PulseChartProps) {
-  const H = compact ? 96 : 160; // plot height in px
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(720);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width;
-      if (w && w > 0) setWidth(w);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   const buckets = series?.buckets ?? [];
   const totals = series?.totals ?? { events: 0, retries: 0, tokens: 0, cost: 0 };
   const hasData = totals.events > 0 || totals.tokens > 0 || totals.cost > 0;
 
-  const plotH = H - PAD_BOTTOM;
-  const n = Math.max(1, buckets.length);
-  const bw = width / n;
-
-  // Tallest total-activity bucket sets the area's vertical scale.
-  const maxStack = Math.max(
-    1,
-    ...buckets.map((b) => b.events),
-  );
-
-  // Build one filled <polygon> per category by walking the running stack base
-  // bucket-by-bucket: the band's top edge is left→right, its bottom edge is the
-  // previous bands' cumulative total drawn right→left to close the shape.
-  const bandPolys = useMemo(() => {
-    const xAt = (i: number) => i * bw + bw / 2;
-    const yAt = (v: number) => plotH - (v / maxStack) * (plotH - 6);
-    const running = buckets.map(() => 0); // cumulative height below current band
-
-    return CATEGORIES.map(({ key, varName }) => {
-      const tops: string[] = [];
-      const bottoms: string[] = [];
-      let any = false;
-      buckets.forEach((b, i) => {
-        const base = running[i] ?? 0;
-        const top = base + (b.types?.[key] ?? 0);
-        if (b.types?.[key]) any = true;
-        const x = xAt(i).toFixed(1);
-        tops.push(`${x},${yAt(top).toFixed(1)}`);
-        bottoms.push(`${x},${yAt(base).toFixed(1)}`);
-        running[i] = top;
-      });
-      // Anchor the band to the baseline at both ends so single-point series
-      // (n===1) and edges still render as a visible shape.
-      const points = [...tops, ...bottoms.reverse()].join(" ");
-      return { key, varName, points, any };
+  // Reshape the per-category bucket breakdown into flat rows keyed by the
+  // display labels, with a time-of-day index label for the X axis. Sub-hour
+  // windows show seconds-free HH:MM; the same key set is the chart's categories.
+  const data = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
     });
-  }, [buckets, bw, plotH, maxStack]);
+    return buckets.map((b) => {
+      const row: Record<string, number | string> = { t: fmt.format(b.t) };
+      for (const c of CATEGORIES) row[c.label] = b.types?.[c.key] ?? 0;
+      return row;
+    });
+  }, [buckets]);
 
-  // Token overlay line, on its own scale.
-  const lineVals = buckets.map((b) => b.tokens);
-  const maxLine = Math.max(0, ...lineVals);
-  const linePts =
-    maxLine > 0
-      ? buckets
-          .map((b, i) => {
-            const v = b.tokens;
-            const x = i * bw + bw / 2;
-            const y = plotH - (v / maxLine) * (plotH - 8);
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          })
-          .join(" ")
-      : "";
-
-  // Per-category totals for the legend.
+  // Per-category totals for the footer summary; also which categories actually
+  // carried activity in this window (drives the chart's plotted categories so
+  // empty bands don't clutter the legend).
   const typeTotals = useMemo(() => {
     const acc: Record<PulseCategory, number> = {
       tool: 0,
@@ -140,12 +94,17 @@ export default function PulseChart({
     return acc;
   }, [buckets]);
 
+  const activeCategories = CATEGORIES.filter((c) => typeTotals[c.key] > 0);
+  const categories = activeCategories.map((c) => c.label);
+  const colors = activeCategories.map((c) => c.color);
+
   return (
     <section
       className={
-        compact
+        "flex h-full flex-col " +
+        (compact
           ? "border-t border-border bg-card px-3 py-2"
-          : "rounded-xl border border-border bg-card p-4"
+          : "rounded-xl border border-border bg-card p-4")
       }
     >
       <div
@@ -179,82 +138,31 @@ export default function PulseChart({
         </div>
       </div>
 
-      <div ref={wrapRef} className="relative w-full">
-        {hasData ? (
-          <svg
-            width={width}
-            height={H}
-            viewBox={`0 0 ${width} ${H}`}
-            className="block"
-            role="img"
-            aria-label="Activity by type and token/cost over time"
-          >
-            {/* Baseline. */}
-            <line
-              x1="0"
-              y1={plotH}
-              x2={width}
-              y2={plotH}
-              className="stroke-border"
-              strokeWidth="1"
-            />
-            {/* Stacked activity bands, one filled polygon per category. */}
-            {bandPolys.map((band) =>
-              band.any ? (
-                <polygon
-                  key={band.key}
-                  points={band.points}
-                  fill={`var(${band.varName})`}
-                  fillOpacity={0.78}
-                  stroke={`var(${band.varName})`}
-                  strokeWidth="1"
-                  strokeLinejoin="round"
-                />
-              ) : null,
-            )}
-            {/* Token / cost overlay line. */}
-            {linePts && (
-              <polyline
-                points={linePts}
-                fill="none"
-                className="stroke-foreground"
-                strokeOpacity={0.55}
-                strokeWidth="1.5"
-                strokeDasharray="3 2"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            )}
-            {/* api_retry rail: a red tick under each bucket that retried. */}
-            {buckets.map((b, i) =>
-              b.retries > 0 ? (
-                <rect
-                  key={`r${i}`}
-                  x={i * bw + bw * 0.15}
-                  y={plotH + 4}
-                  width={Math.max(1, bw * 0.7)}
-                  height="4"
-                  rx="1"
-                  className="fill-destructive"
-                >
-                  <title>api_retry</title>
-                </rect>
-              ) : null,
-            )}
-          </svg>
+      <div className="min-h-0 flex-1">
+        {hasData && categories.length > 0 ? (
+          <AreaChart
+            className="h-full min-h-48 w-full"
+            data={data}
+            index="t"
+            categories={categories}
+            colors={colors}
+            type="stacked"
+            showYAxis={!compact}
+            showLegend
+            startEndOnly={compact}
+            valueFormatter={(v) => String(v)}
+            yAxisWidth={40}
+          />
         ) : (
-          <div
-            style={{ height: H }}
-            className="flex items-center justify-center text-xs text-muted-foreground"
-          >
+          <div className="flex h-full min-h-48 items-center justify-center text-xs text-muted-foreground">
             No activity in this window yet.
           </div>
         )}
       </div>
 
-      {/* Summary footer + per-category legend. */}
+      {/* Summary footer + per-category legend swatches. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {CATEGORIES.filter((c) => typeTotals[c.key] > 0).map((c) => (
+        {activeCategories.map((c) => (
           <span key={c.key} className="inline-flex items-center gap-1.5">
             <span
               className="size-2 rounded-sm"
@@ -264,7 +172,6 @@ export default function PulseChart({
           </span>
         ))}
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0 w-3 border-t border-dashed border-foreground/55" />
           {fmtTokens(totals.tokens)} tokens
         </span>
         {totals.retries > 0 && (

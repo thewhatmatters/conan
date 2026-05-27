@@ -123,7 +123,7 @@
         "Verify with automate-browser at http://localhost:5173 in BOTH light and dark that the Pulse area chart renders with correct colors, legend, tooltip on hover, and range switching"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "docs/v4.2-research.md §5. The token-overlay line + api_retry rail can stay as a thin hand-rolled SVG overlay on top of the AreaChart if worth keeping, or drop if Tremor's tooltip covers it. usePulse + the /api/claude/pulse shape are unchanged."
     },
     {
