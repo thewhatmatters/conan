@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
+import StatusBar from "./StatusBar.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
+import type { ConnStatus } from "../hooks/useTasks.ts";
+import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
@@ -13,6 +16,14 @@ const TAB_TRIGGER =
 interface TerminalPaneProps {
   token: string | null;
   theme: Theme;
+  /** App-wide active cwd for the bottom status bar (US-010). */
+  cwd?: string | null;
+  /** Active session's git branch/dirty for the status bar (US-010). */
+  git?: WidgetData["git"] | null;
+  /** Gateway WS status for the status bar — moved out of the HUD (US-010). */
+  status: ConnStatus;
+  /** Gateway port, shown when connected. */
+  port?: number;
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
@@ -57,7 +68,14 @@ function persistTerms(terms: TermTab[]): void {
  * terminal owns its own pty + WS keyed by a stable `tid`; closing a tab kills
  * that pty (and its terminal_session row) via an explicit close frame.
  */
-export default function TerminalPane({ token, theme }: TerminalPaneProps) {
+export default function TerminalPane({
+  token,
+  theme,
+  cwd,
+  git,
+  status,
+  port,
+}: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
   // Per-tab Claude session info, so a notification click can jump to the tab
@@ -220,6 +238,8 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
           </div>
         )}
       </div>
+
+      <StatusBar cwd={cwd} git={git} status={status} port={port} />
     </section>
   );
 }

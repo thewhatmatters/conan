@@ -143,15 +143,21 @@ export default function App() {
     // fills the main area and the DevTools-style HUD docks to its right
     // (drag-resizable, width persisted). View/theme/HUD controls live in the
     // native macOS menu bar (installAppMenu above); the gateway status lives in
-    // the HUD tab bar. The HUD stays mounted when hidden so its tab state
+    // the TerminalPane's bottom status bar now (US-010). The HUD stays mounted
+    // when hidden so its tab state
     // survives the toggle; terminals always stay mounted so ptys survive.
     <div className="flex h-full bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <TerminalPane token={config?.token ?? null} theme={theme} />
-      <Hud
-        hidden={!hudOpen}
+      <TerminalPane
+        token={config?.token ?? null}
+        theme={theme}
+        cwd={config?.cwd ?? null}
+        git={widgetData?.git ?? null}
         status={status}
         port={health?.port ?? config?.port}
+      />
+      <Hud
+        hidden={!hudOpen}
         activeSession={activeSession}
         sessions={sessions}
         data={widgetData}

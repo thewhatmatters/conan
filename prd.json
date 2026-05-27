@@ -160,7 +160,7 @@
         "Verify in browser using automate-browser skill (cwd/branch render; gateway chip reflects connect/disconnect; light + dark)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Decision 2026-05-27: bottom bar (Option B), not an ASCII header. Suggested skills: automate-browser."
     },
     {

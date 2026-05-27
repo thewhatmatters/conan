@@ -9,7 +9,7 @@ import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
 import type { PlanState } from "../hooks/usePlan.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
-import type { ConnStatus, TasksState } from "../hooks/useTasks.ts";
+import type { TasksState } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
 // DevTools-style flat tab triggers (no pill shell, active = bg-muted) — matches
@@ -24,9 +24,6 @@ const WIDTH_KEY = "conan-hud-w";
 interface HudProps {
   /** Hidden without unmounting (the View ▾ HUD toggle) — content state survives. */
   hidden?: boolean;
-  /** Gateway WS connection status, shown in the tab bar (replaces the toolbar). */
-  status: ConnStatus;
-  port?: number;
   // — Context widget (session-scoped) —
   activeSession: Session | null;
   /** All known sessions — lets the Context estimate infer a 1M window. */
@@ -60,8 +57,6 @@ interface HudProps {
  */
 export default function Hud({
   hidden,
-  status,
-  port,
   activeSession,
   sessions,
   data,
@@ -137,9 +132,6 @@ export default function Hud({
               Skills
             </TabsTrigger>
           </TabsList>
-          <div className="ml-auto shrink-0 pl-1 pr-1">
-            <ConnectionStatus status={status} port={port} />
-          </div>
         </div>
 
         <TabsContent
@@ -192,52 +184,5 @@ export default function Hud({
         </TabsContent>
       </Tabs>
     </aside>
-  );
-}
-
-/**
- * Live WebSocket connection indicator (US-018), now docked in the HUD tab bar
- * rather than a top toolbar. Reflects the self-healing app socket: connected
- * (green, "gateway :PORT"), connecting/reconnecting (amber, pulsing), or offline
- * (red) after backoff has given up reaching the gateway.
- */
-function ConnectionStatus({
-  status,
-  port,
-}: {
-  status: ConnStatus;
-  port?: number;
-}) {
-  const meta: Record<ConnStatus, { dot: string; text: string; label: string }> = {
-    connected: {
-      dot: "bg-primary",
-      text: "text-primary",
-      label: port ? `gateway :${port}` : "connected",
-    },
-    connecting: {
-      dot: "bg-amber-500 animate-pulse",
-      text: "text-muted-foreground",
-      label: "connecting…",
-    },
-    reconnecting: {
-      dot: "bg-amber-500 animate-pulse",
-      text: "text-muted-foreground",
-      label: "reconnecting…",
-    },
-    offline: {
-      dot: "bg-red-500",
-      text: "text-red-500",
-      label: "offline",
-    },
-  };
-  const m = meta[status];
-  return (
-    <span
-      title={`Gateway connection: ${status}`}
-      className={"inline-flex items-center gap-1.5 text-xs " + m.text}
-    >
-      <span className={"size-2 rounded-full " + m.dot} />
-      {m.label}
-    </span>
   );
 }
