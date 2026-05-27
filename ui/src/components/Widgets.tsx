@@ -88,7 +88,7 @@ export function ContextWidget({
       type="button"
       onClick={refresh}
       disabled={refreshing}
-      title="Run /context in the live terminal and capture the exact breakdown"
+      title="Run /context in the live terminal and capture the exact breakdown — note: each refresh consumes a few thousand tokens of context"
       className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
     >
       {refreshing ? "capturing…" : "↻ /context"}
@@ -230,6 +230,12 @@ function LiveContextView({
           </div>
         ))}
       </div>
+      {/* Honest cost (US-002): a /context refresh injects into the session and
+          itself consumes context, so auto-refresh is delta-triggered, not per-turn. */}
+      <p className="mt-2 text-[10px] leading-tight text-muted-foreground/70">
+        Refreshing runs /context in the session and consumes a few thousand
+        tokens; auto-refresh only fires when context has moved a lot.
+      </p>
     </StatCard>
   );
 }

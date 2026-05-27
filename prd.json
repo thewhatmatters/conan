@@ -38,7 +38,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Observer-effect fix (a /context dump is ~4-6k tokens). Refines US-001's autoRefreshContextOnStop. Settled: a hidden/background window can't report the visible session's context (different process). Long-term alternative noted in the backlog: compute the breakdown ourselves and drop the inject. Suggested skills: automate-browser."
     },
     {

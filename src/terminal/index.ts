@@ -10,6 +10,12 @@ import {
   cacheCapturedContext,
   getCapturedContext,
 } from "../context/index.js";
+import {
+  shouldAutoRefreshContext,
+  getContextGrowth,
+  resetContextGrowth,
+  CONTEXT_MIN_SPACING_MS,
+} from "../context/autorefresh.js";
 import { parseUsageFrame, parseUsageSession, cacheCapturedUsage } from "../usage/probe.js";
 
 const DEFAULT_SHELL =
@@ -254,30 +260,41 @@ export function injectContextRefresh(sessionId: string): boolean {
   }
 }
 
-/** Min spacing between auto `/context` injections per session (US-009 fix). */
-const CONTEXT_AUTOREFRESH_MS = 90_000;
 /** Off when CONAN_CONTEXT_AUTOREFRESH=0 (the auto-inject prints to the pty). */
 const CONTEXT_AUTOREFRESH_ENABLED =
   process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";
 const lastAutoContextRefresh = new Map<string, number>();
 
 /**
- * Auto-refresh `/context` when a turn completes (the Stop hook). Heavily
- * throttled because the inject prints the full /context table into the user's
- * terminal: at most once per CONTEXT_AUTOREFRESH_MS per session, and skipped when
- * a fresh capture already exists (context barely moves turn-to-turn). No-op when
- * disabled or when the session has no live correlated pty (injectContextRefresh
- * returns false). Returns whether an inject was issued.
+ * Adaptive auto-refresh of `/context` on a turn boundary (the Stop hook) — US-002.
+ * Instead of refreshing every turn, the inject (which itself costs ~4-6k tokens)
+ * fires only when {@link shouldAutoRefreshContext} says context has likely moved
+ * a lot: enough accumulated output since the last capture, bounded by a hard
+ * floor (min spacing) and a ceiling (refresh eventually even on small deltas).
+ *
+ * A passive capture (user ran /context) within the floor also short-circuits —
+ * context was just measured, so no inject is needed. No-op when disabled or when
+ * the session has no live correlated pty (injectContextRefresh returns false).
+ * Returns whether an inject was issued. On a successful inject the per-session
+ * output accumulator is reset so the next delta is measured from here.
  */
 export function autoRefreshContextOnStop(sessionId: string): boolean {
   if (!CONTEXT_AUTOREFRESH_ENABLED) return false;
   const now = Date.now();
-  if (now - (lastAutoContextRefresh.get(sessionId) ?? 0) < CONTEXT_AUTOREFRESH_MS)
-    return false;
+  // A recent passive capture already measured context within the floor window.
   const cap = getCapturedContext(sessionId);
-  if (cap && now - cap.capturedAt < CONTEXT_AUTOREFRESH_MS) return false;
+  if (cap && now - cap.capturedAt < CONTEXT_MIN_SPACING_MS) return false;
+  const decision = shouldAutoRefreshContext({
+    now,
+    lastRefreshAt: lastAutoContextRefresh.get(sessionId) ?? 0,
+    deltaBytes: getContextGrowth(sessionId),
+  });
+  if (!decision) return false;
   const issued = injectContextRefresh(sessionId);
-  if (issued) lastAutoContextRefresh.set(sessionId, now);
+  if (issued) {
+    lastAutoContextRefresh.set(sessionId, now);
+    resetContextGrowth(sessionId);
+  }
   return issued;
 }
 

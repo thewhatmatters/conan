@@ -82,6 +82,39 @@ try {
   );
   check("used over 200k forces 1M (window must be larger)", tx.resolveContextWindow(null, 243_000, []) === M);
   check("null model, low used -> 200k default", tx.resolveContextWindow(null, 10_000, []) === K);
+
+  // --- adaptive /context auto-refresh decision (US-002) -------------------
+  const ar = await import("../src/context/autorefresh.ts");
+  const MIN = 90_000; // hard floor
+  const MAX = 600_000; // ceiling
+  const THRESH = 40_000; // delta bytes
+  const opts = { minSpacingMs: MIN, maxSpacingMs: MAX, deltaThresholdBytes: THRESH };
+  const decide = (lastRefreshAt, elapsed, deltaBytes) =>
+    ar.shouldAutoRefreshContext({ now: lastRefreshAt + elapsed, lastRefreshAt, deltaBytes, ...opts });
+
+  // Floor: within the min spacing, never refresh — even on a huge delta.
+  check("floor: too soon, big delta -> no refresh", decide(1_000, MIN - 1, 10 * THRESH) === false);
+  check("floor: too soon, zero delta -> no refresh", decide(1_000, 0, 0) === false);
+  // Threshold: past the floor, only a delta over the threshold triggers.
+  check("delta: past floor, under threshold -> no refresh", decide(1_000, MIN + 1, THRESH - 1) === false);
+  check("delta: past floor, at threshold -> refresh", decide(1_000, MIN + 1, THRESH) === true);
+  // Ceiling: past the max spacing, refresh even with a tiny delta.
+  check("ceiling: past max, zero delta -> refresh", decide(1_000, MAX, 0) === true);
+  check("ceiling: never refreshed (huge elapsed) -> refresh", decide(0, MAX + 1, 0) === true);
+  // Defaults are exported and sane (floor < ceiling, positive threshold).
+  check("exported floor < ceiling", ar.CONTEXT_MIN_SPACING_MS < ar.CONTEXT_MAX_SPACING_MS);
+  check("exported delta threshold positive", ar.CONTEXT_DELTA_BYTES > 0);
+
+  // --- per-session output accumulator (US-002) ----------------------------
+  check("growth starts at 0", ar.getContextGrowth("acc-x") === 0);
+  ar.recordContextGrowth("acc-x", 1_000);
+  ar.recordContextGrowth("acc-x", 500);
+  check("growth accumulates", ar.getContextGrowth("acc-x") === 1_500);
+  ar.recordContextGrowth("acc-x", -5); // invalid: ignored
+  ar.recordContextGrowth("", 999); // no session: ignored
+  check("growth ignores invalid/empty", ar.getContextGrowth("acc-x") === 1_500);
+  ar.resetContextGrowth("acc-x");
+  check("reset clears growth", ar.getContextGrowth("acc-x") === 0);
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

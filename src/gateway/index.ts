@@ -19,6 +19,7 @@ import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage
 import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { startReaper } from "../session/reaper.js";
+import { recordContextGrowth } from "../context/autorefresh.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -106,6 +107,26 @@ function authed(req: express.Request, res: express.Response): boolean {
   return true;
 }
 
+/** Byte size of a value as it contributes to context (string as-is, else JSON). */
+function valueBytes(v: unknown): number {
+  if (v == null) return 0;
+  if (typeof v === "string") return Buffer.byteLength(v);
+  try {
+    return Buffer.byteLength(JSON.stringify(v));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Output bytes a hook payload contributes to the session's context (US-002):
+ * the tool_response (the bulk of context growth) plus any assistant message
+ * text the payload carries. Used to drive the adaptive /context auto-refresh.
+ */
+function payloadOutputBytes(payload: Record<string, unknown>): number {
+  return valueBytes(payload.tool_response) + valueBytes(payload.message);
+}
+
 // Ingest a Claude Code lifecycle event (US-003). Posted by the hook scripts in
 // .claude/hooks; persisted to SQLite and broadcast over /ws (US-005).
 const IDLE_EVENTS = new Set(["Stop", "SessionEnd"]);
@@ -173,9 +194,19 @@ app.post("/api/claude/events", (req, res) => {
   };
   broadcast({ type: "event", payload: event });
 
-  // On turn completion, refresh the live /context capture so the Context widget
-  // stays current with the exact (1M-aware) window + breakdown. Throttled and
-  // safe when the session has no live pty (US-009 follow-up).
+  // Feed the adaptive /context auto-refresh accumulator (US-002): tool outputs
+  // are the dominant driver of context growth between turns, so we size each
+  // PostToolUse's tool_response (+ any assistant message text the payload
+  // carries). The Stop handler then decides — from this delta plus a time
+  // floor/ceiling — whether context has likely moved enough to be worth a
+  // (token-costly) /context inject, instead of refreshing on every turn.
+  if (hookEvent === "PostToolUse" && payload) {
+    recordContextGrowth(sessionId, payloadOutputBytes(payload));
+  }
+
+  // On turn completion, adaptively refresh the live /context capture so the
+  // Context widget stays current with the exact (1M-aware) window + breakdown —
+  // delta-triggered (US-002), and safe when the session has no live pty.
   if (hookEvent === "Stop") autoRefreshContextOnStop(sessionId);
 
   res.json({ ok: true, id: event.id });
