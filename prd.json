@@ -1,229 +1,179 @@
 {
-  "project": "Conan \u2014 Claude Code dashboard (v4: QA polish + live in-cwd app preview)",
-  "branchName": "loop/conan-v4",
-  "description": "v4 folds the six items QA logged against the shipped v3 build (docs/v4-backlog.md) into a fresh build loop: finish the shadcn migration v3 started, make the Context widget and permission flow honest, relocate Pulse, and add the marquee feature \u2014 run the project in Conan's current cwd and see it rendered live via a same-origin reverse proxy (Replit-style, not WebContainers). Decisions + re-verified anchors: docs/v4-research.md. Stories are dependency-ordered (shared components -> consumers; backend -> proxy -> UI) and sequenced to avoid migrate-then-rewrite churn.",
+  "project": "Conan — v4.1: Tauri terminal-wrapper for Claude Code (beefed-up TUI)",
+  "branchName": "loop/conan-v4.1",
+  "description": "v4.1 pivots Conan from a sprawling web dashboard to a terminal-primary native desktop app: the Claude Code terminal as the main surface, with a DevTools-style widget HUD (exactly two widgets to start — Context (session) + Usage (global) — plus the Pulse graph), shipped via Tauri v2 with the existing Node gateway running as a Tauri sidecar. Stories are dependency-ordered: first STRIP the v2/v3 IA (sidebar nav + route views, then the timeline-primary Overview) keeping the build green at each step, then RESHAPE to terminal-primary + the HUD, then add the Tauri shell and package the gateway sidecar. Source: docs/v4.1-backlog.md + prd-claude-code-dashboard.md (## v4.1). Tauri/native-module packaging research (the dominant risk): docs/v4.1-research.md. The preview/build feature was already removed in QA before this loop.",
   "generatedAt": "2026-05-26",
-  "sourcePrd": "prd-claude-code-dashboard.md (## v4 section) + docs/v4-backlog.md + docs/v4-research.md",
+  "sourcePrd": "prd-claude-code-dashboard.md (## v4.1 section) + docs/v4.1-backlog.md + docs/v4.1-research.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Extract shared UI patterns into reusable components (SortToggle, status dot, two-tier card, time-ago, scope badge)",
-      "description": "As a developer, I need v3's repeated bespoke patterns lifted into shared components so the rest of v4 (transcript sort, shadcn migration, widgets) consumes one implementation instead of copies.",
+      "title": "Strip the sidebar nav + all route-based views (Settings/Agents/Skills/Plugins/Checkpoints/PromptHistory/WhatsNew/CodeReview)",
+      "description": "As the product owner, I want the multi-page dashboard IA gone so Conan collapses to a single terminal-focused view — the first subtraction toward the terminal-wrapper product.",
       "acceptanceCriteria": [
-        "Extract SortToggle (currently a private function in ActivityTimeline.tsx:319-339, with SortDir type at :313) into a shared component module under ui/src/components/ (e.g. shared/SortToggle.tsx) and re-wire ActivityTimeline to import it \u2014 no behavior change to the timeline",
-        "Componentize the remaining repeated patterns named in v4-backlog item 2: a status dot, the two-tier card shell (bg-muted shell + bg-card inner), a time-ago label, and a scope badge \u2014 each as a small shared component using semantic tokens only",
-        "Replace at least the existing inline duplicates of these patterns with the shared components so adoption is real (not just new files sitting unused)",
-        "No visual regression in ActivityTimeline or any component touched",
+        "Remove the Sidebar and all route-view rendering from ui/src/App.tsx (the route switch at App.tsx ~:280-324): delete the route branches and the <Sidebar> render; App renders only the Overview block (Widgets + timeline) for now — that block is removed in US-002",
+        "Delete the now-orphaned view components under ui/src/components/: Sidebar.tsx, SettingsView.tsx, AgentsView.tsx, SkillsView.tsx, PluginsView.tsx, CheckpointsView.tsx, PromptHistoryView.tsx, WhatsNewView.tsx, UltrareviewView.tsx, DoctorBanner.tsx, HooksCoveragePanel.tsx",
+        "Delete the hooks that become imported-by-nothing after the above: useRoute, useSettings, useChangelog, useDoctor, useUltrareview, useAgents, usePlugins, useCheckpoints, usePromptHistory, useHooksCoverage (verify each is unreferenced before deleting; the build is the safety net)",
+        "Remove the now-dead state/props in App.tsx (route/navigate, sidebarCollapsed/toggleSidebar, whatsNewBadge, changelog/doctor/ultrareview wiring) and any nav-only header controls",
+        "No dangling imports; the app still loads and the terminal dock still works",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill that the timeline sort toggle and any restyled cards/badges render unchanged"
+        "Verify in browser using automate-browser skill that the app loads with no sidebar and no console errors, and the terminal still opens"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Foundation for US-002 (transcript sort reuses SortToggle) and the shadcn slices. SortToggle is NOT currently exported. Keep semantic theme tokens only. Suggested skills: shadcn, frontend-design, automate-browser."
+      "passes": false,
+      "notes": "First strip story. useTasks/useGateway, useSessions, usePulse, useTerminals, useUsage, useTheme all STAY (needed downstream). Don't delete shared/ primitives. Run the loop agent OUTSIDE the in-dock session (footgun #1: editing src/* under tsx watch kills ptys) — though this story only touches ui/. Suggested skills: shadcn, automate-browser."
     },
     {
       "id": "US-002",
-      "title": "Transcript view: newest/oldest-first sort toggle (reuse shared SortToggle)",
-      "description": "As a user, I want the Transcript tab to have the same sort control the Activity timeline has, so I can flip newest/oldest-first instead of being stuck in fixed order.",
+      "title": "Strip the timeline-primary Overview (ActivityTimeline, Transcript, SessionBar, PendingApprovals)",
+      "description": "As the product owner, I want the activity-timeline Overview removed so the main area is free for the terminal-primary layout — no timeline page in the terminal wrapper.",
       "acceptanceCriteria": [
-        "TranscriptViewer.tsx (renders state.messages in fixed order at ~:33, no sort UI) gains a sortDir state defaulting to newest-first (desc)",
-        "Use the shared SortToggle extracted in US-001 \u2014 do not re-implement it",
-        "Display order reverses with the toggle, with a stable tie-break on ts then uuid",
+        "Remove the Overview section from ui/src/App.tsx: the <SessionBar>, the activity/transcript tab toggle (App.tsx ~:359-385), <ActivityTimeline>, <TranscriptViewer>, and <PendingApprovals>, plus the postDecision/decidePermission handlers and the timeline selectedId/detailTab/userPicked plumbing",
+        "Delete the orphaned components: ActivityTimeline.tsx, TranscriptViewer.tsx, SessionBar.tsx, PendingApprovals.tsx",
+        "Delete the hooks that become unreferenced: useSessionEvents, useTranscript, useSubagents, usePendingPermissions (verify unreferenced first)",
+        "Keep the Widgets row and the Dock mounted for now — they are reshaped in US-003/US-004; the app must still render and the terminal still work",
+        "Keep useSessions (the Context widget still needs the active session) and the pty/session correlation (useTerminals + activeSession derivation)",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill that toggling reorders transcript messages and defaults to newest-first"
+        "Verify in browser using automate-browser skill that the Overview timeline/transcript/session controls are gone, the app loads clean, and the terminal still opens"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "v4-backlog item 5. Default newest-first per the ask (latest turn on top). Depends on US-001. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Second strip. After this App.tsx's main area is just <Widgets> (trimmed in US-004) + <Dock>. ALL_SESSIONS export lived in useSessionEvents — move any still-needed constant or inline it. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
-      "title": "Migrate Dock.tsx controls to shadcn primitives (Term dropdown + Terminal|Tasks tabs)",
-      "description": "As a developer, I need the dock's hand-rolled controls on accessible shadcn primitives so keyboard/focus behavior is consistent and later dock work (Pulse strip, Preview tab) builds on real tabs.",
+      "title": "Reshape to a terminal-primary layout with a DevTools-style HUD panel",
+      "description": "As a user, I want the Claude Code terminal to be the primary surface with a docked, tabbed HUD panel beside it (DevTools-style), so Conan feels like a beefed-up TUI rather than a web dashboard.",
       "acceptanceCriteria": [
-        "Replace the raw Term dropdown buttons in Dock.tsx (~:282 and the TermDropdown around :236-349) with ui/dropdown-menu, preserving the session name+ID display and selection behavior",
-        "Replace the raw Terminal|Tasks tab buttons (TabButton ~:351-373, raw buttons ~:308/325/336/361) with ui/tabs",
-        "Drag-resize, show/hide, and pty-survival behavior are unchanged",
-        "Semantic tokens only; no visual regression vs current dock",
+        "Rework the layout so the xterm terminal is the primary pane filling the main area (not a toggled side dock); keep the Term ▾ dropdown for multiple terminals and pty-survival/show-hide behavior (US-037 semantics: hide is visual, never kill)",
+        "Introduce a docked, drag-resizable HUD panel (DevTools-style tab bar) adjacent to the terminal (right or bottom — pick one, persist the size in localStorage as the dock does today); the HUD's tab content is wired in US-004",
+        "Remove the Tasks tab + TaskChecklist from the layout (the build-loop task list is not part of the terminal-wrapper); keep the app WS (useGateway/useTasks data feed) since Pulse + events depend on it",
+        "Trim the header to the essentials (theme toggle + gateway connection status); remove leftover dashboard chrome",
+        "Migrate/replace Dock.tsx into the new terminal-primary shell using shadcn tabs primitives; semantic theme tokens only",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill: open the Term dropdown, switch Terminal/Tasks tabs, and drag-resize the dock"
+        "Verify in browser using automate-browser skill that the terminal fills the primary area, the HUD panel docks + drag-resizes, and the Term dropdown still switches terminals"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "v4-backlog item 2 (Dock slice). dropdown-menu + tabs are each imported only once today (shallow adoption). Do NOT edit src/gateway/* or src/terminal/* from an in-dock session (footgun #1). Suggested skills: shadcn, automate-browser."
+      "passes": false,
+      "notes": "Dock.tsx currently holds Terminal+Tasks tabs + a pinned Pulse strip and a right-side width drag handle (conan-dock-w). Reuse that resize/persistence machinery for the HUD. Keep Terminal.tsx and PulseChart.tsx. Footgun #1: don't edit src/terminal/* from an in-dock session. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
       "id": "US-004",
-      "title": "Relocate Pulse into the dock as a global bottom strip; remove tokens/cost toggle",
-      "description": "As a user, I want the Pulse activity chart docked alongside the terminal where 'is anything happening' context belongs, not floating in the Overview, and without a cost toggle that's meaningless on a token-based plan.",
+      "title": "Widget HUD: exactly Context (session) + Usage (global) tabs + the Pulse graph; remove the rest",
+      "description": "As a user, I want the HUD to show just the two starting widgets — Context (session) and Usage (global) — plus the Pulse activity graph, so the at-a-glance view is sharp and uncluttered.",
       "acceptanceCriteria": [
-        "Move PulseChart from its standalone Overview section (App.tsx:316, below PendingApprovals) into the right-side Dock as a pinned strip at the BOTTOM of the dock column (its own strip, not a third tab)",
-        "Remove the tokens<->cost toggle (PulseChart.tsx:142-158); render tokens/activity only",
-        "Pulse stays GLOBAL across all sessions (keep consuming the global src/pulse payload; do not scope to the active session)",
-        "Do not break src/pulse payload consumers \u2014 stop rendering the cost field, leave the payload shape intact",
-        "Coexists with the Terminal|Tasks tabs + drag-resize without layout breakage",
+        "Trim Widgets.tsx to exactly the Context and Usage cells; render them as two HUD tabs (DevTools-style) and the existing PulseChart as a third tab or pinned strip",
+        "Remove the other widget cells (Sessions, Skills, MCP, Model & idle, Git, Last-session metrics, Stats/heatmap), the WidgetPicker cog, and the horizontal scroll/paging carousel",
+        "Delete the hooks that become unreferenced: useSkills, useMcp, useStats, useWidgetPrefs, useCwdGit, useProjectMetrics (verify first); remove ScopeBadge usage if it is now orphaned (it keyed off widget scope)",
+        "Keep useWidgets (Context breakdown/usage), useUsage (plan utilization + approximation), usePulse, and useSessions (active-session binding) wired to the surviving widgets; the Context widget keeps binding to the pty-correlated active session and the Usage widget keeps its real-scrape/approx honesty",
+        "Semantic theme tokens only; no hard-coded colors",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill that Pulse renders at the bottom of the dock and the cost toggle is gone"
+        "Verify in browser using automate-browser skill that the HUD shows Context + Usage + Pulse only, each renders real data (or an honest empty state), and switching HUD tabs works"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "v4-backlog item 1. Builds on US-003 (migrated dock). Pulse is global (v3 kept it so). Suggested skills: shadcn, frontend-design, automate-browser."
+      "passes": false,
+      "notes": "Context + Usage cells live in Widgets.tsx (ContextWidget ~:312, UsageWidget ~:743) — lift them out cleanly. WIDGET_KEYS/WIDGET_SCOPE/useWidgetPrefs drove the picker; collapse to the two fixed widgets. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Migrate SessionBar + Sidebar controls to shadcn primitives",
-      "description": "As a developer, I need the remaining bespoke navigation/selection controls on shadcn primitives to finish the migration v3 started (PendingApprovals is handled in US-008's rewrite).",
+      "title": "Scaffold Tauri v2 at the repo root, wired to the existing Vite UI",
+      "description": "As a developer, I want a Tauri v2 project at the repo root so Conan can run as a native desktop window reusing the existing React + xterm UI.",
       "acceptanceCriteria": [
-        "Replace the bespoke session picker in SessionBar.tsx (raw buttons ~:221/272/279) with ui/select or ui/dropdown-menu, preserving the session \u25be selection behavior",
-        "Replace Sidebar.tsx nav/toggle raw buttons (~:48/68) with ui/button",
-        "No visual regression; semantic tokens only",
-        "Update the CLAUDE.md/memory note so it reflects 'shadcn adopted, migration completed in v4' (not 'in progress')",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill: switch sessions via SessionBar and navigate via the sidebar"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "v4-backlog item 2 (SessionBar+Sidebar slice). PendingApprovals intentionally excluded \u2014 it is rewritten in US-008. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-006",
-      "title": "Fix Context widget: bind to the live pty-correlated session + render total %",
-      "description": "As a user, I want the Context widget to show real usage for the session I'm actually running, instead of reading 'no usage yet' because it grabbed the wrong row out of ~155 sessions.",
-      "acceptanceCriteria": [
-        "Replace the binding at App.tsx:87-88 (sessions.find(s=>s.status==='running') ?? sessions[0]) so the Context widget targets the actually-live, pty-correlated session \u2014 use src/terminal/correlate.ts / the terminal_session.session_id link rather than the first 'running' row",
-        "When a transcript usage block exists, the widget renders the total context % (readContextUsage in src/transcript/index.ts:220-255, fallback session.context_tokens) instead of blank",
-        "If no live session is correlated, fall back gracefully (don't crash, show an honest empty state)",
-        "Confirm against a real running session that the widget no longer reads 'no usage yet' when /context shows usage in the terminal",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill with a live session that the Context ring shows a non-empty %"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "v4-backlog item 3 (binding + total-% fix). Also sanity-check the session-liveness reaper (79 error/74 idle of 155 smells stale). correlate.ts confirmed to exist. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-007",
-      "title": "Context widget category breakdown via on-disk approximation",
-      "description": "As a user, I want the Context widget to show where my context is going (System/Tools/MCP/Memory/Skills/Messages), not just one total, reconstructed from disk since the transcript only carries totals.",
-      "acceptanceCriteria": [
-        "Add a backend computation (extend src/widgets/index.ts / a new helper) that approximates per-category context from on-disk sources: memory files (CLAUDE.md + MEMORY.md sizes), skills (SKILL.md sizes), MCP tools (~/.claude.json mcpServers), messages (transcript) \u2014 clearly an approximation Conan owns (option B; do NOT PTY-scrape /context)",
-        "Surface the breakdown in the Context widget as a stacked mini-bar or legend alongside the total from US-006",
-        "Degrade gracefully when a source is missing (omit that category, don't error)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill that the Context widget shows category segments that sum sensibly toward the total"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "v4-backlog item 3 (the bigger ask). Option B (disk approximation) locked in research; option A (PTY scrape) rejected as brittle. Depends on US-006. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-008",
-      "title": "Permission honesty floor: surface delivered:false, offer the 3rd option, migrate PendingApprovals to shadcn",
-      "description": "As a user, I want permission approvals from the UI to tell the truth \u2014 show the real options and not falsely report success when the decision went nowhere.",
-      "acceptanceCriteria": [
-        "POST /api/claude/sessions/:id/permission (src/gateway/index.ts:694-710) and the UI propagate decidePermission's delivered flag; when delivered:false the card is NOT optimistically cleared (PendingApprovals.tsx:29) and shows an honest 'answer in terminal / not deliverable' state",
-        "Map permission_suggestions (captured at src/session/parser.ts:232, currently unused) to buttons so the real options render (e.g. Yes / Yes-don't-ask-again / No) instead of hardcoded allow|deny (PendingApprovals.tsx:4,93-104)",
-        "Migrate PendingApprovals approve/deny controls to ui/button as part of this rewrite (this is where item 2's PendingApprovals migration lands)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill: a driven-session prompt shows the suggested options; a non-deliverable prompt is marked honestly and not auto-cleared"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "v4-backlog item 4 (honesty floor + 3rd option). Driven sessions only still \u2014 interactive driving is US-009. Suggested skills: shadcn, automate-browser."
-    },
-    {
-      "id": "US-009",
-      "title": "Answer interactive terminal permission prompts via keystroke injection into the correlated pty",
-      "description": "As a user, I want to approve/deny a Claude Code permission prompt from Conan even for an interactive/observed terminal session, by having Conan type the answer into the right pty.",
-      "acceptanceCriteria": [
-        "For a prompt belonging to an interactive/observed session (not in byLaunchId, so unreachable by decidePermission's stdin path), resolve the matching pty via src/terminal/correlate.ts + the terminal_session.session_id link",
-        "Inject the chosen option as keystrokes (option index + Enter) into that pty so the TUI prompt is actually answered",
-        "listPendingPermissions (src/session/index.ts:805, currently byLaunchId-only) or the UI is extended so interactive-session prompts can be presented and routed to the correct terminal; clearly distinguish driven (stdin) vs interactive (keystroke) delivery",
-        "If no pty can be correlated, fall back to the honest non-deliverable state from US-008 (never claim success)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill: trigger a permission prompt in the docked interactive terminal, approve from the UI, and confirm the terminal prompt advances"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "v4-backlog item 4 (the hard part). correlate.ts + terminal_session FK confirmed present. Brittle by nature (TUI driving) \u2014 keep it best-effort with the honest fallback. Beware footgun #1 when testing in-dock. Depends on US-008. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-010",
-      "title": "Preview backend: dev-server process manager + dev-command discovery (src/preview/)",
-      "description": "As a user, I want Conan to run the current cwd's dev server on demand, so the project I'm editing can be previewed live without me leaving the dashboard.",
-      "acceptanceCriteria": [
-        "Add src/preview/index.ts mirroring the pty/TermSession abstraction in src/terminal/index.ts (ring buffer of stdout, onExit handler, capped buffer) to spawn the project's dev command in getActiveCwd()",
-        "Discover candidate commands from the cwd's package.json scripts (default order dev -> start -> preview), exposed for the UI to pick/override per cwd",
-        "Pin the port: for Vite-style commands spawn with -- --port <free> --strictPort --base /preview/<id>/ --host 127.0.0.1; keep a stdout 'Local: http://localhost:NNNN' regex as the fallback for non-Vite tools",
-        "Subscribe to onCwdChange (src/cwd/index.ts) to stop/restart appropriately; the preview process lifecycle is DECOUPLED from the gateway watch restart (footgun #1)",
-        "Expose start/stop/status REST routes (authed like other /api routes) returning the chosen command, bound port, and run state",
-        "Typecheck passes",
-        "Start a real preview against a sample Vite project (or ui/) and confirm via the status route that it reports a bound port and running state"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "v4-backlog item 6 (backend). v1 scope = run + proxy + preview, no container sandbox. Port-pinning preferred over stdout scrape (research). Suggested skills: typescript-expert, websocket."
-    },
-    {
-      "id": "US-011",
-      "title": "Preview reverse proxy: /preview/:id mount + framing-header strip + HMR upgrade branch",
-      "description": "As a user, I want the running dev server served same-origin inside Conan so it inherits auth, works under TLS, and frames cleanly \u2014 including hot reload.",
-      "acceptanceCriteria": [
-        "Add http-proxy-middleware (pin v3) as the one new dep; mount a proxy at /preview/:id -> http://127.0.0.1:<devport> in src/gateway/index.ts (near the static/SPA serving at :740-742)",
-        "In the proxy's proxyRes, delete x-frame-options and strip frame-ancestors from CSP so the proxied page frames in an iframe",
-        "Build the proxy with ws:true and add a pathname.startsWith('/preview/') branch in the server.on('upgrade') router (src/gateway/index.ts:825-845) that calls wsProxy.upgrade(req, socket, head) \u2014 placed BEFORE the else socket.destroy() catch-all so it inherits the existing verifyUpgrade auth+Origin gate",
-        "Configure the spawned dev server (from US-010) so Vite HMR dials back through Conan's port: server.hmr.clientPort = Conan port, server.hmr.path under /preview/<id>/, protocol wss under TLS \u2014 injected via flags/env, not by editing the user's vite config",
-        "Confirm HMR works through the proxy (edit a file, see it hot-update in the proxied page) and does NOT silently fall back to dialing :5173 directly",
-        "Document the security floor: /preview/ HTTP relies on same-origin + loopback + the Origin-checked WS upgrade (an iframe src can't send x-conan-token) \u2014 note it in docs/ or a code comment",
-        "Typecheck passes",
-        "Load /preview/:id directly in a browser and confirm the dev page renders with working HMR"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "v4-backlog item 6 (proxy + HMR). The two real gotchas (HMR fallback, framing headers) are solved in docs/v4-research.md. Depends on US-010. Editing src/gateway/* from an in-dock session triggers footgun #1 \u2014 run gateway with npm start (no watch). Suggested skills: websocket, typescript-expert."
-    },
-    {
-      "id": "US-012",
-      "title": "Preview UI: Preview dock tab with iframe + start/stop + dev-command picker",
-      "description": "As a user, I want a Preview tab beside Terminal|Tasks that shows the live app for the current cwd, so I can watch Claude's edits render in real time in one window.",
-      "acceptanceCriteria": [
-        "Add a Preview tab to Dock.tsx (sibling of Terminal|Tasks, using the ui/tabs from US-003) hosting an iframe pointed at /preview/:id/",
-        "Provide start/stop controls and a dev-command picker fed by US-010's package.json script discovery (with an override), plus an 'open in new tab' affordance",
-        "Show run state and surface the dev server's stdout/stderr somewhere honest (a small log pane or folded into the existing activity timeline per the 'would I tail this?' rule)",
-        "Preview targets the active cwd from /api/config; reflect cwd changes sensibly (offer/handle restart) without leaving a dead iframe",
-        "Semantic tokens only; no layout breakage with the dock tabs + Pulse strip (US-004)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill: start a preview, see the app render in the iframe, edit a file and watch it hot-update, then stop it"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "v4-backlog item 6 (UI). Depends on US-010 + US-011 + US-003. Suggested skills: shadcn, frontend-design, automate-browser."
-    },
-    {
-      "id": "US-013",
-      "title": "Docs + memory: shadcn migration complete, live preview feature",
-      "description": "As a maintainer, I need CLAUDE.md, the README, and persistent memory updated so the next session knows the shadcn migration finished and how the live preview works.",
-      "acceptanceCriteria": [
-        "Update CLAUDE.md: status line to v4, note shadcn migration completed, and document the preview architecture (src/preview/, /preview/:id reverse proxy, HMR/framing handling, security floor, cwd lifecycle)",
-        "Update README with a short 'Live preview' usage section (how to start a preview for the current cwd)",
-        "Update the persistent memory note that previously said shadcn 'migration in progress' to 'complete'",
-        "Cross-check that docs/v4-backlog.md items 1-6 are all reflected as shipped (or note any deferred scope)",
+        "Add @tauri-apps/cli (dev dep) + @tauri-apps/api and @tauri-apps/plugin-shell; create src-tauri/ at the repo root (NOT inside ui/) via tauri init",
+        "tauri.conf.json (v2 schema) wires build.beforeDevCommand='npm --prefix ui run dev', beforeBuildCommand='npm --prefix ui run build', devUrl='http://localhost:5173', frontendDist='../ui/dist'; productName 'Conan', identifier 'so.whatmatters.conan'; a single 1400x900 window; bundle.targets ['app','dmg']",
+        "Set Vite to a fixed port (5173) and clearScreen:false so Tauri can attach to the dev server",
+        "Add npm scripts (e.g. tauri:dev, tauri:build) and document Rust/Tauri prerequisites in docs/ (rustup + tauri-cli); if the Rust toolchain is unavailable on the build host, install it via rustup or clearly note the gap in progress.txt",
+        "cargo check (or tauri info) succeeds for the scaffolded src-tauri crate; the gateway still builds",
         "Typecheck passes",
         "cd ui && npm run build is clean"
       ],
-      "priority": 13,
-      "passes": true,
-      "notes": "v4-backlog wrap-up + the user's 'beautiful sequence' (docs/memory/README; commit/push happens separately when asked). Suggested skills: none (docs)."
+      "priority": 5,
+      "passes": false,
+      "notes": "Anchors + exact config in docs/v4.1-research.md §1. The sidecar (US-008/009) and origin/CSP (US-007) come later; this story is just scaffolding. Keep .gitignore'ing src-tauri/target. No browser-verify (native shell)."
+    },
+    {
+      "id": "US-006",
+      "title": "Rewire the UI to an absolute gateway base under Tauri (keep same-origin in browser dev)",
+      "description": "As a developer, I want the webview to reach the gateway at an absolute loopback URL when running under Tauri, since the Tauri webview origin (tauri://localhost) differs from the gateway origin, while browser dev keeps using the Vite proxy.",
+      "acceptanceCriteria": [
+        "Introduce a single gateway-base resolver (e.g. ui/src/lib/gateway.ts) that returns 'http://127.0.0.1:3747' when running under Tauri (detect via '__TAURI_INTERNALS__' in window) and '' (same-origin, Vite-proxied) otherwise",
+        "Route the same-origin fetches and WebSocket URLs through the resolver: /api/config + /api/health in App.tsx, the app WS (useGateway/useTasks), the terminal WS (Terminal.tsx), and any remaining /api/* fetches in the surviving hooks (useSessions, useUsage, useWidgets, usePulse, useTerminals)",
+        "Browser behavior is unchanged (relative URLs still hit the Vite proxy at :5173 and same-origin at :3747); no regression to the web-served app",
+        "WS URLs build ws://127.0.0.1:3747/... under Tauri and same-origin ws otherwise, preserving the ?token= param",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill that the web-served app at :3747 still connects (config loads, WS connected, terminal opens) with the resolver in place"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "docs/v4.1-research.md §4. The token still comes from /api/config; cross-origin fetch to 127.0.0.1:3747 works in the Tauri webview. Pinning CONAN_PORT=3747 (US-009 sidecar env) keeps the hard-coded base safe."
+    },
+    {
+      "id": "US-007",
+      "title": "Gateway Origin allowlist + CSP accept the Tauri webview origin",
+      "description": "As a developer, I want the gateway to accept WebSocket upgrades from the Tauri webview origin so the terminal + app WS work inside the desktop app without weakening the loopback/token floor.",
+      "acceptanceCriteria": [
+        "Extend allowedOrigins() in src/gateway/auth.ts (defaults ~:43-61) to include tauri://localhost (plus http://tauri.localhost and https://tauri.localhost for cross-platform/future-proofing), OR ensure CONAN_ALLOWED_ORIGINS carries them — keep http://localhost:5173 and the :3747 loopback defaults intact",
+        "verifyUpgradeOrigin accepts the Tauri origin on /ws and /ws/terminal upgrades and still rejects unknown origins (CVE-2025-52882 floor unchanged)",
+        "Document/define the Tauri CSP option in docs/v4.1-research.md/backlog (connect-src for http+ws loopback) and set app.security.csp in tauri.conf.json (null is acceptable for a loopback desktop app, or the explicit connect-src policy)",
+        "Add a small test (scripts/test-*.mjs) or extend an existing auth test asserting a tauri://localhost Origin is allowed and a bogus origin is rejected",
+        "Typecheck passes",
+        "cd ui && npm run build is clean"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Edits src/gateway/auth.ts — run the loop agent outside the in-dock session (footgun #1). docs/v4.1-research.md §4. No browser-verify needed; cover via the auth unit test."
+    },
+    {
+      "id": "US-008",
+      "title": "Package the Node gateway as a sidecar binary (prove node-pty + better-sqlite3 work)",
+      "description": "As a developer, I want the gateway built into a self-contained sidecar artifact named with the target triple, with its native addons working, since this is the dominant packaging risk.",
+      "acceptanceCriteria": [
+        "Add a reproducible build script (e.g. scripts/build-sidecar.mjs + an npm script) that produces src-tauri/binaries/conan-gateway-<TARGET_TRIPLE> (e.g. conan-gateway-aarch64-apple-darwin); approach = bundled-node launcher (ship node + a node_modules with arm64 prebuilds) OR @yao-pkg/pkg carrying the addons as assets (see docs/v4.1-research.md §3)",
+        "node-pty's spawn-helper travels AND retains its executable (+x) bit in the packaged artifact (the posix_spawnp footgun) — chmod at build/runtime if the packager drops it",
+        "Running the produced binary directly (no Tauri) on this machine: it serves GET /api/health with 200 and a terminal WS can spawn a pty (exercise the two native addons — better-sqlite3 DB open + node-pty spawn)",
+        "The binary is ad-hoc codesigned (codesign -s -) so the arm64 kernel doesn't kill it; document the distribution-signing requirement",
+        "Typecheck passes",
+        "cd ui && npm run build is clean"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "THE HARD PART — docs/v4.1-research.md §3 (native-module gotchas). Match the Node ABI used to package to the prebuilt .node files. Validate the two failure-prone things explicitly: open the DB, open a pty. No browser-verify (binary-level)."
+    },
+    {
+      "id": "US-009",
+      "title": "Spawn the gateway sidecar from Tauri (start on launch, kill on exit) + capability",
+      "description": "As a user, I want launching the Conan desktop app to start the bundled gateway and the terminal + widgets to work end-to-end, with the gateway cleanly killed on quit.",
+      "acceptanceCriteria": [
+        "Register tauri-plugin-shell and grant the shell:allow-spawn capability for the conan-gateway sidecar in src-tauri/capabilities/default.json",
+        "In src-tauri/src/lib.rs: spawn the sidecar in the setup hook with env CONAN_PORT=3747 and CONAN_ALLOWED_ORIGINS including tauri://localhost; hold the CommandChild in Tauri state and kill it on RunEvent::ExitRequested (a leaked sidecar blocks the single-instance :3747 on next launch)",
+        "Pipe sidecar stdout/stderr to the Tauri log for debugging",
+        "cargo check passes; tauri dev launches the window, the webview reaches the sidecar gateway (config loads, app WS connected), and a terminal opens with a live pty; quitting the app terminates the sidecar (port :3747 is free afterward)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "docs/v4.1-research.md §2. Depends on US-006 (absolute base), US-007 (origin), US-008 (the binary). If the Rust/Tauri toolchain can't run a full launch on the build host, verify cargo check + the wiring and note the manual E2E step in progress.txt. No browser-verify (native)."
+    },
+    {
+      "id": "US-010",
+      "title": "Bundle the macOS app (.app/.dmg) with the sidecar signed for local run",
+      "description": "As a user, I want a Conan.app I can launch on macOS, with the bundled gateway sidecar signed so Gatekeeper/the kernel don't kill it.",
+      "acceptanceCriteria": [
+        "tauri build (targets app + dmg) produces Conan.app and a .dmg under src-tauri/target/release/bundle/{macos,dmg}/ with the conan-gateway sidecar embedded",
+        "The embedded sidecar is signed (ad-hoc for local; document the Developer-ID sign + notarize path for distribution per docs/v4.1-research.md §5)",
+        "Launching the built Conan.app on this machine opens the window, starts the gateway, shows the terminal + Context/Usage/Pulse HUD working, and quitting frees :3747",
+        "Update README + CLAUDE.md to reflect the shipped terminal-wrapper desktop app (how to build/run the Tauri app, the sidecar model)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Final story — the full bundle. Heavy (needs the Rust/Tauri toolchain + a real tauri build). If the build host can't complete a full bundle, produce the config/scripts and document the exact build+sign commands, and record the gap in progress.txt rather than falsely passing. docs/v4.1-research.md §5. The 'beautiful sequence' (CLAUDE.md/memory/README/commit) lands here."
     }
   ]
 }

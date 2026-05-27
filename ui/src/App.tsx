@@ -33,7 +33,6 @@ import PromptHistoryView from "./components/PromptHistoryView.tsx";
 import WhatsNewView from "./components/WhatsNewView.tsx";
 import UltrareviewView from "./components/UltrareviewView.tsx";
 import { useUltrareview } from "./hooks/useUltrareview.ts";
-import CwdPicker from "./components/CwdPicker.tsx";
 import { useRoute } from "./hooks/useRoute.ts";
 import { useChangelog } from "./hooks/useChangelog.ts";
 import { useDoctor } from "./hooks/useDoctor.ts";
@@ -253,17 +252,7 @@ export default function App() {
       />
       <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {config?.cwd && (
-            <CwdPicker
-              cwd={config.cwd}
-              token={config.token}
-              onChange={(cwd) =>
-                setConfig((c) => (c ? { ...c, cwd } : c))
-              }
-            />
-          )}
-        </div>
+        <div className="flex min-w-0 items-center gap-2" />
         <div className="flex shrink-0 items-center gap-3 text-xs">
           <ConnectionStatus status={status} port={health?.port ?? config?.port} />
           <button
@@ -417,7 +406,6 @@ export default function App() {
           theme={theme}
           tasks={tasks}
           hidden={!dockOpen}
-          cwd={config?.cwd ?? null}
           pulse={pulse}
           pulseMinutes={pulseMinutes}
           onPulseRange={setPulseMinutes}

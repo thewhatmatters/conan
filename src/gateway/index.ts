@@ -2,11 +2,10 @@ import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import express from "express";
-import { createProxyMiddleware } from "http-proxy-middleware";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
 import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
-import { AUTH_TOKEN, verifyUpgrade, verifyUpgradeOrigin } from "./auth.js";
+import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import { resolveTlsConfig, assertRemoteSafe } from "./tls.js";
 import {
   attachTerminal,
@@ -26,16 +25,6 @@ import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
 import { readStats } from "../stats/index.js";
 import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
 import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
-import {
-  discoverCommands,
-  startPreview,
-  stopPreview,
-  previewStatus,
-  previewOutput,
-  previewProxyTarget,
-  initPreview,
-  closePreview,
-} from "../preview/index.js";
 import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
 import { readChangelog } from "../changelog/index.js";
 import { readDoctorStatus, runDoctor } from "../doctor/index.js";
@@ -184,42 +173,6 @@ app.get("/api/cwd/git", async (req, res) => {
       ? req.query.cwd
       : getActiveCwd();
   res.json({ cwd, git: await gitStatus(cwd) });
-});
-
-// Live preview (US-010): run the active cwd's dev server on demand so the
-// project being edited can be previewed inside the dashboard. GET /status
-// reports the discovered candidate dev commands (package.json scripts, in
-// dev → start → preview order) plus the running process's chosen command,
-// bound port, and run state — read-only. POST /start and /stop are token-gated
-// (they spawn/kill a process). The reverse proxy that surfaces the server is
-// US-011; the dock UI is US-012. Lifecycle is decoupled from the pty layer.
-app.get("/api/preview/status", (_req, res) => {
-  res.json({ status: previewStatus(), discovery: discoverCommands() });
-});
-
-app.post("/api/preview/start", async (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const result = await startPreview({
-    script: typeof b.script === "string" ? b.script : undefined,
-  });
-  if (!result.ok) {
-    res.status(400).json({ error: result.error ?? "could not start preview" });
-    return;
-  }
-  res.json({ ok: true, status: result.status });
-});
-
-app.post("/api/preview/stop", (req, res) => {
-  if (!authed(req, res)) return;
-  res.json({ ...stopPreview(), status: previewStatus() });
-});
-
-// Recent dev-server stdout/stderr for the Preview tab's honest log pane (US-012)
-// — read-only like /status, loopback-only. Returns the tail of the ring buffer
-// (capped server-side) so the UI can surface why a server failed to come up.
-app.get("/api/preview/log", (_req, res) => {
-  res.json({ output: previewOutput() });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
@@ -812,71 +765,6 @@ app.post("/api/claude/sessions/:id/resume", async (req, res) => {
   res.json({ ok: true, launchId: result.launchId, sessionId });
 });
 
-// Live-preview reverse proxy (US-011): serve the running dev server (US-010)
-// same-origin under /preview/:id so it inherits Conan's auth and Origin gate,
-// works under TLS, and frames cleanly in an iframe (US-012).
-//
-// Security floor: an <iframe src> can't attach the x-conan-token header, so the
-// /preview/ HTTP path is NOT token-checked per request. It relies on the same
-// model that serves the static SPA — same-origin + loopback binding — plus the
-// fact that the dev server only binds 127.0.0.1. The HMR WebSocket upgrade DOES
-// pass through verifyUpgrade (token + Origin) below, exactly like /ws. Decided
-// consciously: see docs/v4-research.md "Security floor".
-//
-// The dev server is spawned with --base /preview/<id>/, so it already serves at
-// this path — we forward the full path unchanged (no rewrite). proxyRes strips
-// framing headers so the page renders inside Conan's iframe. ws:true + the
-// /preview/ branch in the upgrade router carry Vite HMR back through this port.
-const previewProxy = createProxyMiddleware({
-  changeOrigin: true,
-  ws: true,
-  router: () => {
-    const t = previewProxyTarget();
-    // Returning undefined would throw inside the proxy; the guard middleware
-    // below short-circuits before we get here, so a target always exists.
-    return t ? `http://127.0.0.1:${t.port}` : undefined;
-  },
-  on: {
-    proxyRes: (proxyRes) => {
-      // Let the proxied page frame inside Conan's iframe.
-      delete proxyRes.headers["x-frame-options"];
-      const csp = proxyRes.headers["content-security-policy"];
-      if (csp) proxyRes.headers["content-security-policy"] = stripFrameAncestors(csp);
-    },
-    error: (_err, _req, res) => {
-      // res is a ServerResponse for HTTP, a Socket for a failed WS upgrade.
-      if ("writeHead" in res) {
-        if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
-        res.end("preview proxy error");
-      } else {
-        res.destroy();
-      }
-    },
-  },
-});
-
-// Drop `frame-ancestors` from a CSP header (string or multi-value array) so the
-// directive can't block framing while leaving the rest of the policy intact.
-function stripFrameAncestors(csp: string | string[]): string | string[] {
-  const strip = (value: string): string =>
-    value
-      .split(";")
-      .map((d) => d.trim())
-      .filter((d) => d && !/^frame-ancestors\b/i.test(d))
-      .join("; ");
-  return Array.isArray(csp) ? csp.map(strip) : strip(csp);
-}
-
-// Guard + delegate: only proxy /preview/ when a dev server is actually up, so a
-// stale iframe gets an honest 503 instead of a thrown proxy error.
-app.use((req, res, next) => {
-  if (!req.path.startsWith("/preview/")) return next();
-  if (!previewProxyTarget()) {
-    res.status(503).type("text/plain").send("no preview running");
-    return;
-  }
-  return previewProxy(req, res, next);
-});
 
 // Serve the built UI in production; in dev the Vite server runs separately.
 if (fs.existsSync(UI_DIST)) {
@@ -956,11 +844,6 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 // so its reconciled status flows to the UI on the next refetch.
 const stopReaper = startReaper();
 
-// Preview manager (US-010): subscribe to active-cwd changes so a running dev
-// server stops when the dashboard switches projects. Decoupled from the pty
-// layer — torn down only on graceful shutdown via closePreview().
-initPreview();
-
 // Live-stream parser-persisted events (US-007) to app clients so headless
 // sessions surface in the timeline (US-011) the same way hook events do. Cost is
 // folded onto the session row by the parser; usage is now framed around plan
@@ -982,23 +865,6 @@ server.on("upgrade", (req, socket, head) => {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
   };
-
-  // Live-preview HMR (US-011). The Vite HMR socket runs inside Conan's
-  // same-origin iframe, which cannot attach the x-conan-token (Vite carries its
-  // own end-to-end HMR token). So this branch is gated on Origin only — the
-  // documented security floor (same-origin + loopback + Origin-checked upgrade)
-  // — rather than the full token gate the other endpoints use. Placed before
-  // the catch-all so an unmatched path still hits socket.destroy().
-  if (pathname.startsWith("/preview/")) {
-    const origin = verifyUpgradeOrigin(req);
-    if (!origin.ok) return reject(origin.reason ?? "origin not allowed");
-    if (previewProxyTarget() && typeof previewProxy.upgrade === "function") {
-      previewProxy.upgrade(req, socket as import("node:net").Socket, head);
-    } else {
-      socket.destroy();
-    }
-    return;
-  }
 
   const auth = verifyUpgrade(req);
   if (!auth.ok) return reject(auth.reason ?? "unauthorized");
@@ -1027,7 +893,6 @@ server.listen(PORT, HOST, () => {
 function shutdown(): void {
   stopWatching();
   stopReaper();
-  closePreview();
   closeAllTerminals();
   server.close();
   eventsWss.close();

@@ -412,6 +412,65 @@ project in Conan's current cwd and see it rendered live, in one window.**
   (iframe + start/stop + command picker).
 - **Docs:** CLAUDE.md/memory/README — shadcn migration complete, preview feature.
 
+## v4.1 — Tauri terminal-wrapper for Claude Code ("beefed-up TUI") (2026-05-26)
+
+v4 shipped its loop (incl. the live in-cwd preview), then **QA decided to pivot the
+product**: drop the preview/build feature and reconceive Conan from a sprawling web
+dashboard into a **terminal-primary native desktop app** — the Claude Code terminal as
+the main surface, with an at-a-glance, DevTools-style **widget HUD**. The preview code
+was removed in QA (gateway `/api/preview/*` routes, `src/preview/`, the Preview dock
+tab, `http-proxy-middleware`); v4.1 carries the rest. Source: `docs/v4.1-backlog.md`.
+Tauri packaging research (re-verified anchors + the native-module crux):
+`docs/v4.1-research.md` (to be written from the research agent's guide).
+
+### Locked decisions
+- **Tauri v2, not Zig/Ghostty-native, not Electron.** Reuse the existing React +
+  `xterm.js` UI + Node gateway; Tauri = Rust core + the OS native webview (small/fast,
+  no bundled Chromium). A Claude Code wrapper isn't terminal-perf-bound, so Ghostty's
+  Zig + Metal/GTK stack is unnecessary; xterm.js suffices.
+- **Node gateway as a Tauri sidecar (externalBin).** The gateway isn't just the PTY —
+  it's the data source for all three starting surfaces (Context, Usage, Pulse all come
+  from `/api/claude/*`), plus session tracking, hooks, SQLite. Since we need it
+  regardless, running the terminal through it too means near-zero rewrite. *(Rejected:
+  Rust `portable-pty` — would rewrite the terminal AND still need the Node gateway for
+  widget data.)* Trade-off accepted: ships a Node runtime + needs `node-pty`/
+  `better-sqlite3` packaged carefully.
+- **Initial cut is deliberately small.** Terminal (primary) + Pulse graph + exactly two
+  widgets: **Context** (session-scoped) and **Usage** (global plan-usage). Everything
+  else — the Sessions timeline, MCP/Model/Git/Skills/Stats/metrics widgets, and the
+  Agents/Skills/Plugins/Checkpoints/PromptHistory/WhatsNew/CodeReview/Settings nav — is
+  **cut**. Some may return later as widget tabs (decide per-widget; don't auto-port).
+
+### Packaging crux (the dominant risk — re-verified by research)
+- **Native addons can't be embedded in a JS-snapshot binary.** `better-sqlite3` and
+  `node-pty` ship `.node` files that must travel as on-disk files next to the sidecar
+  executable. Recommended: ship a pinned `node` + a normal `node_modules` (arm64
+  prebuilds) with a tiny launcher sidecar, OR `@yao-pkg/pkg` carrying the addons as
+  assets. **`node-pty`'s `spawn-helper` is the sharp edge** — it's a separate
+  executable that ships non-executable (already patched by `scripts/fix-node-pty.mjs`)
+  and asset-extraction commonly drops the +x bit → the `posix_spawnp failed` footgun.
+  The sidecar binary itself needs at least an **ad-hoc codesign** on arm64 or the kernel
+  kills it. Validate on a clean machine: open the DB + open a pty.
+- **Origin/CSP/port rewiring (mechanical).** The Tauri webview origin is
+  `tauri://localhost`; add it to the gateway Origin allowlist (`CONAN_ALLOWED_ORIGINS`
+  or `auth.ts` defaults) and set CSP `connect-src` for `http`/`ws` loopback. The UI's
+  same-origin `fetch('/api/config')`/WS must become **absolute to `127.0.0.1:3747`** when
+  running under Tauri (detect `__TAURI_INTERNALS__`), keeping the Vite proxy in browser dev.
+
+### Scope (grouped; see prd.json for the ordered stories)
+- **Strip the IA:** remove sidebar + all route views (Settings/Agents/Skills/Plugins/
+  Checkpoints/PromptHistory/WhatsNew/CodeReview); remove the timeline-primary Overview
+  (ActivityTimeline/Transcript/SessionBar/PendingApprovals); delete the orphaned
+  components + their now-unused hooks so the build stays green at each step.
+- **Reshape to terminal-primary + HUD:** promote the terminal to the primary pane; build
+  a DevTools-style tabbed widget HUD; trim `Widgets.tsx` to exactly Context + Usage; keep
+  Pulse; remove the other widget cells + their hooks.
+- **Tauri shell:** scaffold Tauri v2 at repo root; webview↔gateway absolute-base rewiring
+  (Tauri-detected); Origin allowlist + CSP for the Tauri origin.
+- **Sidecar packaging:** produce the gateway sidecar binary (node-pty + better-sqlite3
+  proven from the packaged binary); Rust spawn-on-startup / kill-on-exit + capability;
+  macOS `.app`/`.dmg` bundle with the sidecar ad-hoc signed.
+
 ## Sources
 
 1. [Claude Agent SDK — Stream responses in real-time](https://code.claude.com/docs/en/agent-sdk/streaming-output) — Anthropic docs
