@@ -96,7 +96,27 @@ export function ContextWidget({
   ) : null;
 
   // --- live face: the EXACT /context capture (US-009) -----------------------
-  if (liveCtx) return <LiveContextView live={liveCtx} refreshBtn={refreshBtn} />;
+  if (liveCtx) {
+    const livePct =
+      liveCtx.usedPct ??
+      (liveCtx.usedTokens != null && liveCtx.windowTokens
+        ? Math.min(100, (liveCtx.usedTokens / liveCtx.windowTokens) * 100)
+        : null);
+    return (
+      <LiveContextView
+        live={liveCtx}
+        refreshBtn={refreshBtn}
+        actionBar={
+          <ContextActionBar
+            ctxPct={livePct}
+            session={session}
+            token={token}
+            hasLivePty={hasLivePty}
+          />
+        }
+      />
+    );
+  }
 
   // --- fallback: the on-disk estimate (US-007/US-013) -----------------------
   const ctx = data?.context ?? null;
@@ -143,7 +163,97 @@ export function ContextWidget({
       {breakdown && breakdown.categories.length > 0 && (
         <ContextBreakdownBar breakdown={breakdown} />
       )}
+      <ContextActionBar
+        ctxPct={ctxPct}
+        session={session}
+        token={token}
+        hasLivePty={hasLivePty}
+      />
     </StatCard>
+  );
+}
+
+/**
+ * Context-pressure action bar (US-013). When the session is filling its context
+ * window (ctxPct >= the 80% destructive-ring threshold) a bottom bar offers a
+ * quick checkpoint: Cancel (dismiss until pressure climbs further, so it doesn't
+ * nag every render) and Compact. Compact injects `/handoff` into the correlated
+ * pty so the SESSION writes HANDOFF.md (Conan can't author it — only the live
+ * conversation knows its own state), and is disabled when there's no live pty.
+ */
+const CTX_ACTION_THRESHOLD = 80;
+function ContextActionBar({
+  ctxPct,
+  session,
+  token,
+  hasLivePty,
+}: {
+  ctxPct: number | null;
+  session: Session | null;
+  token?: string | null;
+  hasLivePty: boolean;
+}) {
+  // The pct at which the user last dismissed; the bar stays hidden until pressure
+  // climbs meaningfully past it (no nagging every render).
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  if (ctxPct == null || ctxPct < CTX_ACTION_THRESHOLD) return null;
+  // Re-show only once context has climbed >=5 points past the dismissal point.
+  if (dismissedAt != null && ctxPct < dismissedAt + 5) return null;
+
+  const compact = async () => {
+    if (!session || !token || busy || !hasLivePty) return;
+    setBusy(true);
+    try {
+      await fetch(
+        apiBase() +
+          `/api/claude/sessions/${encodeURIComponent(session.id)}/handoff`,
+        { method: "POST", headers: { "x-conan-token": token } },
+      );
+      setSent(true);
+    } catch {
+      /* best-effort — the command either typed into the pty or it didn't */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-destructive/30 pt-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-medium text-destructive">
+          Context {Math.round(ctxPct)}% — running low
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setDismissedAt(ctxPct)}
+            className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={compact}
+            disabled={busy || !hasLivePty}
+            title={
+              hasLivePty
+                ? "Runs /handoff in the live terminal session — the session writes HANDOFF.md, then you can /compact"
+                : "No live terminal correlated with this session"
+            }
+            className="rounded bg-destructive px-2 py-0.5 text-[11px] font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+          >
+            {busy ? "sending…" : sent ? "sent ✓" : "Compact"}
+          </button>
+        </div>
+      </div>
+      <p className="mt-1 text-[10px] leading-tight text-muted-foreground/70">
+        Compact runs <span className="font-medium">/handoff</span> in the
+        terminal session; HANDOFF.md is written by the session, not by Conan.
+      </p>
+    </div>
   );
 }
 
@@ -168,9 +278,11 @@ const LIVE_CAT_COLOR: Record<LiveContextCategory["key"], string> = {
 function LiveContextView({
   live,
   refreshBtn,
+  actionBar,
 }: {
   live: LiveContext;
   refreshBtn: ReactNode;
+  actionBar?: ReactNode;
 }) {
   const pct =
     live.usedPct ??
@@ -236,6 +348,7 @@ function LiveContextView({
         Refreshing runs /context in the session and consumes a few thousand
         tokens; auto-refresh only fires when context has moved a lot.
       </p>
+      {actionBar}
     </StatCard>
   );
 }

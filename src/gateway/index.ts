@@ -9,6 +9,7 @@ import {
   listTerminalSessions,
   injectContextRefresh,
   injectUsageRefresh,
+  injectHandoff,
   autoRefreshContextOnStop,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
@@ -307,6 +308,16 @@ app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
 app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
   if (!authed(req, res)) return;
   res.json({ ok: injectUsageRefresh(req.params.id) });
+});
+
+// Context-pressure compact (US-013): inject `/handoff` into the session's live
+// pty so the conversation checkpoints itself to HANDOFF.md before a /compact.
+// Conan can't author the handoff (only the session knows its own state) — it
+// types the command. Token-gated (it types into a terminal). Returns {ok:false}
+// when no live pty is correlated — the UI disables Compact in that case.
+app.post("/api/claude/sessions/:id/handoff", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ ok: injectHandoff(req.params.id) });
 });
 
 // Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for

@@ -260,6 +260,25 @@ export function injectContextRefresh(sessionId: string): boolean {
   }
 }
 
+/**
+ * Context-pressure compact (US-013): inject `/handoff` into the pty running a
+ * given session, reusing the keystroke-injection path. The SESSION authors
+ * HANDOFF.md (Conan can't author it — only the live conversation knows its own
+ * state); we just type the command so the checkpoint runs before a /compact.
+ * Returns whether a live correlated pty was found — false leaves the action a
+ * no-op (the UI disables Compact when there's no live pty).
+ */
+export function injectHandoff(sessionId: string): boolean {
+  const s = findTermForSession(sessionId);
+  if (!s || s.exited) return false;
+  try {
+    s.term.write("/handoff\r");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Off when CONAN_CONTEXT_AUTOREFRESH=0 (the auto-inject prints to the pty). */
 const CONTEXT_AUTOREFRESH_ENABLED =
   process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";

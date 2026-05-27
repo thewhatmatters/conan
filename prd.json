@@ -206,8 +206,8 @@
         "Verify in browser using automate-browser skill (bar appears past threshold; Cancel hides it; Compact disabled with no live pty; light + dark)"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": "Decided: write HANDOFF.md, not CLAUDE.md (CLAUDE.md auto-loads into every future session). Conan can't author the handoff itself — it must inject so the session does. Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Decided: write HANDOFF.md, not CLAUDE.md (CLAUDE.md auto-loads into every future session). Conan can't author the handoff itself — it must inject so the session does. DONE: backend injectHandoff(sessionId) in src/terminal/index.ts (writes `/handoff\\r` to the correlated pty) + token-gated POST /api/claude/sessions/:id/handoff (ok:false when no live pty). UI ContextActionBar in Widgets.tsx renders in BOTH the live and estimate Context faces: appears at ctxPct>=80% (matches the destructive-ring threshold), Cancel records dismissedAt and re-shows only once pressure climbs >=5pts past it (no per-render nag), Compact POSTs /handoff and is disabled when !hasLivePty; copy makes clear it runs /handoff in the terminal session and HANDOFF.md is written by the session, not Conan. Verified: typecheck, npm test, ui build all green; automate-browser confirmed the bar at 99% with Compact disabled (no live pty), Cancel hiding it, light + dark; route returns ok:false no-pty and 401 unauthed. Suggested skills: automate-browser."
     },
     {
       "id": "US-014",
