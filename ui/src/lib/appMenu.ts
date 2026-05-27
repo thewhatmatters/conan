@@ -1,9 +1,11 @@
 import { isTauri } from "./gateway.ts";
+import type { ThemePreference } from "../hooks/useTheme.ts";
 
 export interface AppMenuActions {
-  theme: "light" | "dark";
+  /** The user's stored theme choice (drives the radio checkmark). */
+  themePreference: ThemePreference;
   hudOpen: boolean;
-  onToggleTheme: () => void;
+  onSetTheme: (p: ThemePreference) => void;
   onToggleHud: () => void;
   onNewTerminal: () => void;
   onCloseTerminal: () => void;
@@ -17,8 +19,9 @@ const ABOUT = { name: "Conan", version: "0.1.0" };
  * native menu bar, so the menu only exists in the desktop app (this is why the
  * theme + HUD toggles moved here from the old in-window toolbar).
  *
- * Rebuilt whenever theme / HUD state changes so the toggle labels stay accurate
- * ("Dark Mode"⇄"Light Mode", "Hide HUD"⇄"Show HUD"). Menu actions run here in
+ * Rebuilt whenever theme / HUD state changes so the View ▸ Theme radio
+ * checkmark follows the active choice and the HUD label stays accurate
+ * ("Hide HUD"⇄"Show HUD"). Menu actions run here in
  * the webview and call straight into React state; the File items dispatch window
  * CustomEvents that TerminalPane listens for (its tab state lives locally).
  *
@@ -29,9 +32,8 @@ const ABOUT = { name: "Conan", version: "0.1.0" };
  */
 export async function installAppMenu(a: AppMenuActions): Promise<void> {
   if (!isTauri()) return;
-  const { Menu, Submenu, MenuItem, PredefinedMenuItem } = await import(
-    "@tauri-apps/api/menu"
-  );
+  const { Menu, Submenu, MenuItem, CheckMenuItem, PredefinedMenuItem } =
+    await import("@tauri-apps/api/menu");
 
   const about = () => PredefinedMenuItem.new({ item: { About: ABOUT } });
   const sep = () => PredefinedMenuItem.new({ item: "Separator" });
@@ -86,13 +88,29 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     ],
   });
 
+  // View ▸ Theme radio submenu (US-011). CheckMenuItem carries the checkmark;
+  // selecting one calls onSetTheme, which flips React state and re-runs
+  // installAppMenu, rebuilding the menu so the check follows the active choice.
+  // (Tauri has no native radio group, so we model it as checks + a rebuild.)
+  const themeItem = (text: string, value: ThemePreference) =>
+    CheckMenuItem.new({
+      text,
+      checked: a.themePreference === value,
+      action: () => a.onSetTheme(value),
+    });
+  const themeMenu = await Submenu.new({
+    text: "Theme",
+    items: [
+      await themeItem("Light", "light"),
+      await themeItem("Dark", "dark"),
+      await themeItem("Auto — match system", "auto"),
+    ],
+  });
+
   const viewMenu = await Submenu.new({
     text: "View",
     items: [
-      await MenuItem.new({
-        text: a.theme === "dark" ? "Light Mode" : "Dark Mode",
-        action: () => a.onToggleTheme(),
-      }),
+      themeMenu,
       await MenuItem.new({
         text: a.hudOpen ? "Hide HUD" : "Show HUD",
         accelerator: "CmdOrCtrl+Shift+H",

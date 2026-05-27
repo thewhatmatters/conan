@@ -35,7 +35,7 @@ export default function App() {
   const [hudOpen, setHudOpen] = useState(true);
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { theme, toggle } = useTheme();
+  const { theme, preference, setTheme } = useTheme();
   const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
     [],
@@ -112,22 +112,23 @@ export default function App() {
       .catch(() => setConfig(null));
   }, []);
 
-  // Native macOS menu bar (Tauri only) — File/Edit/View/Help. The View toggles
-  // (theme, HUD) live here now that the top toolbar is gone; File items dispatch
-  // window events TerminalPane handles. Rebuilt on theme/HUD change so the
-  // toggle labels stay accurate. No-op in the browser dev/web view.
+  // Native macOS menu bar (Tauri only) — File/Edit/View/Help. The View controls
+  // (Theme radio submenu, HUD toggle) live here now that the top toolbar is
+  // gone; File items dispatch window events TerminalPane handles. Rebuilt on
+  // theme/HUD change so the Theme checkmark + HUD label stay accurate. No-op in
+  // the browser dev/web view.
   useEffect(() => {
     installAppMenu({
-      theme,
+      themePreference: preference,
       hudOpen,
-      onToggleTheme: toggle,
+      onSetTheme: setTheme,
       onToggleHud: () => setHudOpen((v) => !v),
       onNewTerminal: () =>
         window.dispatchEvent(new CustomEvent("conan:new-terminal")),
       onCloseTerminal: () =>
         window.dispatchEvent(new CustomEvent("conan:close-terminal")),
     }).catch(() => {});
-  }, [theme, hudOpen, toggle]);
+  }, [preference, hudOpen, setTheme]);
 
   // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
   // (same window-event bridge the File items use). Listening here keeps the menu

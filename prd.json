@@ -175,7 +175,7 @@
         "Verify in browser using automate-browser skill (light, dark, auto)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "This is the layer that 'trickles to the HUD'. Suggested skills: automate-browser."
     },
     {
