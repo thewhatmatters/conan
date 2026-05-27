@@ -3,7 +3,6 @@ import { Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
-import type { ConnStatus } from "../hooks/useTasks.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
@@ -18,14 +17,10 @@ const TAB_TRIGGER =
 interface TerminalPaneProps {
   token: string | null;
   theme: Theme;
-  /** App-wide active cwd for the bottom status bar (US-010). */
+  /** App-wide active cwd for the bottom status bar (US-004). */
   cwd?: string | null;
-  /** Active session's git branch/dirty for the status bar (US-010). */
+  /** Active session's git branch/dirty for the status bar (US-004). */
   git?: WidgetData["git"] | null;
-  /** Gateway WS status for the status bar — moved out of the HUD (US-010). */
-  status: ConnStatus;
-  /** Gateway port, shown when connected. */
-  port?: number;
   /** US-003: report the active terminal tab's tid upward (mount, switch, new,
    *  close) so the HUD can bind its session-scoped widgets to the visible tab. */
   onActiveTidChange?: (tid: string) => void;
@@ -78,8 +73,6 @@ export default function TerminalPane({
   theme,
   cwd,
   git,
-  status,
-  port,
   onActiveTidChange,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
@@ -251,7 +244,7 @@ export default function TerminalPane({
         )}
       </div>
 
-      <StatusBar cwd={cwd} git={git} status={status} port={port} />
+      <StatusBar cwd={cwd} git={git} />
     </section>
   );
 }

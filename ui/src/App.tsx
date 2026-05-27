@@ -17,12 +17,6 @@ import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
 import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
 
-interface Health {
-  status: string;
-  port: number;
-  tables: string[];
-}
-
 interface Config {
   token: string;
   port: number;
@@ -30,13 +24,12 @@ interface Config {
 }
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [hudOpen, setHudOpen] = useState(true);
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, preference, setTheme } = useTheme();
-  const { tasks, lastEvent, status, reconnectSeq } = useGateway(
+  const { tasks, lastEvent, reconnectSeq } = useGateway(
     config?.token ?? null,
     [],
   );
@@ -99,7 +92,7 @@ export default function App() {
     visibleSessionId: activeSession?.id ?? null,
   });
 
-  // Bootstrap health + config. RETRY until the gateway answers: under `tauri
+  // Bootstrap config. RETRY until the gateway answers: under `tauri
   // dev` the webview can load before the sidecar finishes booting, so a one-shot
   // fetch hits ECONNREFUSED and the app would hang on "connecting" forever (the
   // token never arrives, so the WS can't auth). Poll until config lands, then stop.
@@ -107,10 +100,6 @@ export default function App() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const attempt = () => {
-      fetch(apiBase() + "/api/health")
-        .then((r) => r.json())
-        .then((h) => !cancelled && setHealth(h))
-        .catch(() => {});
       fetch(apiBase() + "/api/config")
         .then((r) => (r.ok ? r.json() : Promise.reject()))
         .then((c) => {
@@ -159,8 +148,9 @@ export default function App() {
     // Terminal-primary shell (US-003): no top toolbar — the Claude Code terminal
     // fills the main area and the DevTools-style HUD docks to its right
     // (drag-resizable, width persisted). View/theme/HUD controls live in the
-    // native macOS menu bar (installAppMenu above); the gateway status lives in
-    // the TerminalPane's bottom status bar now (US-010). The HUD stays mounted
+    // native macOS menu bar (installAppMenu above). The TerminalPane's bottom
+    // status bar shows cwd + branch (the gateway chip was dropped, US-004). The
+    // HUD stays mounted
     // when hidden so its tab state
     // survives the toggle; terminals always stay mounted so ptys survive.
     <div className="flex h-full bg-background text-foreground">
@@ -170,8 +160,6 @@ export default function App() {
         theme={theme}
         cwd={config?.cwd ?? null}
         git={widgetData?.git ?? null}
-        status={status}
-        port={health?.port ?? config?.port}
         onActiveTidChange={setActiveTid}
       />
       <Hud

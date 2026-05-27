@@ -70,7 +70,7 @@
         "Verify in browser using automate-browser skill (cwd left, branch right, `*` present on a dirty branch and absent when clean, no gateway chip, no layout shift on a long/dirty branch), light + dark"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Presentation-only; data (git.dirty) already on the StatusBar git prop. Anchors: ui/src/components/StatusBar.tsx (US-010), its caller in TerminalPane/App. Suggested skills: automate-browser."
     },
     {
