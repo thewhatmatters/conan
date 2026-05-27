@@ -519,7 +519,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
       yAxisWidth = 56,
       intervalType = "equidistantPreserveStart",
       showTooltip = true,
-      showLegend = true,
+      showLegend = false,
       autoMinValue = false,
       minValue,
       maxValue,
@@ -694,8 +694,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               className={cn(
                 // base
                 "text-xs",
-                // text fill
-                "fill-muted-foreground",
+                // text fill — legible on both light and the dark chart bg
+                "fill-foreground/70",
               )}
               tickLine={false}
               axisLine={false}
@@ -724,8 +724,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               className={cn(
                 // base
                 "text-xs",
-                // text fill
-                "fill-muted-foreground",
+                // text fill — legible on both light and the dark chart bg
+                "fill-foreground/70",
               )}
               tickFormatter={
                 type === "percent" ? valueToPercent : valueFormatter
@@ -748,7 +748,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               wrapperStyle={{ outline: "none" }}
               isAnimationActive={true}
               animationDuration={100}
-              cursor={{ stroke: "#d1d5db", strokeWidth: 1 }}
+              cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
               offset={20}
               position={{ y: 0 }}
               content={({ active, payload, label }) => {

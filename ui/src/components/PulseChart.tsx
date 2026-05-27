@@ -148,7 +148,6 @@ export default function PulseChart({
             colors={colors}
             type="stacked"
             showYAxis={!compact}
-            showLegend
             startEndOnly={compact}
             valueFormatter={(v) => String(v)}
             yAxisWidth={40}

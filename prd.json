@@ -87,7 +87,7 @@
         "Verify in browser using automate-browser skill (axis labels clearly readable in dark mode; hover tooltip does not collide with any legend; footer legend + totals intact), light + dark"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Anchors: ui/src/components/charts/AreaChart.tsx (XAxis/YAxis tick fill ~:698/:728, cursor stroke ~:751, ChartTooltip ~:395); ui/src/components/PulseChart.tsx (showLegend ~:151 + footer legend ~:164-183). Suggested skills: automate-browser."
     },
     {
