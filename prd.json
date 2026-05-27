@@ -72,7 +72,7 @@
         "Verify with automate-browser at http://localhost:5173 that Context, Usage, and Pulse still render real data (or honest empty states) and the terminal works"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "The riskiest cleanup story — the widgets context breakdown (Widgets.tsx ContextBreakdownBar / useWidgets) depends on MCP+skills+memory sizes computed server-side. Trim surgically; the kept-route 200 checks + the browser render are the gate. Gateway edits → run outside the in-dock session."
     },
     {

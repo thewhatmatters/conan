@@ -2,51 +2,19 @@ import http from "node:http";
 import express from "express";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
-import { PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
 import {
   attachTerminal,
   closeAllTerminals,
   listTerminalSessions,
-  liveTerminalSessionIds,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
-import { readSkills, listSkills } from "../skills/index.js";
 import { pulseSeries } from "../pulse/index.js";
-import { readWidgets, gitStatus } from "../widgets/index.js";
+import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
-import { readStats } from "../stats/index.js";
-import { readMcpStatus, liveSessionMcp } from "../mcp/index.js";
-import { getActiveCwd, setActiveCwd, listDirs } from "../cwd/index.js";
-import { readHooksStatus, readClaudeSettings, writeClaudeSetting } from "../settings/index.js";
-import { readChangelog } from "../changelog/index.js";
-import { readDoctorStatus, runDoctor } from "../doctor/index.js";
-import {
-  readUltrareview,
-  startUltrareview,
-  stopUltrareview,
-  onUltrareviewUpdate,
-} from "../ultrareview/index.js";
-import { readCheckpoints, readSnapshot } from "../checkpoints/index.js";
-import { readHooksCoverage } from "../hooks-coverage/index.js";
-import { readProjectMetrics } from "../project-metrics/index.js";
-import { readPlugins } from "../plugins/index.js";
-import { readAgents } from "../agents/index.js";
-import { readBackgroundAgents } from "../background-agents/index.js";
-import { readPromptHistory } from "../prompt-history/index.js";
-import {
-  installGlobalHooks,
-  uninstallGlobalHooks,
-  globalSettingsPath,
-} from "../hooks/install.js";
-import {
-  listSessions,
-  listEvents,
-  listAllEvents,
-  listPendingPermissions,
-  listInteractivePermissions,
-} from "../session/index.js";
+import { getActiveCwd } from "../cwd/index.js";
+import { listSessions, listEvents } from "../session/index.js";
 import { startReaper } from "../session/reaper.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
@@ -105,53 +73,12 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", port: PORT, tables });
 });
 
-// Same-origin bootstrap: the SPA reads the auth token here. Cross-origin pages
+// Same-origin bootstrap: the app reads the auth token here. Cross-origin pages
 // cannot read this response (no CORS headers are set), so the token stays put.
-// cwd is the app-wide active working directory (US-019), which the toolbar
-// picker can change; it survives a restart so reloads see the chosen directory.
+// cwd is the app-wide active working directory (US-019); it survives a restart
+// so reloads see the chosen directory.
 app.get("/api/config", (_req, res) => {
   res.json({ token: AUTH_TOKEN, port: PORT, cwd: getActiveCwd() });
-});
-
-// Active working-directory picker (US-019). The toolbar cwd is no longer a
-// static label: GET reports the current active cwd (+ the repo-root default),
-// PUT changes it (token-gated; rejects anything that isn't an accessible
-// directory). Changing it re-scopes new terminals + the Tasks reader; existing
-// ptys keep their own cwd. The choice persists across reloads.
-app.get("/api/cwd", (_req, res) => {
-  res.json({ cwd: getActiveCwd(), default: PACKAGE_ROOT });
-});
-
-app.put("/api/cwd", (req, res) => {
-  if (!authed(req, res)) return;
-  const result = setActiveCwd((req.body ?? {}).cwd);
-  if (!result.ok) {
-    res.status(400).json({ error: result.error ?? "invalid directory" });
-    return;
-  }
-  res.json({ ok: true, cwd: result.cwd });
-});
-
-// Directory browser backing the toolbar picker (US-019). Lists the immediate
-// subdirectories of ?path= (defaults to the active cwd), token-gated since it
-// exposes the local filesystem layout. Unreadable targets degrade to an empty
-// listing carrying an `error` the UI surfaces.
-app.get("/api/fs/dirs", (req, res) => {
-  if (!authed(req, res)) return;
-  const path = typeof req.query.path === "string" ? req.query.path : undefined;
-  res.json(listDirs(path));
-});
-
-// Git status for the active working directory (US-019). The Git widget is
-// cwd-scoped: it follows the app-wide active cwd (or an explicit ?cwd=) rather
-// than a session's cwd, so changing the toolbar directory re-scopes it. Read
-// only; degrades to { available:false } outside a work tree.
-app.get("/api/cwd/git", async (req, res) => {
-  const cwd =
-    typeof req.query.cwd === "string" && req.query.cwd
-      ? req.query.cwd
-      : getActiveCwd();
-  res.json({ cwd, git: await gitStatus(cwd) });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
@@ -245,64 +172,16 @@ app.post("/api/claude/events", (req, res) => {
   res.json({ ok: true, id: event.id });
 });
 
-// Install/remove Conan's GLOBAL hooks into the user-level ~/.claude/settings.json
-// (US-002), so every `claude` run on this machine self-reports — not just runs
-// inside this repo. Token-gated (mutates the user's settings file). Idempotent
-// and non-destructive: merges, preserves unknown keys, backs up before writing.
-// `?remove=1` (or {remove:true}) uninstalls.
-app.post("/api/claude/hooks/install-global", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const remove = b.remove === true || req.query.remove === "1";
-  try {
-    const result = remove ? uninstallGlobalHooks() : installGlobalHooks();
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res
-      .status(500)
-      .json({ error: err instanceof Error ? err.message : String(err), path: globalSettingsPath() });
-  }
-});
-
-// Skills hero widget data (US-010): total skills available on this machine,
-// plus how many the given session loaded (from its system/init event).
-// Read-only, like /api/tasks.
-app.get("/api/claude/skills", (req, res) => {
-  const sessionId =
-    typeof req.query.session_id === "string" ? req.query.session_id : undefined;
-  res.json(readSkills(sessionId));
-});
-
-// Skills catalog (US-016): the browsable list behind the Skills page (US-028) —
-// every skill across the user (~/.claude/skills) and active-project
-// (<cwd>/.claude/skills) scopes, each with {name, description, scope} from its
-// SKILL.md frontmatter plus a `loaded` flag derived from a session's
-// system/init slash_commands. Read-only; missing dirs → empty list.
-app.get("/api/claude/skills/list", (req, res) => {
-  const sessionId =
-    typeof req.query.session_id === "string" ? req.query.session_id : undefined;
-  res.json(listSkills({ sessionId }));
-});
-
 // Session grid data (US-009): every persisted session, newest activity first.
-// Read-only, like /api/tasks — the mutating routes below stay token-gated.
+// Read-only, like /api/tasks.
 app.get("/api/claude/sessions", (_req, res) => {
   res.json(listSessions());
-});
-
-// The timeline's "All sessions" view (US-007): recent events across every
-// session, oldest-first. Read-only; live updates arrive over /ws. Optional
-// `?cwd=` scopes to one working directory (US-002 multi-project observatory).
-app.get("/api/claude/events", (req, res) => {
-  const cwd = typeof req.query.cwd === "string" && req.query.cwd ? req.query.cwd : undefined;
-  res.json(listAllEvents(1000, cwd));
 });
 
 // Time-series throughput for the Pulse chart (US-020): events-per-minute,
 // token/cost burn, and api_retry markers bucketed across all sessions over a
 // configurable window (?minutes=, default 60, clamped 5..1440). Read-only; the
-// chart refetches as events arrive over /ws. Distinct from the snapshot hero
-// cards (US-010) — this is history, not "now".
+// chart refetches as events arrive over /ws.
 app.get("/api/claude/pulse", (req, res) => {
   const raw = Number(req.query.minutes);
   const minutes = Number.isFinite(raw)
@@ -311,33 +190,18 @@ app.get("/api/claude/pulse", (req, res) => {
   res.json(pulseSeries(minutes * 60_000));
 });
 
-// Opt-in secondary widgets for one session (US-022): MCP servers + health,
-// plugins + plugin_errors, most-used tools, api_retry rate, and git branch +
-// dirty-file count for the session cwd. Read-only; the UI fetches this only for
-// widgets the user has enabled, so the default view stays lean.
+// Per-session Context widget data (US-022): the latest assistant turn's context
+// consumption + the on-disk per-category breakdown (System/Tools/MCP/Memory/
+// Skills/Messages), plus MCP servers and the session cwd's git status. Read-only.
 app.get("/api/claude/sessions/:id/widgets", async (req, res) => {
   res.json(await readWidgets(req.params.id));
-});
-
-// Every permission prompt awaiting a decision across all live sessions, for the
-// cross-session pending-approvals widget (US-013). Read-only; the widget
-// refetches as control_request/control_cancel events arrive over /ws. Each item
-// is answered via the US-012 POST /sessions/:id/permission route.
-app.get("/api/claude/permissions", (_req, res) => {
-  // Driven prompts (stdin-answerable) plus interactive/observed prompts that have
-  // a live correlated pty, so the operator can answer a TUI prompt too (US-009).
-  res.json([
-    ...listPendingPermissions(),
-    ...listInteractivePermissions(liveTerminalSessionIds()),
-  ]);
 });
 
 // Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for
 // a token-based Claude Max plan — a rate-limited state + reset time parsed from
 // recent api_retry events, plus token consumption over rolling windows (5h/7d).
-// Cost-today is reported as informational only, NOT a ceiling. Read-only; the
-// widget refetches as events arrive over /ws and ticks the countdown
-// client-side. The dashboard counterpart to run-tasks.sh's backoff.
+// Read-only; the widget refetches as events arrive over /ws and ticks the
+// countdown client-side.
 //
 // US-005: also surfaces planUtilization — the REAL 5-hour/7-day "% used" + reset
 // times scraped from Claude Code's `/usage` TUI (the only confirmed live source;
@@ -355,225 +219,6 @@ app.get("/api/claude/usage", async (req, res) => {
   res.json({ ...base, planUtilization });
 });
 
-// Claude Code's own usage rollup for the Stats / contribution-heatmap widget
-// (US-002 → US-015): a normalized read of ~/.claude/stats-cache.json — a
-// contiguous (zero-filled) day calendar plus computed headline stats (streaks,
-// favorite model/hour, total tokens). Read-only and access-modeled like the
-// other /api/claude/* GET routes (loopback-only; the SPA reads it same-origin);
-// returns a safe empty shape when stats-cache.json is absent.
-app.get("/api/claude/stats", (_req, res) => {
-  res.json(readStats());
-});
-
-// MCP server status for the MCP widget (US-003 → US-004 → US-011). Claude Code
-// keeps no live MCP registry on disk, so we infer connected/needs-auth from the
-// user's configured servers — unioned across ~/.claude.json (global mcpServers
-// + projects[*].mcpServers, where most live), ~/.claude/settings.json, and the
-// project .mcp.json — minus the needs-auth cache, then override per-server with
-// the most-recent live session's captured system/init mcp_servers (true signal).
-// Read-only and access-modeled like the other /api/claude/* GET routes;
-// degrades to a safe empty shape when the config files are absent.
-app.get("/api/claude/mcp", (_req, res) => {
-  res.json(readMcpStatus({ sessionMcp: liveSessionMcp() }));
-});
-
-// Read-only settings surface for the Settings view (US-020): which Claude Code
-// lifecycle hooks are wired (so observed sessions self-report). NO
-// cost-ceiling/budget here — removed in US-004/US-014; the plan is token-based,
-// not dollar-metered. Theme + usage preferences live client-side. The gateway is
-// loopback-only now (v4.2 Tauri-only — the TLS/remote-access path was removed).
-// Access-modeled like the other GET routes.
-app.get("/api/settings", (_req, res) => {
-  res.json({
-    hooks: readHooksStatus(),
-    remote: {
-      tlsEnabled: false,
-      scheme: "http",
-      host: HOST,
-      loopbackOnly: true,
-    },
-  });
-});
-
-// Claude Code settings mirror for the Settings page (US-006 → US-029). GET
-// reads the real values from ~/.claude/settings.json (+ settings.local.json
-// overrides + a couple of ~/.claude.json flags), reporting each known setting's
-// value, type, allowed values, default, and source file. Setting definitions
-// come from the bundled canonical schema (json.schemastore.org), not guesses.
-// Read-only and access-modeled like the other GET routes.
-app.get("/api/claude/settings", (_req, res) => {
-  res.json(readClaudeSettings());
-});
-
-// Changelog feed for the "What's New" view (US-007 → US-030). Parses
-// ~/.claude/cache/changelog.md into newest-first {version, items} entries (no
-// dates in the source → date null), reports the installed version (from a live
-// sessions/<pid>.json, else lastReleaseNotesSeen) and flags entries newer than
-// lastReleaseNotesSeen as `new` (semver-tuple compare). changelogLastFetched is
-// the file mtime for staleness. Read-only; safe empty shape if the file is gone.
-app.get("/api/claude/changelog", (_req, res) => {
-  res.json(readChangelog());
-});
-
-// Doctor + version/update banner (US-045): the installed Claude Code version,
-// the newest version the local changelog knows about, whether that's an update,
-// and the auto-update posture (~/.claude.json autoUpdates +
-// autoUpdatesProtectedForNative). The base read is synchronous and read-only —
-// access-modeled like the other GET routes. A token-gated `?check=1` additionally
-// runs a bounded one-shot of `claude doctor` (it spawns a process) and returns
-// its health summary; `doctor` is interactive, so headless it degrades to a
-// graceful "unavailable" rather than an error. health is null without ?check=1.
-app.get("/api/claude/doctor", async (req, res) => {
-  const base = readDoctorStatus();
-  let health = null;
-  if (req.query.check === "1") {
-    if (!authed(req, res)) return; // a doctor run spawns a process — token-gate it
-    health = await runDoctor();
-  }
-  res.json({ ...base, health });
-});
-
-// Ultrareview (US-046): a cloud code review of the active repo, launched as the
-// user's explicit, billed, token-gated action. GET reports the current run
-// snapshot (status + streamed findings + any error) and is read-only like the
-// other GET routes; the run's output also streams live over /ws as
-// {type:'ultrareview'}. POST starts a review for the active cwd (or a PR # via
-// {pr}); POST .../stop kills an in-flight run. Long-running and async: POST
-// returns immediately with the run handle while the review streams.
-app.get("/api/claude/ultrareview", (_req, res) => {
-  res.json(readUltrareview());
-});
-
-app.post("/api/claude/ultrareview", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const result = startUltrareview({
-    cwd: getActiveCwd(),
-    pr: typeof b.pr === "string" ? b.pr : undefined,
-  });
-  if (!result.ok) {
-    res.status(409).json({ error: result.error });
-    return;
-  }
-  res.json({ ok: true, run: result.run });
-});
-
-app.post("/api/claude/ultrareview/stop", (req, res) => {
-  if (!authed(req, res)) return;
-  res.json(stopUltrareview());
-});
-
-// Checkpoints (US-008): list Claude Code's per-session file-history snapshots
-// (~/.claude/file-history/<session>/<hash>@vN), grouped/sorted per session.
-// Read-only and access-modeled like the other GET routes; safe empty shape when
-// file-history is absent.
-app.get("/api/claude/checkpoints", (_req, res) => {
-  res.json(readCheckpoints());
-});
-
-// Fetch a single snapshot's content for preview (read-only). The snapshot is
-// located by scanning the session dir for the requested hash/version, so user
-// input is never joined into a filesystem path. 404 when not found.
-app.get("/api/claude/checkpoints/:sessionId/content", (req, res) => {
-  const { sessionId } = req.params;
-  const hash = typeof req.query.hash === "string" ? req.query.hash : "";
-  const versionRaw = typeof req.query.version === "string" ? req.query.version : "";
-  const version = versionRaw ? parseInt(versionRaw, 10) : null;
-  const snap = readSnapshot(sessionId, hash, Number.isFinite(version as number) ? version : null);
-  if (!snap) {
-    res.status(404).json({ error: "snapshot not found" });
-    return;
-  }
-  res.json(snap);
-});
-
-// Hooks-coverage (US-009): the full known Claude Code hook-event set (from the
-// bundled canonical schema), each marked consumed-by-Conan and wired/unwired per
-// scope (user ~/.claude/settings.json + the active project's .claude/settings.json).
-// Surfaces the events Conan doesn't consume yet (SubagentStart, PermissionRequest,
-// …). Read-only and access-modeled like the other GET routes; safe empty-ish
-// shape when schema/settings are absent.
-app.get("/api/claude/hooks-coverage", (_req, res) => {
-  res.json(readHooksCoverage());
-});
-
-// Per-project metrics (US-010): the last-session cost/tokens/lines/model-split
-// Claude Code records under ~/.claude.json projects[<cwd>]. Accepts a ?cwd=
-// param (defaults to the active cwd); unknown project / missing file degrade to
-// a safe found:false shape. Read-only and access-modeled like the other GET routes.
-app.get("/api/claude/project-metrics", (req, res) => {
-  const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
-  res.json(readProjectMetrics(cwd));
-});
-
-// Installed plugins (US-011): the plugins on this machine, the marketplaces they
-// came from, and which are enabled — read from ~/.claude/plugins/*.json plus the
-// enabledPlugins map in settings.json. Read-only; missing files degrade to empty.
-app.get("/api/claude/plugins", (_req, res) => {
-  res.json(readPlugins());
-});
-
-// Custom-agents catalog (US-012): the agent definitions the user has defined,
-// scanned from ~/.claude/agents/ (user scope) + the active project's
-// .claude/agents/ (project scope), parsed from each manifest's frontmatter
-// (SOUL.md / <name>.md). Read-only; missing dirs degrade to an empty list.
-app.get("/api/claude/agents", (_req, res) => {
-  res.json(readAgents());
-});
-
-// Live background agents (US-013): shells out to `claude agents --json` (bounded
-// timeout) and returns the parsed live background-agent list. Token-gated — it
-// spawns a process — and accepts an optional ?cwd= filter (CLI `--cwd`). A
-// non-zero exit / empty list / missing binary degrade to a safe empty payload.
-app.get("/api/claude/background-agents", async (req, res) => {
-  if (!authed(req, res)) return;
-  const cwd = typeof req.query.cwd === "string" ? req.query.cwd : undefined;
-  res.json(await readBackgroundAgents({ cwd }));
-});
-
-// Prompt history (US-015): the user's Claude Code prompt history from
-// ~/.claude/history.jsonl, newest-first, with optional ?q= text search,
-// ?project= filter, and ?limit=/?offset= pagination. Read-only and
-// access-modeled like the other GET routes; missing file → empty result.
-app.get("/api/claude/prompt-history", async (req, res) => {
-  const q = typeof req.query.q === "string" ? req.query.q : undefined;
-  const project = typeof req.query.project === "string" ? req.query.project : undefined;
-  const limit =
-    typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
-  const offset =
-    typeof req.query.offset === "string" ? parseInt(req.query.offset, 10) : undefined;
-  res.json(
-    await readPromptHistory({
-      q,
-      project,
-      limit: Number.isFinite(limit as number) ? limit : undefined,
-      offset: Number.isFinite(offset as number) ? offset : undefined,
-    }),
-  );
-});
-
-// Token-gated safe write: persists ONE allowlisted preference key to
-// settings.json (atomic, preserving unknown keys). Refuses unknown / risky keys
-// (permissions.*, hooks, mcpServers) and rejects invalid values with a clear
-// error. Never writes ~/.claude.json.
-app.put("/api/claude/settings", (req, res) => {
-  if (!authed(req, res)) return;
-  const b = (req.body ?? {}) as Record<string, unknown>;
-  const result = writeClaudeSetting(b.key, b.value);
-  if (!result.ok) {
-    res.status(result.status ?? 400).json({ error: result.error ?? "write failed" });
-    return;
-  }
-  res.json({ ok: true, key: b.key, value: result.value });
-});
-
-// Session DRIVING (start / sendPrompt / stop / resume / permission decisions)
-// was removed in v4.2 (US-003): Conan is Tauri-only and observes sessions via
-// the pty + hooks rather than launching/steering headless `claude -p` runs
-// through the gateway. The session GET routes (list + widgets) and the read
-// helpers above are what remain.
-
-
 // The Tauri webview loads the bundled frontend and dev uses the Vite server
 // (:5173), so the gateway is JSON-API + WebSockets only — it no longer serves
 // the built UI to a browser (v4.2 Tauri-only).
@@ -586,9 +231,8 @@ const terminalWss = new WebSocketServer({ noServer: true });
 
 eventsWss.on("connection", (socket) => {
   // ws emits 'error' on a malformed frame / abrupt reset; with no listener Node
-  // rethrows and crashes the whole gateway. A previewed app (US-012) can drive
-  // odd frames at our endpoints, so swallow per-socket errors — drop that one
-  // client, never the process.
+  // rethrows and crashes the whole gateway. Swallow per-socket errors — drop
+  // that one client, never the process.
   socket.on("error", () => {});
   socket.send(JSON.stringify({ type: "hello", ts: Date.now() }));
   // Send the current task snapshot immediately so the Tasks tab fills on open.
@@ -644,12 +288,6 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 // status='running'. The session grid (GET /api/claude/sessions) reads the table,
 // so its reconciled status flows to the UI on the next refetch.
 const stopReaper = startReaper();
-
-// Stream ultrareview output (US-046) to app clients as it arrives so the
-// findings panel renders live without polling — same broadcast bus as events.
-onUltrareviewUpdate((run) => {
-  broadcast({ type: "ultrareview", payload: run });
-});
 
 server.on("upgrade", (req, socket, head) => {
   const { pathname } = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
