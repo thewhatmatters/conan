@@ -190,8 +190,8 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": "Decision 2026-05-27: include the mirror. Mechanism research required; relates to the keystroke-injection path in src/terminal/index.ts. Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Decision 2026-05-27: include the mirror. Mechanism research required; relates to the keystroke-injection path in src/terminal/index.ts. Suggested skills: automate-browser. DONE: chose config-write (not /theme keystroke-inject — /theme is an arrow-key selector TUI with no arg form, fragile) writing the `theme` key in ~/.claude/settings.json; documented the tradeoff (lands next session, not live). Backend writeClaudeTheme/readClaudeTheme/nextClaudeTheme (preserves accessibility variants) + GET/POST /api/claude/theme; UI useTerminalTheme hook auto-mirrors on Conan theme change (skips initial mount) + a separate View > 'Terminal text theme' menu group (disabled/labeled when no Claude config). Verified: 13 new unit tests, typecheck, npm test, ui build, routes end-to-end via curl, app mounts clean light+dark."
     },
     {
       "id": "US-013",

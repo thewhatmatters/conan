@@ -20,7 +20,7 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
-import { readClaudeConfig } from "../config/index.js";
+import { readClaudeConfig, readClaudeTheme, writeClaudeTheme } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 
@@ -269,6 +269,26 @@ app.get("/api/claude/skills", (req, res) => {
 app.get("/api/claude/config", (req, res) => {
   if (!authed(req, res)) return;
   res.json(readClaudeConfig(getActiveCwd()));
+});
+
+// Terminal /theme mirror (US-012): GET reports Claude's current terminal theme +
+// whether its config exists (drives the menu's "Terminal text theme" group + its
+// no-op state); POST mirrors a Conan polarity ("light"|"dark") into the same
+// `theme` key /config reads, read-modify-write preserving the rest. The file
+// path is chosen over a /theme keystroke inject as the non-fragile mechanism
+// (see src/config/index.ts) — it lands in the next session, not the live one.
+app.get("/api/claude/theme", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(readClaudeTheme());
+});
+app.post("/api/claude/theme", (req, res) => {
+  if (!authed(req, res)) return;
+  const theme = (req.body as { theme?: unknown } | undefined)?.theme;
+  if (theme !== "light" && theme !== "dark") {
+    res.status(400).json({ ok: false, error: "theme must be 'light' or 'dark'" });
+    return;
+  }
+  res.json(writeClaudeTheme(theme));
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

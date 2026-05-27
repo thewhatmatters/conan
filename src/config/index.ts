@@ -152,3 +152,79 @@ export function readClaudeConfig(cwd: string | null): {
   }));
   return { entries, files };
 }
+
+// ── US-012: mirror Conan's app theme into Claude Code's terminal /theme ──────
+//
+// Mechanism: a config-write of the same `theme` key /config reads above — NOT a
+// `/theme` keystroke inject into the pty. Why the file path is the non-fragile
+// one: Claude's `/theme` is an interactive arrow-key SELECTOR TUI with no
+// argument form, so injecting it means guessing arrow presses from a cursor
+// whose start position depends on the current theme (which we can't introspect)
+// — a misfire silently picks the wrong theme. Writing the key is deterministic
+// and non-destructive. The accepted tradeoff: a *running* `claude` reads `theme`
+// at startup and does NOT hot-reload settings.json, so the mirror lands in the
+// session's next start, not live. Precondition (so the mirror is a safe no-op):
+// ~/.claude/settings.json must already exist — a missing/unreadable file is left
+// untouched (we never fabricate the user's config to plant a theme in it).
+
+/** The resolved Conan polarity we drive — Claude's vocabulary is richer. */
+export type ConanTheme = "light" | "dark";
+
+/** Result of a mirror attempt, reflected back to the UI (so a no-op is honest). */
+export interface ThemeMirrorResult {
+  ok: boolean;
+  /** The Claude theme value now on disk (when ok). */
+  theme?: string;
+  /** Why it was a no-op (when !ok). */
+  reason?: "no-config" | "write-error";
+  /** The settings.json path consulted. */
+  path: string;
+}
+
+/** ~/.claude/settings.json — where Claude Code persists the `theme` /config row. */
+const USER_SETTINGS_PATH = path.join(HOME, ".claude", "settings.json");
+
+/**
+ * The Claude theme value to write for a given Conan polarity, given the current
+ * on-disk value. Preserves an accessibility variant (daltonized/ansi) whose
+ * polarity already matches — we only flip the light/dark base, never clobber a
+ * "dark-daltonized" down to a plain "dark". Pure; unit-tested.
+ */
+export function nextClaudeTheme(current: unknown, conan: ConanTheme): string {
+  return typeof current === "string" && current.startsWith(conan) ? current : conan;
+}
+
+/** Read the current terminal theme + whether the config exists (for UI state). */
+export function readClaudeTheme(file: string = USER_SETTINGS_PATH): {
+  theme: string | null;
+  available: boolean;
+  path: string;
+} {
+  const data = readJson(file);
+  return {
+    theme: data && typeof data.theme === "string" ? data.theme : null,
+    available: data != null,
+    path: file,
+  };
+}
+
+/**
+ * Mirror a Conan theme into Claude Code's `theme` setting (read-modify-write,
+ * preserving every other key). No-op when settings.json is absent/unreadable, or
+ * already in sync. Returns the outcome so the UI can reflect a no-op honestly.
+ */
+export function writeClaudeTheme(
+  conan: ConanTheme,
+  file: string = USER_SETTINGS_PATH,
+): ThemeMirrorResult {
+  const data = readJson(file);
+  if (data == null) return { ok: false, reason: "no-config", path: file };
+  const value = nextClaudeTheme(data.theme, conan);
+  if (data.theme === value) return { ok: true, theme: value, path: file };
+  try {
+    fs.writeFileSync(file, JSON.stringify({ ...data, theme: value }, null, 2) + "\n");
+    return { ok: true, theme: value, path: file };
+  } catch {
+    return { ok: false, reason: "write-error", path: file };
+  }
+}
