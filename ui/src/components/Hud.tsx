@@ -32,6 +32,8 @@ interface HudProps {
   onRefetchWidgets?: () => void;
   // — Usage widget (global) —
   usage: UsageState;
+  /** Re-pull the usage payload (after a /usage capture lands, US-010). */
+  onRefetchUsage?: () => void;
   // — Pulse graph —
   pulse?: PulseSeries | null;
   pulseMinutes?: number;
@@ -53,6 +55,7 @@ export default function Hud({
   token,
   onRefetchWidgets,
   usage,
+  onRefetchUsage,
   pulse,
   pulseMinutes = 60,
   onPulseRange,
@@ -126,7 +129,13 @@ export default function Hud({
           value="usage"
           className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
         >
-          <UsageWidget usage={usage} />
+          <UsageWidget
+            usage={usage}
+            session={activeSession}
+            token={token}
+            hasLivePty={data?.hasLivePty ?? false}
+            onRefetch={onRefetchUsage}
+          />
         </TabsContent>
 
         <TabsContent value="pulse" className="mt-0 min-h-0 flex-1 overflow-auto">

@@ -8,12 +8,13 @@ import {
   closeAllTerminals,
   listTerminalSessions,
   injectContextRefresh,
+  injectUsageRefresh,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
-import { getCachedPlanUtilization, maybeProbe } from "../usage/probe.js";
+import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage/probe.js";
 import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { startReaper } from "../session/reaper.js";
@@ -207,6 +208,15 @@ app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
   res.json({ ok: injectContextRefresh(req.params.id) });
 });
 
+// On-demand /usage refresh (US-010): inject `/usage` into the session's live pty
+// so its rendered frame (Session block + 3 windows) is captured passively and
+// surfaces in the next usage fetch. Token-gated (it types into a terminal).
+// {ok:false} when no live pty is correlated — the widget keeps the probe windows.
+app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ ok: injectUsageRefresh(req.params.id) });
+});
+
 // Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for
 // a token-based Claude Max plan — a rate-limited state + reset time parsed from
 // recent api_retry events, plus token consumption over rolling windows (5h/7d).
@@ -219,6 +229,11 @@ app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
 // Always returns the last cached probe (or null); never blocks on a scrape. A
 // token-gated `?probe=1` requests a fresh, bounded PTY probe on demand (throttled
 // to once per TTL) — that's how the widget refreshes when the dashboard opens.
+// US-010: also surfaces liveUsage — the EXACT Session block (cost/durations/code/
+// per-model tokens) + all 3 windows captured from the active session's correlated
+// pty (passive when a user runs /usage, or via POST …/usage/refresh). Source
+// precedence in the widget: liveUsage → planUtilization (probe windows) → the
+// token-trend baseline. Pass ?session=<id> to bind the live block to that session.
 app.get("/api/claude/usage", async (req, res) => {
   const base = usageStatus();
   let planUtilization = getCachedPlanUtilization();
@@ -226,7 +241,9 @@ app.get("/api/claude/usage", async (req, res) => {
     if (!authed(req, res)) return; // a probe spawns a process — token-gate it
     planUtilization = await maybeProbe();
   }
-  res.json({ ...base, planUtilization });
+  const sessionId = typeof req.query.session === "string" ? req.query.session : null;
+  const liveUsage = sessionId ? getCapturedUsage(sessionId) : null;
+  res.json({ ...base, planUtilization, liveUsage });
 });
 
 // The Tauri webview loads the bundled frontend and dev uses the Vite server

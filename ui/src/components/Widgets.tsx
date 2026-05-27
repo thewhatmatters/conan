@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Session } from "../hooks/useSessions.ts";
-import type { UsageState, UsageWindow } from "../hooks/useUsage.ts";
+import type {
+  LiveUsage,
+  ModelUsage,
+  UsageState,
+  UsageWindow,
+} from "../hooks/useUsage.ts";
 import type {
   ContextCategory,
   LiveContext,
@@ -274,17 +279,85 @@ function ContextBreakdownBar({
  * marks itself an approximation via the "≈ approx" tag. It is never blank: with
  * no data at all it shows "—". The countdowns tick client-side off `resetAt`.
  */
-export function UsageWidget({ usage }: { usage: UsageState }) {
+export function UsageWidget({
+  usage,
+  session,
+  token,
+  hasLivePty,
+  onRefetch,
+}: {
+  usage: UsageState;
+  session?: Session | null;
+  token?: string | null;
+  hasLivePty?: boolean;
+  onRefetch?: () => void;
+}) {
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // On-demand refresh: inject `/usage` into the correlated pty (US-010), then
+  // poll the usage payload a few times so the passively-captured frame surfaces.
+  const [refreshing, setRefreshing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
+  const refresh = async () => {
+    if (!session || !token || refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetch(
+        apiBase() +
+          `/api/claude/sessions/${encodeURIComponent(session.id)}/usage/refresh`,
+        { method: "POST", headers: { "x-conan-token": token } },
+      );
+    } catch {
+      /* best-effort — fall back to whatever surfaces */
+    }
+    let n = 0;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => {
+      onRefetch?.();
+      if (++n >= 6) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setRefreshing(false);
+      }
+    }, 700);
+  };
+
+  // Refresh control: only when a live pty is correlated (it types into it).
+  const refreshBtn = hasLivePty ? (
+    <button
+      type="button"
+      onClick={refresh}
+      disabled={refreshing}
+      title="Run /usage in the live terminal and capture the exact Session block + windows"
+      className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+    >
+      {refreshing ? "capturing…" : "↻ /usage"}
+    </button>
+  ) : null;
+
+  // --- live face: the EXACT /usage capture (US-010) -------------------------
+  if (usage.liveUsage) {
+    return (
+      <LiveUsageView live={usage.liveUsage} tick={tick} refreshBtn={refreshBtn} />
+    );
+  }
+
   // Prefer the real scrape (US-005) when it carries at least one parsed window.
   const plan = usage.planUtilization;
   const hasPlan = !!plan && (!!plan.fiveHour || !!plan.sevenDay);
-  if (hasPlan && plan) return <PlanUsage plan={plan} tick={tick} />;
+  if (hasPlan && plan) {
+    return <PlanUsage plan={plan} tick={tick} refreshBtn={refreshBtn} />;
+  }
 
   // --- baseline (US-004): token-trend approximation -------------------------
   const remaining =
@@ -320,6 +393,7 @@ export function UsageWidget({ usage }: { usage: UsageState }) {
           </span>
         )}
         <ApproxTag />
+        {refreshBtn}
       </div>
       <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
         {resetLabel
@@ -343,30 +417,48 @@ const STATUS_COLOR: Record<"ok" | "warning" | "limit", string> = {
   limit: "text-destructive",
 };
 
+/** The status chip (High/Limit) for the plan/live faces; null when ok. */
+function StatusChip({ status }: { status: "ok" | "warning" | "limit" }) {
+  if (status === "ok") return null;
+  return (
+    <span
+      className={
+        "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide " +
+        (status === "limit"
+          ? "bg-destructive/15 text-destructive"
+          : "bg-amber-500/15 text-amber-600 dark:text-amber-400")
+      }
+    >
+      {status === "limit" ? "Limit" : "High"}
+    </span>
+  );
+}
+
+/** The worst (binding) window % across the three windows, floored to an int. */
+function worstWindow(
+  ...windows: (UsageWindow | null | undefined)[]
+): number {
+  return (
+    Math.max(-1, ...windows.map((w) => w?.utilizationPct ?? -1)) | 0
+  );
+}
+
 /**
- * The REAL plan-utilization face of the Usage widget (US-025): the 5-hour and
- * 7-day windows' "% used" + per-window reset countdown, headlined by the worst
- * window and tinted by the scrape's posture. The countdown ticks off `tick`.
+ * The REAL plan-utilization face of the Usage widget (US-025/US-010): the 5-hour,
+ * 7-day all-models, and 7-day Sonnet-only windows' "% used" + per-window reset
+ * countdown, headlined by the worst window and tinted by the scrape's posture.
+ * The countdown ticks off `tick`. These windows are account-global (probe).
  */
 function PlanUsage({
   plan,
   tick,
+  refreshBtn,
 }: {
   plan: NonNullable<UsageState["planUtilization"]>;
   tick: number;
+  refreshBtn?: ReactNode;
 }) {
-  // Headline = the window closest to its limit (the binding constraint).
-  const worst =
-    Math.max(
-      plan.fiveHour?.utilizationPct ?? -1,
-      plan.sevenDay?.utilizationPct ?? -1,
-    ) | 0;
-  const statusLabel =
-    plan.status === "limit"
-      ? "Limit"
-      : plan.status === "warning"
-        ? "High"
-        : null;
+  const worst = worstWindow(plan.fiveHour, plan.sevenDay, plan.sevenDaySonnet);
 
   return (
     <StatCard label="Usage" sub="plan · live">
@@ -374,24 +466,116 @@ function PlanUsage({
         <span className={"text-xl font-semibold " + STATUS_COLOR[plan.status]}>
           {worst}%
         </span>
-        {statusLabel && (
-          <span
-            className={
-              "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide " +
-              (plan.status === "limit"
-                ? "bg-destructive/15 text-destructive"
-                : "bg-amber-500/15 text-amber-600 dark:text-amber-400")
-            }
-          >
-            {statusLabel}
-          </span>
-        )}
+        <StatusChip status={plan.status} />
+        {refreshBtn}
       </div>
       <div className="mt-1.5 space-y-1">
         <PlanWindowRow label="5h" win={plan.fiveHour} tick={tick} />
         <PlanWindowRow label="7d" win={plan.sevenDay} tick={tick} />
+        <PlanWindowRow label="7d-S" win={plan.sevenDaySonnet} tick={tick} />
       </div>
     </StatCard>
+  );
+}
+
+/**
+ * The LIVE face of the Usage widget (US-010): the EXACT /usage capture from the
+ * correlated pty — the session-specific Session block (cost, API/wall durations,
+ * code changes, per-model token usage) plus all three account-global windows.
+ * Distinguished from the probe by the "live · from /usage" sub-label.
+ */
+function LiveUsageView({
+  live,
+  tick,
+  refreshBtn,
+}: {
+  live: LiveUsage;
+  tick: number;
+  refreshBtn?: ReactNode;
+}) {
+  const worst = worstWindow(live.fiveHour, live.sevenDay, live.sevenDaySonnet);
+  const s = live.session;
+  return (
+    <StatCard label="Usage" sub="live · from /usage">
+      <div className="flex items-center gap-2">
+        <span className={"text-xl font-semibold " + STATUS_COLOR[live.status]}>
+          {worst >= 0 ? `${worst}%` : "—"}
+        </span>
+        <StatusChip status={live.status} />
+        {refreshBtn}
+      </div>
+
+      {/* account-global rate-limit windows */}
+      <div className="mt-1.5 space-y-1">
+        <PlanWindowRow label="5h" win={live.fiveHour} tick={tick} />
+        <PlanWindowRow label="7d" win={live.sevenDay} tick={tick} />
+        <PlanWindowRow label="7d-S" win={live.sevenDaySonnet} tick={tick} />
+      </div>
+
+      {/* session-specific Session block */}
+      {s && (
+        <div className="mt-2 border-t border-border pt-1.5">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Session
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+            {s.totalCostUsd != null && (
+              <SessionStat label="Cost" value={`$${s.totalCostUsd.toFixed(2)}`} />
+            )}
+            {(s.linesAdded != null || s.linesRemoved != null) && (
+              <SessionStat
+                label="Code"
+                value={`+${s.linesAdded ?? 0} / −${s.linesRemoved ?? 0}`}
+              />
+            )}
+            {s.apiDurationMs != null && (
+              <SessionStat label="API" value={fmtDuration(s.apiDurationMs)} />
+            )}
+            {s.wallDurationMs != null && (
+              <SessionStat label="Wall" value={fmtDuration(s.wallDurationMs)} />
+            )}
+          </div>
+          {s.byModel.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {s.byModel.map((m, i) => (
+                <ModelUsageRow key={m.model ?? `m${i}`} usage={m} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </StatCard>
+  );
+}
+
+/** One labeled Session-block stat (label left, value right). */
+function SessionStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums text-foreground">{value}</span>
+    </div>
+  );
+}
+
+/** One per-model usage row: model name + in/out/cache token counts (US-010). */
+function ModelUsageRow({ usage }: { usage: ModelUsage }) {
+  return (
+    <div className="text-[11px]">
+      <div className="truncate font-medium text-foreground">
+        {usage.modelDisplay ?? usage.model ?? "All models"}
+      </div>
+      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-muted-foreground">
+        <span className="tabular-nums">{fmtTokens(usage.inputTokens)} in</span>
+        <span className="tabular-nums">{fmtTokens(usage.outputTokens)} out</span>
+        <span className="tabular-nums">
+          {fmtTokens(usage.cacheReadTokens)} cache-r
+        </span>
+        <span className="tabular-nums">
+          {fmtTokens(usage.cacheWriteTokens)} cache-w
+        </span>
+      </div>
+    </div>
   );
 }
 

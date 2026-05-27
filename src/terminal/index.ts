@@ -6,6 +6,7 @@ import { getDb } from "../db/index.js";
 import { getActiveCwd } from "../cwd/index.js";
 import { correlateClaudeSession, shortSessionId } from "./correlate.js";
 import { parseContextFrame, cacheCapturedContext } from "../context/index.js";
+import { parseUsageFrame, parseUsageSession, cacheCapturedUsage } from "../usage/probe.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -34,6 +35,13 @@ const DETACH_GRACE_MS = clampEnvInt("CONAN_TERM_GRACE_MS", 30_000, 0, 60 * 60_00
  * chunks still assembles, without re-scanning the whole replay ring.
  */
 const CTX_SCAN_MAX = 64 * 1024;
+
+/**
+ * Bound on the rolling buffer scanned for a `/usage` frame (US-010). The /usage
+ * screen (Session block + 3 windows + the detail section) is larger than
+ * /context, so we keep a slightly bigger tail to assemble it across pty chunks.
+ */
+const USAGE_SCAN_MAX = 96 * 1024;
 
 /**
  * Resolve what the pty runs. `mode=claude` (default) launches Claude Code so the
@@ -88,6 +96,8 @@ interface TermSession {
   killTimer: ReturnType<typeof setTimeout> | null;
   /** Rolling tail of recent output scanned for a `/context` frame (US-009). */
   ctxScan: string;
+  /** Rolling tail of recent output scanned for a `/usage` frame (US-010). */
+  usageScan: string;
   exited: boolean;
   onData: pty.IDisposable;
   onExit: pty.IDisposable;
@@ -157,6 +167,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     persistent: tid !== null,
     killTimer: null,
     ctxScan: "",
+    usageScan: "",
     exited: false,
     onData: { dispose() {} },
     onExit: { dispose() {} },
@@ -168,6 +179,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   session.onData = term.onData((d) => {
     pushBuffer(session, d);
     maybeCaptureContext(session, d);
+    maybeCaptureUsage(session, d);
     if (session.ws && session.ws.readyState === session.ws.OPEN) session.ws.send(d);
   });
   session.onExit = term.onExit(({ exitCode }) => {
@@ -232,6 +244,56 @@ export function injectContextRefresh(sessionId: string): boolean {
   if (!s || s.exited) return false;
   try {
     s.term.write("/context\r");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Passive `/usage` capture (US-010): accumulate a tail of the pty's output and,
+ * once the /usage windows have rendered (a "Resets" line is present), parse the
+ * Session block + all three windows and cache them under the correlated session —
+ * WITHOUT injecting anything. The user ran /usage themselves; we just read it.
+ * The Session block is session-specific, so it can only come from this live pty.
+ *
+ * The frame renders the Session block + windows BEFORE the long "What's
+ * contributing" detail; we re-capture as each window arrives and only clear the
+ * scan once the detail section ("contributing") appears, so the final cached
+ * frame carries all three windows rather than a half-rendered one.
+ */
+function maybeCaptureUsage(s: TermSession, chunk: string): void {
+  s.usageScan = (s.usageScan + chunk).slice(-USAGE_SCAN_MAX);
+  // Cheap pre-gate: "Resets" labels each window's reset line — rare in normal
+  // output and present once a window has rendered. Only then pay for the parse.
+  if (!s.usageScan.includes("Resets")) return;
+  const windows = parseUsageFrame(s.usageScan);
+  if (!windows || !windows.fiveHour) return; // not a complete /usage frame yet
+  const info = correlateClaudeSession(s.term.pid, s.cwd);
+  if (!info?.sessionId) return; // keep scanning; retry on a later chunk
+  cacheCapturedUsage(info.sessionId, {
+    session: parseUsageSession(s.usageScan),
+    fiveHour: windows.fiveHour,
+    sevenDay: windows.sevenDay,
+    sevenDaySonnet: windows.sevenDaySonnet,
+    status: windows.status,
+  });
+  // Clear only once the frame is fully rendered (the detail section, which comes
+  // after every window, has appeared) so we don't drop the later windows.
+  if (s.usageScan.includes("contributing")) s.usageScan = "";
+}
+
+/**
+ * On-demand /usage refresh (US-010): inject `/usage` into the pty running a given
+ * session, reusing the keystroke-injection path. The resulting frame is captured
+ * passively by maybeCaptureUsage. Returns whether a live correlated pty was found
+ * — false falls back to the throwaway-probe windows / token-trend baseline.
+ */
+export function injectUsageRefresh(sessionId: string): boolean {
+  const s = findTermForSession(sessionId);
+  if (!s || s.exited) return false;
+  try {
+    s.term.write("/usage\r");
     return true;
   } catch {
     return false;

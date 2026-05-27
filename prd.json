@@ -177,7 +177,7 @@
         "Verify with automate-browser at http://localhost:5173 that after a /usage run (or Refresh) the widget shows the Session block (cost/durations/code/by-model) + all three windows with % and resets, and that with no live session it falls back to the probe windows"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Parallels US-009. src/usage/probe.ts already does the ANSI-strip + window parse (parseUsageFrame) for 2 windows + caches the throwaway probe — extend it to 3 windows and add the Session-block parse, and add the live-pty capture for the session-specific block. The rate-limit windows are account-global (throwaway probe is fine); the Session block is session-specific (live pty only). Gateway/terminal edits → run outside the in-dock session (footgun #1)."
     },
     {

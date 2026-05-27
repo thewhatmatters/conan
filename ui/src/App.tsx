@@ -61,7 +61,13 @@ export default function App() {
     null;
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   // US-025: also surfaces the real /usage scrape; token-gated probe on open.
-  const usage = useUsage(wsTrigger, config?.token ?? null);
+  // US-010: bind the live /usage capture (Session block + 3 windows) to the
+  // active session via the session id; refetch drives the on-demand Refresh.
+  const { usage, refetch: refetchUsage } = useUsage(
+    wsTrigger,
+    config?.token ?? null,
+    activeSession?.id ?? null,
+  );
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
@@ -120,6 +126,7 @@ export default function App() {
         token={config?.token ?? null}
         onRefetchWidgets={refetchWidgets}
         usage={usage}
+        onRefetchUsage={refetchUsage}
         pulse={pulse}
         pulseMinutes={pulseMinutes}
         onPulseRange={setPulseMinutes}

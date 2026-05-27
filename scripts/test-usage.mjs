@@ -101,6 +101,57 @@ try {
   check("seven-day utilizationPct = 12", plan?.sevenDay?.utilizationPct === 12);
   check("seven-day resetAt parses the dated reset", typeof plan?.sevenDay?.resetAt === "number" && plan.sevenDay.resetAt > ref);
   check("status derived (50%/12% -> ok)", plan?.status === "ok");
+  // The 2-window capture has no Sonnet-only window (US-010 backward-compat).
+  check("no Sonnet-only window in the 2-window frame", plan?.sevenDaySonnet === null);
+
+  // --- US-010 full /usage frame: Session block + all 3 windows -------------
+  // A frame covering the Session block (cost/durations/code/per-model) + all
+  // three rate-limit windows including "Current week (Sonnet only)". (Modeled on
+  // the real /usage layout — a billed multi-model session can't be captured in
+  // CI — and exercises the same ANSI-strip + collapse path as the real capture.)
+  const fullFrame = fs.readFileSync(
+    new URL("./fixtures/usage-frame-full.txt", import.meta.url),
+    "utf8",
+  );
+  const full = probe.parseUsageFrame(fullFrame, ref);
+  check("full frame: 5h window = 35%", full?.fiveHour?.utilizationPct === 35);
+  check("full frame: 7d all-models = 62%", full?.sevenDay?.utilizationPct === 62);
+  check("full frame: 7d Sonnet-only = 18%", full?.sevenDaySonnet?.utilizationPct === 18);
+  check("full frame: all 3 windows have resets", typeof full?.fiveHour?.resetAt === "number" && typeof full?.sevenDay?.resetAt === "number" && typeof full?.sevenDaySonnet?.resetAt === "number");
+  check("full frame: status (62% -> ok)", full?.status === "ok");
+
+  const sess = probe.parseUsageSession(fullFrame);
+  check("session block parses", !!sess);
+  check("session total cost = $12.34", Math.abs((sess?.totalCostUsd ?? 0) - 12.34) < 1e-6);
+  check("session API duration = 1h2m (ms)", sess?.apiDurationMs === 3_720_000);
+  check("session wall duration = 2h5m (ms)", sess?.wallDurationMs === 7_500_000);
+  check("session lines added = 1234", sess?.linesAdded === 1234);
+  check("session lines removed = 567", sess?.linesRemoved === 567);
+  check("session by-model: 2 models", (sess?.byModel?.length ?? 0) === 2);
+  const opus = sess?.byModel?.find((m) => m.model === "claude-opus-4-7");
+  check("opus row parsed (slug + display)", opus?.modelDisplay === "Claude Opus 4.7");
+  check("opus input 1.2k -> 1200", opus?.inputTokens === 1200);
+  check("opus output 45.6k -> 45600", opus?.outputTokens === 45_600);
+  check("opus cache-read 1.8m -> 1.8M", opus?.cacheReadTokens === 1_800_000);
+  check("opus cache-write 134.6k", opus?.cacheWriteTokens === 134_600);
+  const sonnet = sess?.byModel?.find((m) => m.model === "claude-sonnet-4-6");
+  check("sonnet row parsed", sonnet?.outputTokens === 12_000 && sonnet?.cacheReadTokens === 320_000);
+
+  // The $0 session ($0 fixture) renders an aggregate "Usage:" line (no per-model
+  // breakdown) — represented as one entry with model=null, never blank.
+  const sessAgg = probe.parseUsageSession(fixture);
+  check("aggregate session block parses ($0)", !!sessAgg && sessAgg.totalCostUsd === 0);
+  check("aggregate by-model is one model=null entry", sessAgg?.byModel?.length === 1 && sessAgg.byModel[0].model === null);
+  check("garbage frame -> no session block", probe.parseUsageSession("just shell output\n$ ls") === null);
+
+  // Live-usage per-session cache round-trip (US-010).
+  check("getCapturedUsage null before capture", probe.getCapturedUsage("sess-live") === null);
+  probe.cacheCapturedUsage("sess-live", { session: sess, fiveHour: full.fiveHour, sevenDay: full.sevenDay, sevenDaySonnet: full.sevenDaySonnet, status: full.status });
+  const live = probe.getCapturedUsage("sess-live");
+  check("captured usage retrievable", !!live && live.session?.totalCostUsd === 12.34);
+  check("captured usage stamps capturedAt", typeof live?.capturedAt === "number" && live.capturedAt > 0);
+  probe.clearCapturedUsage("sess-live");
+  check("clearCapturedUsage drops it", probe.getCapturedUsage("sess-live") === null);
 
   // status thresholds + standalone reset parsing.
   check(
@@ -179,8 +230,13 @@ try {
   check("tokensRecent.last7d includes older sessions", usage.tokensRecent?.last7d === 6200);
   check("no dollar ceiling/pct in response", !("dailyCeilingUsd" in usage) && !("pct" in usage));
   check("planUtilization present (null with no fresh probe)", "planUtilization" in usage && usage.planUtilization === null);
+  check("liveUsage present (null without ?session, US-010)", "liveUsage" in usage && usage.liveUsage === null);
   check("not rate-limited with no retry events", usage.rateLimited === false);
   check("hasData true once usage recorded", usage.hasData === true);
+
+  // US-010: ?session=<id> binds the live capture; null when none captured.
+  const usageSess = await (await fetch(`${BASE}/api/claude/usage?session=sess-a`)).json();
+  check("liveUsage null for a session with no captured frame", usageSess.liveUsage === null);
 
   // A rate-limit retry with a 90s reset -> rateLimited + resetAt in the future.
   const retryTs = now - 10_000;

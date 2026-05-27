@@ -1,0 +1,34 @@
+[2J[H
+[38;5;174m▐[48;5;16m▛███▜[49m▌[12G[1mClaude[22m Code [38;5;246mv2.1.152[39m
+[38;5;246mOpus[39m 4.7 (1M context) · Claude Max
+
+[48;5;237m❯ [38;5;231m/usage[39m
+
+[1mSession[22m
+[38;5;246mTotal[39m [38;5;246mcost:[39m        $12.34
+[38;5;246mTotal[39m [38;5;246mduration[39m (API):  1h 2m
+[38;5;246mTotal[39m [38;5;246mduration[39m (wall): 2h 5m
+[38;5;246mTotal[39m [38;5;246mcode[39m changes:   1,234 lines added, 567 lines removed
+
+[1mUsage by model:[22m
+[38;5;246mclaude-opus-4-7:[39m    1.2k input, 45.6k output, 1.8m cache read, 134.6k cache write
+[38;5;246mclaude-sonnet-4-6:[39m  500 input, 12k output, 320k cache read, 18k cache write
+
+[1mCurrent session[22m
+[48;5;102m[38;5;153m██████████████████[49m[39m                                  35% used
+[38;5;246mResets[39m 3:30pm (America/Chicago)
+
+[1mCurrent week (all models)[22m
+[48;5;102m[38;5;153m███████████████████████████████[49m[39m                     62% used
+[38;5;246mResets[39m Jun 1 at 3pm (America/Chicago)
+
+[1mCurrent week (Sonnet only)[22m
+[48;5;102m[38;5;153m█████████[49m[39m                                         18% used
+[38;5;246mResets[39m Jun 1 at 3pm (America/Chicago)
+
+[1mWhat's contributing to your limits usage?[22m
+[38;5;246mApproximate, based on local sessions on this machine[39m
+
+43% of your usage was at >150k context
+
+[38;5;246md to day · w to week[39m

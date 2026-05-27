@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../lib/gateway.ts";
 
 /** Output-token consumption over recent rolling windows (plan-usage trend). */
@@ -21,8 +21,45 @@ export interface UsageWindow {
 export interface PlanUtilization {
   fiveHour: UsageWindow | null;
   sevenDay: UsageWindow | null;
+  /** Current week, Sonnet-only window (US-010); null on plans without it. */
+  sevenDaySonnet: UsageWindow | null;
   status: "ok" | "warning" | "limit";
   probedAt: number;
+}
+
+/** Per-model token usage from the /usage Session block (US-010). */
+export interface ModelUsage {
+  model: string | null;
+  modelDisplay: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** The session-specific Session block of the /usage screen (US-010). */
+export interface UsageSession {
+  totalCostUsd: number | null;
+  apiDurationMs: number | null;
+  wallDurationMs: number | null;
+  linesAdded: number | null;
+  linesRemoved: number | null;
+  byModel: ModelUsage[];
+}
+
+/**
+ * The EXACT /usage capture from the active session's live pty (US-010): the
+ * session-specific block + all three windows, parsed from one rendered frame.
+ * null when no frame has been captured for the session — the widget then falls
+ * back to the throwaway-probe windows, then the token-trend baseline.
+ */
+export interface LiveUsage {
+  session: UsageSession | null;
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  sevenDaySonnet: UsageWindow | null;
+  status: "ok" | "warning" | "limit";
+  capturedAt: number;
 }
 
 export interface UsageState {
@@ -36,6 +73,8 @@ export interface UsageState {
   hasData: boolean;
   /** Real /usage scrape (US-005) when fresh; null → fall back to the baseline. */
   planUtilization: PlanUtilization | null;
+  /** Live /usage capture for the active session (US-010); null → use the probe. */
+  liveUsage: LiveUsage | null;
 }
 
 const EMPTY: UsageState = {
@@ -47,6 +86,7 @@ const EMPTY: UsageState = {
   resetAt: null,
   hasData: false,
   planUtilization: null,
+  liveUsage: null,
 };
 
 /** Normalize one raw /usage window into a typed UsageWindow (or null). */
@@ -69,8 +109,58 @@ function parsePlanUtilization(p: unknown): PlanUtilization | null {
   return {
     fiveHour: parseWindow(o.fiveHour),
     sevenDay: parseWindow(o.sevenDay),
+    sevenDaySonnet: parseWindow(o.sevenDaySonnet),
     status,
     probedAt: typeof o.probedAt === "number" ? o.probedAt : 0,
+  };
+}
+
+/** Coerce an unknown to a finite number, or null. */
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** Normalize one raw per-model usage row (US-010). */
+function parseModelUsage(m: unknown): ModelUsage | null {
+  if (!m || typeof m !== "object") return null;
+  const o = m as Record<string, unknown>;
+  return {
+    model: typeof o.model === "string" ? o.model : null,
+    modelDisplay: typeof o.modelDisplay === "string" ? o.modelDisplay : null,
+    inputTokens: num(o.inputTokens) ?? 0,
+    outputTokens: num(o.outputTokens) ?? 0,
+    cacheReadTokens: num(o.cacheReadTokens) ?? 0,
+    cacheWriteTokens: num(o.cacheWriteTokens) ?? 0,
+  };
+}
+
+/** Normalize the raw liveUsage payload (US-010), tolerating null/absent. */
+function parseLiveUsage(p: unknown): LiveUsage | null {
+  if (!p || typeof p !== "object") return null;
+  const o = p as Record<string, unknown>;
+  const status =
+    o.status === "warning" || o.status === "limit" ? o.status : "ok";
+  let session: UsageSession | null = null;
+  if (o.session && typeof o.session === "object") {
+    const s = o.session as Record<string, unknown>;
+    session = {
+      totalCostUsd: num(s.totalCostUsd),
+      apiDurationMs: num(s.apiDurationMs),
+      wallDurationMs: num(s.wallDurationMs),
+      linesAdded: num(s.linesAdded),
+      linesRemoved: num(s.linesRemoved),
+      byModel: Array.isArray(s.byModel)
+        ? s.byModel.map(parseModelUsage).filter((m): m is ModelUsage => !!m)
+        : [],
+    };
+  }
+  return {
+    session,
+    fiveHour: parseWindow(o.fiveHour),
+    sevenDay: parseWindow(o.sevenDay),
+    sevenDaySonnet: parseWindow(o.sevenDaySonnet),
+    status,
+    capturedAt: num(o.capturedAt) ?? 0,
   };
 }
 
@@ -88,6 +178,7 @@ function normalize(u: Record<string, unknown>): UsageState {
     resetAt: typeof u.resetAt === "number" ? u.resetAt : null,
     hasData: u.hasData === true,
     planUtilization: parsePlanUtilization(u.planUtilization),
+    liveUsage: parseLiveUsage(u.liveUsage),
   };
 }
 
@@ -104,26 +195,38 @@ function normalize(u: Record<string, unknown>): UsageState {
  * `claude` process). The probe is bounded and never throws on the backend, so a
  * failure just leaves `planUtilization` null and the widget falls back to the
  * baseline; it is NOT repeated on every event (no tight billed-probe loop).
+ *
+ * `sessionId` binds the live /usage capture (US-010) to the active session via
+ * `?session=` so the Session block surfaces. The returned `refetch` re-pulls on
+ * demand (used by the Usage widget's /usage Refresh after a passive capture).
  */
 export function useUsage(
   eventSeq: number | null,
   token: string | null = null,
-): UsageState {
+  sessionId: string | null = null,
+): { usage: UsageState; refetch: () => void } {
   const [usage, setUsage] = useState<UsageState>(EMPTY);
+  const [nonce, setNonce] = useState(0);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
-  // Baseline + cached scrape: refetch on every event so the figures stay live.
+  const sessionQuery = sessionId
+    ? `?session=${encodeURIComponent(sessionId)}`
+    : "";
+
+  // Baseline + cached scrape + live capture: refetch on every event / on demand.
   useEffect(() => {
-    fetch(apiBase() + "/api/claude/usage")
+    fetch(apiBase() + "/api/claude/usage" + sessionQuery)
       .then((r) => r.json())
       .then((u) => setUsage(normalize(u)))
       .catch(() => {});
-  }, [eventSeq]);
+  }, [eventSeq, sessionQuery, nonce]);
 
   // Lazily request ONE fresh /usage scrape when the dashboard opens (token-gated).
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetch(apiBase() + "/api/claude/usage?probe=1", {
+    const sep = sessionQuery ? "&" : "?";
+    fetch(apiBase() + "/api/claude/usage" + sessionQuery + sep + "probe=1", {
       headers: { "x-conan-token": token },
     })
       .then((r) => r.json())
@@ -134,7 +237,7 @@ export function useUsage(
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, sessionQuery]);
 
-  return usage;
+  return { usage, refetch };
 }

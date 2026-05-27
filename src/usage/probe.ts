@@ -30,10 +30,61 @@ export interface UsageWindow {
 export interface PlanUtilization {
   fiveHour: UsageWindow | null;
   sevenDay: UsageWindow | null;
+  /** Current week, Sonnet-only window (US-010); null on plans that don't show it. */
+  sevenDaySonnet: UsageWindow | null;
   /** Overall posture derived from the windows: ok < 80% ≤ warning < 100% ≤ limit. */
   status: "ok" | "warning" | "limit";
   /** When this frame was captured (epoch ms). */
   probedAt: number;
+}
+
+/** Per-model token usage from the /usage Session block (US-010). */
+export interface ModelUsage {
+  /** Model slug, e.g. "claude-opus-4-7", or null for the aggregate "Usage:" line. */
+  model: string | null;
+  /** Friendly model name derived from the slug, or null. */
+  modelDisplay: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/**
+ * The SESSION-specific block of the /usage screen (US-010): the running cost,
+ * API/wall durations, code changes, and per-model token usage for *this*
+ * conversation. Account-global windows live in PlanUtilization; this block can
+ * only come from a live, correlated pty (a throwaway probe has no real session).
+ */
+export interface UsageSession {
+  /** Total session cost in USD, or null when unparseable. */
+  totalCostUsd: number | null;
+  /** API duration in ms (the "Total duration (API)" line), or null. */
+  apiDurationMs: number | null;
+  /** Wall-clock duration in ms (the "Total duration (wall)" line), or null. */
+  wallDurationMs: number | null;
+  /** Lines added (from "Total code changes"), or null. */
+  linesAdded: number | null;
+  /** Lines removed (from "Total code changes"), or null. */
+  linesRemoved: number | null;
+  /** Per-model token usage; one aggregate entry (model=null) when no breakdown. */
+  byModel: ModelUsage[];
+}
+
+/**
+ * A full /usage capture from a live pty (US-010): the session-specific block plus
+ * all three account-global windows, parsed from one rendered frame. Cached per
+ * session by the terminal layer and surfaced (more accurate than the throwaway
+ * probe) by the usage route when present.
+ */
+export interface LiveUsage {
+  session: UsageSession | null;
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  sevenDaySonnet: UsageWindow | null;
+  status: "ok" | "warning" | "limit";
+  /** When this frame was captured (epoch ms). */
+  capturedAt: number;
 }
 
 /** The `claude` binary to probe; override with CONAN_CLAUDE_BIN (matches terminal). */
@@ -77,9 +128,134 @@ export function parseUsageFrame(
     /Currentweek(?:\(allmodels\))?/i,
     now,
   );
+  // US-010: the third window — Current week, Sonnet only. Anchored on its own
+  // "(Sonnetonly)" label so it's distinct from the all-models week above.
+  const sevenDaySonnet = matchWindow(compact, /Currentweek\(Sonnetonly\)/i, now);
 
-  if (!fiveHour && !sevenDay) return null;
-  return { fiveHour, sevenDay, status: deriveStatus(fiveHour, sevenDay) };
+  if (!fiveHour && !sevenDay && !sevenDaySonnet) return null;
+  return {
+    fiveHour,
+    sevenDay,
+    sevenDaySonnet,
+    status: deriveStatus(fiveHour, sevenDay, sevenDaySonnet),
+  };
+}
+
+const MODELLESS_DURATION = /([0-9hms]+)/;
+
+/**
+ * Parse the SESSION block of a captured /usage frame (US-010): total cost,
+ * API/wall durations, code changes, and per-model token usage. Like the window
+ * parser, the TUI column-positions text so we strip ANSI + collapse whitespace,
+ * then match the labels (which carry no internal whitespace that matters).
+ * Returns null when no Session-block signal is present (so random output is
+ * ignored). The session block is session-specific — only meaningful from a live
+ * correlated pty, never a throwaway probe.
+ */
+export function parseUsageSession(frame: string): UsageSession | null {
+  const compact = stripAnsi(frame).replace(/\s+/g, "");
+
+  const cost = /Totalcost:\$([\d,]+(?:\.\d+)?)/i.exec(compact);
+  const api = /Totalduration\(API\):([0-9hms.]+)/i.exec(compact);
+  const wall = /Totalduration\(wall\):([0-9hms.]+)/i.exec(compact);
+  const code = /Totalcodechanges:([\d,]+)linesadded,([\d,]+)linesremoved/i.exec(compact);
+  const byModel = parseByModel(compact);
+
+  const totalCostUsd = cost ? Number((cost[1] ?? "").replace(/,/g, "")) : null;
+  const apiDurationMs = api ? parseDurationMs(api[1] ?? "") : null;
+  const wallDurationMs = wall ? parseDurationMs(wall[1] ?? "") : null;
+  const linesAdded = code ? Number((code[1] ?? "").replace(/,/g, "")) : null;
+  const linesRemoved = code ? Number((code[2] ?? "").replace(/,/g, "")) : null;
+
+  // Require at least one Session-block signal so unrelated output doesn't parse.
+  if (
+    totalCostUsd == null &&
+    apiDurationMs == null &&
+    wallDurationMs == null &&
+    code == null &&
+    byModel.length === 0
+  ) {
+    return null;
+  }
+
+  return { totalCostUsd, apiDurationMs, wallDurationMs, linesAdded, linesRemoved, byModel };
+}
+
+/**
+ * Per-model usage rows from the Session block. Anchored on a "claude-…" slug so
+ * the "Usage by model" header (which has no colon-delimited numbers) can't be
+ * mis-captured as a model. Falls back to the single aggregate "Usage: N input, …"
+ * line (e.g. a $0 session with no per-model breakdown) as one entry (model=null).
+ */
+function parseByModel(compact: string): ModelUsage[] {
+  const out: ModelUsage[] = [];
+  const re =
+    /(claude-[a-z]+-[\d-]+):([\d.,]+[km]?)input,([\d.,]+[km]?)output,([\d.,]+[km]?)cacheread,([\d.,]+[km]?)cachewrite/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(compact)) !== null) {
+    const model = (m[1] ?? "").replace(/-+$/, "");
+    out.push({
+      model,
+      modelDisplay: modelDisplayFor(model),
+      inputTokens: parseTokenCount(m[2] ?? ""),
+      outputTokens: parseTokenCount(m[3] ?? ""),
+      cacheReadTokens: parseTokenCount(m[4] ?? ""),
+      cacheWriteTokens: parseTokenCount(m[5] ?? ""),
+    });
+  }
+  if (out.length > 0) return out;
+
+  const agg =
+    /Usage:([\d.,]+[km]?)input,([\d.,]+[km]?)output,([\d.,]+[km]?)cacheread,([\d.,]+[km]?)cachewrite/i.exec(
+      compact,
+    );
+  if (agg) {
+    out.push({
+      model: null,
+      modelDisplay: null,
+      inputTokens: parseTokenCount(agg[1] ?? ""),
+      outputTokens: parseTokenCount(agg[2] ?? ""),
+      cacheReadTokens: parseTokenCount(agg[3] ?? ""),
+      cacheWriteTokens: parseTokenCount(agg[4] ?? ""),
+    });
+  }
+  return out;
+}
+
+/** Parse "1.2k" / "168k" / "1.8m" / "450" / "1,234" into an integer count. */
+function parseTokenCount(raw: string): number {
+  const s = raw.replace(/,/g, "").trim();
+  const m = /^([\d.]+)([km]?)$/i.exec(s);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return 0;
+  const suffix = (m[2] ?? "").toLowerCase();
+  if (suffix === "k") return Math.round(n * 1_000);
+  if (suffix === "m") return Math.round(n * 1_000_000);
+  return Math.round(n);
+}
+
+/** Convert a "1h2m3s" / "3m20s" / "45s" / "0s" duration string to milliseconds. */
+function parseDurationMs(raw: string): number {
+  if (!MODELLESS_DURATION.test(raw)) return 0;
+  let ms = 0;
+  const h = /(\d+)h/.exec(raw);
+  if (h) ms += Number(h[1]) * 3_600_000;
+  const m = /(\d+)m/.exec(raw);
+  if (m) ms += Number(m[1]) * 60_000;
+  const s = /(\d+)s/.exec(raw);
+  if (s) ms += Number(s[1]) * 1_000;
+  return ms;
+}
+
+/** Friendly display name from a model slug (best-effort; null when unknown). */
+function modelDisplayFor(slug: string): string | null {
+  const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/i.exec(slug);
+  if (!m) return null;
+  const fam = (m[1] ?? "").toLowerCase();
+  const family = fam.charAt(0).toUpperCase() + fam.slice(1);
+  const version = m[3] ? `${m[2]}.${m[3]}` : (m[2] ?? "");
+  return `Claude ${family} ${version}`.trim();
 }
 
 /**
@@ -198,6 +374,33 @@ let inFlight: Promise<PlanUtilization | null> | null = null;
 /** The last successful probe, or null if none yet. Never spawns anything. */
 export function getCachedPlanUtilization(): PlanUtilization | null {
   return cached;
+}
+
+// --- live /usage capture (per session, from the correlated pty) -------------
+//
+// US-010: the Session block is session-specific, so — like the /context capture
+// (src/context/index.ts) — it can't come from the throwaway probe. The terminal
+// layer fills this cache passively (when a user runs /usage) or on demand (the
+// widget's Refresh injects it); the usage route reads it for the active session.
+
+const liveCache = new Map<string, LiveUsage>();
+
+/** The last captured /usage frame for a session, or null if none. */
+export function getCapturedUsage(sessionId: string): LiveUsage | null {
+  return liveCache.get(sessionId) ?? null;
+}
+
+/** Cache a parsed live /usage frame for a session, stamping the capture time. */
+export function cacheCapturedUsage(
+  sessionId: string,
+  parsed: Omit<LiveUsage, "capturedAt">,
+): void {
+  liveCache.set(sessionId, { ...parsed, capturedAt: Date.now() });
+}
+
+/** Drop a session's cached live /usage frame (e.g. when its pty exits). */
+export function clearCapturedUsage(sessionId: string): void {
+  liveCache.delete(sessionId);
 }
 
 /**
