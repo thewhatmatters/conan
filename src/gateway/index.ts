@@ -31,6 +31,7 @@ import {
   startPreview,
   stopPreview,
   previewStatus,
+  previewOutput,
   previewProxyTarget,
   initPreview,
   closePreview,
@@ -212,6 +213,13 @@ app.post("/api/preview/start", async (req, res) => {
 app.post("/api/preview/stop", (req, res) => {
   if (!authed(req, res)) return;
   res.json({ ...stopPreview(), status: previewStatus() });
+});
+
+// Recent dev-server stdout/stderr for the Preview tab's honest log pane (US-012)
+// — read-only like /status, loopback-only. Returns the tail of the ring buffer
+// (capped server-side) so the UI can surface why a server failed to come up.
+app.get("/api/preview/log", (_req, res) => {
+  res.json({ output: previewOutput() });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.
@@ -888,6 +896,11 @@ const eventsWss = new WebSocketServer({ noServer: true });
 const terminalWss = new WebSocketServer({ noServer: true });
 
 eventsWss.on("connection", (socket) => {
+  // ws emits 'error' on a malformed frame / abrupt reset; with no listener Node
+  // rethrows and crashes the whole gateway. A previewed app (US-012) can drive
+  // odd frames at our endpoints, so swallow per-socket errors — drop that one
+  // client, never the process.
+  socket.on("error", () => {});
   socket.send(JSON.stringify({ type: "hello", ts: Date.now() }));
   // Send the current task snapshot immediately so the Tasks tab fills on open.
   socket.send(JSON.stringify({ type: "tasks", payload: readTasks() }));
@@ -922,6 +935,7 @@ eventsWss.on("connection", (socket) => {
   });
 });
 terminalWss.on("connection", (socket, req) => {
+  socket.on("error", () => {}); // see eventsWss: never let a bad frame crash us
   attachTerminal(socket, req);
 });
 

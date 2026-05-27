@@ -206,7 +206,7 @@
         "Verify in browser using automate-browser skill: start a preview, see the app render in the iframe, edit a file and watch it hot-update, then stop it"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "v4-backlog item 6 (UI). Depends on US-010 + US-011 + US-003. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {

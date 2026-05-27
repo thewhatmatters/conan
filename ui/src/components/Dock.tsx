@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import TaskChecklist from "./TaskChecklist.tsx";
 import PulseChart from "./PulseChart.tsx";
+import Preview from "./Preview.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { TasksState } from "../hooks/useTasks.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
@@ -33,6 +34,11 @@ interface DockProps {
    */
   hidden?: boolean;
   /**
+   * US-012: the active working directory (from /api/config) the Preview tab runs
+   * its dev server against. Null while config is still loading.
+   */
+  cwd?: string | null;
+  /**
    * US-004: the global Pulse time-series, pinned as a strip at the bottom of
    * the dock column. Stays global across all sessions (not scoped to the
    * active one). Omitted while still loading → the strip just shows empty.
@@ -51,8 +57,11 @@ interface TermTab {
   tid: string;
 }
 
-/** The active dock surface: a specific terminal tab (by tid) or the Tasks tab. */
-type Active = { kind: "term"; tid: string } | { kind: "tasks" };
+/** The active dock surface: a terminal tab, the Tasks tab, or the Preview tab. */
+type Active =
+  | { kind: "term"; tid: string }
+  | { kind: "tasks" }
+  | { kind: "preview" };
 
 /**
  * Restore the terminal tab list from sessionStorage so a reload re-attaches to
@@ -92,6 +101,7 @@ export default function Dock({
   theme,
   tasks,
   hidden,
+  cwd,
   pulse,
   pulseMinutes = 60,
   onPulseRange,
@@ -204,7 +214,9 @@ export default function Dock({
           setActive(
             v === "tasks"
               ? { kind: "tasks" }
-              : { kind: "term", tid: lastTermTid },
+              : v === "preview"
+                ? { kind: "preview" }
+                : { kind: "term", tid: lastTermTid },
           )
         }
       >
@@ -219,8 +231,14 @@ export default function Dock({
               onNew={addTerm}
             />
 
+            {/* Preview tab (US-012): sibling of Terminal|Tasks, frames the active
+                cwd's live dev server. ml-auto pushes it (and Tasks) right. */}
+            <TabsTrigger value="preview" className={TAB_TRIGGER + " ml-auto"}>
+              Preview
+            </TabsTrigger>
+
             {showTasks && (
-              <TabsTrigger value="tasks" className={TAB_TRIGGER + " ml-auto"}>
+              <TabsTrigger value="tasks" className={TAB_TRIGGER}>
                 Tasks
                 {tasks?.exists && (
                   <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -268,6 +286,16 @@ export default function Dock({
             <TaskChecklist tasks={tasks} />
           </div>
         )}
+        {/* Preview stays mounted (just hidden when inactive) so the iframe's HMR
+            socket + scroll survive tab switches — same rationale as terminals. */}
+        <div
+          className={
+            "absolute inset-0 bg-card " +
+            (active.kind === "preview" ? "z-20" : "z-0 invisible")
+          }
+        >
+          <Preview token={token} cwd={cwd ?? null} />
+        </div>
       </div>
 
       {/* US-004: Pulse pinned to the bottom of the dock column — its own strip,

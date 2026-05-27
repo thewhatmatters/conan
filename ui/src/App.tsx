@@ -417,6 +417,7 @@ export default function App() {
           theme={theme}
           tasks={tasks}
           hidden={!dockOpen}
+          cwd={config?.cwd ?? null}
           pulse={pulse}
           pulseMinutes={pulseMinutes}
           onPulseRange={setPulseMinutes}
