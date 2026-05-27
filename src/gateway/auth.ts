@@ -46,6 +46,15 @@ function allowedOrigins(): Set<string> {
     `http://localhost:${PORT}`,
     "http://127.0.0.1:5173",
     "http://localhost:5173",
+    // Tauri webview origins (US-007, v4.1 desktop shell). Browsers don't apply
+    // same-origin policy to WS, so the desktop webview's Origin must be listed
+    // explicitly or its app/terminal WS upgrades are rejected (CVE-2025-52882
+    // floor unchanged — bogus origins still fail). Production macOS sends
+    // tauri://localhost; Windows/Android use https://tauri.localhost. We allow
+    // all three for cross-platform/future-proofing.
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
   ];
   // When remote TLS mode is on (US-024) the SPA is served over https, so the
   // browser's Origin is https://… — allow the loopback https variants too. The

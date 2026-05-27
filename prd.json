@@ -124,7 +124,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Edits src/gateway/auth.ts — run the loop agent outside the in-dock session (footgun #1). docs/v4.1-research.md §4. No browser-verify needed; cover via the auth unit test."
     },
     {
