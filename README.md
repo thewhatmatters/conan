@@ -1,32 +1,37 @@
 # Conan
 
-**An always-on web dashboard that observes _and_ drives Claude Code.** Conan is
-a structured-stream UI plus an integrated `xterm.js` terminal, served by a single
-Node gateway. It surfaces everything Claude Code knows — from disk and the CLI —
-in one place, and can launch and steer Claude Code sessions on your behalf.
+**A terminal-primary native desktop app that wraps and observes Claude Code.**
+Conan puts Claude Code's `xterm.js` terminal front-and-center, with a
+DevTools-style **widget HUD** — **Context** (session-scoped), **Usage** (plan +
+session), and a **Pulse** activity graph — backed by one loopback Node gateway
+packaged as a Tauri sidecar.
 
+- **Terminal** — a live `node-pty` running `claude` in the active cwd, the main
+  surface of the app.
 - **Observe** — any hooked `claude` run in a watched directory self-reports its
-  events, tool calls, tokens/cost, and status over a live WebSocket.
-- **Drive** — launch headless sessions with the full sweep of Claude Code flags
-  (effort, fork-session, from-PR, worktree isolation, typed `--json-schema`
-  output, ultrareview, remote-control, Chrome), then watch them stream in.
-
-Conan reads broadly from `~/.claude` and the `claude` CLI to surface real usage,
-settings, MCP servers, the changelog, checkpoints, plugins, agents, skills, and
-prompt history — so you never have to `tail` a file to see what's happening.
+  events, tool calls, and status over a live WebSocket, feeding the HUD and the
+  Pulse graph. (The earlier launch/steer "drive" surface was removed in v4.2 —
+  Conan observes the pty, it doesn't drive headless sessions through the gateway.)
+- **Exact captures** — the Context and Usage widgets capture the real `/context`
+  and `/usage` frames from the correlated live pty (passive when you run them, or
+  via a Refresh button), falling back to an honest on-disk estimate / throwaway
+  probe when there's no live session.
 
 ## Stack
 
 - **Gateway** (`src/`): TypeScript ESM — Express 4 + [`ws`](https://github.com/websockets/ws)
   + [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) + `node-pty`.
   Run with [`tsx`](https://github.com/privatenumber/tsx). Entry
-  `src/gateway/index.ts`, port **3747**, loopback-only by default.
+  `src/gateway/index.ts`, port **3747**, **loopback-only**. JSON API + two
+  WebSockets only — it does **not** serve the UI to a browser (v4.2 Tauri-only).
 - **UI** (`ui/`): Vite + React 19 + TypeScript + Tailwind v4 (CSS-first,
-  `@theme inline` + `.dark` in `ui/src/index.css`), built on a real shadcn
-  foundation with semantic theme tokens. `xterm.js` (`@xterm/*`) for the terminal.
-  Charts are hand-rolled SVG + CSS grid (zero new charting deps). Loaded by the
-  Tauri webview; dev uses the Vite server (:5173). The gateway no longer serves
-  the UI to a browser (v4.2 Tauri-only).
+  `@theme inline` + `.dark` in `ui/src/index.css`), on a real shadcn foundation
+  with semantic theme tokens. `xterm.js` (`@xterm/*`) for the terminal. **Charts
+  ride [Tremor Raw](https://tremor.so)** (recharts-based, Tailwind-v4-native
+  copy-in components vendored under `ui/src/components/charts/`) — *not*
+  `@tremor/react`. Loaded by the Tauri webview; dev uses the Vite server (:5173).
+- **Desktop** (`src-tauri/`): a Tauri v2 crate that opens a native window onto the
+  React + `xterm.js` UI and spawns the gateway as a bundled-node **sidecar**.
 - **Storage**: SQLite (WAL) at `.data/conan.db` — tables `session`, `event`,
   `terminal_session`, initialised idempotently on boot.
 
@@ -34,8 +39,8 @@ prompt history — so you never have to `tail` a file to see what's happening.
 
 ```bash
 npm install                 # postinstall fixes node-pty's spawn-helper perms
-npm run dev                 # gateway, tsx WATCH, :3747   (restarts kill ptys — see Footguns)
 npm start                   # gateway, NO watch (safer when self-editing)
+npm run dev                 # gateway, tsx WATCH, :3747   (restarts kill ptys — see Gotchas)
 cd ui && npm run dev        # Vite dev :5173, proxies /api + /ws -> :3747
 
 npm run build               # root: typecheck + build ui   (CI gate)
@@ -43,7 +48,9 @@ npm run typecheck           # tsc --noEmit (gateway)
 npm test                    # tsx unit/integration suites under scripts/
 ```
 
-Then open <http://localhost:3747>.
+For development, run the gateway with `npm start` and the UI on the Vite dev
+server, then open <http://localhost:5173> (the gateway no longer serves a
+browser UI). The shipped product is the **Tauri app** (see below).
 
 The gateway is **single-instance on :3747** — if the port is already bound it
 exits with a clear message instead of an `EADDRINUSE` stack. Override with
@@ -52,88 +59,74 @@ exits with a clear message instead of an `EADDRINUSE` stack. Override with
 ## Architecture
 
 A single Node gateway (`src/gateway/index.ts`) serves the REST API and two
-authenticated WebSockets. It runs **loopback-only** — the Tauri webview loads
-the bundled frontend (Vite at :5173 in dev), so the gateway no longer serves the
-UI to a browser (v4.2 Tauri-only).
+authenticated WebSockets, **loopback-only**. The trimmed v4.2 route surface is
+exactly what the app calls:
 
-**HTTP** — `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
-`GET /api/tasks` (prd.json + progress.txt), `GET/POST /api/cwd`,
-`GET /api/fs/dirs` (directory picker), `GET/POST /api/settings`, plus a broad
-read-mostly `/api/claude/*` surface:
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | liveness |
+| GET | `/api/config` | `{token, port, cwd}` |
+| GET | `/api/tasks` | prd.json + progress.txt (build-loop backlog) |
+| GET | `/api/terminals` | live terminals + their session labels |
+| GET | `/api/claude/sessions` | the observed-sessions list |
+| GET | `/api/claude/sessions/:id/widgets` | Context breakdown for a session |
+| POST | `/api/claude/sessions/:id/context/refresh` | inject `/context` into the correlated pty + capture |
+| POST | `/api/claude/sessions/:id/usage/refresh` | inject `/usage` into the correlated pty + capture |
+| GET | `/api/claude/usage` (`+?probe=1`) | plan usage / rate-limit windows |
+| GET | `/api/claude/pulse` | activity buckets for the Pulse chart |
+| POST | `/api/claude/events` | hook ingestion |
 
-| Area | Routes |
-| --- | --- |
-| Sessions | `GET /sessions`, `:id/events`, `:id/transcript`, `:id/subagents`, `:id/widgets`; drive via `POST /sessions`, `:id/prompt`, `:id/resume`, `:id/stop`, `:id/permission` |
-| Usage / metrics | `/usage` (real `/usage` via PTY scrape → planUtilization), `/stats`, `/pulse`, `/project-metrics` |
-| Config from disk | `/settings`, `/mcp`, `/permissions`, `/hooks-coverage`, `POST /hooks/install-global` |
-| Catalogs | `/agents`, `/background-agents`, `/skills`, `/skills/list`, `/plugins`, `/changelog`, `/checkpoints` (+ `/:sessionId/content`), `/prompt-history` |
-| Ops | `/doctor`, `/ultrareview` (+ `/stop`), `POST /events` (hook ingestion) |
-
+Everything else — the launch/steer drive routes, the read-only catalog/config
+routes (`/agents`, `/skills`, `/stats`, `/settings`, …), and the web-served +
+TLS/remote-access + pm2 path — was removed in v4.2.
 
 **WebSockets** — `/ws` (app events `{type:'event'}`, the build-loop trail
 `{type:'tasks'}`, snapshot on connect) and `/ws/terminal` (a `node-pty` that
 auto-launches `claude` in the active cwd). Both are **authenticated on upgrade**.
 
 **Auth** (`src/gateway/auth.ts`) — a token (`CONAN_AUTH_TOKEN` | `.data/auth-token`
-| generated) **plus an Origin allowlist**, required because browsers don't apply
-same-origin policy to WebSockets (CVE-2025-52882). The app reads the token from
-same-origin `/api/config`. The gateway binds **loopback-only** (127.0.0.1) — the
-TLS/remote-access path was removed in v4.2 (Tauri-only).
+| generated) **plus an Origin allowlist** (incl. `tauri://localhost`), required
+because browsers don't apply same-origin policy to WebSockets (CVE-2025-52882).
+The app reads the token from same-origin `/api/config`. The gateway binds
+**loopback-only** (127.0.0.1) — there is no TLS/remote-access path (Tauri-only).
 
 **Multi-project** — a global `~/.claude` hook means any `claude` run anywhere
 self-reports; the UI filters the firehose by the active cwd.
 
-## UI / navigation
+## UI / the HUD
 
-The app shell is a collapsible sidebar over a timeline-primary Overview. The
-nav routes are:
+The app is terminal-primary: the `xterm.js` terminal fills the main pane (its
+dropdown shows the session name + short id), with a DevTools-style tabbed HUD and
+a docked panel beside/below it.
 
-- **Overview** — the live activity timeline (hook events + build-loop trail),
-  a sticky widget carousel (scope-grouped: session / cwd / global), the
-  transcript viewer, and session drive controls.
-- **Agents** — registry agents, background agents, and teams.
-- **Skills** — browse global + project `SKILL.md`s, with loaded state.
-- **Plugins** — installed plugins, marketplaces, and enabled state.
-- **Checkpoints** — read-only file-history snapshot viewer / rewind.
-- **Prompt History** — search `history.jsonl`.
-- **Code Review** — ultrareview trigger + findings panel.
-- **What's New** — changelog feed with a new-since-last-seen nav badge.
-- **Settings** — mirrors Claude Code `/settings` with typed controls + search.
-
-A docked panel (drag-resizable, non-destructive show/hide) carries tabbed
-**Terminal** (`xterm.js`, dropdown shows session name + short id) and **Tasks**
-(shown when the cwd has a task source), with the global **Pulse** activity strip
-pinned at the bottom of the column. A cwd directory picker lives in the toolbar;
-toasts surface bottom-right.
+- **Context** widget — the live session's `/context` breakdown (model header,
+  total %, per-category tokens incl. Free space), rendered with a Tremor
+  `ProgressCircle` gauge (destructive past 80%) over a hand-rolled breakdown bar.
+- **Usage** widget — the `/usage` Session block (cost, durations, code changes,
+  per-model usage) + all three rate-limit windows, captured from the live pty
+  with the throwaway probe as fallback.
+- **Pulse** — a Tremor `AreaChart` (stacked) of activity over 15m/1h/6h/24h.
+- **Dock** — drag-resizable, tabbed **Terminal** | **Tasks** (when the cwd has a
+  task source), with the Pulse strip pinned at the bottom of the column.
+- **Native notifications** — in the Tauri app, a `Notification` hook event fires
+  a native macOS banner with the prompt text; clicking it focuses Conan. The
+  browser dev view falls back to the in-app Toaster.
 
 > **"Session"** in Conan means one Claude Code _run_ (an agent conversation),
-> keyed by `session_id` — observed (self-reporting) or driven (launched by
-> Conan). Not a browser/login session.
+> keyed by `session_id` — observed (self-reporting over the WS). Not a
+> browser/login session.
 
-## Direction (v4.1)
-
-Conan is pivoting from a sprawling web dashboard to a **terminal-primary native
-desktop app** — Claude Code's terminal as the main surface, with an at-a-glance,
-DevTools-style **widget HUD** (a "beefed-up TUI"). The initial cut is deliberately
-small: the **Terminal**, the **Pulse** activity graph, and two widgets —
-**Context** (session-scoped) and **Usage** (global plan-usage). The
-activity-timeline page and the Agents / Skills / Settings nav are cut (some may
-return later as widget tabs).
-
-It ships via **Tauri v2**: a Rust core + the OS's native webview reusing the
-existing React + `xterm.js` UI, with the **Node gateway bundled as a Tauri
-sidecar** (it stays the PTY host _and_ the `/api/claude/*` data source for the
-widgets — so near-zero rewrite of the core). See `docs/tauri-desktop.md`.
-
-### Desktop app (Tauri)
+## Desktop app (Tauri)
 
 The shipped product is a native macOS app: `src-tauri/` (a Tauri v2 crate at the
-repo root) opens a 1400×900 window onto the same React + `xterm.js` UI and spawns
-the **gateway sidecar** on launch (`CONAN_PORT=3747`), killing it on quit so the
+repo root) opens a 1400×900 window onto the React + `xterm.js` UI and spawns the
+**gateway sidecar** on launch (`CONAN_PORT=3747`), killing it on quit so the
 single-instance port frees for the next run. The gateway is packaged as a
 bundled-node launcher (`src-tauri/binaries/conan-gateway-<triple>` + a `runtime/`
 tree carrying Node and the `better-sqlite3` / `node-pty` native addons as real
-files — the reliable route for native modules).
+files — the reliable route for native modules). A **stdin-EOF watchdog**
+(`CONAN_SIDECAR=1`) self-terminates the gateway if the Rust kill doesn't land on
+an Apple-event quit.
 
 ```bash
 npm run tauri:dev              # dev: Vite (:5173) + native window + live sidecar

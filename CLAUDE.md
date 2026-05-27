@@ -1,9 +1,11 @@
 # Conan — project context for Claude Code
 
-Conan is an **always-on web dashboard that observes AND drives Claude Code**:
-a structured-stream UI plus an integrated xterm.js terminal, served by one
-Node gateway. This file is auto-loaded by every Claude Code session (interactive
-or `run-tasks.sh` iterations) — keep it accurate.
+Conan is a **terminal-primary native desktop app (Tauri v2) that wraps and
+observes Claude Code**: an `xterm.js` terminal as the main surface plus a
+DevTools-style widget HUD (Context + Usage + the Pulse graph), backed by one
+loopback Node gateway packaged as a Tauri sidecar. This file is auto-loaded by
+every Claude Code session (interactive or `run-tasks.sh` iterations) — keep it
+accurate.
 
 ## Source of truth for work
 - **`prd.json`** — the build backlog. Each story has `passes` (true/false),
@@ -41,16 +43,18 @@ npm run typecheck           # tsc --noEmit (gateway)
 ## Architecture (current)
 - **Glossary — "Session":** one Claude Code *run* (an agent conversation/instance),
   keyed by `session_id`. Conan tracks its events, tool calls, token/cost, and
-  status (running/idle/error). Sessions are **observed** (any hooked `claude` in
-  this repo self-reports) or **driven** (launched by the session manager). NOT a
-  browser/login session. The Sessions grid should carry an info-icon tooltip with
-  this one-liner so users aren't confused.
+  status (running/idle/error). Sessions are **observed** — any hooked `claude` in
+  this repo self-reports over the WS (the launch/steer "drive" route surface was
+  removed in v4.2). NOT a browser/login session.
 - Routes (the trimmed v4.2 surface — only what the app calls):
   `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
   `GET /api/tasks` (prd.json + progress.txt), `GET /api/terminals` (live
   terminals + their session labels), `GET /api/claude/sessions` (the sessions
   list), `GET /api/claude/sessions/:id/widgets` (Context breakdown),
-  `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`, and
+  `POST /api/claude/sessions/:id/context/refresh` and `.../usage/refresh`
+  (inject `/context`/`/usage` into the correlated pty and capture the rendered
+  frame — US-009/US-010), `GET /api/claude/usage` (`+?probe=1`),
+  `GET /api/claude/pulse`, and
   `POST /api/claude/events` (hook ingestion). Everything else (the drive route
   surface, the read-only catalog/config routes, the web-serving/TLS/pm2 path)
   was removed in v4.2 (US-002–US-004).
@@ -66,35 +70,22 @@ npm run typecheck           # tsc --noEmit (gateway)
 - DB (`src/db/`): SQLite WAL at `.data/conan.db`; tables `session`, `event`,
   `terminal_session`. Idempotent init on boot.
 - Tasks (`src/tasks/index.ts`): reads prd.json/progress.txt + fs.watch -> WS broadcast.
-- Preview (`src/preview/index.ts`, US-010–012): runs the active cwd's dev server
-  on demand so the project being edited renders live inside the dock. Mirrors the
-  TermSession abstraction (one managed child, capped stdout ring buffer, onExit)
-  but for a long-lived dev server. Discovers candidate commands from the cwd's
-  `package.json` scripts (`dev` → `start` → `preview`). Vite-style commands spawn
-  with `--base /preview/<id>/ --strictPort --host 127.0.0.1` on a pinned free port
-  (with a `Local: http://…` stdout regex as the non-Vite fallback). Lifecycle is
-  **decoupled** from the pty layer and the gateway watch restart (footgun #1): it
-  stops itself on `onCwdChange` and is killed only on explicit stop / graceful
-  shutdown. REST: `GET /api/preview/status` (discovery + run state), `POST
-  /api/preview/start|stop`, `GET /api/preview/log`.
-  - **Reverse proxy** (US-011): `http-proxy-middleware` mounts `/preview/:id` →
-    `http://127.0.0.1:<devport>`. In `proxyRes` it deletes `x-frame-options` and
-    strips `frame-ancestors` from CSP so the page frames in an iframe. The proxy
-    runs with `ws:true`; a `pathname.startsWith('/preview/')` branch in the
-    `server.on('upgrade')` router (before the catch-all `socket.destroy()`) routes
-    HMR upgrades through it, inheriting the existing `verifyUpgrade` auth+Origin
-    gate. Vite HMR is pointed back through Conan's port via
-    `scripts/preview-vite-config.mjs` (`server.hmr.clientPort`/`path`, `wss` under
-    TLS) injected by flags/env — never by editing the user's vite config.
-  - **Security floor:** the `/preview/` HTTP path is *not* token-checked per
-    request (an iframe `src` can't send `x-conan-token`); it relies on same-origin
-    + loopback + the Origin-checked WS upgrade. Documented in `src/gateway/index.ts`
-    around the proxy mount.
-- UI: `App.tsx` shell (hero-widget placeholders + cwd in toolbar),
-  `components/Dock.tsx` (tabbed Terminal|Tasks|Preview + bottom Pulse strip,
-  drag-resize), `components/Terminal.tsx`, `components/Preview.tsx`,
-  `components/TaskChecklist.tsx`, `hooks/{useTheme,useTasks}.ts`,
-  `lib/terminalTheme.ts`.
+- pty↔session correlation (`src/terminal/correlate.ts`): maps the live `/ws/terminal`
+  pty to its `session_id`, and carries the **keystroke-injection** path used to run
+  TUI slash commands in the correlated session (answer interactive prompts; inject
+  `/context` and `/usage` for the on-demand widget refresh).
+- Usage / Context capture (`src/usage/probe.ts`): pure ANSI-strip + bounded scrape +
+  testable frame parsers (`parseUsageFrame`, `parseContextFrame`). Two capture paths:
+  a **throwaway probe** for the account-global `/usage` rate-limit windows
+  (`/api/claude/usage?probe=1`), and **live-pty capture** for session-specific
+  `/context` and `/usage` Session-block frames (passive when the user runs the command,
+  or via the `.../context/refresh` and `.../usage/refresh` routes). Disk estimates
+  (MCP/skills/memory size readers) are the labelled `≈ estimated` fallback.
+- UI: `App.tsx` shell, `components/Dock.tsx` (tabbed Terminal|Tasks + bottom Pulse
+  strip, drag-resize), `components/Terminal.tsx`, `components/Widgets.tsx`
+  (Context + Usage HUD), `components/PulseChart.tsx`, `components/charts/`
+  (vendored Tremor `AreaChart`/`ProgressCircle`), `components/TaskChecklist.tsx`,
+  `hooks/{useTheme,useTasks,useWidgets,usePulse}.ts`, `lib/{terminalTheme,chartUtils}.ts`.
 
 ## Conventions
 - **Semantic theme tokens only** — `bg-background`, `text-foreground`,
@@ -105,6 +96,12 @@ npm run typecheck           # tsc --noEmit (gateway)
   across Dock, SessionBar, and Sidebar now ride `ui/*` primitives (`button`,
   `select`, `dropdown-menu`, `tabs`). Reach for `ui/*` for any new control; the
   semantic token names match shadcn so the components drop in cleanly.
+- **Charts ride Tremor Raw (the charting standard since v4.2)** — recharts-based,
+  Tailwind-v4-native copy-in components vendored under `ui/src/components/charts/`
+  (`AreaChart`, `ProgressCircle`), themed through `ui/src/lib/chartUtils.ts` so
+  colors resolve to the `--color-chart-1..5` CSS vars and honor light/dark. Use
+  Tremor for any new chart; do **not** install `@tremor/react` (Tailwind v3 only).
+  This replaces the old "zero charting deps, hand-rolled SVG" convention.
 - Auth/Origin checks apply to **every** new WS endpoint.
 - **Gateway is single-instance on :3747.** On startup, if the port is already
   bound, exit immediately with a clear message (e.g. "Conan gateway already
@@ -138,12 +135,18 @@ npm run typecheck           # tsc --noEmit (gateway)
    Conan instance on another port) and use this dashboard to **observe**.
 
 ## Status (2026-05-27)
-**v4.2 in progress (`loop/conan-v4.2`).** Two themes: an aggressive Tauri-only
-cleanup (trim the gateway to the routes the app calls; drop the web-served/TLS/pm2
-path, the drive route surface, and the v1→v4 planning history) and adopting
-**Tremor Raw** (recharts-based, Tailwind-v4-native — NOT `@tremor/react`) as the
-charting standard. Backlog: `docs/v4.2-backlog.md`; charting research:
-`docs/v4.2-research.md`.
+**v4.2 done (`loop/conan-v4.2`, 12 stories).** Two themes shipped: an aggressive
+Tauri-only cleanup (trimmed the gateway to only the routes the app calls; dropped
+the web-served/TLS/pm2 path, the drive route surface, and the v1→v4 planning
+history; rebuilt + re-verified the sidecar) and adopting **Tremor Raw**
+(recharts-based, Tailwind-v4-native — NOT `@tremor/react`) as the charting standard
+— the Pulse graph is now a Tremor `AreaChart` (stacked) and the Context gauge a
+Tremor `ProgressCircle`. Also landed: **exact `/context`** (US-009) and **full
+`/usage`** (US-010, Session block + all 3 rate-limit windows) captures from the
+correlated live pty into the Context/Usage widgets (disk estimate stays the
+labelled fallback), and **native macOS notifications** (US-011, Tauri notification
+plugin) surfacing Claude's `Notification`-hook prompts with click-to-focus.
+Backlog: `docs/v4.2-backlog.md`; charting research: `docs/v4.2-research.md`.
 
 **v4.1 done (`loop/conan-v4.1`).** Pivoted Conan from a web dashboard to a
 **terminal-primary native desktop app shipped via Tauri v2**. Reshaped to a

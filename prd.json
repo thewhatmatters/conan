@@ -211,7 +211,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "The 'beautiful sequence' close-out (CLAUDE.md, memory, README). Also note the exact /context (US-009) + /usage (US-010) captures and the native OS notifications (US-011). Memory dir: /Users/digitalalchemist/.claude/projects/-Users-digitalalchemist-Development-conan/memory/."
     }
   ]
