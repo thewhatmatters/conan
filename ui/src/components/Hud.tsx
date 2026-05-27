@@ -1,15 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import Widgets from "./Widgets.tsx";
+import { ContextWidget, UsageWidget } from "./Widgets.tsx";
 import PulseChart from "./PulseChart.tsx";
 import type { Session } from "../hooks/useSessions.ts";
-import type { SkillsState } from "../hooks/useSkills.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
-import type { McpState } from "../hooks/useMcp.ts";
-import type { StatsState } from "../hooks/useStats.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
-import type { CwdGit } from "../hooks/useCwdGit.ts";
-import type { ProjectMetrics } from "../hooks/useProjectMetrics.ts";
-import type { WidgetKey } from "../hooks/useWidgetPrefs.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
@@ -25,44 +19,28 @@ const WIDTH_KEY = "conan-hud-w";
 interface HudProps {
   /** Hidden without unmounting (the header HUD toggle) — content state survives. */
   hidden?: boolean;
-  // — widget data (trimmed to Context + Usage in US-004) —
-  sessions: Session[];
+  // — Context widget (session-scoped) —
   activeSession: Session | null;
-  skills: SkillsState;
-  usage: UsageState;
-  mcp: McpState;
-  stats: StatsState;
   data: WidgetData | null;
-  git: CwdGit | null;
-  metrics: ProjectMetrics | null;
-  enabled: Set<WidgetKey>;
-  toggle: (key: WidgetKey) => void;
-  // — pulse —
+  // — Usage widget (global) —
+  usage: UsageState;
+  // — Pulse graph —
   pulse?: PulseSeries | null;
   pulseMinutes?: number;
   onPulseRange?: (minutes: number) => void;
 }
 
 /**
- * The DevTools-style HUD (US-003): a drag-resizable panel docked to the right of
- * the terminal with a flat tab bar. Width persists in localStorage exactly like
- * the old dock did. The tab *content* is the at-a-glance widget set + the global
- * Pulse graph; US-004 trims the Widgets tab down to the two starting cells
- * (Context + Usage) and splits them into their own tabs.
+ * The DevTools-style HUD (US-003/US-004): a drag-resizable panel docked to the
+ * right of the terminal with a flat tab bar. Width persists in localStorage
+ * exactly like the old dock did. After US-004 the HUD shows exactly three tabs —
+ * Context (session), Usage (global), and the live Pulse activity graph.
  */
 export default function Hud({
   hidden,
-  sessions,
   activeSession,
-  skills,
-  usage,
-  mcp,
-  stats,
   data,
-  git,
-  metrics,
-  enabled,
-  toggle,
+  usage,
   pulse,
   pulseMinutes = 60,
   onPulseRange,
@@ -102,14 +80,14 @@ export default function Hud({
         className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
       />
 
-      <Tabs
-        defaultValue="widgets"
-        className="flex min-h-0 flex-1 flex-col gap-0"
-      >
+      <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
           <TabsList className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0">
-            <TabsTrigger value="widgets" className={TAB_TRIGGER}>
-              Widgets
+            <TabsTrigger value="context" className={TAB_TRIGGER}>
+              Context
+            </TabsTrigger>
+            <TabsTrigger value="usage" className={TAB_TRIGGER}>
+              Usage
             </TabsTrigger>
             <TabsTrigger value="pulse" className={TAB_TRIGGER}>
               Pulse
@@ -118,22 +96,17 @@ export default function Hud({
         </div>
 
         <TabsContent
-          value="widgets"
+          value="context"
           className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
         >
-          <Widgets
-            sessions={sessions}
-            activeSession={activeSession}
-            skills={skills}
-            usage={usage}
-            mcp={mcp}
-            stats={stats}
-            data={data}
-            git={git}
-            metrics={metrics}
-            enabled={enabled}
-            toggle={toggle}
-          />
+          <ContextWidget session={activeSession} data={data} />
+        </TabsContent>
+
+        <TabsContent
+          value="usage"
+          className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
+        >
+          <UsageWidget usage={usage} />
         </TabsContent>
 
         <TabsContent value="pulse" className="mt-0 min-h-0 flex-1 overflow-auto">

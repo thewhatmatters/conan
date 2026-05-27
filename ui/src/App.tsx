@@ -2,18 +2,12 @@ import { useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme.ts";
 import { useGateway, type ConnStatus } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
-import { useSkills } from "./hooks/useSkills.ts";
 import { useUsage } from "./hooks/useUsage.ts";
-import { useMcp } from "./hooks/useMcp.ts";
-import { useStats } from "./hooks/useStats.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
 import TerminalPane from "./components/TerminalPane.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
-import { useCwdGit } from "./hooks/useCwdGit.ts";
-import { useProjectMetrics } from "./hooks/useProjectMetrics.ts";
-import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -63,39 +57,15 @@ export default function App() {
     sessions.find((s) => s.status === "running") ??
     sessions[0] ??
     null;
-  const skills = useSkills(activeSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   // US-025: also surfaces the real /usage scrape; token-gated probe on open.
   const usage = useUsage(wsTrigger, config?.token ?? null);
-  // US-011: MCP server status — inferred connected count + names + needs-auth.
-  const mcp = useMcp(wsTrigger);
-  // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.
-  const stats = useStats(wsTrigger);
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
-  // US-022: opt-in secondary widgets. Data is fetched for the active session
-  // only when at least one widget is enabled, keeping the default view lean.
-  const widgetPrefs = useWidgetPrefs();
-  const widgetData = useWidgets(
-    activeSession?.id ?? null,
-    wsTrigger,
-    widgetPrefs.anyEnabled,
-  );
-  // US-019: Git is cwd-scoped — it follows the active working directory (the
-  // toolbar cwd), not a session's cwd. Refetched on each WS event.
-  const cwdGit = useCwdGit(
-    config?.cwd ?? null,
-    wsTrigger,
-    widgetPrefs.anyEnabled,
-  );
-  // US-026: Last-session metrics are also cwd-scoped — they read the figures
-  // Claude Code recorded for the active working directory's project.
-  const projectMetrics = useProjectMetrics(
-    config?.cwd ?? null,
-    wsTrigger,
-    widgetPrefs.anyEnabled,
-  );
+  // US-004: the Context widget's live breakdown for the active session. Always
+  // fetched (the Context HUD tab is permanent now) when a session is correlated.
+  const widgetData = useWidgets(activeSession?.id ?? null, wsTrigger, true);
 
   useEffect(() => {
     fetch("/api/health")
@@ -142,17 +112,9 @@ export default function App() {
         <TerminalPane token={config?.token ?? null} theme={theme} />
         <Hud
           hidden={!hudOpen}
-          sessions={sessions}
           activeSession={activeSession}
-          skills={skills}
-          usage={usage}
-          mcp={mcp}
-          stats={stats}
           data={widgetData}
-          git={cwdGit}
-          metrics={projectMetrics}
-          enabled={widgetPrefs.enabled}
-          toggle={widgetPrefs.toggle}
+          usage={usage}
           pulse={pulse}
           pulseMinutes={pulseMinutes}
           onPulseRange={setPulseMinutes}

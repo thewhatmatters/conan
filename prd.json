@@ -74,7 +74,7 @@
         "Verify in browser using automate-browser skill that the HUD shows Context + Usage + Pulse only, each renders real data (or an honest empty state), and switching HUD tabs works"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Context + Usage cells live in Widgets.tsx (ContextWidget ~:312, UsageWidget ~:743) — lift them out cleanly. WIDGET_KEYS/WIDGET_SCOPE/useWidgetPrefs drove the picker; collapse to the two fixed widgets. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {
