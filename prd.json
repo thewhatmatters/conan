@@ -122,7 +122,7 @@
         "Verify in browser using automate-browser skill (MCP tab lists the session's servers with correct status colors; empty state renders), light + dark"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Core data exists (WidgetData.mcp, parsed by parseMcp/McpServer in src/widgets/index.ts). Tool-counts + User/claude.ai/Built-in grouping are a deliberate follow-up (not in system/init mcp_servers). Model on ui/src/components/SkillsWidget.tsx; reuse StatusDot in ui/src/components/shared/. Add tab in ui/src/components/Hud.tsx. Suggested skills: automate-browser."
     },
     {

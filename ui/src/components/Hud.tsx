@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { ContextWidget, UsageWidget } from "./Widgets.tsx";
 import PlanWidget from "./PlanWidget.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
+import McpWidget from "./McpWidget.tsx";
 import PulseChart from "./PulseChart.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
@@ -133,6 +134,9 @@ export default function Hud({
             <TabsTrigger value="skills" className={TAB_TRIGGER}>
               Skills
             </TabsTrigger>
+            <TabsTrigger value="mcp" className={TAB_TRIGGER}>
+              MCP
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -184,6 +188,10 @@ export default function Hud({
 
         <TabsContent value="skills" className="mt-0 min-h-0 flex-1 overflow-auto">
           <SkillsWidget skills={skills ?? []} />
+        </TabsContent>
+
+        <TabsContent value="mcp" className="mt-0 min-h-0 flex-1 overflow-auto">
+          <McpWidget data={data} />
         </TabsContent>
       </Tabs>
     </aside>
