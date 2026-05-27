@@ -1,228 +1,197 @@
 {
-  "project": "Conan — v4.3: HUD/UX expansion (Plan widget + observability + UI lifts)",
-  "branchName": "loop/conan-v4.3",
-  "description": "v4.3 expands the Tauri terminal-wrapper's HUD/UX: land the finished context-accuracy fixes and make the /context auto-refresh adaptive (observer-effect aware); add a conditional Plan tab (from TodoWrite/ExitPlanMode/build-loop) and a Skills tab (VS Code-extensions-style, from SKILL.md frontmatter); add a read-only Settings surface mirroring Claude's /config; and a run of UI lifts — real terminal tabs (drop the Term dropdown), a bottom status bar (cwd / branch / gateway, moved out of the HUD), a View > Theme submenu that drives Conan's app theme AND mirrors Claude's terminal /theme, a context-pressure action bar (Compact -> /handoff in the correlated pty), and flush/panel-native widget content (no card chrome). Backend before UI; build stays green at every story. Source: docs/v4.3-backlog.md. Resolved decisions (2026-05-27): the US-013 follow-up folded as the first story (not pre-committed); chrome = bottom bar; Settings = read-only only this loop; Theme = include the Claude /theme mirror.",
+  "project": "Conan — v4.4: HUD/UX polish (active-tab binding, session header, MCP tab, editable Settings, Pulse fixes, Claude Radio)",
+  "branchName": "loop/conan-v4.4",
+  "description": "v4.4 continues the Tauri terminal-wrapper's HUD/UX work: capture Claude Code's version from the SessionStart hook and add an editable Claude-config write route (backend foundations); bind the session-scoped HUD widgets to the ACTIVE terminal tab; a run of UI items — a slimmer bottom status bar (drop the gateway chip, flex cwd-left/branch-right, VS Code-style `*` dirty marker), Pulse-chart dark-mode legibility fixes, a user-facing Context 'Auto' toggle, a HUD MCP tab (servers + status), a fixed Claude-banner-style session header atop each terminal (logo placeholder + Conan & Claude Code versions + model/context + cwd), an editable tabbed (Status/Config) Settings dialog, and a Claude Radio play/pause bottom toolbar that streams a YouTube live stream. Backend/schema before UI; build stays green at every story. Source: docs/v4.4-backlog.md. Decisions (2026-05-27): show BOTH versions in the header (Conan + Claude Code); status bar uses a bare `*` for dirty (no count); MCP tab ships the flat name+status list first (tool-counts/grouping is a follow-up); Radio is its own app-wide bottom strip below the terminal+HUD row, default paused.",
   "generatedAt": "2026-05-27",
-  "sourcePrd": "docs/v4.3-backlog.md",
+  "sourcePrd": "docs/v4.4-backlog.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Land the context-accuracy fixes (1M window + /context auto-refresh + hook token + sidecar-test)",
-      "description": "As a Conan user, I want the Context widget to be accurate on 1M-context sessions and to stay current, so the HUD reflects reality.",
+      "title": "Capture Claude Code's version from the SessionStart hook",
+      "description": "As a Conan user, I want Conan to know which Claude Code version a session is running, so the session header can display it.",
       "acceptanceCriteria": [
-        "resolveContextWindow returns a 1M window when: the model slug carries a 1m marker, OR a sibling session on the SAME base model reports 1m, OR measured used tokens exceed the 200k default; otherwise 200k (unit-tested in scripts/test-context.mjs)",
-        "A 1M-context session (e.g. claude-opus-4-7[1m]) shows the correct low % in the Context widget, not ~99%",
-        "autoRefreshContextOnStop injects /context on the Stop hook, throttled per session, and is a no-op when the session has no live correlated pty or when CONAN_CONTEXT_AUTOREFRESH=0",
-        "scripts/hooks/send-event.mjs resolves the auth token from CONAN_DATA_DIR so events from the Tauri-app-spawned gateway are not 401'd",
-        "scripts/test-sidecar.mjs uses a parent-held stdin pipe (not /dev/null) so the EOF watchdog doesn't cause a false health-check failure",
+        "The session table gains a nullable `claude_version` column (idempotent init, no crash on existing DBs)",
+        "The events ingestion route (POST /api/claude/events) persists `payload.version` from the SessionStart hook onto the session row when present, leaving it null otherwise (never fabricated)",
+        "GET /api/claude/sessions and the per-session widgets payload expose the captured `claude_version` (null when unknown)",
+        "scripts/hooks/send-event.mjs forwards the SessionStart payload's `version` field unchanged (no transformation)",
+        "A unit/integration check covers parsing/persisting the version from a SessionStart payload and the null fallback",
         "npm test passes all suites",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (a 1M-context session shows the correct low % in the Context widget)"
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "This is the finished-but-uncommitted US-013 follow-up, folded in as the first story (per the 2026-05-27 decision) — verify the behaviors hold and the tree is green; the runner commits it. The em-dash re-encoding noise in the old prd.json is superseded by this v4.3 rewrite. Suggested skills: automate-browser (confirm the Context % in the running UI)."
+      "passes": false,
+      "notes": "Backend/schema foundation for the session header (US-008). Anchors: events route in src/gateway/index.ts, session table in src/db/, parse in src/widgets/index.ts, scripts/hooks/send-event.mjs. SessionStart's payload carries `version`; only persist when present."
     },
     {
       "id": "US-002",
-      "title": "Make the /context auto-refresh adaptive (delta-triggered, not every turn)",
-      "description": "As a Conan user, I don't want self-measurement to inflate or burn my context, so /context should refresh only when context has likely moved a lot.",
+      "title": "Editable Claude-config write route + editable-key schema",
+      "description": "As a Conan user, I want a safe backend path to change Claude Code config values, so the Settings dialog can become editable.",
       "acceptanceCriteria": [
-        "The auto-refresh replaces the fixed once-per-Stop cadence with a delta trigger: it injects /context only after cumulative output since the last capture (PostToolUse tool_response sizes + assistant message length) crosses a meaningful threshold",
-        "A hard floor (>= the existing min spacing) AND a ceiling are enforced, so tiny turns don't refresh and a slow session still refreshes eventually",
-        "Manual refresh and passive capture remain always-available cheap paths; CONAN_CONTEXT_AUTOREFRESH=0 still disables auto-refresh",
-        "The Context widget's live face notes that refreshing consumes context (honest cost)",
-        "Behavior of the delta trigger is unit-covered (threshold/floor/ceiling)",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill"
+        "Extend the config module (src/config/index.ts) so each editable key in SETTINGS_KEYS/GLOBAL_KEYS carries type metadata: kind ('boolean' | 'enum' | 'string' | 'number') and, for enums, the allowed values (e.g. theme, editorMode) extracted from the claude binary where applicable (not hand-guessed)",
+        "Add POST /api/claude/config (token-gated) that writes a single key via read-modify-write, preserving every other key in the target file (~/.claude/settings.json or ~/.claude.json) byte-for-byte except the changed value",
+        "The route rejects unknown keys and type-mismatched values with a 4xx and a clear error; it never writes a key not in the editable schema",
+        "GET /api/claude/config returns the value + type metadata so the UI can render the right control",
+        "A unit/integration test writes a key and asserts only that key changed (all other keys/permissions/hooks/mcp preserved), plus the reject paths",
+        "npm test passes all suites",
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Observer-effect fix (a /context dump is ~4-6k tokens). Refines US-001's autoRefreshContextOnStop. Settled: a hidden/background window can't report the visible session's context (different process). Long-term alternative noted in the backlog: compute the breakdown ourselves and drop the inject. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backend foundation for editable Settings (US-010). Read-modify-write preserving all other keys is the proven-safe pattern (v4.3 theme write). Anchors: readClaudeConfig + SETTINGS_KEYS/GLOBAL_KEYS in src/config/index.ts, GET /api/claude/config in src/gateway/index.ts."
     },
     {
       "id": "US-003",
-      "title": "Backend: derive per-session plan-state from the event stream + expose a route",
-      "description": "As a developer, I need the active session's plan available to the UI, derived from hook events already on the wire.",
+      "title": "Bind the session-scoped HUD widgets to the ACTIVE terminal tab",
+      "description": "As a Conan user, I want the Context/Plan/Skills widgets to describe the terminal tab I'm looking at, so opening a new terminal doesn't keep showing the previous session's data.",
       "acceptanceCriteria": [
-        "Reduce the persisted event stream into per-session plan-state: latest-wins TodoWrite todos ([{content, status, activeForm}]) + the last ExitPlanMode plan markdown",
-        "Expose GET /api/claude/sessions/:id/plan (token-gated) that rehydrates from the persisted event table so a reconnect restores the current plan",
-        "isActive is true when the session has a non-empty TodoWrite list with at least one non-completed item, OR a recent ExitPlanMode plan, OR an active build loop; false otherwise",
-        "Reducer logic is unit-tested",
-        "Typecheck passes"
+        "TerminalPane surfaces its active terminal id upward via a callback prop, covering tab switch, new terminal, and close (the active tid always reflects the visible terminal)",
+        "App tracks the active tid and derives the active session from the terminal correlated to THAT tid (via useTerminals tid→sessionId), instead of `matched.find(running) ?? matched[0]`",
+        "The Context, Plan, and Skills widgets + the notification visibleSessionId all repoint to the active tab's session",
+        "Switching terminal tabs updates the HUD widgets to the newly active tab's session; a freshly opened tab shows an empty/uncorrelated state until its pty correlates (not the prior tab's data)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (open a 2nd terminal → HUD widgets repoint; switch back → they follow)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "No new capture — the forwarder already passes the full tool_input. Precedence: live TodoWrite -> ExitPlanMode seed -> build-loop. See docs/v4.3-backlog.md Plan-widget section."
+      "passes": false,
+      "notes": "Foundation for the per-session header (US-008) and MCP tab (US-007) to track the active tab. Anchors: correlatedSession/activeSession in ui/src/App.tsx, activeTid in ui/src/components/TerminalPane.tsx, useTerminals. Suggested skills: automate-browser."
     },
     {
       "id": "US-004",
-      "title": "Frontend: usePlan hook + PlanWidget + conditional Plan HUD tab",
-      "description": "As a Conan user, I want to see the active session's plan in the HUD when there is one, and have it stay out of the way otherwise.",
+      "title": "Slim bottom status bar: drop gateway chip, flex cwd-left / branch-right, `*` dirty marker",
+      "description": "As a Conan user, I want a cleaner bottom status bar that reads at a glance, so cwd and branch sit at opposite ends and dirtiness is a simple asterisk.",
       "acceptanceCriteria": [
-        "usePlan hook reduces TodoWrite/ExitPlanMode events for the active session into { todos, proposedPlan, source, isActive }",
-        "PlanWidget renders the checklist (per-item status icon + a progress count) and/or the proposed-plan markdown; falls back to the build-loop tasks feed when no interactive plan is live",
-        "A conditional 4th HUD tab (Plan) is shown/enabled only when isActive, and greyed/disabled/hidden when there's no active plan or all TodoWrite items are completed",
+        "StatusBar removes the gateway-connection chip and its `status`/`port` props (and the ConnectionStatus render)",
+        "The bar lays out flexed: cwd hugs the left edge, git branch hugs the right edge (justify-between), preserving truncation on each",
+        "The numeric dirty/changes indicator is removed; instead a bare `*` is appended to the branch name when git.dirty > 0 (e.g. `main*`), and the plain branch shows when clean",
+        "The StatusBar call site (TerminalPane/App) stops passing status/port; any now-dead ConnStatus/useGateway.status wiring at that call site is cleaned up",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (plan appears with todos present, hides/greys when none; light + dark)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (cwd left, branch right, `*` present on a dirty branch and absent when clean, no gateway chip, no layout shift on a long/dirty branch), light + dark"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Consumes US-003. HUD tabs live in ui/src/components/Hud.tsx:89-130. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Presentation-only; data (git.dirty) already on the StatusBar git prop. Anchors: ui/src/components/StatusBar.tsx (US-010), its caller in TerminalPane/App. Suggested skills: automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Backend: skills frontmatter reader + GET /api/claude/skills",
-      "description": "As a developer, I need installed skills with their descriptions available to the UI.",
+      "title": "Pulse chart: dark-mode axis legibility + remove redundant in-chart legend",
+      "description": "As a Conan user, I want the Pulse chart readable in dark mode without the tooltip colliding with a legend, so the activity graph is legible.",
       "acceptanceCriteria": [
-        "Extend the existing skill-dir walk (skillTokens in src/widgets/index.ts) into a frontmatter parser returning [{ name, description, source }] for user (~/.claude/skills), project (<cwd>/.claude/skills), and plugin skills",
-        "Expose GET /api/claude/skills (token-gated)",
-        "Built-in skills with no readable SKILL.md are listed name-only (source = Built-in) with no fabricated description",
-        "Frontmatter parsing is unit-tested",
-        "Typecheck passes"
+        "The AreaChart X/Y axis tick labels use a legible token (e.g. fill-foreground/60–70 or a dedicated chart-axis token) instead of fill-muted-foreground, readable on the dark chart background",
+        "The hover cursor line stroke is theme-aware (semantic token) rather than the hard-coded #d1d5db",
+        "PulseChart no longer passes showLegend to <AreaChart> (the in-chart legend is dropped); PulseChart's own footer legend + per-category totals remain the source of truth, so the hover tooltip no longer overlaps any legend",
+        "Axis/cursor changes stay token-driven in AreaChart.tsx so any future chart inherits them; no other chart consumer regresses",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (axis labels clearly readable in dark mode; hover tooltip does not collide with any legend; footer legend + totals intact), light + dark"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Descriptions are NOT in /context (only names + sizes) — they live in each SKILL.md frontmatter. Keep dependency-light like the other readers."
+      "passes": false,
+      "notes": "Anchors: ui/src/components/charts/AreaChart.tsx (XAxis/YAxis tick fill ~:698/:728, cursor stroke ~:751, ChartTooltip ~:395); ui/src/components/PulseChart.tsx (showLegend ~:151 + footer legend ~:164-183). Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
-      "title": "Frontend: useSkills hook + Skills HUD tab (VS Code-extensions style)",
-      "description": "As a Conan user, I want to browse my installed skills and their descriptions in the HUD.",
+      "title": "Context tab: user-facing 'Auto' context-tracking toggle (inline with manual refresh)",
+      "description": "As a Conan user, I want to turn the adaptive /context auto-refresh on or off from the Context tab, so I control the observer-effect tradeoff instead of an env var.",
       "acceptanceCriteria": [
-        "useSkills hook fetches + caches GET /api/claude/skills",
-        "A Skills HUD tab renders rows like the VS Code Extensions panel: bold name, clamped description, source badge (User / Project / Plugin (name) / Built-in), with an empty state",
-        "The flat HUD tab bar still reads well at the 320px min width with the added tab(s) (Context | Usage | Pulse | Plan | Skills) — confirm fit or apply overflow handling",
+        "A toggle sits inline with the existing ↻ /context manual refresh button in the Context widget header (one control group)",
+        "Auto ON enables the adaptive auto-inject path (the v3 delta-triggered cadence, not every turn); Auto OFF stops auto-injects while the manual refresh button still works on click",
+        "The toggle drives a runtime-settable flag that gates the existing autoRefreshContextOnStop path (lifting the CONAN_CONTEXT_AUTOREFRESH env gate to a UI-controlled setting), defaulting from the env var; the preference persists and is reflected on reload",
+        "The toggle's label/tooltip notes that Auto spends context to measure context (honest cost), consistent with the live·from /context framing",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (light + dark)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (toggle + button render inline; ON re-enables auto-refresh, OFF stops auto-injects while manual refresh still works), light + dark"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Consumes US-005. Reuse the flush/no-card treatment (US-014). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Surfaces an existing capability. Anchors: autoRefreshContextOnStop + CONAN_CONTEXT_AUTOREFRESH in src/terminal/index.ts (fired from the Stop branch in src/gateway/index.ts); manual button + ContextWidget in ui/src/components/Widgets.tsx; route POST /api/claude/sessions/:id/context/refresh. Decide global vs per-session scope at implementation; a small runtime flag endpoint is acceptable. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
-      "title": "Backend: read-only Settings mirror of Claude's /config + GET /api/claude/config",
-      "description": "As a developer, I need Claude Code's settings readable so Conan can display them.",
+      "title": "MCP tab in the HUD — servers + connection status",
+      "description": "As a Conan user, I want a HUD tab listing the active session's MCP servers and their status, so I can see MCP health like Claude's /mcp view.",
       "acceptanceCriteria": [
-        "Read Claude Code config from ~/.claude/settings.json, the global ~/.claude.json, and project <cwd>/.claude/settings.json into a known key/value set, each value tagged with its source",
-        "Expose GET /api/claude/config (token-gated), read-only",
-        "Document the discovered /config-row -> file -> key mapping in code comments; rows that cannot be confidently mapped are omitted (never fabricated)",
-        "Reader logic is unit-tested",
-        "Typecheck passes"
+        "A new McpWidget.tsx renders WidgetData.mcp as a list of `name · status` rows, each with a StatusDot whose tone maps from the server status (connected→green, failed→destructive/red, needs-authentication/pending→amber, disabled/other→muted)",
+        "A new MCP tab is added to the HUD tab strip + TabsContent (next to Skills), fed by the active session's WidgetData",
+        "An empty/graceful state renders when the list is empty or the session is hook-only (mcp === null): e.g. 'No MCP servers for this session'",
+        "The tab follows the active terminal tab's session (consistent with US-003)",
+        "Flush panel styling consistent with the other HUD tabs (no card chrome)",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (MCP tab lists the session's servers with correct status colors; empty state renders), light + dark"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Read-only this loop (decision 2026-05-27); editing deferred to a later version. Optionally cross-check against a captured /config frame (same infra as src/usage/probe.ts + src/context/index.ts), but disk-read is the structured source."
+      "passes": false,
+      "notes": "Core data exists (WidgetData.mcp, parsed by parseMcp/McpServer in src/widgets/index.ts). Tool-counts + User/claude.ai/Built-in grouping are a deliberate follow-up (not in system/init mcp_servers). Model on ui/src/components/SkillsWidget.tsx; reuse StatusDot in ui/src/components/shared/. Add tab in ui/src/components/Hud.tsx. Suggested skills: automate-browser."
     },
     {
       "id": "US-008",
-      "title": "Frontend: top-level Settings view mirroring Claude's config (read-only)",
-      "description": "As a Conan user, I want a Settings screen that shows Claude Code's current configuration.",
+      "title": "Fixed Claude-banner-style session header atop each terminal",
+      "description": "As a Conan user, I want a pinned header on the terminal pane showing what's running (logo, versions, model/context, cwd), so I see it without scrolling the terminal back to Claude's banner.",
       "acceptanceCriteria": [
-        "A top-level Settings view/modal opens from a native Conan menu item (Conan > Settings, accelerator Cmd+,) and renders the settings from GET /api/claude/config",
-        "Grouped read-only list with a search box (like Claude's /config screen); each value shows its source and a 'managed by Claude Code' affordance",
+        "A new SessionHeader.tsx renders three lines mirroring Claude's banner: (1) a logo placeholder (text/lucide, artwork TBD) + product line showing BOTH versions, e.g. `Conan 0.1.0 · Claude Code v2.1.152` (Conan version from ABOUT/package.json; Claude version from the session's claude_version captured in US-001, shown as `—` when unknown); (2) model (context), e.g. `Opus 4.7 (1M context)` from WidgetData.liveContext.modelDisplay + windowTokens (falling back to context.model); (3) the session cwd (~-collapsed)",
+        "The header is mounted in TerminalPane above the terminal body (between the tab strip and the xterm surface), describing the ACTIVE terminal tab's session (US-003)",
+        "A graceful fallback renders when the tab is uncorrelated (logo + Conan version + cwd; model line muted, Claude version `—`) rather than a blank bar",
+        "Semantic tokens only; flush styling with a 1px bottom border; the terminal body is unaffected (no layout shift / no pty teardown)",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (light + dark)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (header pinned at the pane top shows both versions + model(context) + cwd for the active session, follows tab switches, no layout shift), light + dark"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "Consumes US-007. Native menu wiring in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-001 (claude_version) and US-003 (active-tab binding). Anchors: ui/src/components/TerminalPane.tsx (above the terminal body), WidgetData.liveContext (ui/src/hooks/useWidgets.ts), Session.cwd/config.cwd, ABOUT in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
-      "title": "UI lift: real terminal tabs (drop the Term dropdown)",
-      "description": "As a Conan user, I want a native tab strip for terminals instead of a dropdown.",
+      "title": "Settings dialog: reorganize into Status / Config tabs (mirroring Claude's /settings)",
+      "description": "As a Conan user, I want the Settings dialog split into the same Status and Config tabs Claude uses, so the layout is faithful and ready for editable controls.",
       "acceptanceCriteria": [
-        "Replace TermDropdown (TerminalPane.tsx:204-284) and its DropdownMenu imports with a tab strip: one TabsTrigger per terminal, label from terminalLabel(byTid…), active highlighted, wired to setActiveTid",
-        "Each tab has a hover close (x) that calls closeTerm with stopPropagation; closing the active tab falls back to the last remaining terminal",
-        "A trailing + button at the right end calls addTerm (title 'New terminal')",
-        "Many tabs overflow via horizontal scroll or label truncation (no wrap)",
-        "Switching tabs preserves the pty/scrollback (no kill), and the native File > New/Close Terminal menu bridge still works",
+        "SettingsView is reorganized into two tabs — Status and Config — using the ui/* tabs primitive",
+        "Status tab (read-only): version, session, cwd, login/org/email, model, MCP servers, setting sources — the existing read-only mirror content",
+        "Config tab lists the editable keys from GET /api/claude/config grouped sensibly, rendered read-only in THIS story (display value + type), as the scaffold the next story makes interactive",
+        "No regression to opening the dialog (Conan ▸ Settings / ⌘,) or its data loading",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (open 3+ terminals; switch/close/add; light + dark)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (dialog opens with Status + Config tabs; Status shows read-only info; Config lists keys/values), light + dark"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Presentation-only — terms[]/addTerm/closeTerm/activeTid/byTid + sessionStorage reattach already exist. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Anchors: ui/src/components/SettingsView.tsx (US-008), useConfig, GET /api/claude/config, ui/* tabs primitive. Splits the editable-Settings work: tabbing here, interactivity in US-010. Suggested skills: automate-browser."
     },
     {
       "id": "US-010",
-      "title": "UI lift: bottom status bar (cwd / branch / gateway), move gateway chip out of the HUD",
-      "description": "As a Conan user, I want the working directory always visible, with branch and gateway status alongside.",
+      "title": "Settings Config tab: live editable controls wired to the write route",
+      "description": "As a Conan user, I want to change Claude config values from the Config tab with the right control per type, so Settings is editable, not just a mirror.",
       "acceptanceCriteria": [
-        "A slim status bar on the TerminalPane shows cwd, git branch (and dirty count), and gateway status (connected gateway :PORT / connecting / offline)",
-        "cwd comes from GET /api/config (and the active terminal's cwd when available); branch/dirty from WidgetData.git (useWidgets)",
-        "The gateway ConnectionStatus is removed from the HUD tab bar (Hud.tsx) and its props are unplumbed from App.tsx — gateway status now shows only in the status bar",
-        "Themed with semantic tokens; updates on branch/connection change",
+        "Config rows become live controls driven by the type metadata from GET /api/claude/config: toggle switch for booleans, dropdown for enums (allowed values), text/number input otherwise",
+        "Changing a control persists via POST /api/claude/config (US-002) and reflects the saved value; a save error surfaces inline without losing the dialog",
+        "Each editable control carries an honest note that changes apply to Claude's config and may only take effect on the next Claude session (no false claim of live hot-reload)",
+        "Status tab stays read-only; only Config is editable",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (cwd/branch render; gateway chip reflects connect/disconnect; light + dark)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (toggle a boolean and pick an enum value; the value persists across reopen; other settings untouched), light + dark"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Decision 2026-05-27: bottom bar (Option B), not an ASCII header. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-002 (write route + type metadata) and US-009 (tabbed scaffold). Anchors: ui/src/components/SettingsView.tsx, POST /api/claude/config, ui/* select/switch primitives. Suggested skills: automate-browser."
     },
     {
       "id": "US-011",
-      "title": "UI lift: View > Theme submenu driving Conan's app theme",
-      "description": "As a Conan user, I want a Theme submenu (not just a toggle) that themes the whole app.",
+      "title": "Claude Radio — app-wide bottom toolbar play/pause for the YouTube live stream",
+      "description": "As a Conan user, I want a play/pause toolbar that streams Claude Radio, so I can have ambient audio while I work.",
       "acceptanceCriteria": [
-        "Replace the single View toggle (appMenu.ts:80-91) with a View > Theme radio submenu, a checkmark on the active option, wired to useTheme.setTheme; the menu rebuilds on theme change so the check follows",
-        "Options include Light, Dark, and 'Auto — match system' (prefers-color-scheme); extend useTheme + index.css token handling as needed",
-        "Switching the theme recolors the HUD + charts + terminal background in lockstep (xterm derives from the same tokens)",
+        "A new RadioBar.tsx hosts an offscreen (1×1 / visually hidden) YouTube IFrame Player for video id YmQ7jRgf4f0 (https://www.youtube.com/live/YmQ7jRgf4f0), controlled via the YouTube IFrame Player API (playVideo/pauseVideo)",
+        "A play/pause button reflects the player's real state via onStateChange; the bar starts PAUSED (audio plays only after the user clicks Play — the gesture satisfies the autoplay-with-sound policy)",
+        "A 'Claude Radio' label is shown; an offline/error state (stream ended/unavailable) disables the button with a muted label instead of a dead control",
+        "The bar is mounted as an app-wide full-width bottom strip in App.tsx, BELOW the TerminalPane + Hud row (its own strip, distinct from the terminal's cwd/branch status bar), slim with a 1px top border and semantic tokens; it does not shift or tear down the terminal/HUD",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (light, dark, auto)"
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (button toggles play↔pause and reflects player state; label reads 'Claude Radio'; layout stable — note audio can't be asserted headlessly, verify the player state + control instead), light + dark"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "This is the layer that 'trickles to the HUD'. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-012",
-      "title": "Mirror the theme choice into Claude's terminal /theme",
-      "description": "As a Conan user, I want the in-terminal text theme to harmonize with the app theme.",
-      "acceptanceCriteria": [
-        "On a Conan theme change, the choice is mirrored into Claude Code's terminal /theme via the reliable mechanism (research config-write vs keystroke-inject; choose the non-fragile one and document why)",
-        "The terminal-theme control is presented as a separate, clearly-labeled menu group ('Terminal text theme') so the two theme layers aren't conflated",
-        "The mirror is a safe no-op when its precondition isn't met (no live pty for the inject path, or a missing config path for the file path) and that state is reflected in the UI",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Decision 2026-05-27: include the mirror. Mechanism research required; relates to the keystroke-injection path in src/terminal/index.ts. Suggested skills: automate-browser. DONE: chose config-write (not /theme keystroke-inject — /theme is an arrow-key selector TUI with no arg form, fragile) writing the `theme` key in ~/.claude/settings.json; documented the tradeoff (lands next session, not live). Backend writeClaudeTheme/readClaudeTheme/nextClaudeTheme (preserves accessibility variants) + GET/POST /api/claude/theme; UI useTerminalTheme hook auto-mirrors on Conan theme change (skips initial mount) + a separate View > 'Terminal text theme' menu group (disabled/labeled when no Claude config). Verified: 13 new unit tests, typecheck, npm test, ui build, routes end-to-end via curl, app mounts clean light+dark."
-    },
-    {
-      "id": "US-013",
-      "title": "Context-pressure action bar (Compact -> /handoff in the correlated pty)",
-      "description": "As a Conan user, when context is filling up I want a quick way to checkpoint and compact the session.",
-      "acceptanceCriteria": [
-        "In the Context HUD tab, a bottom action bar appears conditionally when ctxPct >= 80% (matching the destructive-ring threshold), with two actions: Cancel and Compact",
-        "Cancel hides the bar until a higher threshold is crossed (no nagging every render)",
-        "Compact injects /handoff (then optionally /compact) into the correlated pty via the existing keystroke-injection path; it is disabled/hidden when the session has no live correlated pty",
-        "The action is labeled so it's clear it runs in the terminal session and that HANDOFF.md is written by the session (not by Conan)",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill (bar appears past threshold; Cancel hides it; Compact disabled with no live pty; light + dark)"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "Decided: write HANDOFF.md, not CLAUDE.md (CLAUDE.md auto-loads into every future session). Conan can't author the handoff itself — it must inject so the session does. DONE: backend injectHandoff(sessionId) in src/terminal/index.ts (writes `/handoff\\r` to the correlated pty) + token-gated POST /api/claude/sessions/:id/handoff (ok:false when no live pty). UI ContextActionBar in Widgets.tsx renders in BOTH the live and estimate Context faces: appears at ctxPct>=80% (matches the destructive-ring threshold), Cancel records dismissedAt and re-shows only once pressure climbs >=5pts past it (no per-render nag), Compact POSTs /handoff and is disabled when !hasLivePty; copy makes clear it runs /handoff in the terminal session and HANDOFF.md is written by the session, not Conan. Verified: typecheck, npm test, ui build all green; automate-browser confirmed the bar at 99% with Compact disabled (no live pty), Cancel hiding it, light + dark; route returns ok:false no-pty and 401 unauthed. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-014",
-      "title": "UI lift: flush, panel-native HUD content (no card chrome)",
-      "description": "As a Conan user, I want the HUD tabs to read as one continuous panel, not cards floating inside it.",
-      "acceptanceCriteria": [
-        "Flatten the Context + Usage section containers in Widgets.tsx: no rounded corners, no box-borders, no inset background panels around sub-sections; keep the data viz (progress ring, stacked bars, category dots)",
-        "Sections are separated by full-width border-t dividers (edge-to-edge), like the PulseChart compact rule; no border radius anywhere in the tab body",
-        "The Pulse tab uses the flush/no-radius treatment too (render compact or equivalent) so Context | Usage | Pulse | Plan | Skills share one continuous surface",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill (all tabs read as one panel a la Linear; light + dark)"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "Run last so it harmonizes the new tabs too. Reference: PulseChart compact rule (PulseChart.tsx:103-108). Suggested skills: automate-browser. DONE: flattened StatCard (the Context/Usage/Plan primitive) from the two-tier card into a flush panel-native section — dropped TwoTierCard's rounded-xl/bg-muted shell + bordered bg-card inner, kept the data viz (ProgressCircle, stacked bars, category dots); StatCard now owns its px-3 py-3 and a full-width border-b (last:border-b-0). The sub-section dividers (ContextActionBar, the live /usage SESSION block) made edge-to-edge via -mx-3 px-3. Hud.tsx context/usage/plan tab bodies no longer pad (StatCard owns it); Pulse renders compact, and compact lost its now-redundant top border-t so it reads flush under the tab bar. Verified: typecheck + ui build clean; automate-browser confirmed Context/Usage/Pulse read as one continuous panel (no card chrome, edge-to-edge dividers, no container radius) in light + dark, matching the already-flush Skills tab."
+      "passes": false,
+      "notes": "CSP is null (permissive) so no allowlisting needed now. Anchors: new ui/src/components/RadioBar.tsx (YT IFrame API loaded lazily), ui/src/App.tsx shell (bottom strip below the terminal/HUD flex row), security.csp in src-tauri/tauri.conf.json (only if CSP is ever tightened). Suggested skills: automate-browser."
     }
   ]
 }
