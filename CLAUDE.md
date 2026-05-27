@@ -20,8 +20,10 @@ or `run-tasks.sh` iterations) — keep it accurate.
 - **Gateway** (`src/`): TypeScript ESM, Express 4 + `ws` + `better-sqlite3`.
   Run with `tsx`. Entry `src/gateway/index.ts`, port **3747**, loopback-only.
 - **UI** (`ui/`): Vite + React 19 + TypeScript + Tailwind v4 (CSS-first,
-  `@theme inline` + `.dark` in `ui/src/index.css`). Built to `ui/dist`, served
-  by the gateway. xterm.js (`@xterm/*`) for the terminal.
+  `@theme inline` + `.dark` in `ui/src/index.css`). Loaded by the Tauri webview
+  (bundled frontend); dev uses the Vite server (:5173). The gateway is JSON-API +
+  WebSockets only — it does **not** serve the UI to a browser (v4.2 Tauri-only).
+  xterm.js (`@xterm/*`) for the terminal.
 
 ## Run / build / verify
 ```bash
@@ -49,13 +51,9 @@ npm run typecheck           # tsc --noEmit (gateway)
   `/ws/terminal` (node-pty). **Both authenticated on upgrade.**
 - Auth (`src/gateway/auth.ts`): token (`CONAN_AUTH_TOKEN` | `.data/auth-token` |
   generated) + **Origin allowlist** — required because browsers don't apply
-  same-origin policy to WebSockets (CVE-2025-52882). The SPA reads the token
-  from same-origin `/api/config`.
-- Remote access (`src/gateway/tls.ts`, US-024): **opt-in, off by default.** Set
-  `CONAN_TLS_CERT` + `CONAN_TLS_KEY` to run as HTTPS — all WS (app + terminal)
-  then serve over `wss://` behind the same token/Origin checks. Binding a
-  non-loopback `CONAN_HOST` without TLS is refused (no cleartext exposure, no raw
-  shell port). See `docs/remote-access.md`.
+  same-origin policy to WebSockets (CVE-2025-52882). The app reads the token
+  from same-origin `/api/config`. The gateway binds **loopback-only**; there is
+  no TLS/remote-access path (removed in v4.2 — Tauri-only over 127.0.0.1).
 - Terminal (`src/terminal/index.ts`): pty auto-launches `claude` (`mode=claude`,
   default) in the repo cwd via a login shell; `mode=shell` for a plain shell.
 - DB (`src/db/`): SQLite WAL at `.data/conan.db`; tables `session`, `event`,

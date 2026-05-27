@@ -37,7 +37,7 @@
         "Verify with automate-browser at http://localhost:5173 (start the gateway with `npm start`, then `cd ui && npm run dev`): the app loads, gateway shows connected, and a terminal opens"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Footgun #1: run the loop agent OUTSIDE the in-dock session (gateway edits). Keep the auth/Origin module (auth.ts) — only TLS goes. The Origin allowlist + tauri://localhost stay."
     },
     {

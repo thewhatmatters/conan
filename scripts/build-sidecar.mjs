@@ -236,7 +236,7 @@ chmodSync(LAUNCHER, 0o755);
 
 // 7. Ad-hoc codesign the launcher + the embedded node (arm64 kernel kills
 //    unsigned/locally-modified Mach-O). Distribution needs a Developer ID +
-//    notarization (see docs/remote-access.md / research §5).
+//    notarization (see docs/tauri-desktop.md).
 console.log("[sidecar] ad-hoc codesigning …");
 for (const bin of [path.join(RUNTIME, "node"), LAUNCHER]) {
   const r = spawnSync("codesign", ["--force", "-s", "-", bin], {

@@ -56,12 +56,6 @@ function allowedOrigins(): Set<string> {
     "http://tauri.localhost",
     "https://tauri.localhost",
   ];
-  // When remote TLS mode is on (US-024) the SPA is served over https, so the
-  // browser's Origin is https://… — allow the loopback https variants too. The
-  // public remote hostname is added explicitly via CONAN_ALLOWED_ORIGINS.
-  if (process.env.CONAN_TLS_CERT && process.env.CONAN_TLS_KEY) {
-    defaults.push(`https://127.0.0.1:${PORT}`, `https://localhost:${PORT}`);
-  }
   const extra = (process.env.CONAN_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((s) => s.trim())

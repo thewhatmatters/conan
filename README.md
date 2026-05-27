@@ -24,8 +24,9 @@ prompt history — so you never have to `tail` a file to see what's happening.
 - **UI** (`ui/`): Vite + React 19 + TypeScript + Tailwind v4 (CSS-first,
   `@theme inline` + `.dark` in `ui/src/index.css`), built on a real shadcn
   foundation with semantic theme tokens. `xterm.js` (`@xterm/*`) for the terminal.
-  Charts are hand-rolled SVG + CSS grid (zero new charting deps). Built to
-  `ui/dist` and served by the gateway.
+  Charts are hand-rolled SVG + CSS grid (zero new charting deps). Loaded by the
+  Tauri webview; dev uses the Vite server (:5173). The gateway no longer serves
+  the UI to a browser (v4.2 Tauri-only).
 - **Storage**: SQLite (WAL) at `.data/conan.db` — tables `session`, `event`,
   `terminal_session`, initialised idempotently on boot.
 
@@ -50,8 +51,10 @@ exits with a clear message instead of an `EADDRINUSE` stack. Override with
 
 ## Architecture
 
-A single Node gateway (`src/gateway/index.ts`) serves the built SPA, the REST
-API, and two authenticated WebSockets.
+A single Node gateway (`src/gateway/index.ts`) serves the REST API and two
+authenticated WebSockets. It runs **loopback-only** — the Tauri webview loads
+the bundled frontend (Vite at :5173 in dev), so the gateway no longer serves the
+UI to a browser (v4.2 Tauri-only).
 
 **HTTP** — `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
 `GET /api/tasks` (prd.json + progress.txt), `GET/POST /api/cwd`,
@@ -73,18 +76,12 @@ auto-launches `claude` in the active cwd). Both are **authenticated on upgrade**
 
 **Auth** (`src/gateway/auth.ts`) — a token (`CONAN_AUTH_TOKEN` | `.data/auth-token`
 | generated) **plus an Origin allowlist**, required because browsers don't apply
-same-origin policy to WebSockets (CVE-2025-52882). The SPA reads the token from
-same-origin `/api/config`.
-
-**Remote access** (`src/gateway/tls.ts`) — opt-in, off by default. Set
-`CONAN_TLS_CERT` + `CONAN_TLS_KEY` to serve HTTPS/`wss://` behind the same
-token + Origin checks. Binding a non-loopback `CONAN_HOST` without TLS is
-refused (no cleartext exposure). See `docs/remote-access.md`.
+same-origin policy to WebSockets (CVE-2025-52882). The app reads the token from
+same-origin `/api/config`. The gateway binds **loopback-only** (127.0.0.1) — the
+TLS/remote-access path was removed in v4.2 (Tauri-only).
 
 **Multi-project** — a global `~/.claude` hook means any `claude` run anywhere
-self-reports; the UI filters the firehose by the active cwd. Driven sessions can
-be isolated in their own git worktree (`docs/worktree-sessions.md`) and launched
-with Remote Control / Chrome integration (`docs/remote-control-sessions.md`).
+self-reports; the UI filters the firehose by the active cwd.
 
 ## UI / navigation
 
@@ -168,7 +165,6 @@ python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
 ```
 
 Current spec: `docs/v4.2-backlog.md` (+ `docs/v4.2-research.md`).
-Ops/PM2: `docs/ops.md`.
 
 ## Gotchas
 

@@ -1,12 +1,9 @@
-import fs from "node:fs";
 import http from "node:http";
-import https from "node:https";
 import express from "express";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
-import { UI_DIST, PACKAGE_ROOT } from "../paths.js";
+import { PACKAGE_ROOT } from "../paths.js";
 import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
-import { resolveTlsConfig, assertRemoteSafe } from "./tls.js";
 import {
   attachTerminal,
   closeAllTerminals,
@@ -64,18 +61,11 @@ import {
 import { startReaper } from "../session/reaper.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
-// Loopback by default — network exposure is opt-in (CONAN_HOST) and still
-// gated by the WS auth token + Origin validation in auth.ts (US-002).
-const HOST = process.env.CONAN_HOST ?? "127.0.0.1";
-
-// Opt-in remote access over TLS (US-024). Off unless CONAN_TLS_CERT +
-// CONAN_TLS_KEY are set; when on, the gateway runs as HTTPS and all WebSockets
-// (app + terminal) are served over wss:// behind the same token/Origin checks.
-const TLS = resolveTlsConfig();
-// Binding to a non-loopback interface without TLS is refused outright, so the
-// dashboard (and the pty terminal behind it) can never be exposed in cleartext.
-assertRemoteSafe(HOST, TLS);
-const SCHEME = TLS.enabled ? "https" : "http";
+// Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
+// over 127.0.0.1 and is never exposed to the network. The browser/web-served +
+// TLS/remote-access path was removed — the WS auth token + Origin validation in
+// auth.ts (US-002) still gate every upgrade.
+const HOST = "127.0.0.1";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -437,18 +427,19 @@ app.get("/api/claude/mcp", (_req, res) => {
 });
 
 // Read-only settings surface for the Settings view (US-020): which Claude Code
-// lifecycle hooks are wired (so observed sessions self-report) and the
-// remote-access (TLS) posture. NO cost-ceiling/budget here — removed in
-// US-004/US-014; the plan is token-based, not dollar-metered. Theme + usage
-// preferences live client-side. Access-modeled like the other GET routes.
+// lifecycle hooks are wired (so observed sessions self-report). NO
+// cost-ceiling/budget here — removed in US-004/US-014; the plan is token-based,
+// not dollar-metered. Theme + usage preferences live client-side. The gateway is
+// loopback-only now (v4.2 Tauri-only — the TLS/remote-access path was removed).
+// Access-modeled like the other GET routes.
 app.get("/api/settings", (_req, res) => {
   res.json({
     hooks: readHooksStatus(),
     remote: {
-      tlsEnabled: TLS.enabled,
-      scheme: SCHEME,
+      tlsEnabled: false,
+      scheme: "http",
       host: HOST,
-      loopbackOnly: !TLS.enabled,
+      loopbackOnly: true,
     },
   });
 });
@@ -766,17 +757,10 @@ app.post("/api/claude/sessions/:id/resume", async (req, res) => {
 });
 
 
-// Serve the built UI in production; in dev the Vite server runs separately.
-if (fs.existsSync(UI_DIST)) {
-  app.use(express.static(UI_DIST));
-  app.get("*", (_req, res) => {
-    res.sendFile("index.html", { root: UI_DIST });
-  });
-}
-
-const server = TLS.enabled
-  ? https.createServer(TLS.options!, app)
-  : http.createServer(app);
+// The Tauri webview loads the bundled frontend and dev uses the Vite server
+// (:5173), so the gateway is JSON-API + WebSockets only — it no longer serves
+// the built UI to a browser (v4.2 Tauri-only).
+const server = http.createServer(app);
 
 // Two WS endpoints, both authenticated (token + Origin) on upgrade.
 // `noServer` lets us run the auth check before accepting the socket.
@@ -882,12 +866,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[conan] gateway listening on ${SCHEME}://${HOST}:${PORT}`);
-  if (TLS.enabled) {
-    console.log(
-      `[conan] remote TLS mode ON (cert ${TLS.certPath}) — WebSockets served over wss://`,
-    );
-  }
+  console.log(`[conan] gateway listening on http://${HOST}:${PORT}`);
 });
 
 function shutdown(): void {
