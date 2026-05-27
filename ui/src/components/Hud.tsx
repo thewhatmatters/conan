@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { ContextWidget, UsageWidget } from "./Widgets.tsx";
+import PlanWidget from "./PlanWidget.tsx";
 import PulseChart from "./PulseChart.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
-import type { ConnStatus } from "../hooks/useTasks.ts";
+import type { PlanState } from "../hooks/usePlan.ts";
+import type { ConnStatus, TasksState } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
 // DevTools-style flat tab triggers (no pill shell, active = bg-muted) — matches
@@ -40,6 +42,10 @@ interface HudProps {
   pulse?: PulseSeries | null;
   pulseMinutes?: number;
   onPulseRange?: (minutes: number) => void;
+  // — Plan widget (US-004): conditional 4th tab, shown only when active —
+  plan?: PlanState;
+  /** Build-loop tasks feed — the Plan widget's fallback source. */
+  tasks?: TasksState | null;
 }
 
 /**
@@ -62,7 +68,12 @@ export default function Hud({
   pulse,
   pulseMinutes = 60,
   onPulseRange,
+  plan,
+  tasks,
 }: HudProps) {
+  // US-004: the Plan tab only exists when the active session has a live plan
+  // (open TodoWrite items, a recent ExitPlanMode plan, or an active build loop).
+  const planActive = plan?.isActive ?? false;
   const [width, setWidth] = useState<number>(
     () => Number(localStorage.getItem(WIDTH_KEY)) || 460,
   );
@@ -110,6 +121,11 @@ export default function Hud({
             <TabsTrigger value="pulse" className={TAB_TRIGGER}>
               Pulse
             </TabsTrigger>
+            {planActive && (
+              <TabsTrigger value="plan" className={TAB_TRIGGER}>
+                Plan
+              </TabsTrigger>
+            )}
           </TabsList>
           <div className="ml-auto pr-1">
             <ConnectionStatus status={status} port={port} />
@@ -151,6 +167,15 @@ export default function Hud({
             />
           )}
         </TabsContent>
+
+        {planActive && plan && (
+          <TabsContent
+            value="plan"
+            className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
+          >
+            <PlanWidget plan={plan} tasks={tasks ?? null} />
+          </TabsContent>
+        )}
       </Tabs>
     </aside>
   );

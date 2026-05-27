@@ -68,7 +68,7 @@
         "Verify in browser using automate-browser skill (plan appears with todos present, hides/greys when none; light + dark)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Consumes US-003. HUD tabs live in ui/src/components/Hud.tsx:89-130. Suggested skills: automate-browser."
     },
     {
