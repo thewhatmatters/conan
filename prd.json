@@ -140,7 +140,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "THE HARD PART — docs/v4.1-research.md §3 (native-module gotchas). Match the Node ABI used to package to the prebuilt .node files. Validate the two failure-prone things explicitly: open the DB, open a pty. No browser-verify (binary-level)."
     },
     {
