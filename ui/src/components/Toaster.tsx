@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GatewayEvent, TasksState } from "../hooks/useTasks.ts";
+import { isTauri } from "../lib/gateway.ts";
 
 type Kind = "success" | "error" | "info";
 interface Toast {
@@ -60,6 +61,10 @@ export default function Toaster({
   useEffect(() => {
     if (lastEvent?.replay) return;
     if (!lastEvent?.hook_event_name) return;
+    // US-011: in the Tauri app, `Notification` prompts surface as native OS
+    // banners (useNativeNotifications), so skip the in-app toast there to avoid
+    // a double-notify. The browser dev view keeps the toast as the fallback.
+    if (lastEvent.hook_event_name === "Notification" && isTauri()) return;
     const meta = NOTABLE[lastEvent.hook_event_name];
     if (!meta) return;
     push({

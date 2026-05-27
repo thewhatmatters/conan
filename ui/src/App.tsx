@@ -11,6 +11,7 @@ import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
+import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
 
 interface Health {
   status: string;
@@ -78,6 +79,14 @@ export default function App() {
     wsTrigger,
     true,
   );
+  // US-011: native macOS notifications for Claude's `Notification` hook prompts.
+  // The correlated live-pty session is the one whose terminal is visible, so a
+  // prompt for it while Conan is focused is suppressed (the user sees it live).
+  useNativeNotifications({
+    lastEvent,
+    sessions,
+    visibleSessionId: correlatedSession?.id ?? null,
+  });
 
   useEffect(() => {
     fetch(apiBase() + "/api/health")

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
-import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
+import {
+  useTerminals,
+  terminalLabel,
+  type TerminalInfo,
+} from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import {
   DropdownMenu,
@@ -66,6 +70,12 @@ function persistTerms(terms: TermTab[]): void {
 export default function TerminalPane({ token, theme }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
+  // Per-tab Claude session info, so a notification click can jump to the tab
+  // whose pty runs the prompting session (US-011). Kept in a ref so the
+  // `conan:focus-session` listener reads the live map without rebinding.
+  const byTid = useTerminals();
+  const byTidRef = useRef(byTid);
+  byTidRef.current = byTid;
   // Per-tab "destroy on unmount" flags. Set just before removing a tab so the
   // Terminal's cleanup sends the backend close frame (US-026 criterion 3).
   const closeFlags = useRef(new Map<string, { current: boolean }>());
@@ -120,6 +130,25 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
     };
   }, [addTerm, closeTerm]);
 
+  // US-011: a clicked native notification dispatches `conan:focus-session` with
+  // the prompting session id; select the terminal tab whose pty runs it so the
+  // user lands on the prompt to answer it.
+  useEffect(() => {
+    const onFocusSession = (e: Event) => {
+      const sid = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!sid) return;
+      for (const [tid, info] of byTidRef.current) {
+        if (info.sessionId === sid) {
+          setActiveTid(tid);
+          break;
+        }
+      }
+    };
+    window.addEventListener("conan:focus-session", onFocusSession);
+    return () =>
+      window.removeEventListener("conan:focus-session", onFocusSession);
+  }, []);
+
   return (
     <section className="relative flex min-w-0 flex-1 flex-col bg-card">
       <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
@@ -128,6 +157,7 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
             <TermDropdown
               terms={terms}
               activeTid={activeTid}
+              byTid={byTid}
               onSelect={setActiveTid}
               onClose={closeTerm}
               onNew={addTerm}
@@ -180,19 +210,18 @@ export default function TerminalPane({ token, theme }: TerminalPaneProps) {
 function TermDropdown({
   terms,
   activeTid,
+  byTid,
   onSelect,
   onClose,
   onNew,
 }: {
   terms: TermTab[];
   activeTid: string;
+  byTid: Map<string, TerminalInfo>;
   onSelect: (tid: string) => void;
   onClose: (tid: string) => void;
   onNew: () => void;
 }) {
-  // Per-tab Claude session info, polled so a mid-session /rename relabels live.
-  const byTid = useTerminals();
-
   const labelIdx = terms.findIndex((t) => t.tid === activeTid);
   const label =
     labelIdx >= 0 ? terminalLabel(byTid.get(activeTid), labelIdx) : "Term";

@@ -20,6 +20,11 @@ const ALLOWED_ORIGINS: &str =
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
+    // US-011: native OS notifications surfacing Claude's `Notification` hook
+    // prompts (permission requests / waiting-for-input) so the user is pulled
+    // back to acknowledge them. The UI fires these over the app WS via
+    // @tauri-apps/plugin-notification; permission is requested on first use.
+    .plugin(tauri_plugin_notification::init())
     .manage(GatewayChild(Mutex::new(None)))
     .setup(|app| {
       if cfg!(debug_assertions) {

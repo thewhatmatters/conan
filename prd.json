@@ -195,7 +195,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Trigger source verified: the `Notification` hook is already installed (.claude/settings.json → scripts/hooks/send-event.mjs → POST /api/claude/events → /ws), and its payload carries `message`. Surfacing it over the WS is read-only — no new gateway route. Adding the plugin regenerates src-tauri/gen/schemas + needs a tauri dev restart (Rust recompile). STRETCH (note only, not required): interactive Allow/Deny notification actions that route the answer to the correlated pty via the v4 keystroke-injection path (src/terminal/correlate.ts) — macOS notification action-button support is limited, so base scope is notify + click-to-focus. Run Rust/gateway/terminal edits outside the in-dock session (footgun #1)."
     },
     {
