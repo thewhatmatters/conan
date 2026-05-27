@@ -9,6 +9,7 @@ import {
   listTerminalSessions,
   injectContextRefresh,
   injectUsageRefresh,
+  autoRefreshContextOnStop,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
@@ -171,6 +172,12 @@ app.post("/api/claude/events", (req, res) => {
     ts: now,
   };
   broadcast({ type: "event", payload: event });
+
+  // On turn completion, refresh the live /context capture so the Context widget
+  // stays current with the exact (1M-aware) window + breakdown. Throttled and
+  // safe when the session has no live pty (US-009 follow-up).
+  if (hookEvent === "Stop") autoRefreshContextOnStop(sessionId);
+
   res.json({ ok: true, id: event.id });
 });
 

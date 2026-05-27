@@ -35,11 +35,14 @@ export function ContextWidget({
   data,
   token,
   onRefetch,
+  sessions,
 }: {
   session: Session | null;
   data: WidgetData | null;
   token?: string | null;
   onRefetch?: () => void;
+  /** All known sessions — lets the estimate infer a 1M window install-wide. */
+  sessions?: Session[];
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -98,7 +101,15 @@ export function ContextWidget({
   // --- fallback: the on-disk estimate (US-007/US-013) -----------------------
   const ctx = data?.context ?? null;
   const ctxTokens = ctx?.used ?? session?.context_tokens ?? null;
-  const ctxWindow = contextWindowFor(ctx?.model ?? session?.model ?? null);
+  // Prefer the gateway-computed window (it resolves the 1M beta across sessions);
+  // fall back to the local resolver when there's no transcript context payload.
+  const ctxWindow =
+    ctx?.windowTokens ??
+    resolveContextWindow(
+      ctx?.model ?? session?.model ?? null,
+      ctxTokens,
+      sessions ?? (session ? [session] : []),
+    );
   const ctxPct =
     ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
   const sub = session ? "≈ estimated" : "no session";
@@ -658,8 +669,40 @@ function fmtDuration(ms: number): string {
  * Best-effort context-window size for a model slug. Claude's default window is
  * 200k; the 1M-context variants carry a "1m"/"[1m]" marker in the slug.
  */
-function contextWindowFor(model: string | null): number {
-  if (model && /1m/i.test(model)) return 1_000_000;
+/** Strip a "[variant]" suffix (e.g. "[1m]") down to the base model id. */
+function baseModel(m: string | null | undefined): string {
+  return (m ?? "").replace(/\[[^\]]*\]/g, "").trim();
+}
+
+/** True when a model slug marks the 1M-context variant. */
+function is1m(m: string | null | undefined): boolean {
+  return !!m && /1m/i.test(m);
+}
+
+/**
+ * Resolve the context-window size for the on-disk estimate. The "[1m]" marker
+ * only rides the SessionStart hook payload — the transcript model and a session
+ * that missed its SessionStart both lack it — so a bare slug would wrongly
+ * default a 1M-context session to 200k (showing ~99% instead of ~20%). We treat
+ * the window as 1M when any of these hold:
+ *   1. the model itself is a 1m variant;
+ *   2. a sibling session on the SAME base model reports 1m (the 1M beta is
+ *      install-wide for that model, so an unmarked sibling is on it too);
+ *   3. the measured used tokens already exceed the 200k default — the window
+ *      must be larger than 200k for that to be possible.
+ * The live `/context` capture (when present) takes precedence over this estimate
+ * and carries the exact window it parsed.
+ */
+export function resolveContextWindow(
+  model: string | null,
+  used: number | null,
+  sessions: { model: string | null }[],
+): number {
+  if (is1m(model)) return 1_000_000;
+  const base = baseModel(model);
+  if (base && sessions.some((s) => is1m(s.model) && baseModel(s.model) === base))
+    return 1_000_000;
+  if (used != null && used > 200_000) return 1_000_000;
   return 200_000;
 }
 

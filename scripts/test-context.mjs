@@ -65,6 +65,23 @@ try {
   check("cache stamps capturedAt", typeof got?.capturedAt === "number" && got.capturedAt > 0);
   ctx.clearCapturedContext("sess-x");
   check("clearCapturedContext drops it", ctx.getCapturedContext("sess-x") === null);
+
+  // --- resolveContextWindow (US-013 fix: 1M-aware window) -----------------
+  const tx = await import("../src/transcript/index.ts");
+  const M = 1_000_000;
+  const K = 200_000;
+  check("1m model slug -> 1M", tx.resolveContextWindow("claude-opus-4-7[1m]", 50_000, []) === M);
+  check("bare slug, no signal -> 200k", tx.resolveContextWindow("claude-opus-4-7", 50_000, []) === K);
+  check(
+    "bare slug + 1m sibling on same base -> 1M",
+    tx.resolveContextWindow("claude-opus-4-7", 50_000, ["claude-opus-4-7[1m]"]) === M,
+  );
+  check(
+    "1m sibling on a DIFFERENT base does not leak -> 200k",
+    tx.resolveContextWindow("claude-sonnet-4-6", 50_000, ["claude-opus-4-7[1m]"]) === K,
+  );
+  check("used over 200k forces 1M (window must be larger)", tx.resolveContextWindow(null, 243_000, []) === M);
+  check("null model, low used -> 200k default", tx.resolveContextWindow(null, 10_000, []) === K);
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;

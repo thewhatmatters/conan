@@ -49,7 +49,13 @@ const child = spawn(BINARY, [], {
     CONAN_PORT: String(PORT),
     // No SHELL override: exercise a plain shell pty.
   },
-  stdio: ["ignore", "pipe", "pipe"],
+  // stdin must be a pipe the PARENT holds open — NOT "ignore" (which gives the
+  // child /dev/null → immediate EOF). The gateway/launcher self-terminates on
+  // stdin EOF (the Tauri host pipes stdin and holds it open for the app's life;
+  // EOF == app quit). With "ignore" the binary would exit before health answers
+  // and every check would false-fail. We never write to or end child.stdin, so
+  // it stays open until the finally-block kill.
+  stdio: ["pipe", "pipe", "pipe"],
 });
 let stderr = "";
 child.stdout.on("data", (d) => process.stdout.write(`[gateway] ${d}`));

@@ -5,7 +5,11 @@ import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
 import { getActiveCwd } from "../cwd/index.js";
 import { correlateClaudeSession, shortSessionId } from "./correlate.js";
-import { parseContextFrame, cacheCapturedContext } from "../context/index.js";
+import {
+  parseContextFrame,
+  cacheCapturedContext,
+  getCapturedContext,
+} from "../context/index.js";
 import { parseUsageFrame, parseUsageSession, cacheCapturedUsage } from "../usage/probe.js";
 
 const DEFAULT_SHELL =
@@ -248,6 +252,33 @@ export function injectContextRefresh(sessionId: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Min spacing between auto `/context` injections per session (US-009 fix). */
+const CONTEXT_AUTOREFRESH_MS = 90_000;
+/** Off when CONAN_CONTEXT_AUTOREFRESH=0 (the auto-inject prints to the pty). */
+const CONTEXT_AUTOREFRESH_ENABLED =
+  process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";
+const lastAutoContextRefresh = new Map<string, number>();
+
+/**
+ * Auto-refresh `/context` when a turn completes (the Stop hook). Heavily
+ * throttled because the inject prints the full /context table into the user's
+ * terminal: at most once per CONTEXT_AUTOREFRESH_MS per session, and skipped when
+ * a fresh capture already exists (context barely moves turn-to-turn). No-op when
+ * disabled or when the session has no live correlated pty (injectContextRefresh
+ * returns false). Returns whether an inject was issued.
+ */
+export function autoRefreshContextOnStop(sessionId: string): boolean {
+  if (!CONTEXT_AUTOREFRESH_ENABLED) return false;
+  const now = Date.now();
+  if (now - (lastAutoContextRefresh.get(sessionId) ?? 0) < CONTEXT_AUTOREFRESH_MS)
+    return false;
+  const cap = getCapturedContext(sessionId);
+  if (cap && now - cap.capturedAt < CONTEXT_AUTOREFRESH_MS) return false;
+  const issued = injectContextRefresh(sessionId);
+  if (issued) lastAutoContextRefresh.set(sessionId, now);
+  return issued;
 }
 
 /**

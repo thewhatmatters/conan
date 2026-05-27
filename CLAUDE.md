@@ -81,11 +81,13 @@ npm run typecheck           # tsc --noEmit (gateway)
   `/context` and `/usage` Session-block frames (passive when the user runs the command,
   or via the `.../context/refresh` and `.../usage/refresh` routes). Disk estimates
   (MCP/skills/memory size readers) are the labelled `≈ estimated` fallback.
-- UI: `App.tsx` shell, `components/Dock.tsx` (tabbed Terminal|Tasks + bottom Pulse
-  strip, drag-resize), `components/Terminal.tsx`, `components/Widgets.tsx`
-  (Context + Usage HUD), `components/PulseChart.tsx`, `components/charts/`
-  (vendored Tremor `AreaChart`/`ProgressCircle`), `components/TaskChecklist.tsx`,
-  `hooks/{useTheme,useTasks,useWidgets,usePulse}.ts`, `lib/{terminalTheme,chartUtils}.ts`.
+- UI: `App.tsx` shell renders `components/TerminalPane.tsx` (the main surface —
+  N `Terminal.tsx` tabs behind a `Term ▾` dropdown, mounted-but-hidden so
+  switching never tears down a pty) beside `components/Hud.tsx` (the DevTools-style
+  widget HUD: `Widgets.tsx` Context + Usage tabs + the `PulseChart.tsx` strip).
+  Charts live in `components/charts/` (vendored Tremor `AreaChart`/`ProgressCircle`);
+  build-loop `tasks` feed `Toaster.tsx`. Hooks `hooks/{useTheme,useTasks,useWidgets,usePulse,useUsage,useSessions,useTerminals,useNativeNotifications}.ts`;
+  `lib/{terminalTheme,chartUtils,nativeNotify,appMenu}.ts`.
 
 ## Conventions
 - **Semantic theme tokens only** — `bg-background`, `text-foreground`,

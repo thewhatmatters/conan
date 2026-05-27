@@ -131,6 +131,7 @@ export default function App() {
         status={status}
         port={health?.port ?? config?.port}
         activeSession={activeSession}
+        sessions={sessions}
         data={widgetData}
         token={config?.token ?? null}
         onRefetchWidgets={refetchWidgets}

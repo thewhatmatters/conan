@@ -18,7 +18,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { HOME } from "../paths.js";
 import { getDb } from "../db/index.js";
-import { readContextUsage, type ContextUsage } from "../transcript/index.js";
+import {
+  readContextUsage,
+  resolveContextWindow,
+  type ContextUsage,
+} from "../transcript/index.js";
 import { getCapturedContext, type ContextCapture } from "../context/index.js";
 import { liveTerminalSessionIds } from "../terminal/index.js";
 
@@ -263,10 +267,25 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
     .prepare("SELECT cwd FROM session WHERE id = ?")
     .get(sessionId) as { cwd?: string } | undefined;
   const cwd = row?.cwd ?? null;
+  // Refine the context window with the cross-session 1M inference: the "[1m]"
+  // marker rides only SessionStart, so a session that missed it (or reads the
+  // unmarked transcript model) needs a sibling on the same base model to reveal
+  // the install-wide 1M beta. readContextUsage only sees its own model + used.
+  const context = readContextUsage(sessionId, cwd);
+  if (context) {
+    const models = getDb()
+      .prepare("SELECT model FROM session")
+      .all() as { model: string | null }[];
+    context.windowTokens = resolveContextWindow(
+      context.model,
+      context.used,
+      models.map((m) => m.model),
+    );
+  }
   return {
     mcp: parseMcp(init),
     git: await gitStatus(cwd),
-    context: readContextUsage(sessionId, cwd),
+    context,
     contextBreakdown: readContextBreakdown(sessionId, cwd),
     liveContext: getCapturedContext(sessionId),
     hasLivePty: liveTerminalSessionIds().has(sessionId),

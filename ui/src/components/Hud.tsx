@@ -25,6 +25,8 @@ interface HudProps {
   port?: number;
   // — Context widget (session-scoped) —
   activeSession: Session | null;
+  /** All known sessions — lets the Context estimate infer a 1M window. */
+  sessions?: Session[];
   data: WidgetData | null;
   /** Auth token for the token-gated /context Refresh POST (US-009). */
   token?: string | null;
@@ -51,6 +53,7 @@ export default function Hud({
   status,
   port,
   activeSession,
+  sessions,
   data,
   token,
   onRefetchWidgets,
@@ -119,6 +122,7 @@ export default function Hud({
         >
           <ContextWidget
             session={activeSession}
+            sessions={sessions}
             data={data}
             token={token}
             onRefetch={onRefetchWidgets}

@@ -203,6 +203,49 @@ function parseTs(v: unknown): number | null {
 export interface ContextUsage {
   used: number;
   model: string | null;
+  /** Context-window size the `used` count is measured against (US-013 fix). */
+  windowTokens: number;
+}
+
+/** Default context window for models without the 1M-context beta. */
+export const DEFAULT_CONTEXT_WINDOW = 200_000;
+/** The 1M-context-beta window. */
+export const ONE_M_CONTEXT_WINDOW = 1_000_000;
+
+/** Strip a "[variant]" suffix (e.g. "[1m]") down to the base model id. */
+function baseModel(m: string | null | undefined): string {
+  return (m ?? "").replace(/\[[^\]]*\]/g, "").trim();
+}
+
+/** True when a model slug marks the 1M-context variant. */
+function is1mModel(m: string | null | undefined): boolean {
+  return !!m && /1m/i.test(m);
+}
+
+/**
+ * Resolve a session's context-window size. The "[1m]" 1M-context marker rides
+ * ONLY the SessionStart hook payload — the transcript model and any session that
+ * missed its SessionStart both lack it — so a bare slug would wrongly default a
+ * 1M-context session to 200k (showing ~99% instead of ~20%). We treat the window
+ * as 1M when any of these hold:
+ *   1. the model itself is a 1m variant;
+ *   2. a sibling session on the SAME base model reports 1m — the 1M beta is
+ *      install-wide for that model, so an unmarked sibling is on it too;
+ *   3. the measured used tokens already exceed the 200k default — impossible on
+ *      a 200k window.
+ * The live `/context` capture, when present, supersedes this with its parsed window.
+ */
+export function resolveContextWindow(
+  model: string | null,
+  used: number | null,
+  sessionModels: (string | null)[] = [],
+): number {
+  if (is1mModel(model)) return ONE_M_CONTEXT_WINDOW;
+  const base = baseModel(model);
+  if (base && sessionModels.some((m) => is1mModel(m) && baseModel(m) === base))
+    return ONE_M_CONTEXT_WINDOW;
+  if (used != null && used > DEFAULT_CONTEXT_WINDOW) return ONE_M_CONTEXT_WINDOW;
+  return DEFAULT_CONTEXT_WINDOW;
 }
 
 /** Coerce a usage field to a non-negative integer, defaulting to 0. */
@@ -231,7 +274,7 @@ export function readContextUsage(
     return null;
   }
 
-  let latest: ContextUsage | null = null;
+  let latest: { used: number; model: string | null } | null = null;
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     let o: Record<string, unknown>;
@@ -251,5 +294,12 @@ export function readContextUsage(
     if (used === 0) continue;
     latest = { used, model: typeof msg.model === "string" ? msg.model : null };
   }
-  return latest;
+  if (!latest) return null;
+  // Window from this session's own model + used (the transcript model lacks the
+  // "[1m]" marker, so used>200k is the main signal here); readWidgets refines it
+  // with the cross-session sibling inference once it has the full session list.
+  return {
+    ...latest,
+    windowTokens: resolveContextWindow(latest.model, latest.used),
+  };
 }

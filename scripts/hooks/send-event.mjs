@@ -9,11 +9,17 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PORT = process.env.CONAN_PORT ?? "3747";
+// Resolve the auth token from the SAME data dir the running gateway uses. The
+// Tauri app spawns the gateway with CONAN_DATA_DIR=<app-support>/… and the pty
+// inherits it, so the hook must honor it too — otherwise it reads the repo's
+// dev .data/auth-token, which won't match the app's token and every POST 401s
+// (→ no events → empty Context/Pulse). Mirrors src/paths.ts DATA_DIR.
+const DATA_DIR = process.env.CONAN_DATA_DIR ?? path.join(ROOT, ".data");
 
 function token() {
   if (process.env.CONAN_AUTH_TOKEN) return process.env.CONAN_AUTH_TOKEN;
   try {
-    return fs.readFileSync(path.join(ROOT, ".data", "auth-token"), "utf8").trim();
+    return fs.readFileSync(path.join(DATA_DIR, "auth-token"), "utf8").trim();
   } catch {
     return "";
   }
