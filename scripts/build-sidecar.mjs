@@ -172,28 +172,13 @@ await esbuild({
 });
 
 // 2. Boot-critical asset: db/schema.sql is read via import.meta.url, which the
-//    CJS bundle resolves to runtime/schema.sql.
+//    CJS bundle resolves to runtime/schema.sql. (The trimmed v4.2 gateway has no
+//    other lazily-read schema assets — the settings/hooks-coverage routes that
+//    needed claude-code-settings.schema.json were removed in US-004.)
 cpSync(
   path.join(ROOT, "src", "db", "schema.sql"),
   path.join(RUNTIME, "schema.sql"),
 );
-// Lazily-read schemas (settings / hooks-coverage endpoints). Placed at the two
-// locations their import.meta.url computations resolve to, so those routes
-// don't 500 in the packaged gateway.
-const settingsSchema = path.join(
-  ROOT,
-  "src",
-  "settings",
-  "claude-code-settings.schema.json",
-);
-if (existsSync(settingsSchema)) {
-  cpSync(settingsSchema, path.join(RUNTIME, "claude-code-settings.schema.json"));
-  mkdirSync(path.join(OUT, "settings"), { recursive: true });
-  cpSync(
-    settingsSchema,
-    path.join(OUT, "settings", "claude-code-settings.schema.json"),
-  );
-}
 
 // 3. Ship a Node binary so the launcher has an interpreter to exec.
 console.log("[sidecar] copying node binary …");

@@ -89,7 +89,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Gate before adding Tremor — proves the subtraction didn't break the packaged app. If the Rust/Tauri toolchain can't run a full launch on the build host, verify the rebuilt binary + test:sidecar and note the manual app-launch step in progress.txt. docs/v4.1-research.md §2-3 covers the sidecar mechanics."
     },
     {

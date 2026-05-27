@@ -40,7 +40,10 @@ cd src-tauri && cargo check   # typecheck the Rust crate without bundling
 the fixed Vite dev server at `http://localhost:5173`
 (`server.port: 5173 + strictPort` and `clearScreen: false` in
 `ui/vite.config.ts`). `tauri build` runs `beforeBuildCommand`
-(`npm --prefix ui run build`) and serves `../ui/dist`.
+(`npm --prefix ui run build`) and loads the bundled frontend from `../ui/dist`
+into the webview (`frontendDist`). The gateway itself is JSON-API + WebSockets
+only — it does **not** serve the UI over HTTP (v4.2 Tauri-only; the gateway's
+trimmed route surface is listed in `CLAUDE.md`).
 
 ## Config anchors (`src-tauri/tauri.conf.json`)
 

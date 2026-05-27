@@ -45,8 +45,15 @@ npm run typecheck           # tsc --noEmit (gateway)
   this repo self-reports) or **driven** (launched by the session manager). NOT a
   browser/login session. The Sessions grid should carry an info-icon tooltip with
   this one-liner so users aren't confused.
-- Routes: `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
-  `GET /api/tasks` (prd.json + progress.txt).
+- Routes (the trimmed v4.2 surface — only what the app calls):
+  `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
+  `GET /api/tasks` (prd.json + progress.txt), `GET /api/terminals` (live
+  terminals + their session labels), `GET /api/claude/sessions` (the sessions
+  list), `GET /api/claude/sessions/:id/widgets` (Context breakdown),
+  `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`, and
+  `POST /api/claude/events` (hook ingestion). Everything else (the drive route
+  surface, the read-only catalog/config routes, the web-serving/TLS/pm2 path)
+  was removed in v4.2 (US-002–US-004).
 - WS: `/ws` (app events + `{type:'tasks'}` broadcast, snapshot on connect),
   `/ws/terminal` (node-pty). **Both authenticated on upgrade.**
 - Auth (`src/gateway/auth.ts`): token (`CONAN_AUTH_TOKEN` | `.data/auth-token` |
