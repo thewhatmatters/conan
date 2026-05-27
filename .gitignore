@@ -28,3 +28,7 @@ ui/dist/
 # build-loop run state
 progress.txt
 archive/
+
+# Local planning/handoff scratch (read-once, not versioned)
+HANDOFF.md
+.claude/current-task.txt
