@@ -44,28 +44,26 @@ export default function App() {
   // REST-backed hooks re-pull their snapshots after a connection gap.
   const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
   const { sessions } = useSessions(wsTrigger);
-  // US-006: the Claude session running inside a live dock pty, correlated by
-  // src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.
+  // US-006/US-003: the Claude session running inside a live dock pty, correlated
+  // by src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.
   // This is the session the user is *actually* running — the right binding for
-  // the session-scoped widgets (Context, Model, Skills) instead of the first of
+  // the session-scoped widgets (Context, Plan, Skills) instead of the first of
   // ~155 historical 'running' rows.
   const terminals = useTerminals();
-  const correlatedSession = (() => {
-    const matched = [...terminals.values()]
-      .map((t) => t.sessionId)
-      .filter((id): id is string => !!id)
-      .map((id) => sessions.find((s) => s.id === id))
-      .filter((s): s is (typeof sessions)[number] => !!s);
-    return matched.find((s) => s.status === "running") ?? matched[0] ?? null;
-  })();
-  // The Context/Skills widgets describe the active session: the one correlated to
-  // a live pty if present, otherwise a running one, otherwise the most-recently-
-  // active (sessions are sorted DESC). Falls through to null when there are none.
-  const activeSession =
-    correlatedSession ??
-    sessions.find((s) => s.status === "running") ??
-    sessions[0] ??
-    null;
+  // US-003: the tid of the terminal tab the user is currently looking at,
+  // reported up from TerminalPane on mount / tab switch / new / close.
+  const [activeTid, setActiveTid] = useState<string | null>(null);
+  // The HUD's session-scoped widgets describe the session correlated to the
+  // ACTIVE tab — `activeTid → sessionId` via useTerminals — so opening a new
+  // terminal repoints them instead of clinging to the previous session. A fresh
+  // tab whose pty hasn't correlated yet has no session id, so activeSession is
+  // null (empty/uncorrelated state) rather than the prior tab's data.
+  const activeSessionId = activeTid
+    ? terminals.get(activeTid)?.sessionId ?? null
+    : null;
+  const activeSession = activeSessionId
+    ? sessions.find((s) => s.id === activeSessionId) ?? null
+    : null;
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   // US-025: also surfaces the real /usage scrape; token-gated probe on open.
   // US-010: bind the live /usage capture (Session block + 3 windows) to the
@@ -98,7 +96,7 @@ export default function App() {
   useNativeNotifications({
     lastEvent,
     sessions,
-    visibleSessionId: correlatedSession?.id ?? null,
+    visibleSessionId: activeSession?.id ?? null,
   });
 
   // Bootstrap health + config. RETRY until the gateway answers: under `tauri
@@ -174,6 +172,7 @@ export default function App() {
         git={widgetData?.git ?? null}
         status={status}
         port={health?.port ?? config?.port}
+        onActiveTidChange={setActiveTid}
       />
       <Hud
         hidden={!hudOpen}

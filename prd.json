@@ -53,7 +53,7 @@
         "Verify in browser using automate-browser skill (open a 2nd terminal → HUD widgets repoint; switch back → they follow)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation for the per-session header (US-008) and MCP tab (US-007) to track the active tab. Anchors: correlatedSession/activeSession in ui/src/App.tsx, activeTid in ui/src/components/TerminalPane.tsx, useTerminals. Suggested skills: automate-browser."
     },
     {

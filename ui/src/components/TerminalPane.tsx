@@ -26,6 +26,9 @@ interface TerminalPaneProps {
   status: ConnStatus;
   /** Gateway port, shown when connected. */
   port?: number;
+  /** US-003: report the active terminal tab's tid upward (mount, switch, new,
+   *  close) so the HUD can bind its session-scoped widgets to the visible tab. */
+  onActiveTidChange?: (tid: string) => void;
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
@@ -77,9 +80,15 @@ export default function TerminalPane({
   git,
   status,
   port,
+  onActiveTidChange,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
+  // US-003: surface the active tab's tid upward on every change (initial mount,
+  // tab switch, new, close) so App can repoint the session-scoped HUD widgets.
+  useEffect(() => {
+    onActiveTidChange?.(activeTid);
+  }, [activeTid, onActiveTidChange]);
   // Per-tab Claude session info, so a notification click can jump to the tab
   // whose pty runs the prompting session (US-011). Kept in a ref so the
   // `conan:focus-session` listener reads the live map without rebinding.
