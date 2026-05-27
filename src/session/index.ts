@@ -16,6 +16,8 @@ export interface SessionRow {
   cwd: string | null;
   model: string | null;
   permission_mode: string | null;
+  /** Claude Code version captured from the SessionStart hook (US-001 v4.4); null if unknown. */
+  claude_version: string | null;
   status: string;
   color: string | null;
   created_at: number;
@@ -38,7 +40,7 @@ export interface SessionRow {
 export function listSessions(): SessionRow[] {
   return getDb()
     .prepare(
-      `SELECT id, title, cwd, model, permission_mode, status, color,
+      `SELECT id, title, cwd, model, permission_mode, claude_version, status, color,
               created_at, last_activity, total_cost_usd,
               input_tokens, output_tokens, context_tokens,
               worktree_path, worktree_base_ref,

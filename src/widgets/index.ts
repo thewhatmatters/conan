@@ -68,6 +68,11 @@ export interface WidgetData {
    * whether the Context widget's on-demand Refresh control is enabled.
    */
   hasLivePty: boolean;
+  /**
+   * Claude Code version captured from the SessionStart hook (US-001 v4.4); null
+   * when unknown. Feeds the session header's product line (US-008).
+   */
+  claudeVersion: string | null;
 }
 
 /** One category in the on-disk context approximation (US-007). */
@@ -264,8 +269,8 @@ export function readContextBreakdown(
 export async function readWidgets(sessionId: string): Promise<WidgetData> {
   const init = latestInit(sessionId);
   const row = getDb()
-    .prepare("SELECT cwd FROM session WHERE id = ?")
-    .get(sessionId) as { cwd?: string } | undefined;
+    .prepare("SELECT cwd, claude_version FROM session WHERE id = ?")
+    .get(sessionId) as { cwd?: string; claude_version?: string | null } | undefined;
   const cwd = row?.cwd ?? null;
   // Refine the context window with the cross-session 1M inference: the "[1m]"
   // marker rides only SessionStart, so a session that missed it (or reads the
@@ -289,5 +294,6 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
     contextBreakdown: readContextBreakdown(sessionId, cwd),
     liveContext: getCapturedContext(sessionId),
     hasLivePty: liveTerminalSessionIds().has(sessionId),
+    claudeVersion: row?.claude_version ?? null,
   };
 }

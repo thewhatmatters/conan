@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS session (
   cwd             TEXT,
   model           TEXT,
   permission_mode TEXT,                        -- default | acceptEdits | dontAsk
+  claude_version  TEXT,                         -- Claude Code version from SessionStart (US-001 v4.4); null if unknown
   status          TEXT NOT NULL DEFAULT 'idle',-- running | idle | error | dormant
   color           TEXT,                        -- UI session color
   created_at      INTEGER NOT NULL,            -- epoch ms

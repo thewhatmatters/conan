@@ -155,18 +155,28 @@ app.post("/api/claude/events", (req, res) => {
   const model =
     payload && typeof payload.model === "string" ? payload.model : null;
 
+  // Capture Claude Code's version from the SessionStart payload (US-001 v4.4)
+  // so the session header can display it (US-008). The hook forwards the whole
+  // payload, and SessionStart carries `version` (e.g. "2.1.152"). COALESCE keeps
+  // a known version when a later event omits it; never fabricated (null when
+  // absent).
+  const claudeVersion =
+    payload && typeof payload.version === "string" ? payload.version : null;
+
   db.prepare(
-    `INSERT INTO session (id, cwd, model, status, created_at, last_activity)
-       VALUES (@id, @cwd, @model, @status, @now, @now)
+    `INSERT INTO session (id, cwd, model, claude_version, status, created_at, last_activity)
+       VALUES (@id, @cwd, @model, @claudeVersion, @status, @now, @now)
      ON CONFLICT(id) DO UPDATE SET
        last_activity = @now,
        status = @status,
        cwd = COALESCE(excluded.cwd, session.cwd),
-       model = COALESCE(excluded.model, session.model)`,
+       model = COALESCE(excluded.model, session.model),
+       claude_version = COALESCE(excluded.claude_version, session.claude_version)`,
   ).run({
     id: sessionId,
     cwd: typeof b.cwd === "string" ? b.cwd : null,
     model,
+    claudeVersion,
     status,
     now,
   });

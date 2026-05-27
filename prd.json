@@ -19,7 +19,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Backend/schema foundation for the session header (US-008). Anchors: events route in src/gateway/index.ts, session table in src/db/, parse in src/widgets/index.ts, scripts/hooks/send-event.mjs. SessionStart's payload carries `version`; only persist when present."
     },
     {
