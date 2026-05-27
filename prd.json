@@ -19,7 +19,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Pure doc subtraction, zero code risk — safe first story. prd.json's sourcePrd already points at docs/v4.2-*.md, not the deleted PRD. Don't touch run-tasks.sh / prd.json / progress.txt (build-loop infra stays)."
     },
     {

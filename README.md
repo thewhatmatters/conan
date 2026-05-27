@@ -126,7 +126,7 @@ return later as widget tabs).
 It ships via **Tauri v2**: a Rust core + the OS's native webview reusing the
 existing React + `xterm.js` UI, with the **Node gateway bundled as a Tauri
 sidecar** (it stays the PTY host _and_ the `/api/claude/*` data source for the
-widgets — so near-zero rewrite of the core). See `docs/v4.1-backlog.md`.
+widgets — so near-zero rewrite of the core). See `docs/tauri-desktop.md`.
 
 ### Desktop app (Tauri)
 
@@ -167,8 +167,7 @@ Validate the backlog after editing:
 python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
 ```
 
-Full spec: `prd-claude-code-dashboard.md`. Backlogs: `docs/v2-backlog.md`,
-`docs/v3-backlog.md`, `docs/v4-backlog.md` (+ `docs/v4-research.md`).
+Current spec: `docs/v4.2-backlog.md` (+ `docs/v4.2-research.md`).
 Ops/PM2: `docs/ops.md`.
 
 ## Gotchas

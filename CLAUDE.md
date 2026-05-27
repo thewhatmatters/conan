@@ -14,7 +14,7 @@ or `run-tasks.sh` iterations) — keep it accurate.
 - **`run-tasks.sh`** — autonomous loop: a fresh agent per story until all pass.
 - Validate after editing the backlog:
   `python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json`
-- Full spec: `prd-claude-code-dashboard.md`; research: `research-claude-code-always-on-dashboard.md`.
+- Current spec: `docs/v4.2-backlog.md`; charting research: `docs/v4.2-research.md`.
 
 ## Stack
 - **Gateway** (`src/`): TypeScript ESM, Express 4 + `ws` + `better-sqlite3`.
@@ -132,61 +132,40 @@ npm run typecheck           # tsc --noEmit (gateway)
 3. Safest model for now: run the *building* session externally (or a separate
    Conan instance on another port) and use this dashboard to **observe**.
 
-## Status (2026-05-26)
-**v4.1 done (10/10, `loop/conan-v4.1`).** Pivoted Conan from a web dashboard to a
-**terminal-primary native desktop app shipped via Tauri v2**. Stripped the v2/v3
-IA (sidebar nav + route views, then the timeline Overview); reshaped to a
-terminal-primary layout with a DevTools-style HUD (exactly Context + Usage widgets
-+ the Pulse graph); scaffolded `src-tauri/` (Tauri v2 at repo root) with a
-Tauri-aware absolute gateway-base resolver (`ui/src/lib/gateway.ts`), the WS
-Origin allowlist + CSP extended for `tauri://localhost`; packaged the Node gateway
-as a **bundled-node sidecar** (`scripts/build-sidecar.mjs` → a relocatable C
-launcher + `runtime/` tree with Node + `better-sqlite3`/`node-pty` as real files,
-ad-hoc codesigned), spawned/killed from `src-tauri/src/lib.rs`; and **bundled
+## Status (2026-05-27)
+**v4.2 in progress (`loop/conan-v4.2`).** Two themes: an aggressive Tauri-only
+cleanup (trim the gateway to the routes the app calls; drop the web-served/TLS/pm2
+path, the drive route surface, and the v1→v4 planning history) and adopting
+**Tremor Raw** (recharts-based, Tailwind-v4-native — NOT `@tremor/react`) as the
+charting standard. Backlog: `docs/v4.2-backlog.md`; charting research:
+`docs/v4.2-research.md`.
+
+**v4.1 done (`loop/conan-v4.1`).** Pivoted Conan from a web dashboard to a
+**terminal-primary native desktop app shipped via Tauri v2**. Reshaped to a
+terminal-primary layout with a DevTools-style HUD (Context + Usage widgets + the
+Pulse graph); scaffolded `src-tauri/` (Tauri v2 at repo root) with a Tauri-aware
+absolute gateway-base resolver (`ui/src/lib/gateway.ts`), the WS Origin allowlist
++ CSP extended for `tauri://localhost`; packaged the Node gateway as a
+**bundled-node sidecar** (`scripts/build-sidecar.mjs` → a relocatable C launcher +
+`runtime/` tree with Node + `better-sqlite3`/`node-pty` as real files, ad-hoc
+codesigned), spawned/killed from `src-tauri/src/lib.rs`; and **bundled
 `Conan.app` + `.dmg`** (`bundle.resources` copies `runtime/` into
 `Contents/Resources`; `CI=true npm run tauri:build` for headless DMG). The
 gateway carries a **stdin-EOF watchdog** (`CONAN_SIDECAR=1`) so it self-terminates
 and frees :3747 when the app quits without the `ExitRequested` kill landing
 (observed on macOS Apple-event quit). Build/run + Developer-ID sign + notarize:
-`docs/tauri-desktop.md`. Research: `docs/v4.1-research.md`.
+`docs/tauri-desktop.md`.
 
-**v4 done (13/13, `loop/conan-v4`).** v4 folded the six QA items from
-`docs/v4-backlog.md` into a build loop: shared-component extraction (SortToggle,
-status dot, two-tier card, time-ago, scope badge) + transcript sort toggle;
-**finished the shadcn migration v3 started** (Dock, SessionBar, Sidebar,
-PendingApprovals now on `ui/*` primitives); relocated Pulse into the dock as a
-bottom strip and dropped the tokens/cost toggle; made the Context widget honest
-(pty-correlated live session + total %) and added an on-disk category breakdown;
-a permission honesty floor (surface `delivered:false`, render real
-`permission_suggestions`) plus keystroke injection to answer interactive TUI
-prompts via the correlated pty; and the marquee feature — **live in-cwd app
-preview** (`src/preview/` dev-server manager + `/preview/:id` reverse proxy with
-framing-header strip + HMR upgrade branch + Preview dock tab). Decisions:
-`docs/v4-research.md`.
-
-**v3 done (48/48, `loop/conan-v3`)** — multi-project global hook,
-Overview/Agents/Skills/Settings nav, a real shadcn foundation, and broad Claude
-Code data from disk + CLI. v1/v2 history below.
-
-**v1 done (30/30), v2 done (20/20).** v1 (US-001→030, branch
-`loop/claude-code-dashboard`) shipped via `run-tasks.sh`; archived to
-`archive/2026-05-25-claude-code-dashboard/`.
-- Hooks installed in `.claude/settings.json` (9 events -> `scripts/hooks/send-event.mjs`
-  -> `/api/claude/events`); `conan-hooks.example.json` is the shareable template.
-- **`prd.json` is now the v2 backlog** (`loop/conan-v2-ia`, 20 stories US-001→020,
-  all `passes:false`) — IA rework + real Claude Code data. Source: `docs/v2-backlog.md`;
-  PRD v2 section in `prd-claude-code-dashboard.md`; plan in memory
-  `project_conan_layout_ia`. Highlights: session-liveness reaper (fix stale `running`
-  via `~/.claude/sessions/<pid>.json` pid-liveness, not hooks); `/api/claude/stats`
-  from `stats-cache.json` → contribution-heatmap widget; Context widget from transcript
-  `usage`; **cost-ceiling removed** (Claude Max is token-based) → Usage reframed to
-  plan-usage; collapsible Overview+Settings sidebar + pushState; timeline-primary
-  Overview (`session ▾` + type filters, **session cards removed**, Transcript kept);
-  hero-widget overhaul (drop Plugins/API-retry/Top-tools; wire MCP/Model/Git);
-  Pulse → hand-rolled stacked-area (no Sankey); Term tabs → dropdown; cwd picker.
-  Charting = **zero new deps** (hand-rolled SVG + CSS grid, `--color-chart-*` tokens).
-- **Data-source verdicts** (research 2026-05-25): `/usage`,`/stats`,`/context` are
-  TUI-only slash commands (no `claude usage` CLI). Live `/usage` % is unreadable
-  headlessly (it's in `anthropic-ratelimit-unified-*` response headers, in the claude
-  process memory; Conan only shells out) → Usage stays an honest approximation.
-- v1 commits in git; v2 doc/prd.json changes uncommitted.
+**Earlier (v1–v4, in git history).** v1 shipped the dashboard + hooks
+(`.claude/settings.json`, 9 events → `scripts/hooks/send-event.mjs` →
+`/api/claude/events`; `conan-hooks.example.json` is the shareable template). v2
+reworked the IA + real Claude Code data (session-liveness reaper via
+`~/.claude/sessions/<pid>.json` pid-liveness; cost-ceiling removed since Claude Max
+is token-based → Usage reframed to plan-usage). v3 added multi-project global hook
++ a real shadcn foundation. v4 finished the shadcn migration and made the Context
+widget honest (pty-correlated live session + total % + on-disk category breakdown)
+with keystroke injection to answer interactive TUI prompts via the correlated pty.
+- **Data-source verdicts**: `/usage`, `/stats`, `/context` are TUI-only slash
+  commands (no `claude usage` CLI). Live `/usage` % is unreadable headlessly (it's
+  in `anthropic-ratelimit-unified-*` response headers, in the claude process
+  memory) → Usage stays an honest approximation until captured from a live pty.

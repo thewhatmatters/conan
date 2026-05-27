@@ -1,6 +1,6 @@
 // US-008 verification: run the PACKAGED gateway sidecar binary directly (no
 // Tauri) and prove the two native addons survived bundling — the dominant
-// packaging risk (docs/v4.1-research.md §3):
+// packaging risk (see docs/sidecar.md):
 //
 //   1. better-sqlite3 — GET /api/health opens the DB and queries sqlite_master,
 //      so a 200 with a non-empty `tables` array means the .node loaded and the

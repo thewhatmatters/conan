@@ -1,6 +1,6 @@
 // Build the Conan gateway into a self-contained Tauri *sidecar* artifact
-// (US-008). Approach (d) from docs/v4.1-research.md §3 — the "bundled-node
-// launcher", the most reliable route for native addons:
+// (US-008). The "bundled-node launcher" approach (see docs/sidecar.md) — the
+// most reliable route for native addons:
 //
 //   src-tauri/binaries/
 //     conan-gateway-<TARGET_TRIPLE>     <- the sidecar binary Tauri bundles

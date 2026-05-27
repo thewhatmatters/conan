@@ -129,7 +129,7 @@ export async function gitStatus(cwd: string | null): Promise<GitStatus> {
 //
 // `/context` reports per-category usage (System prompt, System tools, MCP tools,
 // Memory files, Skills, Messages) but the transcript `usage` block carries only
-// totals — so Conan reconstructs the split from disk (option B in v4-research):
+// totals — so Conan reconstructs the split from disk:
 // memory = CLAUDE.md + MEMORY.md sizes, skills = SKILL.md sizes, MCP from
 // ~/.claude.json, messages = the remainder of the real measured total. The base
 // system prompt + built-in tool schemas can't be read from disk, so they're

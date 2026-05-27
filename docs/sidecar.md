@@ -65,7 +65,7 @@ absent.
   2. **notarize** the bundle (`xcrun notarytool`) and staple it.
   Test the notarized build end-to-end — the embedded gateway must still spawn
   after Gatekeeper validation (known externalBin + notarization ordering issue,
-  tauri#11992). See `docs/v4.1-research.md` §5.
+  tauri#11992).
 
 ## Rebuild / re-verify
 ```bash

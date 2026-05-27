@@ -3,8 +3,8 @@
 Conan v4.1 wraps the existing React + xterm UI and the Node gateway in a native
 Tauri v2 desktop window. `src-tauri/` lives at the **repo root** (next to `ui/`).
 This doc covers the toolchain you need to build/run the desktop app. The sidecar
-packaging (US-008+), origin/CSP wiring (US-006/007), and spawn-on-launch
-(US-009) are layered on top of this scaffold; see `docs/v4.1-research.md`.
+packaging, origin/CSP wiring, and spawn-on-launch are layered on top of this
+scaffold (see `docs/sidecar.md` for the sidecar mechanics).
 
 ## Prerequisites
 
@@ -47,8 +47,8 @@ the fixed Vite dev server at `http://localhost:5173`
 - `productName: "Conan"`, `identifier: "so.whatmatters.conan"`
 - One 1400×900 window
 - `bundle.targets: ["app", "dmg"]`
-- `app.security.csp: null` (loopback desktop app; see `docs/v4.1-research.md` §4
-  for the optional explicit `connect-src` policy)
+- `app.security.csp: null` (loopback desktop app; an explicit `connect-src`
+  policy is optional)
 
 `src-tauri/target/` is gitignored.
 
