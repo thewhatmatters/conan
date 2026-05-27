@@ -5,6 +5,7 @@ import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
 import { getActiveCwd } from "../cwd/index.js";
 import { correlateClaudeSession, shortSessionId } from "./correlate.js";
+import { parseContextFrame, cacheCapturedContext } from "../context/index.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -26,6 +27,13 @@ const RING_MAX_BYTES = clampEnvInt("CONAN_TERM_RING_BYTES", 256 * 1024, 1, 64 * 
  * Override with CONAN_TERM_GRACE_MS (used by tests).
  */
 const DETACH_GRACE_MS = clampEnvInt("CONAN_TERM_GRACE_MS", 30_000, 0, 60 * 60_000);
+
+/**
+ * Bound on the rolling buffer scanned for a `/context` frame (US-009). A frame
+ * fits comfortably in a few KB; we keep a small tail so a frame split across pty
+ * chunks still assembles, without re-scanning the whole replay ring.
+ */
+const CTX_SCAN_MAX = 64 * 1024;
 
 /**
  * Resolve what the pty runs. `mode=claude` (default) launches Claude Code so the
@@ -78,6 +86,8 @@ interface TermSession {
   persistent: boolean;
   /** Pending kill scheduled after a detach; cleared on reattach. */
   killTimer: ReturnType<typeof setTimeout> | null;
+  /** Rolling tail of recent output scanned for a `/context` frame (US-009). */
+  ctxScan: string;
   exited: boolean;
   onData: pty.IDisposable;
   onExit: pty.IDisposable;
@@ -146,6 +156,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     ws: null,
     persistent: tid !== null,
     killTimer: null,
+    ctxScan: "",
     exited: false,
     onData: { dispose() {} },
     onExit: { dispose() {} },
@@ -156,6 +167,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   // whatever client is currently attached and always feed the ring buffer.
   session.onData = term.onData((d) => {
     pushBuffer(session, d);
+    maybeCaptureContext(session, d);
     if (session.ws && session.ws.readyState === session.ws.OPEN) session.ws.send(d);
   });
   session.onExit = term.onExit(({ exitCode }) => {
@@ -177,6 +189,52 @@ function pushBuffer(s: TermSession, chunk: string): void {
   while (s.bufferBytes > RING_MAX_BYTES && s.buffer.length > 1) {
     const evicted = s.buffer.shift()!;
     s.bufferBytes -= Buffer.byteLength(evicted);
+  }
+}
+
+/**
+ * Passive `/context` capture (US-009): accumulate a small tail of the pty's
+ * output and, once a frame looks complete (its last row "Free space" has
+ * rendered), parse it and cache it under the session correlated to this pty —
+ * WITHOUT injecting anything. The user ran /context themselves; we just read it.
+ * The "Free space" gate keeps the parse (which strips+collapses the tail) rare.
+ * Correlation runs only on a parseable frame, so the per-chunk cost stays low.
+ */
+function maybeCaptureContext(s: TermSession, chunk: string): void {
+  s.ctxScan = (s.ctxScan + chunk).slice(-CTX_SCAN_MAX);
+  // Cheap pre-gate: the word "Free" is rare in normal output and (unlike a
+  // multi-word phrase) survives the TUI's per-cell ANSI/cursor positioning. Only
+  // when it appears do we pay for the ANSI strip + parse. The /context summary
+  // (categories + the Free space row) renders BEFORE the long detail listing of
+  // every MCP tool/skill, so the Free-space chunk arrives while the summary is
+  // still in the scan tail — we capture it then, before the detail scrolls it out.
+  if (!s.ctxScan.includes("Free")) return;
+  const parsed = parseContextFrame(s.ctxScan);
+  // Require the Free-space row: it's /context's last summary line, so its presence
+  // means we have a complete frame (not a half-rendered one).
+  if (!parsed || !parsed.categories.some((c) => c.key === "free")) return;
+  const info = correlateClaudeSession(s.term.pid, s.cwd);
+  if (!info?.sessionId) return; // keep scanning; retry on a later chunk
+  cacheCapturedContext(info.sessionId, parsed);
+  // Reset the scan window so the same lingering frame isn't re-parsed every
+  // chunk; a fresh /context run re-accumulates and re-captures.
+  s.ctxScan = "";
+}
+
+/**
+ * On-demand /context refresh (US-009): inject `/context` into the pty running a
+ * given session, reusing the keystroke-injection path (answerInteractivePermission).
+ * The resulting frame is captured passively by maybeCaptureContext. Returns
+ * whether a live correlated pty was found — false falls back to the estimate.
+ */
+export function injectContextRefresh(sessionId: string): boolean {
+  const s = findTermForSession(sessionId);
+  if (!s || s.exited) return false;
+  try {
+    s.term.write("/context\r");
+    return true;
+  } catch {
+    return false;
   }
 }
 

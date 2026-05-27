@@ -19,6 +19,8 @@ import path from "node:path";
 import { HOME } from "../paths.js";
 import { getDb } from "../db/index.js";
 import { readContextUsage, type ContextUsage } from "../transcript/index.js";
+import { getCapturedContext, type ContextCapture } from "../context/index.js";
+import { liveTerminalSessionIds } from "../terminal/index.js";
 
 /** An MCP server entry as surfaced from system/init. */
 export interface McpServer {
@@ -51,6 +53,17 @@ export interface WidgetData {
    * (US-007). Always present; categories with no contribution are omitted.
    */
   contextBreakdown: ContextBreakdown;
+  /**
+   * The EXACT /context breakdown captured from the session's live pty (US-009),
+   * or null when none has been captured. When present the Context widget shows
+   * it ("live · from /context") in place of the on-disk estimate.
+   */
+  liveContext: ContextCapture | null;
+  /**
+   * Whether this session has a live, correlated pty right now (US-009) — drives
+   * whether the Context widget's on-demand Refresh control is enabled.
+   */
+  hasLivePty: boolean;
 }
 
 /** One category in the on-disk context approximation (US-007). */
@@ -255,5 +268,7 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
     git: await gitStatus(cwd),
     context: readContextUsage(sessionId, cwd),
     contextBreakdown: readContextBreakdown(sessionId, cwd),
+    liveContext: getCapturedContext(sessionId),
+    hasLivePty: liveTerminalSessionIds().has(sessionId),
   };
 }

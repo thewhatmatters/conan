@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../lib/gateway.ts";
 
 /** One category in the on-disk context approximation (US-007). */
@@ -6,6 +6,26 @@ export interface ContextCategory {
   key: "system" | "tools" | "mcp" | "memory" | "skills" | "messages";
   label: string;
   tokens: number;
+}
+
+/** One category from the live /context capture (US-009) — includes Free space. */
+export interface LiveContextCategory {
+  key: "system" | "tools" | "mcp" | "memory" | "skills" | "messages" | "free";
+  label: string;
+  tokens: number;
+  /** Percent of the context window this category occupies, as /context renders. */
+  pct: number;
+}
+
+/** The exact /context breakdown captured from the live pty (US-009). */
+export interface LiveContext {
+  model: string | null;
+  modelDisplay: string | null;
+  usedTokens: number | null;
+  windowTokens: number | null;
+  usedPct: number | null;
+  categories: LiveContextCategory[];
+  capturedAt: number;
 }
 
 /** Mirrors the WidgetData shape from src/widgets/index.ts (US-010). */
@@ -16,20 +36,28 @@ export interface WidgetData {
   context: { used: number; model: string | null } | null;
   /** On-disk per-category context approximation (US-007). */
   contextBreakdown: { categories: ContextCategory[]; approxTotal: number };
+  /** Exact /context capture from the live pty, or null (US-009). */
+  liveContext: LiveContext | null;
+  /** Whether the session has a live correlated pty right now (US-009). */
+  hasLivePty: boolean;
 }
 
 /**
  * Loads the opt-in secondary-widget data for the active session from
  * GET /api/claude/sessions/:id/widgets (US-022). Only fetches when `enabled`
  * (i.e. at least one secondary widget is turned on) so the default view makes
- * no extra request. Refetches as WS events arrive via `eventSeq`.
+ * no extra request. Refetches as WS events arrive via `eventSeq`, and on demand
+ * via the returned `refetch` (used by the Context widget's /context Refresh,
+ * US-009, to re-pull after a passive capture lands).
  */
 export function useWidgets(
   sessionId: string | null,
   eventSeq: number | null,
   enabled: boolean,
-): WidgetData | null {
+): { data: WidgetData | null; refetch: () => void } {
   const [data, setData] = useState<WidgetData | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!enabled || !sessionId) {
@@ -49,7 +77,7 @@ export function useWidgets(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, eventSeq, enabled]);
+  }, [sessionId, eventSeq, enabled, nonce]);
 
-  return data;
+  return { data, refetch };
 }

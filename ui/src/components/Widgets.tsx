@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState, UsageWindow } from "../hooks/useUsage.ts";
-import type { ContextCategory, WidgetData } from "../hooks/useWidgets.ts";
+import type {
+  ContextCategory,
+  LiveContext,
+  LiveContextCategory,
+  WidgetData,
+} from "../hooks/useWidgets.ts";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import StatCard from "./StatCard.tsx";
+import { apiBase } from "../lib/gateway.ts";
 
 /* ---- widget cells -------------------------------------------------------- */
 //
@@ -22,16 +28,75 @@ import StatCard from "./StatCard.tsx";
 export function ContextWidget({
   session,
   data,
+  token,
+  onRefetch,
 }: {
   session: Session | null;
   data: WidgetData | null;
+  token?: string | null;
+  onRefetch?: () => void;
 }) {
-  const live = data?.context ?? null;
-  const ctxTokens = live?.used ?? session?.context_tokens ?? null;
-  const ctxWindow = contextWindowFor(live?.model ?? session?.model ?? null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
+
+  const liveCtx = data?.liveContext ?? null;
+  const hasLivePty = data?.hasLivePty ?? false;
+
+  // On-demand refresh: inject `/context` into the correlated pty (US-009), then
+  // poll the widgets payload a few times so the passively-captured frame surfaces.
+  const refresh = async () => {
+    if (!session || !token || refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetch(
+        apiBase() +
+          `/api/claude/sessions/${encodeURIComponent(session.id)}/context/refresh`,
+        { method: "POST", headers: { "x-conan-token": token } },
+      );
+    } catch {
+      /* best-effort — fall back to whatever surfaces */
+    }
+    let n = 0;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => {
+      onRefetch?.();
+      if (++n >= 6) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setRefreshing(false);
+      }
+    }, 700);
+  };
+
+  // Refresh control: only when a live pty is correlated (it types into it).
+  const refreshBtn = hasLivePty ? (
+    <button
+      type="button"
+      onClick={refresh}
+      disabled={refreshing}
+      title="Run /context in the live terminal and capture the exact breakdown"
+      className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+    >
+      {refreshing ? "capturing…" : "↻ /context"}
+    </button>
+  ) : null;
+
+  // --- live face: the EXACT /context capture (US-009) -----------------------
+  if (liveCtx) return <LiveContextView live={liveCtx} refreshBtn={refreshBtn} />;
+
+  // --- fallback: the on-disk estimate (US-007/US-013) -----------------------
+  const ctx = data?.context ?? null;
+  const ctxTokens = ctx?.used ?? session?.context_tokens ?? null;
+  const ctxWindow = contextWindowFor(ctx?.model ?? session?.model ?? null);
   const ctxPct =
     ctxTokens != null ? Math.min(100, (ctxTokens / ctxWindow) * 100) : null;
-  const sub = session ? (live ? "active · live" : "active session") : "no session";
+  const sub = session ? "≈ estimated" : "no session";
   const breakdown = data?.contextBreakdown ?? null;
   return (
     <StatCard label="Context" sub={sub}>
@@ -57,10 +122,98 @@ export function ContextWidget({
               : "—"}
           </div>
         </div>
+        {refreshBtn}
       </div>
       {breakdown && breakdown.categories.length > 0 && (
         <ContextBreakdownBar breakdown={breakdown} />
       )}
+    </StatCard>
+  );
+}
+
+/** Per-category chart color for the live /context segments (US-009). */
+const LIVE_CAT_COLOR: Record<LiveContextCategory["key"], string> = {
+  system: "bg-chart-4",
+  tools: "bg-chart-2",
+  mcp: "bg-chart-3",
+  memory: "bg-chart-1",
+  skills: "bg-chart-5",
+  messages: "bg-primary",
+  free: "bg-muted-foreground/25",
+};
+
+/**
+ * The live face of the Context widget (US-009): the EXACT /context breakdown
+ * scraped from the correlated pty — model header, total %-of-window ring (>=80%
+ * → destructive), and a per-category row list including the Free space row,
+ * matching the /context layout. Distinguished from the estimate by the
+ * "live · from /context" sub-label.
+ */
+function LiveContextView({
+  live,
+  refreshBtn,
+}: {
+  live: LiveContext;
+  refreshBtn: ReactNode;
+}) {
+  const pct =
+    live.usedPct ??
+    (live.usedTokens != null && live.windowTokens
+      ? Math.min(100, (live.usedTokens / live.windowTokens) * 100)
+      : null);
+  const total = live.categories.reduce((s, c) => s + c.pct, 0) || 100;
+  return (
+    <StatCard label="Context" sub="live · from /context">
+      <div className="flex items-center gap-3">
+        <ProgressCircle
+          value={pct ?? 0}
+          radius={26}
+          strokeWidth={5}
+          variant={pct != null && pct >= 80 ? "error" : "default"}
+          className="shrink-0"
+        >
+          <span className="text-sm font-semibold tabular-nums text-foreground">
+            {pct != null ? `${Math.round(pct)}%` : "—"}
+          </span>
+        </ProgressCircle>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-foreground">
+            {live.modelDisplay ?? live.model ?? "context used"}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {live.usedTokens != null && live.windowTokens != null
+              ? `${fmtTokens(live.usedTokens)} / ${fmtTokens(live.windowTokens)}`
+              : (live.model ?? "—")}
+          </div>
+        </div>
+        {refreshBtn}
+      </div>
+      {/* stacked mini-bar by share of window (includes Free space) */}
+      <span className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-muted">
+        {live.categories.map((c) => (
+          <span
+            key={c.key}
+            className={LIVE_CAT_COLOR[c.key]}
+            style={{ width: `${(c.pct / total) * 100}%` }}
+            title={`${c.label}: ${fmtTokens(c.tokens)} tokens (${c.pct}%)`}
+          />
+        ))}
+      </span>
+      {/* per-category rows, in /context order, including Free space */}
+      <div className="mt-1.5 space-y-0.5">
+        {live.categories.map((c) => (
+          <div key={c.key} className="flex items-center gap-2 text-[11px]">
+            <span className={"size-1.5 shrink-0 rounded-full " + LIVE_CAT_COLOR[c.key]} />
+            <span className="text-foreground">{c.label}</span>
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {fmtTokens(c.tokens)}
+            </span>
+            <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
+              {c.pct}%
+            </span>
+          </div>
+        ))}
+      </div>
     </StatCard>
   );
 }

@@ -26,6 +26,10 @@ interface HudProps {
   // — Context widget (session-scoped) —
   activeSession: Session | null;
   data: WidgetData | null;
+  /** Auth token for the token-gated /context Refresh POST (US-009). */
+  token?: string | null;
+  /** Re-pull the widgets payload (after a /context capture lands, US-009). */
+  onRefetchWidgets?: () => void;
   // — Usage widget (global) —
   usage: UsageState;
   // — Pulse graph —
@@ -46,6 +50,8 @@ export default function Hud({
   port,
   activeSession,
   data,
+  token,
+  onRefetchWidgets,
   usage,
   pulse,
   pulseMinutes = 60,
@@ -108,7 +114,12 @@ export default function Hud({
           value="context"
           className="mt-0 min-h-0 flex-1 overflow-auto px-3 py-3"
         >
-          <ContextWidget session={activeSession} data={data} />
+          <ContextWidget
+            session={activeSession}
+            data={data}
+            token={token}
+            onRefetch={onRefetchWidgets}
+          />
         </TabsContent>
 
         <TabsContent

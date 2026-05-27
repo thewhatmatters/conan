@@ -158,7 +158,7 @@
         "Verify with automate-browser at http://localhost:5173 that after a /context run (or Refresh) the widget shows the exact categories/tokens/% including Free space + the model header, and that with no live session it falls back to the estimate"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "/context is SESSION-SPECIFIC, so it must come from the correlated live pty (not a throwaway claude like the /usage probe). Anchors: src/usage/probe.ts (ANSI strip + bounded scrape + pure testable parser), src/terminal/correlate.ts (pty↔session correlation + the v4 keystroke injection), Widgets.tsx ContextWidget + ContextBreakdownBar, useWidgets. Depends on US-008 (ProgressCircle gauge). The disk estimate stays as the fallback — US-004 preserves its MCP/skills/memory readers. Gateway/terminal edits → run outside the in-dock session (footgun #1)."
     },
     {

@@ -7,6 +7,7 @@ import {
   attachTerminal,
   closeAllTerminals,
   listTerminalSessions,
+  injectContextRefresh,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
@@ -195,6 +196,15 @@ app.get("/api/claude/pulse", (req, res) => {
 // Skills/Messages), plus MCP servers and the session cwd's git status. Read-only.
 app.get("/api/claude/sessions/:id/widgets", async (req, res) => {
   res.json(await readWidgets(req.params.id));
+});
+
+// On-demand /context refresh (US-009): inject `/context` into the session's
+// correlated live pty so its rendered frame is captured passively and surfaces
+// in the next widgets fetch. Token-gated (it types into a terminal). Returns
+// {ok:false} when no live pty is correlated — the widget then keeps the estimate.
+app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ ok: injectContextRefresh(req.params.id) });
 });
 
 // Usage monitor for the hero widget (US-004, was US-030): plan-usage framing for

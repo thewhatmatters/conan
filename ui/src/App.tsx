@@ -67,7 +67,11 @@ export default function App() {
   const pulse = usePulse(wsTrigger, pulseMinutes);
   // US-004: the Context widget's live breakdown for the active session. Always
   // fetched (the Context HUD tab is permanent now) when a session is correlated.
-  const widgetData = useWidgets(activeSession?.id ?? null, wsTrigger, true);
+  const { data: widgetData, refetch: refetchWidgets } = useWidgets(
+    activeSession?.id ?? null,
+    wsTrigger,
+    true,
+  );
 
   useEffect(() => {
     fetch(apiBase() + "/api/health")
@@ -113,6 +117,8 @@ export default function App() {
         port={health?.port ?? config?.port}
         activeSession={activeSession}
         data={widgetData}
+        token={config?.token ?? null}
+        onRefetchWidgets={refetchWidgets}
         usage={usage}
         pulse={pulse}
         pulseMinutes={pulseMinutes}
