@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiBase } from "../lib/gateway.ts";
 
 /** A live terminal + the Claude session running inside it (mirrors the gateway). */
 export interface TerminalInfo {
@@ -27,7 +28,7 @@ export function useTerminals(): Map<string, TerminalInfo> {
   useEffect(() => {
     let cancelled = false;
     const pull = () => {
-      fetch("/api/terminals")
+      fetch(apiBase() + "/api/terminals")
         .then((r) => r.json())
         .then((data) => {
           if (cancelled) return;

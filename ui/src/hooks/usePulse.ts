@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiBase } from "../lib/gateway.ts";
 
 export type PulseCategory =
   | "tool"
@@ -40,7 +41,7 @@ export function usePulse(
   useEffect(() => {
     let alive = true;
     const load = () => {
-      fetch(`/api/claude/pulse?minutes=${minutes}`)
+      fetch(apiBase() + `/api/claude/pulse?minutes=${minutes}`)
         .then((r) => r.json())
         .then((s) => {
           if (alive && s && Array.isArray(s.buckets)) setSeries(s);

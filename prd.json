@@ -108,7 +108,7 @@
         "Verify in browser using automate-browser skill that the web-served app at :3747 still connects (config loads, WS connected, terminal opens) with the resolver in place"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "docs/v4.1-research.md §4. The token still comes from /api/config; cross-origin fetch to 127.0.0.1:3747 works in the Tauri webview. Pinning CONAN_PORT=3747 (US-009 sidecar env) keeps the hard-coded base safe."
     },
     {

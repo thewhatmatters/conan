@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiBase } from "../lib/gateway.ts";
 
 /** Output-token consumption over recent rolling windows (plan-usage trend). */
 export interface TokensRecent {
@@ -112,7 +113,7 @@ export function useUsage(
 
   // Baseline + cached scrape: refetch on every event so the figures stay live.
   useEffect(() => {
-    fetch("/api/claude/usage")
+    fetch(apiBase() + "/api/claude/usage")
       .then((r) => r.json())
       .then((u) => setUsage(normalize(u)))
       .catch(() => {});
@@ -122,7 +123,9 @@ export function useUsage(
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetch("/api/claude/usage?probe=1", { headers: { "x-conan-token": token } })
+    fetch(apiBase() + "/api/claude/usage?probe=1", {
+      headers: { "x-conan-token": token },
+    })
       .then((r) => r.json())
       .then((u) => {
         if (!cancelled) setUsage(normalize(u));

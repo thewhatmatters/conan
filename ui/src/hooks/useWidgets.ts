@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiBase } from "../lib/gateway.ts";
 
 /** One category in the on-disk context approximation (US-007). */
 export interface ContextCategory {
@@ -36,7 +37,10 @@ export function useWidgets(
       return;
     }
     let cancelled = false;
-    fetch(`/api/claude/sessions/${encodeURIComponent(sessionId)}/widgets`)
+    fetch(
+      apiBase() +
+        `/api/claude/sessions/${encodeURIComponent(sessionId)}/widgets`,
+    )
       .then((r) => r.json())
       .then((d) => {
         if (!cancelled) setData(d as WidgetData);

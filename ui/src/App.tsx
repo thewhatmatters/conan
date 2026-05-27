@@ -9,6 +9,7 @@ import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
+import { apiBase } from "./lib/gateway.ts";
 
 interface Health {
   status: string;
@@ -68,11 +69,11 @@ export default function App() {
   const widgetData = useWidgets(activeSession?.id ?? null, wsTrigger, true);
 
   useEffect(() => {
-    fetch("/api/health")
+    fetch(apiBase() + "/api/health")
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
-    fetch("/api/config")
+    fetch(apiBase() + "/api/config")
       .then((r) => r.json())
       .then(setConfig)
       .catch(() => setConfig(null));

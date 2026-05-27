@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { apiBase } from "../lib/gateway.ts";
 
 export interface Session {
   id: string;
@@ -33,7 +34,7 @@ export function useSessions(eventSeq: number | null): {
   const [sessions, setSessions] = useState<Session[]>([]);
 
   const refresh = useCallback(() => {
-    fetch("/api/claude/sessions")
+    fetch(apiBase() + "/api/claude/sessions")
       .then((r) => r.json())
       .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
       .catch(() => {});

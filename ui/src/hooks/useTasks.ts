@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ResilientSocket, type ConnStatus } from "../lib/resilientSocket.ts";
+import { apiBase, wsUrl } from "../lib/gateway.ts";
 
 export type { ConnStatus };
 
@@ -90,7 +91,7 @@ export function useGateway(
   activeRef.current = activeSessions;
 
   useEffect(() => {
-    fetch("/api/tasks")
+    fetch(apiBase() + "/api/tasks")
       .then((r) => r.json())
       .then(setTasks)
       .catch(() => {});
@@ -100,10 +101,7 @@ export function useGateway(
     if (!token) return;
     let seq = 0;
     const sock = new ResilientSocket({
-      url: () => {
-        const proto = location.protocol === "https:" ? "wss" : "ws";
-        return `${proto}://${location.host}/ws?token=${token}`;
-      },
+      url: () => wsUrl(`/ws?token=${token}`),
       heartbeatMs: 15_000,
       ping: () => JSON.stringify({ type: "ping" }),
       onStatus: setStatus,

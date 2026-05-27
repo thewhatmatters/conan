@@ -5,6 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { getTerminalTheme } from "../lib/terminalTheme.ts";
 import { ResilientSocket } from "../lib/resilientSocket.ts";
+import { wsUrl } from "../lib/gateway.ts";
 import type { Theme } from "../hooks/useTheme.ts";
 
 interface TerminalProps {
@@ -61,7 +62,6 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
     }
     fit.fit();
 
-    const proto = location.protocol === "https:" ? "wss" : "ws";
     // `tid` is the stable per-tab id supplied by the Dock (US-026). Re-using it
     // across a reload/HMR/dropped socket re-attaches to the surviving pty and
     // replays the missed backlog instead of spawning a fresh one (US-017/US-018).
@@ -80,7 +80,7 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
           cols: String(term.cols),
           rows: String(term.rows),
         });
-        return `${proto}://${location.host}/ws/terminal?${params}`;
+        return wsUrl(`/ws/terminal?${params}`);
       },
       onMessage: (ev) => term.write(ev.data as string),
       onStatus: (status) => {
