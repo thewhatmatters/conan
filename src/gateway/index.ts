@@ -20,6 +20,7 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { readClaudeConfig } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 
@@ -259,6 +260,15 @@ app.get("/api/claude/sessions/:id/plan", (req, res) => {
 app.get("/api/claude/skills", (req, res) => {
   if (!authed(req, res)) return;
   res.json(readSkills(getActiveCwd()));
+});
+
+// Read-only mirror of Claude Code's /config (US-007): the confidently-mapped
+// settings rows read from ~/.claude/settings.json, <cwd>/.claude/settings.json,
+// and the CLI-state ~/.claude.json — each value tagged with the file it came
+// from (project > user precedence). Token-gated, read-only; editing is deferred.
+app.get("/api/claude/config", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(readClaudeConfig(getActiveCwd()));
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

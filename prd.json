@@ -113,7 +113,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Read-only this loop (decision 2026-05-27); editing deferred to a later version. Optionally cross-check against a captured /config frame (same infra as src/usage/probe.ts + src/context/index.ts), but disk-read is the structured source."
     },
     {
