@@ -20,7 +20,7 @@
         "Verify in browser using automate-browser skill that the app loads with no sidebar and no console errors, and the terminal still opens"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "First strip story. useTasks/useGateway, useSessions, usePulse, useTerminals, useUsage, useTheme all STAY (needed downstream). Don't delete shared/ primitives. Run the loop agent OUTSIDE the in-dock session (footgun #1: editing src/* under tsx watch kills ptys) — though this story only touches ui/. Suggested skills: shadcn, automate-browser."
     },
     {

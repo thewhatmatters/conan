@@ -23,19 +23,6 @@ import TranscriptViewer from "./components/TranscriptViewer.tsx";
 import { useTranscript } from "./hooks/useTranscript.ts";
 import { useSubagents } from "./hooks/useSubagents.ts";
 import Toaster from "./components/Toaster.tsx";
-import Sidebar from "./components/Sidebar.tsx";
-import SettingsView from "./components/SettingsView.tsx";
-import AgentsView from "./components/AgentsView.tsx";
-import SkillsView from "./components/SkillsView.tsx";
-import PluginsView from "./components/PluginsView.tsx";
-import CheckpointsView from "./components/CheckpointsView.tsx";
-import PromptHistoryView from "./components/PromptHistoryView.tsx";
-import WhatsNewView from "./components/WhatsNewView.tsx";
-import UltrareviewView from "./components/UltrareviewView.tsx";
-import { useUltrareview } from "./hooks/useUltrareview.ts";
-import { useRoute } from "./hooks/useRoute.ts";
-import { useChangelog } from "./hooks/useChangelog.ts";
-import { useDoctor } from "./hooks/useDoctor.ts";
 
 interface Health {
   status: string;
@@ -54,18 +41,6 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [dockOpen, setDockOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // US-006: pushState routing (Overview / Settings) + collapsible sidebar whose
-  // collapsed state survives reloads.
-  const { route, navigate } = useRoute();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem("conan.sidebar.collapsed") === "1",
-  );
-  const toggleSidebar = () =>
-    setSidebarCollapsed((v) => {
-      const next = !v;
-      localStorage.setItem("conan.sidebar.collapsed", next ? "1" : "0");
-      return next;
-    });
   // Which tab the selected-session detail shows (US-011 vs US-014).
   const [detailTab, setDetailTab] = useState<"activity" | "transcript">(
     "activity",
@@ -73,7 +48,7 @@ export default function App() {
   const { theme, toggle } = useTheme();
   // Re-subscribe to whichever session's timeline is open so its events replay
   // after a reconnect (US-018).
-  const { tasks, lastEvent, lastUltrareview, status, reconnectSeq } = useGateway(
+  const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
     selectedId ? [selectedId] : [],
   );
@@ -119,14 +94,6 @@ export default function App() {
   const mcp = useMcp(wsTrigger);
   // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.
   const stats = useStats(wsTrigger);
-  // US-030: What's New changelog feed + unseen-entry count for the nav badge.
-  const changelog = useChangelog(wsTrigger);
-  // US-045: version/update status + on-demand `claude doctor` health for the
-  // What's New banner.
-  const doctor = useDoctor(wsTrigger, config?.token ?? null);
-  // US-046: ultrareview control + streamed findings, seeded from REST and kept
-  // live by the WS `ultrareview` broadcast.
-  const ultrareview = useUltrareview(lastUltrareview, config?.token ?? null);
   // US-007: the timeline is the primary surface. Default the session ▾ to the
   // active session; "All sessions" (and any explicit pick) is sticky thereafter.
   // US-006: until the user explicitly picks, keep the default tracking the active
@@ -243,13 +210,6 @@ export default function App() {
   return (
     <div className="flex h-full bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <Sidebar
-        route={route}
-        onNavigate={navigate}
-        collapsed={sidebarCollapsed}
-        onToggle={toggleSidebar}
-        whatsNewBadge={changelog.unseenCount}
-      />
       <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-2" />
@@ -275,55 +235,8 @@ export default function App() {
         {/* US-020: top padding lives on the content, not <main>, so the sticky
             widget row (Overview) can pin its opaque background flush to the
             scrollport top with no transparent gap for the timeline to show
-            through. Non-Overview routes get the padding back via pt-6. */}
+            through. */}
         <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
-          {route === "settings" ? (
-            <div className="pt-6">
-              <SettingsView
-                theme={theme}
-                onToggleTheme={toggle}
-                token={config?.token ?? null}
-                trigger={wsTrigger}
-              />
-            </div>
-          ) : route === "agents" ? (
-            <div className="pt-6">
-              <AgentsView token={config?.token ?? null} trigger={wsTrigger} />
-            </div>
-          ) : route === "skills" ? (
-            <div className="pt-6">
-              <SkillsView
-                sessionId={widgetSession?.id ?? null}
-                cwd={config?.cwd ?? null}
-                trigger={wsTrigger}
-              />
-            </div>
-          ) : route === "plugins" ? (
-            <div className="pt-6">
-              <PluginsView trigger={wsTrigger} />
-            </div>
-          ) : route === "checkpoints" ? (
-            <div className="pt-6">
-              <CheckpointsView trigger={wsTrigger} />
-            </div>
-          ) : route === "prompts" ? (
-            <div className="pt-6">
-              <PromptHistoryView trigger={wsTrigger} />
-            </div>
-          ) : route === "review" ? (
-            <div className="pt-6">
-              <UltrareviewView
-                ultrareview={ultrareview}
-                cwd={config?.cwd ?? null}
-                hasToken={!!config?.token}
-              />
-            </div>
-          ) : route === "whatsnew" ? (
-            <div className="pt-6">
-              <WhatsNewView changelog={changelog} doctor={doctor} />
-            </div>
-          ) : (
-          <>
           <Widgets
             sessions={sessions}
             activeSession={widgetSession}
@@ -394,8 +307,6 @@ export default function App() {
               <TranscriptViewer state={transcript} />
             )}
           </section>
-          </>
-          )}
         </main>
 
         {/* The Dock stays mounted even when hidden so toggling the terminal off
