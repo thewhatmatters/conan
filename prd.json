@@ -56,7 +56,7 @@
         "Verify in browser using automate-browser skill that the terminal fills the primary area, the HUD panel docks + drag-resizes, and the Term dropdown still switches terminals"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Dock.tsx currently holds Terminal+Tasks tabs + a pinned Pulse strip and a right-side width drag handle (conan-dock-w). Reuse that resize/persistence machinery for the HUD. Keep Terminal.tsx and PulseChart.tsx. Footgun #1: don't edit src/terminal/* from an in-dock session. Suggested skills: shadcn, frontend-design, automate-browser."
     },
     {

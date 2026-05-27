@@ -7,8 +7,8 @@ import { useUsage } from "./hooks/useUsage.ts";
 import { useMcp } from "./hooks/useMcp.ts";
 import { useStats } from "./hooks/useStats.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
-import Dock from "./components/Dock.tsx";
-import Widgets from "./components/Widgets.tsx";
+import TerminalPane from "./components/TerminalPane.tsx";
+import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import { useCwdGit } from "./hooks/useCwdGit.ts";
@@ -31,7 +31,7 @@ interface Config {
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
-  const [dockOpen, setDockOpen] = useState(false);
+  const [hudOpen, setHudOpen] = useState(true);
   const { theme, toggle } = useTheme();
   const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
@@ -109,11 +109,12 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-full bg-background text-foreground">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2" />
+        <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+          Conan
+        </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
           <ConnectionStatus status={status} port={health?.port ?? config?.port} />
           <button
@@ -124,44 +125,38 @@ export default function App() {
             {theme === "dark" ? "☾ Dark" : "☀ Light"}
           </button>
           <button
-            onClick={() => setDockOpen((v) => !v)}
+            onClick={() => setHudOpen((v) => !v)}
+            title="Toggle the widget HUD"
             className="rounded-md border border-border px-2 py-1 text-muted-foreground hover:bg-muted"
           >
-            {dockOpen ? "Hide terminal" : "Show terminal"}
+            {hudOpen ? "Hide HUD" : "Show HUD"}
           </button>
         </div>
       </header>
 
+      {/* Terminal-primary shell (US-003): the Claude Code terminal fills the
+          main area; the DevTools-style HUD docks to its right (drag-resizable,
+          width persisted). The HUD stays mounted when hidden so its tab state
+          survives the toggle; terminals always stay mounted so ptys survive. */}
       <div className="flex min-h-0 flex-1">
-        <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
-          <Widgets
-            sessions={sessions}
-            activeSession={activeSession}
-            skills={skills}
-            usage={usage}
-            mcp={mcp}
-            stats={stats}
-            data={widgetData}
-            git={cwdGit}
-            metrics={projectMetrics}
-            enabled={widgetPrefs.enabled}
-            toggle={widgetPrefs.toggle}
-          />
-        </main>
-
-        {/* The Dock stays mounted even when hidden so toggling the terminal off
-            keeps every pty + WS alive (US-037): hide is purely visual, never a
-            detach/kill. Only an explicit tab-close kills a pty. */}
-        <Dock
-          token={config?.token ?? null}
-          theme={theme}
-          tasks={tasks}
-          hidden={!dockOpen}
+        <TerminalPane token={config?.token ?? null} theme={theme} />
+        <Hud
+          hidden={!hudOpen}
+          sessions={sessions}
+          activeSession={activeSession}
+          skills={skills}
+          usage={usage}
+          mcp={mcp}
+          stats={stats}
+          data={widgetData}
+          git={cwdGit}
+          metrics={projectMetrics}
+          enabled={widgetPrefs.enabled}
+          toggle={widgetPrefs.toggle}
           pulse={pulse}
           pulseMinutes={pulseMinutes}
           onPulseRange={setPulseMinutes}
         />
-      </div>
       </div>
     </div>
   );
