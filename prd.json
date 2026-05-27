@@ -38,7 +38,7 @@
         "Verify in browser using automate-browser skill that the Overview timeline/transcript/session controls are gone, the app loads clean, and the terminal still opens"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Second strip. After this App.tsx's main area is just <Widgets> (trimmed in US-004) + <Dock>. ALL_SESSIONS export lived in useSessionEvents — move any still-needed constant or inline it. Suggested skills: automate-browser."
     },
     {

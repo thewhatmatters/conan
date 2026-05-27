@@ -6,22 +6,14 @@ import { useSkills } from "./hooks/useSkills.ts";
 import { useUsage } from "./hooks/useUsage.ts";
 import { useMcp } from "./hooks/useMcp.ts";
 import { useStats } from "./hooks/useStats.ts";
-import { useSessionEvents, ALL_SESSIONS } from "./hooks/useSessionEvents.ts";
-import { usePendingPermissions } from "./hooks/usePendingPermissions.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
 import Dock from "./components/Dock.tsx";
-import SessionBar from "./components/SessionBar.tsx";
 import Widgets from "./components/Widgets.tsx";
-import PendingApprovals from "./components/PendingApprovals.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import { useCwdGit } from "./hooks/useCwdGit.ts";
 import { useProjectMetrics } from "./hooks/useProjectMetrics.ts";
 import { useWidgetPrefs } from "./hooks/useWidgetPrefs.ts";
-import ActivityTimeline from "./components/ActivityTimeline.tsx";
-import TranscriptViewer from "./components/TranscriptViewer.tsx";
-import { useTranscript } from "./hooks/useTranscript.ts";
-import { useSubagents } from "./hooks/useSubagents.ts";
 import Toaster from "./components/Toaster.tsx";
 
 interface Health {
@@ -40,22 +32,15 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [dockOpen, setDockOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Which tab the selected-session detail shows (US-011 vs US-014).
-  const [detailTab, setDetailTab] = useState<"activity" | "transcript">(
-    "activity",
-  );
   const { theme, toggle } = useTheme();
-  // Re-subscribe to whichever session's timeline is open so its events replay
-  // after a reconnect (US-018).
   const { tasks, lastEvent, status, reconnectSeq } = useGateway(
     config?.token ?? null,
-    selectedId ? [selectedId] : [],
+    [],
   );
   // A trigger that advances on each live event *and* each reconnect, so the
   // REST-backed hooks re-pull their snapshots after a connection gap.
   const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
-  const { sessions, refresh } = useSessions(wsTrigger);
+  const { sessions } = useSessions(wsTrigger);
   // US-006: the Claude session running inside a live dock pty, correlated by
   // src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.
   // This is the session the user is *actually* running — the right binding for
@@ -78,15 +63,7 @@ export default function App() {
     sessions.find((s) => s.status === "running") ??
     sessions[0] ??
     null;
-  // US-019: the session-scoped widgets (Context, Model, Skills) describe whichever
-  // session the timeline ▾ has selected, falling back to the auto active session
-  // when "All sessions"/nothing is picked — so they update as the ▾ changes.
-  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
-  const widgetSession =
-    selectedId && selectedId !== ALL_SESSIONS
-      ? (selectedSession ?? activeSession)
-      : activeSession;
-  const skills = useSkills(widgetSession?.id ?? null, wsTrigger);
+  const skills = useSkills(activeSession?.id ?? null, wsTrigger);
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   // US-025: also surfaces the real /usage scrape; token-gated probe on open.
   const usage = useUsage(wsTrigger, config?.token ?? null);
@@ -94,36 +71,6 @@ export default function App() {
   const mcp = useMcp(wsTrigger);
   // US-015: Claude Code's own usage rollup — contribution heatmap + headline stats.
   const stats = useStats(wsTrigger);
-  // US-007: the timeline is the primary surface. Default the session ▾ to the
-  // active session; "All sessions" (and any explicit pick) is sticky thereafter.
-  // US-006: until the user explicitly picks, keep the default tracking the active
-  // session so a late-resolving pty correlation (terminals poll after the first
-  // render) re-points the widgets at the session actually running — not the stale
-  // 'running' row chosen before correlation arrived.
-  const [userPicked, setUserPicked] = useState(false);
-  useEffect(() => {
-    if (!userPicked && activeSession) setSelectedId(activeSession.id);
-  }, [userPicked, activeSession]);
-  const isAll = selectedId === ALL_SESSIONS;
-  // Transcript is per-session; "All sessions" only has an Activity view.
-  const effectiveTab = isAll ? "activity" : detailTab;
-  // Timeline (US-011): events for the selected session — history + live WS.
-  const timelineEvents = useSessionEvents(selectedId, lastEvent);
-  // Transcript (US-014): fetched lazily, only while its tab is open.
-  const transcript = useTranscript(
-    isAll ? null : selectedId,
-    effectiveTab === "transcript",
-  );
-  // US-035: subagent tree reconstructed from disk for the selected session,
-  // fetched while the Activity tab is open. When present it supersedes the live
-  // parent_tool_use_id grouping in the timeline; absent, the timeline falls
-  // back to the live tree.
-  const subagents = useSubagents(
-    isAll ? null : selectedId,
-    effectiveTab === "activity",
-  );
-  // US-013: every pending permission prompt across sessions, kept live by WS.
-  const { pending, refresh: refreshPending } = usePendingPermissions(wsTrigger);
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
@@ -131,7 +78,7 @@ export default function App() {
   // only when at least one widget is enabled, keeping the default view lean.
   const widgetPrefs = useWidgetPrefs();
   const widgetData = useWidgets(
-    widgetSession?.id ?? null,
+    activeSession?.id ?? null,
     wsTrigger,
     widgetPrefs.anyEnabled,
   );
@@ -149,52 +96,6 @@ export default function App() {
     wsTrigger,
     widgetPrefs.anyEnabled,
   );
-
-  // Route an approve/deny choice to a session via the US-012 decision route,
-  // then refresh the cross-session pending list. Shared by the inline timeline
-  // control and the pending-approvals widget (US-013).
-  const postDecision = (
-    sessionId: string,
-    requestId: string | null,
-    choice: "allow" | "deny",
-    updatedPermissions?: unknown[],
-  ): Promise<{ delivered: boolean }> => {
-    if (!config?.token) return Promise.resolve({ delivered: false });
-    return fetch(
-      `/api/claude/sessions/${encodeURIComponent(sessionId)}/permission`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-conan-token": config.token,
-        },
-        body: JSON.stringify({
-          request_id: requestId,
-          decision: choice,
-          ...(updatedPermissions && updatedPermissions.length
-            ? { updated_permissions: updatedPermissions }
-            : {}),
-        }),
-      },
-    )
-      .then((r) => r.json())
-      // The route reports decidePermission's `delivered` flag (US-008): false
-      // means no live child received the answer, so the UI must stay honest and
-      // not pretend the prompt resolved.
-      .then((j) => {
-        refreshPending();
-        return { delivered: j?.delivered === true };
-      })
-      .catch(() => ({ delivered: false }));
-  };
-
-  // US-012: the timeline decides for whichever session it's showing. In the
-  // "All sessions" view there is no single target — the PendingApprovals panel
-  // handles cross-session decisions with the correct session id.
-  const decidePermission = (requestId: string | null, choice: "allow" | "deny") => {
-    if (!selectedId || selectedId === ALL_SESSIONS) return;
-    postDecision(selectedId, requestId, choice);
-  };
 
   useEffect(() => {
     fetch("/api/health")
@@ -232,14 +133,10 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* US-020: top padding lives on the content, not <main>, so the sticky
-            widget row (Overview) can pin its opaque background flush to the
-            scrollport top with no transparent gap for the timeline to show
-            through. */}
         <main className="min-w-0 flex-1 overflow-auto px-6 pb-6">
           <Widgets
             sessions={sessions}
-            activeSession={widgetSession}
+            activeSession={activeSession}
             skills={skills}
             usage={usage}
             mcp={mcp}
@@ -250,63 +147,6 @@ export default function App() {
             enabled={widgetPrefs.enabled}
             toggle={widgetPrefs.toggle}
           />
-
-          <PendingApprovals pending={pending} onDecide={postDecision} />
-
-          {/* US-007: timeline-primary Overview — session ▾ + inline lifecycle
-              controls replace the removed per-session card grid. */}
-          <section className="mt-6">
-            <SessionBar
-              sessions={sessions}
-              token={config?.token ?? null}
-              defaultCwd={config?.cwd ?? ""}
-              onRefresh={refresh}
-              selectedId={selectedId}
-              onSelect={(id) => {
-                setUserPicked(true);
-                setSelectedId(id);
-              }}
-              onOpen={() => setDockOpen(true)}
-            />
-
-            <div className="mb-3 flex items-center gap-3">
-              <div className="flex rounded-md border border-border bg-card p-0.5 text-xs">
-                {(["activity", "transcript"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setDetailTab(tab)}
-                    disabled={isAll && tab === "transcript"}
-                    className={
-                      "rounded px-2.5 py-1 capitalize disabled:opacity-40 " +
-                      (effectiveTab === tab
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted")
-                    }
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              <span className="truncate font-mono text-xs text-muted-foreground">
-                {isAll
-                  ? "All sessions"
-                  : (selectedSession?.title ??
-                    selectedSession?.model ??
-                    selectedId?.slice(0, 8) ??
-                    "no session")}
-              </span>
-            </div>
-
-            {effectiveTab === "activity" ? (
-              <ActivityTimeline
-                events={timelineEvents}
-                onDecide={decidePermission}
-                subagents={subagents.subagents}
-              />
-            ) : (
-              <TranscriptViewer state={transcript} />
-            )}
-          </section>
         </main>
 
         {/* The Dock stays mounted even when hidden so toggling the terminal off
