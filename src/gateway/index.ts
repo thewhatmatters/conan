@@ -18,6 +18,7 @@ import { usageStatus } from "../usage/index.js";
 import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage/probe.js";
 import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
+import { readPlanState } from "../plan/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 
@@ -235,6 +236,18 @@ app.get("/api/claude/pulse", (req, res) => {
 // Skills/Messages), plus MCP servers and the session cwd's git status. Read-only.
 app.get("/api/claude/sessions/:id/widgets", async (req, res) => {
   res.json(await readWidgets(req.params.id));
+});
+
+// Per-session plan-state (US-003): the active session's plan reduced from the
+// hook event stream — latest-wins TodoWrite checklist + the last ExitPlanMode
+// plan markdown, with a build-loop fallback. Token-gated; rehydrated from the
+// persisted event table so a reconnecting client restores the current plan. The
+// build loop counts as active when the tasks reader still has a failing story.
+app.get("/api/claude/sessions/:id/plan", (req, res) => {
+  if (!authed(req, res)) return;
+  const tasks = readTasks();
+  const buildLoopActive = tasks.exists && tasks.currentId !== null;
+  res.json(readPlanState(req.params.id, buildLoopActive));
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

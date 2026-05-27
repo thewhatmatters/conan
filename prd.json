@@ -53,7 +53,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "No new capture — the forwarder already passes the full tool_input. Precedence: live TodoWrite -> ExitPlanMode seed -> build-loop. See docs/v4.3-backlog.md Plan-widget section."
     },
     {
