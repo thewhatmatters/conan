@@ -156,7 +156,7 @@
         "cd ui && npm run build is clean"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "docs/v4.1-research.md §2. Depends on US-006 (absolute base), US-007 (origin), US-008 (the binary). If the Rust/Tauri toolchain can't run a full launch on the build host, verify cargo check + the wiring and note the manual E2E step in progress.txt. No browser-verify (native)."
     },
     {

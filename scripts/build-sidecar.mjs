@@ -65,8 +65,20 @@ function targetTriple() {
 const TRIPLE = targetTriple();
 const LAUNCHER = path.join(OUT, `conan-gateway-${TRIPLE}`);
 
-/** Relocatable C launcher. Finds its own dir, execs runtime/node
- *  runtime/gateway.cjs, forwarding argv and inheriting env. */
+/** Relocatable C launcher. Locates the runtime/ tree and execs
+ *  <runtime>/node <runtime>/gateway.cjs, forwarding argv and inheriting env.
+ *
+ *  The runtime tree does NOT always sit next to the launcher: Tauri's
+ *  externalBin relocates only the single triple-stripped binary (to
+ *  target/debug|release/ in dev, Contents/MacOS/ in a .app), leaving runtime/
+ *  behind. So we resolve it in this order:
+ *    1. $CONAN_GATEWAY_DIR    — absolute path the Tauri host passes in dev
+ *                               (src-tauri/src/lib.rs, debug only).
+ *    2. <exedir>/runtime      — sibling layout (running the binary in place,
+ *                               e.g. scripts/test-sidecar.mjs).
+ *    3. <exedir>/../Resources/runtime — macOS .app bundle layout (the binary in
+ *                               Contents/MacOS, runtime/ a bundled Resource).
+ */
 const LAUNCHER_C = `#include <mach-o/dyld.h>
 #include <libgen.h>
 #include <limits.h>
@@ -87,11 +99,25 @@ int main(int argc, char **argv, char **envp) {
     fprintf(stderr, "conan-gateway: realpath failed\\n");
     return 70;
   }
-  char *exedir = dirname(real); // launcher lives next to runtime/
+  char *exedir = dirname(real);
+
+  // Resolve the runtime/ dir holding node + gateway.cjs (see comment above).
+  char rtdir[PATH_MAX];
+  const char *env_dir = getenv("CONAN_GATEWAY_DIR");
+  if (env_dir && env_dir[0]) {
+    snprintf(rtdir, sizeof(rtdir), "%s", env_dir);
+  } else {
+    char probe[PATH_MAX];
+    snprintf(rtdir, sizeof(rtdir), "%s/runtime", exedir);
+    snprintf(probe, sizeof(probe), "%s/node", rtdir);
+    if (access(probe, X_OK) != 0) {
+      snprintf(rtdir, sizeof(rtdir), "%s/../Resources/runtime", exedir);
+    }
+  }
 
   char node[PATH_MAX], script[PATH_MAX];
-  snprintf(node, sizeof(node), "%s/runtime/node", exedir);
-  snprintf(script, sizeof(script), "%s/runtime/gateway.cjs", exedir);
+  snprintf(node, sizeof(node), "%s/node", rtdir);
+  snprintf(script, sizeof(script), "%s/gateway.cjs", rtdir);
 
   // Build argv: node, gateway.cjs, <forwarded args...>, NULL.
   char **child = calloc(argc + 2, sizeof(char *));
