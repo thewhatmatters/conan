@@ -57,7 +57,17 @@ interface TerminalPaneProps {
   widgetData?: WidgetData | null;
   /** Re-pull widgets after a /context capture lands. */
   onRefetchWidgets?: () => void;
+  /** Live window width (px) for responsive Timeline layout — at narrow
+   *  widths the Timeline split overlays the terminal instead of side-by-side. */
+  windowWidth?: number;
 }
+
+/** Window width at which the per-tab Timeline split overlays the terminal
+ *  column at full width instead of taking a side-by-side slice. Below this
+ *  there isn't enough horizontal room for both surfaces to be usable. The
+ *  terminal stays mounted underneath (just visually hidden) so the pty
+ *  keeps running and switching back is instant. */
+const TIMELINE_OVERLAY_BREAKPOINT = 720;
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
 // US-005: per-tab Timeline split persistence — independent keys, so existing
@@ -170,7 +180,12 @@ export default function TerminalPane({
   sessions,
   widgetData,
   onRefetchWidgets,
+  windowWidth,
 }: TerminalPaneProps) {
+  // Below this width the Timeline overlays the terminal at full width; above
+  // it the historical side-by-side split + draggable divider stay in play.
+  const timelineOverlay =
+    typeof windowWidth === "number" && windowWidth < TIMELINE_OVERLAY_BREAKPOINT;
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
   // PROTOTYPE: per-tab Timeline split state — which tabs have the right-hand
@@ -475,17 +490,14 @@ export default function TerminalPane({
                     />
                   </div>
                 </div>
-                {tlOn && (
-                  <>
-                    <div
-                      onMouseDown={startResizeTimeline(t.tid)}
-                      title="Drag to resize"
-                      className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/40"
-                    />
-                    <aside
-                      style={{ width: tlW }}
-                      className="shrink-0 bg-card"
-                    >
+                {tlOn &&
+                  (timelineOverlay ? (
+                    /* Narrow window: Timeline overlays the terminal column at
+                       full width. Terminal stays mounted underneath (z-0) so
+                       its pty keeps running; closing the Timeline reveals it
+                       again instantly with all scrollback intact. No drag
+                       divider — there's nothing to size against. */
+                    <aside className="absolute inset-0 z-20 bg-card">
                       <Timeline
                         token={token}
                         sessionId={byTid.get(t.tid)?.sessionId ?? null}
@@ -504,8 +516,39 @@ export default function TerminalPane({
                         tasks={tasks ?? null}
                       />
                     </aside>
-                  </>
-                )}
+                  ) : (
+                    /* Wide window: classic side-by-side split with a draggable
+                       divider. The terminal column keeps its remaining slice. */
+                    <>
+                      <div
+                        onMouseDown={startResizeTimeline(t.tid)}
+                        title="Drag to resize"
+                        className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/40"
+                      />
+                      <aside
+                        style={{ width: tlW }}
+                        className="shrink-0 bg-card"
+                      >
+                        <Timeline
+                          token={token}
+                          sessionId={byTid.get(t.tid)?.sessionId ?? null}
+                          terminalLabel={terminalLabel(byTid.get(t.tid), i)}
+                          onClose={() =>
+                            setTimelineOpen((prev) => {
+                              const next = new Set(prev);
+                              next.delete(t.tid);
+                              return next;
+                            })
+                          }
+                          lastEvent={lastEvent ?? null}
+                          lastSkillFired={lastSkillFired ?? null}
+                          lastSkillConsidered={lastSkillConsidered ?? null}
+                          lastPlan={lastPlan ?? null}
+                          tasks={tasks ?? null}
+                        />
+                      </aside>
+                    </>
+                  ))}
               </div>
             );
           })

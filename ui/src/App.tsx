@@ -10,6 +10,13 @@ import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
+import { useWindowWidth } from "./hooks/useWindowWidth.ts";
+
+/** Window width at which the HUD auto-hides. Below this the terminal can't
+ *  share horizontal space with a 320px-min HUD without becoming unusable.
+ *  Mirrored client-side only — `hudOpen` (the user's manual toggle) stays
+ *  intact across resizes so a wide window restores the user's intent. */
+const HUD_HIDE_BREAKPOINT = 900;
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
@@ -26,6 +33,11 @@ interface Config {
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [hudOpen, setHudOpen] = useState(true);
+  // Horizontal responsiveness: window-width-driven layout decisions live here
+  // so both the HUD (hidden when narrow) and TerminalPane (Timeline overlays
+  // the terminal at very-narrow widths) agree on the same breakpoint state.
+  const windowWidth = useWindowWidth();
+  const hudCrampedHide = windowWidth < HUD_HIDE_BREAKPOINT;
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, preference, setTheme } = useTheme();
@@ -182,9 +194,10 @@ export default function App() {
         sessions={sessions}
         widgetData={widgetData}
         onRefetchWidgets={refetchWidgets}
+        windowWidth={windowWidth}
       />
       <Hud
-        hidden={!hudOpen}
+        hidden={!hudOpen || hudCrampedHide}
         activeSession={activeSession}
         data={widgetData}
         token={config?.token ?? null}
