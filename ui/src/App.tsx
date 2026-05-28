@@ -131,6 +131,8 @@ export default function App() {
         window.dispatchEvent(new CustomEvent("conan:new-terminal")),
       onCloseTerminal: () =>
         window.dispatchEvent(new CustomEvent("conan:close-terminal")),
+      onToggleTimeline: () =>
+        window.dispatchEvent(new CustomEvent("conan:toggle-timeline")),
     }).catch(() => {});
   }, [preference, hudOpen, setTheme]);
 

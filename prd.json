@@ -104,7 +104,7 @@
         "Verify in browser using automate-browser skill (toggle, resize, reload → split state survives; ⌘\\ toggles the active tab's split)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Anchors: TerminalPane.tsx timelineOpen Set + timelineWidth Record + toggleTimelineForActive (already plumbed); persist alongside conan.terms (the existing tid list). Native menu bridge: window CustomEvent pattern in ui/src/lib/appMenu.ts (e.g. conan:new-terminal). Suggested skills: automate-browser."
     },
     {

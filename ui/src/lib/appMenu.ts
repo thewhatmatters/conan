@@ -9,6 +9,9 @@ export interface AppMenuActions {
   onToggleHud: () => void;
   onNewTerminal: () => void;
   onCloseTerminal: () => void;
+  /** US-005: View ▸ Split Timeline (⌘\) — toggles the active tab's
+   *  per-terminal Timeline split panel. */
+  onToggleTimeline: () => void;
 }
 
 /** Conan's own version, shown in the About box. */
@@ -118,6 +121,15 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
         text: a.hudOpen ? "Hide HUD" : "Show HUD",
         accelerator: "CmdOrCtrl+Shift+H",
         action: () => a.onToggleHud(),
+      }),
+      // US-005: parity with File ▸ New/Close Terminal — dispatches a window
+      // event TerminalPane listens for so the menu stays decoupled from React
+      // state. The ⌘\ accelerator is mirrored by a webview-level keydown in
+      // TerminalPane for the browser dev build (which has no native menu).
+      await MenuItem.new({
+        text: "Split Timeline",
+        accelerator: "CmdOrCtrl+\\",
+        action: () => a.onToggleTimeline(),
       }),
     ],
   });

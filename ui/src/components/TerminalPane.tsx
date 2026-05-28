@@ -46,6 +46,10 @@ interface TerminalPaneProps {
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
+// US-005: per-tab Timeline split persistence — independent keys, so existing
+// terminal-restore code (TERMS_KEY) keeps working unchanged.
+const TIMELINE_OPEN_KEY = "conan.terms.timeline"; // JSON string[] of open tids
+const TIMELINE_WIDTH_KEY = "conan.terms.timeline.w"; // JSON Record<tid, number>
 
 /** A single terminal tab — its `tid` keys an independent pty on the backend. */
 interface TermTab {
@@ -77,6 +81,56 @@ function persistTerms(terms: TermTab[]): void {
   sessionStorage.setItem(TERMS_KEY, JSON.stringify(terms.map((t) => t.tid)));
 }
 
+/** US-005: restore the per-tab Timeline-open set from sessionStorage. */
+function loadTimelineOpen(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(TIMELINE_OPEN_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw) as unknown;
+      if (Array.isArray(ids)) {
+        return new Set(ids.filter((x): x is string => typeof x === "string"));
+      }
+    }
+  } catch {
+    /* corrupt entry — fall through to an empty set */
+  }
+  return new Set();
+}
+
+/** US-005: restore the per-tab Timeline width map from sessionStorage. */
+function loadTimelineWidth(): Record<string, number> {
+  try {
+    const raw = sessionStorage.getItem(TIMELINE_WIDTH_KEY);
+    if (raw) {
+      const m = JSON.parse(raw) as unknown;
+      if (m && typeof m === "object" && !Array.isArray(m)) {
+        const out: Record<string, number> = {};
+        for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+          if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+        }
+        return out;
+      }
+    }
+  } catch {
+    /* corrupt entry — fall through to an empty map */
+  }
+  return {};
+}
+
+/** Skip the global ⌘\ shortcut when typing into a real text input (forms,
+ *  dialogs); xterm's helper textarea is the terminal, not a text input, so we
+ *  intentionally let the shortcut through there too. */
+function isUserTextInput(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") {
+    if (target.closest(".xterm")) return false;
+    return true;
+  }
+  if (target.isContentEditable) return true;
+  return false;
+}
+
 /**
  * The primary surface (US-003 terminal-wrapper reshape): the Claude Code
  * terminal filling the main area. Holds N terminal tabs in a real tab strip
@@ -103,9 +157,40 @@ export default function TerminalPane({
   // PROTOTYPE: per-tab Timeline split state — which tabs have the right-hand
   // Timeline panel open, and its current pixel width per tab. Keyed by tid so
   // the split is *tethered* to a specific terminal (its session). Closes
-  // automatically when the tab closes (via closeTerm cleanup below).
-  const [timelineOpen, setTimelineOpen] = useState<Set<string>>(new Set());
-  const [timelineWidth, setTimelineWidth] = useState<Record<string, number>>({});
+  // automatically when the tab closes (via closeTerm cleanup below). US-005:
+  // restored from sessionStorage so a reload preserves what the user had open.
+  const [timelineOpen, setTimelineOpen] = useState<Set<string>>(loadTimelineOpen);
+  const [timelineWidth, setTimelineWidth] = useState<Record<string, number>>(
+    loadTimelineWidth,
+  );
+
+  // US-005: persist the open-set on every toggle/close (rare changes, no debounce).
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        TIMELINE_OPEN_KEY,
+        JSON.stringify(Array.from(timelineOpen)),
+      );
+    } catch {
+      /* sessionStorage may be unavailable (private mode); ignore */
+    }
+  }, [timelineOpen]);
+
+  // US-005: persist widths debounced — drag-resize updates state on every
+  // mousemove, so a 150ms trailing-edge write absorbs the entire drag.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(
+          TIMELINE_WIDTH_KEY,
+          JSON.stringify(timelineWidth),
+        );
+      } catch {
+        /* sessionStorage may be unavailable; ignore */
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [timelineWidth]);
   // US-003: surface the active tab's tid upward on every change (initial mount,
   // tab switch, new, close) so App can repoint the session-scoped HUD widgets.
   useEffect(() => {
@@ -217,6 +302,29 @@ export default function TerminalPane({
       window.removeEventListener("conan:close-terminal", onClose);
     };
   }, [addTerm, closeTerm]);
+
+  // US-005: ⌘\ (CmdOrCtrl+Backslash) toggles the Timeline split for the active
+  // tab — works whether focus is on the terminal or the HUD because the
+  // listener is at window level in the capture phase (fires before xterm.js
+  // claims the keystroke). Skip when typing into a real text input (Settings,
+  // forms). The native menu bridge `conan:toggle-timeline` (dispatched by the
+  // View ▸ Split Timeline menu item) lands here too so both paths converge.
+  useEffect(() => {
+    const onToggle = () => toggleTimelineForActive();
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key !== "\\" && e.code !== "Backslash") return;
+      if (isUserTextInput(e.target)) return;
+      e.preventDefault();
+      toggleTimelineForActive();
+    };
+    window.addEventListener("conan:toggle-timeline", onToggle);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("conan:toggle-timeline", onToggle);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [toggleTimelineForActive]);
 
   // US-011: a clicked native notification dispatches `conan:focus-session` with
   // the prompting session id; select the terminal tab whose pty runs it so the
