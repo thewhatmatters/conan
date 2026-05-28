@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../lib/gateway.ts";
 
 /** Which file a config value was read from — mirrors ConfigScope in src/config/index.ts. */
@@ -44,35 +44,35 @@ export interface ClaudeConfig {
 }
 
 /**
- * Loads Claude Code's read-only config mirror from the token-gated
- * GET /api/claude/config (US-007). Like useSkills this is fetched once when the
- * token first arrives — the on-disk settings don't change at runtime within a
- * session, and the Settings view re-mounts (re-fetches) each time it's opened.
- * Resets to null when there's no token.
+ * Loads Claude Code's config mirror from the token-gated GET /api/claude/config
+ * (US-007). Fetched when the token first arrives — the on-disk settings don't
+ * change at runtime within a session. The returned `refetch` re-reads from disk
+ * after the Config tab writes a key (US-010) so the saved value is reflected and
+ * persists across reopen. Resets to null when there's no token.
  */
-export function useConfig(token: string | null): ClaudeConfig | null {
+export function useConfig(token: string | null): [ClaudeConfig | null, () => void] {
   const [config, setConfig] = useState<ClaudeConfig | null>(null);
 
-  useEffect(() => {
+  const refetch = useCallback(() => {
     if (!token) {
       setConfig(null);
       return;
     }
-    let cancelled = false;
     fetch(apiBase() + "/api/claude/config", {
       headers: { "x-conan-token": token },
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled && d && Array.isArray(d.entries)) {
+        if (d && Array.isArray(d.entries)) {
           setConfig({ ...d, schema: Array.isArray(d.schema) ? d.schema : [] } as ClaudeConfig);
         }
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [token]);
 
-  return config;
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return [config, refetch];
 }

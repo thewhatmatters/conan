@@ -173,7 +173,7 @@
         "Verify in browser using automate-browser skill (toggle a boolean and pick an enum value; the value persists across reopen; other settings untouched), light + dark"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-002 (write route + type metadata) and US-009 (tabbed scaffold). Anchors: ui/src/components/SettingsView.tsx, POST /api/claude/config, ui/* select/switch primitives. Suggested skills: automate-browser."
     },
     {

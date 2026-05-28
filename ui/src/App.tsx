@@ -81,8 +81,9 @@ export default function App() {
   const plan = usePlan(activeSession?.id ?? null, wsTrigger, config?.token ?? null);
   // US-006: installed skills (name + description + source) for the Skills tab.
   const skills = useSkills(config?.token ?? null);
-  // US-008: Claude Code's read-only config mirror for the Settings view.
-  const claudeConfig = useConfig(config?.token ?? null);
+  // US-008: Claude Code's config mirror for the Settings view; refetch re-reads
+  // after the Config tab writes a key (US-010) so the saved value sticks.
+  const [claudeConfig, refetchConfig] = useConfig(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).
@@ -184,6 +185,8 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         config={claudeConfig}
+        token={config?.token ?? null}
+        onSaved={refetchConfig}
       />
     </div>
   );

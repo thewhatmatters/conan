@@ -7,6 +7,15 @@ import {
   DialogTitle,
 } from "./ui/dialog.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
+import { Switch } from "./ui/switch.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select.tsx";
+import { apiBase } from "../lib/gateway.ts";
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -23,20 +32,26 @@ import type {
  *     concrete values currently set, grouped by the source scope (Project / User
  *     / Global) they were read from, plus the list of setting sources consulted.
  *   - **Config** — the editable-key catalog from GET /api/claude/config's
- *     `schema` (every editable key + its type), rendered read-only here as the
- *     scaffold US-010 makes interactive.
+ *     `schema` (every editable key + its type), rendered as live controls
+ *     (US-010): a switch for booleans, a dropdown for enums, a text/number input
+ *     otherwise. Changes persist via POST /api/claude/config and re-read on save.
  *
- * Everything is managed by Claude Code on disk; Conan only reads it this loop, so
- * both tabs are read-only. Themed with semantic tokens only.
+ * The Status tab stays a read-only mirror; only Config is editable. Edits apply
+ * to Claude Code's on-disk config and may only take effect on the next Claude
+ * session (no live hot-reload). Themed with semantic tokens only.
  */
 export default function SettingsView({
   open,
   onClose,
   config,
+  token,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   config: ClaudeConfig | null;
+  token: string | null;
+  onSaved: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -49,7 +64,7 @@ export default function SettingsView({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="status" className="flex flex-col gap-0">
+        <Tabs defaultValue="status" className="flex min-w-0 flex-col gap-0">
           <div className="border-b border-border px-5 py-2.5">
             <TabsList>
               <TabsTrigger value="status">Status</TabsTrigger>
@@ -61,7 +76,7 @@ export default function SettingsView({
             <StatusTab config={config} />
           </TabsContent>
           <TabsContent value="config" className="mt-0">
-            <ConfigTab config={config} />
+            <ConfigTab config={config} token={token} onSaved={onSaved} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -174,17 +189,30 @@ function StatusTab({ config }: { config: ClaudeConfig | null }) {
 
 /**
  * Config tab — the editable-key catalog from the GET /api/claude/config `schema`.
- * Lists every editable key with its type and current value (from the read-only
- * entries when set), grouped by target file. Read-only in THIS story (US-009);
- * the controls become interactive in US-010.
+ * Each row is a live control driven by the key's type metadata (US-010): a switch
+ * for booleans, a dropdown for enums, a text/number input otherwise. Saving POSTs
+ * a single key to /api/claude/config (read-modify-write, US-002) and on success
+ * re-reads the config (`onSaved`) so the value sticks across reopen; a save error
+ * surfaces inline without closing the dialog.
  */
-function ConfigTab({ config }: { config: ClaudeConfig | null }) {
-  // Index the current values by key so each editable row can show what's set.
+function ConfigTab({
+  config,
+  token,
+  onSaved,
+}: {
+  config: ClaudeConfig | null;
+  token: string | null;
+  onSaved: () => void;
+}) {
+  // Index the current values by key so each editable row starts from what's set.
   const valueByKey = useMemo(() => {
     const m = new Map<string, unknown>();
     for (const e of config?.entries ?? []) m.set(e.key, e.value);
     return m;
   }, [config]);
+
+  // Per-key inline save error (cleared on the next successful save of that key).
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const groups = useMemo(() => {
     const schema = config?.schema ?? [];
@@ -197,35 +225,71 @@ function ConfigTab({ config }: { config: ClaudeConfig | null }) {
       .filter((g) => g.rows.length > 0);
   }, [config]);
 
+  async function save(key: string, value: unknown) {
+    if (!token) {
+      setErrors((e) => ({ ...e, [key]: "no gateway token" }));
+      return;
+    }
+    try {
+      const r = await fetch(apiBase() + "/api/claude/config", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-conan-token": token },
+        body: JSON.stringify({ key, value }),
+      });
+      const d = (await r.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!r.ok || !d?.ok) {
+        setErrors((e) => ({ ...e, [key]: d?.error || `save failed (${r.status})` }));
+        return;
+      }
+      setErrors((e) => {
+        if (!(key in e)) return e;
+        const rest = { ...e };
+        delete rest[key];
+        return rest;
+      });
+      onSaved();
+    } catch (err) {
+      setErrors((e) => ({ ...e, [key]: (err as Error).message }));
+    }
+  }
+
   return (
-    <div className="max-h-[52vh] overflow-y-auto">
-      {config == null ? (
-        <p className="px-5 py-6 text-[13px] text-muted-foreground">
-          Loading configuration…
-        </p>
-      ) : groups.length === 0 ? (
-        <p className="px-5 py-6 text-[13px] text-muted-foreground">
-          No editable settings available.
-        </p>
-      ) : (
-        groups.map((g) => (
-          <section key={g.scope}>
-            <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {g.label}
-            </h3>
-            <ul>
-              {g.rows.map((k) => (
-                <SchemaRow
-                  key={k.key}
-                  keyType={k}
-                  hasValue={valueByKey.has(k.key)}
-                  value={valueByKey.get(k.key)}
-                />
-              ))}
-            </ul>
-          </section>
-        ))
-      )}
+    <div className="flex flex-col">
+      <p className="border-b border-border px-5 py-2.5 text-[11px] text-muted-foreground">
+        Edits apply to Claude Code&rsquo;s config on disk and may only take effect
+        on the next Claude session.
+      </p>
+      <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
+        {config == null ? (
+          <p className="px-5 py-6 text-[13px] text-muted-foreground">
+            Loading configuration…
+          </p>
+        ) : groups.length === 0 ? (
+          <p className="px-5 py-6 text-[13px] text-muted-foreground">
+            No editable settings available.
+          </p>
+        ) : (
+          groups.map((g) => (
+            <section key={g.scope}>
+              <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {g.label}
+              </h3>
+              <ul>
+                {g.rows.map((k) => (
+                  <SchemaRow
+                    key={k.key}
+                    keyType={k}
+                    hasValue={valueByKey.has(k.key)}
+                    value={valueByKey.get(k.key)}
+                    error={errors[k.key]}
+                    onSave={(v) => save(k.key, v)}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -253,41 +317,150 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
 }
 
 /**
- * One editable-key row (read-only scaffold): label, the value type, and the
- * current value when set (or a muted "not set"). US-010 swaps the value column
- * for the live control the `kind` implies.
+ * One editable-key row (US-010): label + key/type subtitle on the left, and the
+ * live control the `kind` implies on the right — a switch for booleans, a
+ * dropdown for enums, a text/number input otherwise. A save error renders inline
+ * beneath the row without closing the dialog.
  */
 function SchemaRow({
   keyType,
   hasValue,
   value,
+  error,
+  onSave,
 }: {
   keyType: KeyType;
   hasValue: boolean;
   value: unknown;
+  error?: string;
+  onSave: (value: unknown) => void;
 }) {
   const typeLabel =
     keyType.kind === "enum" && keyType.values && keyType.values.length > 0
       ? `enum: ${keyType.values.join(" · ")}`
       : keyType.kind;
   return (
-    <li className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5 last:border-b-0">
-      <div className="min-w-0">
-        <div className="truncate text-[13px] font-medium text-foreground">
-          {keyType.label}
+    <li className="border-b border-border px-5 py-2.5 last:border-b-0">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-medium text-foreground">
+            {keyType.label}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground" title={typeLabel}>
+            {keyType.key} · {typeLabel}
+          </div>
         </div>
-        <div className="truncate text-[11px] text-muted-foreground" title={typeLabel}>
-          {keyType.key} · {typeLabel}
+        <div className="flex shrink-0 items-center">
+          <KeyControl keyType={keyType} hasValue={hasValue} value={value} onSave={onSave} />
         </div>
       </div>
-      {hasValue ? (
-        <code className="shrink-0 rounded-sm bg-muted px-2 py-0.5 font-mono text-[12px] text-foreground">
-          {formatValue(value)}
-        </code>
-      ) : (
-        <span className="shrink-0 text-[11px] italic text-muted-foreground">not set</span>
+      {error && (
+        <p className="mt-1.5 text-[11px] text-destructive" role="alert">
+          {error}
+        </p>
       )}
     </li>
+  );
+}
+
+/** The type-appropriate editable control for one key, controlled by `value`. */
+function KeyControl({
+  keyType,
+  hasValue,
+  value,
+  onSave,
+}: {
+  keyType: KeyType;
+  hasValue: boolean;
+  value: unknown;
+  onSave: (value: unknown) => void;
+}) {
+  if (keyType.kind === "boolean") {
+    return (
+      <Switch
+        checked={value === true}
+        onCheckedChange={(checked) => onSave(checked)}
+        aria-label={keyType.label}
+      />
+    );
+  }
+
+  if (keyType.kind === "enum" && keyType.values && keyType.values.length > 0) {
+    return (
+      <Select
+        value={hasValue && typeof value === "string" ? value : undefined}
+        onValueChange={(v) => onSave(v)}
+      >
+        <SelectTrigger className="h-8 w-48 text-[12px]" aria-label={keyType.label}>
+          <SelectValue placeholder="not set" />
+        </SelectTrigger>
+        <SelectContent>
+          {keyType.values.map((v) => (
+            <SelectItem key={v} value={v} className="text-[12px]">
+              {v}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  // string / number / enum-without-values → free input committed on blur or Enter.
+  return (
+    <TextControl keyType={keyType} hasValue={hasValue} value={value} onSave={onSave} />
+  );
+}
+
+/** A text/number input that commits on Enter or blur, only when the value changed. */
+function TextControl({
+  keyType,
+  hasValue,
+  value,
+  onSave,
+}: {
+  keyType: KeyType;
+  hasValue: boolean;
+  value: unknown;
+  onSave: (value: unknown) => void;
+}) {
+  const initial = hasValue ? formatValue(value) : "";
+  const [draft, setDraft] = useState(initial);
+  // Re-sync the draft when the saved value changes (e.g. after a refetch).
+  const [seed, setSeed] = useState(initial);
+  if (seed !== initial) {
+    setSeed(initial);
+    setDraft(initial);
+  }
+
+  const isNumber = keyType.kind === "number";
+
+  function commit() {
+    if (draft === initial) return;
+    if (isNumber) {
+      const n = Number(draft);
+      if (draft.trim() === "" || !Number.isFinite(n)) return;
+      onSave(n);
+    } else {
+      onSave(draft);
+    }
+  }
+
+  return (
+    <input
+      type={isNumber ? "number" : "text"}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      placeholder="not set"
+      aria-label={keyType.label}
+      className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+    />
   );
 }
 
