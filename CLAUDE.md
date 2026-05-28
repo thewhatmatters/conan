@@ -16,7 +16,10 @@ accurate.
 - **`run-tasks.sh`** — autonomous loop: a fresh agent per story until all pass.
 - Validate after editing the backlog:
   `python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json`
-- Current spec: `docs/v4.2-backlog.md`; charting research: `docs/v4.2-research.md`.
+- Current spec: `docs/v4.4-backlog.md` (latest shipped loop). Per-version backlogs
+  live under `docs/v4.x-backlog.md`; charting research in `docs/v4.2-research.md`.
+- **Regression QA:** `docs/qa-checklist.md` — run it (mostly `automate-browser` at
+  :5173, a few native-only) after each change set to catch regressions.
 
 ## Stack
 - **Gateway** (`src/`): TypeScript ESM, Express 4 + `ws` + `better-sqlite3`.
@@ -46,18 +49,23 @@ npm run typecheck           # tsc --noEmit (gateway)
   status (running/idle/error). Sessions are **observed** — any hooked `claude` in
   this repo self-reports over the WS (the launch/steer "drive" route surface was
   removed in v4.2). NOT a browser/login session.
-- Routes (the trimmed v4.2 surface — only what the app calls):
-  `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
+- Routes (only what the app calls — trimmed in v4.2, grown back deliberately in
+  v4.3/v4.4): `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
   `GET /api/tasks` (prd.json + progress.txt), `GET /api/terminals` (live
   terminals + their session labels), `GET /api/claude/sessions` (the sessions
   list), `GET /api/claude/sessions/:id/widgets` (Context breakdown),
   `POST /api/claude/sessions/:id/context/refresh` and `.../usage/refresh`
   (inject `/context`/`/usage` into the correlated pty and capture the rendered
-  frame — US-009/US-010), `GET /api/claude/usage` (`+?probe=1`),
-  `GET /api/claude/pulse`, and
-  `POST /api/claude/events` (hook ingestion). Everything else (the drive route
-  surface, the read-only catalog/config routes, the web-serving/TLS/pm2 path)
-  was removed in v4.2 (US-002–US-004).
+  frame — US-009/US-010), `POST /api/claude/sessions/:id/handoff` (inject
+  `/handoff` for the Context-pressure Compact — v4.3 US-013),
+  `GET/POST /api/claude/context/autorefresh` (the adaptive auto-refresh gate —
+  v4.4 US-006), `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`,
+  `GET /api/claude/skills` (v4.3 US-006), `GET /api/claude/mcp` (`+?force=1`;
+  shells `claude mcp list` — v4.4 US-007), `GET /api/claude/config` +
+  `POST /api/claude/config` (read-only mirror + single-key read-modify-write
+  with an editable-key type schema — v4.3 US-007/008, v4.4 US-002/010), and
+  `POST /api/claude/events` (hook ingestion). The drive surface, the
+  web-serving/TLS/pm2 path, and the read-only catalog routes stay removed.
 - WS: `/ws` (app events + `{type:'tasks'}` broadcast, snapshot on connect),
   `/ws/terminal` (node-pty). **Both authenticated on upgrade.**
 - Auth (`src/gateway/auth.ts`): token (`CONAN_AUTH_TOKEN` | `.data/auth-token` |
@@ -81,13 +89,21 @@ npm run typecheck           # tsc --noEmit (gateway)
   `/context` and `/usage` Session-block frames (passive when the user runs the command,
   or via the `.../context/refresh` and `.../usage/refresh` routes). Disk estimates
   (MCP/skills/memory size readers) are the labelled `≈ estimated` fallback.
-- UI: `App.tsx` shell renders `components/TerminalPane.tsx` (the main surface —
-  N `Terminal.tsx` tabs behind a `Term ▾` dropdown, mounted-but-hidden so
-  switching never tears down a pty) beside `components/Hud.tsx` (the DevTools-style
-  widget HUD: `Widgets.tsx` Context + Usage tabs + the `PulseChart.tsx` strip).
-  Charts live in `components/charts/` (vendored Tremor `AreaChart`/`ProgressCircle`);
-  build-loop `tasks` feed `Toaster.tsx`. Hooks `hooks/{useTheme,useTasks,useWidgets,usePulse,useUsage,useSessions,useTerminals,useNativeNotifications}.ts`;
-  `lib/{terminalTheme,chartUtils,nativeNotify,appMenu}.ts`.
+- UI: `App.tsx` shell renders `components/TerminalPane.tsx` (the main surface — N
+  `Terminal.tsx` tabs in a **real VS-Code-style tab strip** (v4.3 US-009, replacing
+  the old `Term ▾` dropdown), mounted-but-hidden so switching never tears down a
+  pty; a pinned `SessionHeader.tsx` Claude-banner sits above the xterm, and a
+  `StatusBar.tsx` cwd/branch footer below it) beside `components/Hud.tsx` (the
+  DevTools-style widget HUD). The HUD tabs are **Context · Usage · Pulse · [Plan]
+  · Skills · MCP** — `Widgets.tsx` (Context+Usage), `PulseChart.tsx`,
+  `PlanWidget.tsx` (conditional), `SkillsWidget.tsx`, `McpWidget.tsx` — with a
+  `RadioBar.tsx` (Claude Radio play/pause) pinned at the HUD's bottom (v4.4
+  US-011). The session-scoped tabs follow the **active terminal tab** (v4.4
+  US-003). `SettingsView.tsx` is the tabbed Status/Config dialog (⌘,). Charts live
+  in `components/charts/` (vendored Tremor `AreaChart`/`ProgressCircle`); build-loop
+  `tasks` feed `Toaster.tsx`. Hooks `hooks/{useTheme,useTasks,useWidgets,usePulse,
+  useUsage,useSessions,useTerminals,usePlan,useSkills,useMcp,useConfig,
+  useNativeNotifications}.ts`; `lib/{chartUtils,nativeNotify,appMenu,gateway}.ts`.
 
 ## Conventions
 - **Semantic theme tokens only** — `bg-background`, `text-foreground`,
@@ -137,6 +153,38 @@ npm run typecheck           # tsc --noEmit (gateway)
    Conan instance on another port) and use this dashboard to **observe**.
 
 ## Status (2026-05-27)
+**v4.4 done (`loop/conan-v4.4`, 11 stories + QA polish).** HUD/UX polish:
+**Claude Code version capture** from the SessionStart hook (US-001, `claude_version`
+column → session header); an **editable Claude-config write route** + binary-extracted
+enum schema (US-002, single-key read-modify-write preserving all other keys);
+**session-scoped HUD widgets bound to the active terminal tab** (US-003, fixes the
+"new terminal shows the old session" bug); a **slim status bar** (US-004, drop the
+gateway chip, cwd-left/branch-right, VS-Code `*` dirty marker); **Pulse dark-mode
+axis legibility** + dropped the redundant in-chart legend (US-005); a **Context
+"Auto" toggle** for the adaptive `/context` auto-refresh (US-006); a **fixed
+Claude-banner session header** atop the terminal (US-008, Conan + Claude Code
+versions + model/context + cwd); an **editable tabbed (Status/Config) Settings
+dialog** (US-009/010); and **Claude Radio** — a play/pause toolbar at the HUD's
+bottom streaming a YouTube live stream (US-011). **MCP tab** (US-007) ships too, but
+was **fixed post-loop** to source from `claude mcp list` (the per-session
+`system/init` mcp_servers it was built against never arrives over hooks). Post-loop
+QA polish: the Context-pressure bar became an always-on **top-pinned toolbar** with a
+"Remind me later" snooze (armed 80–95%, Compact-only at ≥95%); Radio moved into the
+HUD + height-matched to the status bar. Regression suite: `docs/qa-checklist.md`.
+**Known open bug:** terminal **reattach** crashes the gateway (`UNIQUE constraint
+failed: terminal_session.id` — `attachTerminal` needs `INSERT OR REPLACE`).
+
+**v4.3 done (`loop/conan-v4.3`, 14 stories).** HUD/UX expansion: landed the
+context-accuracy fixes (1M-window resolution; adaptive delta-triggered `/context`
+auto-refresh); a conditional **Plan** tab (TodoWrite/ExitPlanMode/build-loop) and a
+**Skills** tab (VS-Code-extensions-style, from SKILL.md frontmatter); a read-only
+Settings mirror of Claude's `/config`; **real terminal tabs** (dropped the `Term ▾`
+dropdown); a **bottom status bar** (cwd/branch/gateway, moved out of the HUD); a
+**View ▸ Theme** submenu driving Conan's app theme; a **context-pressure action bar**
+(Compact → `/handoff` in the correlated pty); and **flush/panel-native** widget
+content (no card chrome). _Note: v4.3's Claude `/theme` mirror (US-012) was removed
+in QA — config-write applied only next-session, so it never changed the live look._
+
 **v4.2 done (`loop/conan-v4.2`, 12 stories).** Two themes shipped: an aggressive
 Tauri-only cleanup (trimmed the gateway to only the routes the app calls; dropped
 the web-served/TLS/pm2 path, the drive route surface, and the v1→v4 planning

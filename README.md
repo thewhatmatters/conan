@@ -1,9 +1,10 @@
 # Conan
 
 **A terminal-primary native desktop app that wraps and observes Claude Code.**
-Conan puts Claude Code's `xterm.js` terminal front-and-center, with a
-DevTools-style **widget HUD** — **Context** (session-scoped), **Usage** (plan +
-session), and a **Pulse** activity graph — backed by one loopback Node gateway
+Conan puts Claude Code's `xterm.js` terminal front-and-center — with a pinned
+Claude-banner **session header** and a cwd/branch **status bar** — beside a
+DevTools-style **widget HUD** (**Context · Usage · Pulse · Plan · Skills · MCP**)
+and a **Claude Radio** play/pause toolbar, all backed by one loopback Node gateway
 packaged as a Tauri sidecar.
 
 - **Terminal** — a live `node-pty` running `claude` in the active cwd, the main
@@ -59,8 +60,8 @@ exits with a clear message instead of an `EADDRINUSE` stack. Override with
 ## Architecture
 
 A single Node gateway (`src/gateway/index.ts`) serves the REST API and two
-authenticated WebSockets, **loopback-only**. The trimmed v4.2 route surface is
-exactly what the app calls:
+authenticated WebSockets, **loopback-only**. The route surface — trimmed hard in
+v4.2, then grown back deliberately in v4.3/v4.4 — is exactly what the app calls:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -72,13 +73,19 @@ exactly what the app calls:
 | GET | `/api/claude/sessions/:id/widgets` | Context breakdown for a session |
 | POST | `/api/claude/sessions/:id/context/refresh` | inject `/context` into the correlated pty + capture |
 | POST | `/api/claude/sessions/:id/usage/refresh` | inject `/usage` into the correlated pty + capture |
+| POST | `/api/claude/sessions/:id/handoff` | inject `/handoff` (Context-pressure Compact) |
+| GET/POST | `/api/claude/context/autorefresh` | the adaptive `/context` auto-refresh gate |
 | GET | `/api/claude/usage` (`+?probe=1`) | plan usage / rate-limit windows |
 | GET | `/api/claude/pulse` | activity buckets for the Pulse chart |
+| GET | `/api/claude/skills` | installed skills (name + description + source) |
+| GET | `/api/claude/mcp` (`+?force=1`) | configured MCP servers + health (`claude mcp list`) |
+| GET/POST | `/api/claude/config` | Claude config mirror (read) + single-key edit (write) |
 | POST | `/api/claude/events` | hook ingestion |
 
-Everything else — the launch/steer drive routes, the read-only catalog/config
-routes (`/agents`, `/skills`, `/stats`, `/settings`, …), and the web-served +
-TLS/remote-access + pm2 path — was removed in v4.2.
+Still gone (removed in v2/v4.2): the launch/steer drive routes, the read-only
+catalog routes (`/agents`, `/stats`, …), and the web-served + TLS/remote-access +
+pm2 path. The `/skills`, `/mcp`, and `/config` routes here are the new, focused
+read/write surface the HUD + Settings actually use — not the old catalog.
 
 **WebSockets** — `/ws` (app events `{type:'event'}`, the build-loop trail
 `{type:'tasks'}`, snapshot on connect) and `/ws/terminal` (a `node-pty` that
@@ -95,22 +102,34 @@ self-reports; the UI filters the firehose by the active cwd.
 
 ## UI / the HUD
 
-The app is terminal-primary: the `xterm.js` terminal fills the main pane (its
-dropdown shows the session name + short id), with a DevTools-style tabbed HUD and
-a docked panel beside/below it.
+The app is terminal-primary: the `xterm.js` terminal fills the main pane behind a
+**VS-Code-style tab strip** (multiple terminals, each its own pty; switching never
+tears one down), with a pinned Claude-banner **session header** above it (Conan +
+Claude Code versions · model/context · cwd) and a cwd/branch **status bar** below.
+A drag-resizable, width-persisted HUD docks to the right. The HUD's session-scoped
+tabs follow the **active terminal tab**.
 
-- **Context** widget — the live session's `/context` breakdown (model header,
-  total %, per-category tokens incl. Free space), rendered with a Tremor
-  `ProgressCircle` gauge (destructive past 80%) over a hand-rolled breakdown bar.
-- **Usage** widget — the `/usage` Session block (cost, durations, code changes,
-  per-model usage) + all three rate-limit windows, captured from the live pty
-  with the throwaway probe as fallback.
-- **Pulse** — a Tremor `AreaChart` (stacked) of activity over 15m/1h/6h/24h.
-- **Dock** — drag-resizable, tabbed **Terminal** | **Tasks** (when the cwd has a
-  task source), with the Pulse strip pinned at the bottom of the column.
-- **Native notifications** — in the Tauri app, a `Notification` hook event fires
-  a native macOS banner with the prompt text; clicking it focuses Conan. The
-  browser dev view falls back to the in-app Toaster.
+- **Context** tab — the live session's `/context` breakdown (model header, total %,
+  per-category tokens incl. Free space) with a Tremor `ProgressCircle` gauge, an
+  **Auto** auto-refresh toggle + manual `↻ /context`, and a top-pinned
+  **context-pressure toolbar** (Remind-me-later snooze 80–95%, Compact → `/handoff`
+  at ≥95%).
+- **Usage** tab — the `/usage` Session block + all three rate-limit windows,
+  captured from the live pty with the throwaway probe as fallback.
+- **Pulse** tab — a Tremor `AreaChart` (stacked) of activity over 15m/1h/6h/24h.
+- **Plan** tab — conditional: the session's live plan (TodoWrite / ExitPlanMode /
+  build-loop).
+- **Skills** tab — installed skills (name + description from SKILL.md), grouped
+  **User / System**.
+- **MCP** tab — configured MCP servers + live health from `claude mcp list`
+  (connected / failed / needs-auth), with a refresh.
+- **Claude Radio** — a play/pause toolbar at the HUD's bottom streaming a YouTube
+  live stream as ambient audio (offscreen YouTube IFrame player).
+- **Settings** (⌘,) — a tabbed **Status** (read-only mirror) / **Config**
+  (editable: toggles, dropdowns, inputs → `/api/claude/config`) dialog.
+- **Native notifications** — in the Tauri app, a `Notification` hook event fires a
+  native macOS banner; clicking it focuses Conan + the prompting tab. The browser
+  dev view falls back to the in-app Toaster.
 
 > **"Session"** in Conan means one Claude Code _run_ (an agent conversation),
 > keyed by `session_id` — observed (self-reporting over the WS). Not a
@@ -157,7 +176,8 @@ Validate the backlog after editing:
 python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
 ```
 
-Current spec: `docs/v4.2-backlog.md` (+ `docs/v4.2-research.md`).
+Current spec: `docs/v4.4-backlog.md` (latest shipped). Per-version backlogs live
+under `docs/v4.x-backlog.md`. Regression QA: `docs/qa-checklist.md`.
 
 ## Gotchas
 
