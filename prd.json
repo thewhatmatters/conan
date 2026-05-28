@@ -21,7 +21,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Backend foundation. The UI consumes existing {type:'event'} and {type:'tasks'} WS broadcasts for live updates — no new WS plumbing in this story. Anchors: POST /api/claude/events ingest + INSERT INTO event in src/gateway/index.ts (~:140/:189); broadcast({type:'event'}) ~:212; watchTasks + readTasks().activity in src/tasks/index.ts (~:125). Add the new route + envelope in src/timeline/index.ts (new module) wired from src/gateway/index.ts."
     },
     {

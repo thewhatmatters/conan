@@ -27,6 +27,7 @@ import { getMcpServers } from "../mcp/index.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
+import { readTimeline } from "../timeline/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -375,6 +376,24 @@ app.get("/api/claude/usage", async (req, res) => {
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
   const liveUsage = sessionId ? getCapturedUsage(sessionId) : null;
   res.json({ ...base, planUtilization, liveUsage });
+});
+
+// Per-session Timeline feed (US-001 v4.5): the chronological log the Timeline
+// split panel backfills from on mount. Returns hook rows (from the persisted
+// `event` table, mapped to short titles by hook_event_name) merged with
+// build-loop activity rows (from progress.txt, when the session's cwd matches
+// the active project). Descending by ts. `since` filters strictly greater than;
+// `limit` clamps to [1, 500] (default 200). Skill rows (skill-fired /
+// skill-considered) are part of the envelope contract but US-002/US-003 wire up
+// the actual data. Token-gated.
+app.get("/api/claude/timeline", (req, res) => {
+  if (!authed(req, res)) return;
+  const session = typeof req.query.session === "string" ? req.query.session : null;
+  const sinceRaw = Number(req.query.since);
+  const since = Number.isFinite(sinceRaw) ? sinceRaw : undefined;
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+  res.json(readTimeline(session, { since, limit }));
 });
 
 // Configured MCP servers + live health for the HUD's MCP tab (v4.4 fix). Sourced
