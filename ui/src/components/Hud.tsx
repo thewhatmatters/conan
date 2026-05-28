@@ -3,6 +3,7 @@ import { ContextWidget, UsageWidget } from "./Widgets.tsx";
 import PlanWidget from "./PlanWidget.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
+import RadioBar from "./RadioBar.tsx";
 import PulseChart from "./PulseChart.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
@@ -194,6 +195,9 @@ export default function Hud({
           <McpWidget data={data} />
         </TabsContent>
       </Tabs>
+
+      {/* US-011: Claude Radio toolbar pinned at the bottom of the HUD panel. */}
+      <RadioBar />
     </aside>
   );
 }

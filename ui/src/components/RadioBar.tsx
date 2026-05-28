@@ -66,8 +66,9 @@ function loadYouTubeApi(): Promise<void> {
 }
 
 /**
- * Claude Radio (US-011): an app-wide bottom strip with a single play/pause
- * control that streams a YouTube live stream as ambient audio. The actual
+ * Claude Radio (US-011): a toolbar pinned at the bottom of the HUD panel with a
+ * single play/pause control that streams a YouTube live stream as ambient audio.
+ * The actual
  * player is an offscreen (1×1, visually hidden) YouTube IFrame Player driven via
  * the IFrame Player API — only its play/pause + state surface is exposed here.
  *

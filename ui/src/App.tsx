@@ -12,7 +12,6 @@ import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
-import RadioBar from "./components/RadioBar.tsx";
 import SettingsView from "./components/SettingsView.tsx";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
@@ -155,39 +154,35 @@ export default function App() {
     // HUD stays mounted
     // when hidden so its tab state
     // survives the toggle; terminals always stay mounted so ptys survive.
-    // US-011: a column shell — the terminal+HUD row on top, the app-wide Claude
-    // Radio strip pinned full-width below it (its own strip, distinct from the
-    // terminal's cwd/branch status bar).
-    <div className="flex h-full flex-col bg-background text-foreground">
+    // US-011: the Claude Radio toolbar lives at the bottom of the HUD panel
+    // (inside Hud.tsx), not the app shell.
+    <div className="flex h-full bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <div className="flex min-h-0 flex-1">
-        <TerminalPane
-          token={config?.token ?? null}
-          theme={theme}
-          cwd={config?.cwd ?? null}
-          git={widgetData?.git ?? null}
-          session={activeSession}
-          data={widgetData}
-          onActiveTidChange={setActiveTid}
-        />
-        <Hud
-          hidden={!hudOpen}
-          activeSession={activeSession}
-          sessions={sessions}
-          data={widgetData}
-          token={config?.token ?? null}
-          onRefetchWidgets={refetchWidgets}
-          usage={usage}
-          onRefetchUsage={refetchUsage}
-          pulse={pulse}
-          pulseMinutes={pulseMinutes}
-          onPulseRange={setPulseMinutes}
-          plan={plan}
-          tasks={tasks}
-          skills={skills}
-        />
-      </div>
-      <RadioBar />
+      <TerminalPane
+        token={config?.token ?? null}
+        theme={theme}
+        cwd={config?.cwd ?? null}
+        git={widgetData?.git ?? null}
+        session={activeSession}
+        data={widgetData}
+        onActiveTidChange={setActiveTid}
+      />
+      <Hud
+        hidden={!hudOpen}
+        activeSession={activeSession}
+        sessions={sessions}
+        data={widgetData}
+        token={config?.token ?? null}
+        onRefetchWidgets={refetchWidgets}
+        usage={usage}
+        onRefetchUsage={refetchUsage}
+        pulse={pulse}
+        pulseMinutes={pulseMinutes}
+        onPulseRange={setPulseMinutes}
+        plan={plan}
+        tasks={tasks}
+        skills={skills}
+      />
       <SettingsView
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
