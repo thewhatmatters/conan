@@ -106,6 +106,45 @@
       "priority": 5,
       "passes": false,
       "notes": "Anchors: TerminalPane.tsx timelineOpen Set + timelineWidth Record + toggleTimelineForActive (already plumbed); persist alongside conan.terms (the existing tid list). Native menu bridge: window CustomEvent pattern in ui/src/lib/appMenu.ts (e.g. conan:new-terminal). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-006",
+      "title": "Extend transcript scanner for TodoWrite + ExitPlanMode → emit Plan rows on the Timeline",
+      "description": "As a Conan user, I want the Timeline to show my TodoWrite items and ExitPlanMode plans as PLAN rows, so per-session planning state lives on the same surface as the rest of the session's activity.",
+      "acceptanceCriteria": [
+        "Extend src/timeline/transcriptScan.ts (from US-002) to ALSO extract TodoWrite tool_use blocks as `{kind: 'plan', subtype: 'todo-write', ts, items: [{content: string, activeForm?: string, status: 'pending'|'in_progress'|'completed'}], eventId, promptEventId}` (eventId/promptEventId resolved the same way as the Skill blocks)",
+        "Extend the same scanner to extract ExitPlanMode tool_use blocks as `{kind: 'plan', subtype: 'plan-mode', ts, plan: string, eventId, promptEventId}` (plan is the agent's plan text from the tool input)",
+        "The Timeline read route (US-001) merges these rows into the response in correct chronological order with hook/loop/skill rows",
+        "The live JSONL watcher (from US-002) emits each new TodoWrite/ExitPlanMode block as a `{type: 'plan', payload: TimelineRow}` WS broadcast (separate kind from {type:'event'}, {type:'skill-fired'}, {type:'skill-considered'} so consumers can subscribe granularly)",
+        "Unit test on the scanner extension: a JSONL fixture containing one TodoWrite block + one ExitPlanMode block asserts both are extracted with correct shape (items[] with statuses for TodoWrite; plan string for ExitPlanMode); a fixture with NO plan blocks asserts the empty result",
+        "Integration test: append a TodoWrite block to a fixture JSONL mid-watch, assert a `{type:'plan'}` WS broadcast lands with the expected payload",
+        "npm test passes all suites",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-001 (TimelineRow envelope) and US-002 (transcript scanner + watcher). Anchors: src/timeline/transcriptScan.ts (the scanner US-002 created), the Timeline route + WS broadcast in the gateway. The Plan HUD tab's existing data source (usePlan / readPlanState) is informative for shape — the tool input schemas for TodoWrite/ExitPlanMode are stable. No new tables — TimelineRow plan rows are derived live from the JSONL."
+    },
+    {
+      "id": "US-007",
+      "title": "Replace the Plan HUD tab with Timeline PLAN rows + a Plan filter chip",
+      "description": "As a Conan user, I want Plan to live in the per-terminal Timeline split (where it belongs — it's session-scoped) instead of its own HUD tab, so per-session surfaces are consolidated.",
+      "acceptanceCriteria": [
+        "ui/src/components/Timeline.tsx (the live one from US-004) renders the plan rows from US-006 as `PLAN` pill rows colored chart-5 (the existing-but-unused palette slot), with an expandable card per subtype",
+        "todo-write rows: title `N todos · M done` (counts from items); the expanded card lists every item with a status badge (○ pending, ◐ in_progress, ✓ completed) and the item's `content` (`activeForm` shown muted when in_progress)",
+        "plan-mode rows: title `Entered plan mode`; the expanded card shows the plan text (multi-line, preserves line breaks; no markdown rendering required for this story)",
+        "Filter chips in the Timeline header become: All · Hooks · Skills · Plan · Loop (multi-select; All clears the others; selecting any deselects All)",
+        "Timeline subscribes to the {type:'plan'} WS broadcast (in addition to event/skill-fired/skill-considered) and appends matching rows live, scoped to the active session's sessionId (same filtering as the other kinds)",
+        "Remove the conditional Plan TabsTrigger + TabsContent from ui/src/components/Hud.tsx; drop the PlanWidget import; remove the `plan` and `tasks` props from the HUD interface + the plan-active conditional rendering",
+        "Remove the usePlan hook call from ui/src/App.tsx and stop passing plan/tasks to <Hud>; delete ui/src/hooks/usePlan.ts and ui/src/components/PlanWidget.tsx (no remaining consumers after this story)",
+        "No data loss: every TodoWrite item (including statuses) and every ExitPlanMode plan text that the Plan widget surfaces today is visible in the Timeline PLAN rows + their expandable cards",
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (open the timeline split for an active session; a TodoWrite produces a PLAN row that expands to the item list; an ExitPlanMode produces a PLAN row that expands to the plan text; the Plan tab no longer appears in the HUD tab strip; the Plan filter chip toggles plan-row visibility — light + dark)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Depends on US-004 (live Timeline.tsx) and US-006 (plan rows in the timeline route + WS). Anchors: ui/src/components/Hud.tsx (the conditional Plan tab to remove), ui/src/components/PlanWidget.tsx + ui/src/hooks/usePlan.ts (to delete), ui/src/App.tsx (drops the usePlan call + the plan/tasks props passed to Hud). Suggested skills: automate-browser."
     }
   ]
 }
