@@ -37,6 +37,9 @@ import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 import { readTimeline } from "../timeline/index.js";
+import { readAssistantTurnUsages } from "../transcript/index.js";
+import { installBundledPlugins } from "../plugins/install.js";
+import { getRadio, setRadio } from "../radio/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -209,7 +212,20 @@ app.post("/api/claude/events", (req, res) => {
       now,
     );
 
-  const event = {
+  const event: {
+    id: number;
+    session_id: string;
+    parent_tool_use_id: string | null;
+    hook_event_name: string | null;
+    stream_type: string;
+    tool_name: string | null;
+    payload: string;
+    ts: number;
+    /** Per-turn token total for Stop events — same enrichment the Timeline's
+     *  REST backfill applies, mirrored here so live STOP rows arriving over
+     *  WS render the `+Nk` badge without needing a refetch. */
+    tokens?: number;
+  } = {
     id: Number(info.lastInsertRowid),
     session_id: sessionId,
     parent_tool_use_id: typeof b.parent_tool_use_id === "string" ? b.parent_tool_use_id : null,
@@ -219,6 +235,18 @@ app.post("/api/claude/events", (req, res) => {
     payload: JSON.stringify(b.payload ?? b),
     ts: now,
   };
+  // On Stop, pull the just-ended turn's usage from the JSONL transcript. The
+  // assistant message + its usage block lands in the transcript before the
+  // Stop hook fires, so the last entry is the right one to attach. Empty/null
+  // when the transcript isn't readable — UI just omits the badge in that case.
+  if (hookEvent === "Stop") {
+    const usages = readAssistantTurnUsages(
+      sessionId,
+      typeof b.cwd === "string" ? b.cwd : null,
+    );
+    const last = usages[usages.length - 1];
+    if (last) event.tokens = last.totalTokens;
+  }
   broadcast({ type: "event", payload: event });
 
   // Feed the adaptive /context auto-refresh accumulator (US-002): tool outputs
@@ -644,6 +672,34 @@ app.get("/api/claude/mcp", async (req, res) => {
   res.json(result);
 });
 
+// Claude Radio state — read the current { videoId, title } the UI's player is
+// pointed at. Bundled `/conan-change-radio` skill POSTs to the sibling route
+// to swap streams. In-memory, session-only — gateway restart reverts to default.
+app.get("/api/claude/radio", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(getRadio());
+});
+
+// Set the radio to a new YouTube URL or 11-char video ID. Resolves the title
+// via YouTube oEmbed (best-effort), then broadcasts the new state so any open
+// HUD repaints its player without a refetch. Returns 400 when the URL/ID can't
+// be parsed.
+app.post("/api/claude/radio", async (req, res) => {
+  if (!authed(req, res)) return;
+  const url = req.body?.url;
+  if (typeof url !== "string" || !url.trim()) {
+    res.status(400).json({ error: "url required" });
+    return;
+  }
+  try {
+    const next = await setRadio(url);
+    broadcast({ type: "radio", payload: next });
+    res.json(next);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+});
+
 // The Tauri webview loads the bundled frontend and dev uses the Vite server
 // (:5173), so the gateway is JSON-API + WebSockets only — it no longer serves
 // the built UI to a browser (v4.2 Tauri-only).
@@ -706,6 +762,12 @@ function broadcast(message: unknown): void {
   }
 }
 const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: state }));
+
+// Bundled plugins: symlink CONAN_PLUGIN_DIR/<name>/ into ~/.claude/plugins/<name>/
+// on boot so Claude Code discovers them with the same plugin source path it
+// uses for any third-party plugin. Best-effort; logs a warning on failure but
+// doesn't block the gateway from starting.
+installBundledPlugins();
 
 // Session-liveness reaper (US-001): reconcile the session table against process
 // ground truth at boot and on an interval, so the Active Sessions count reflects

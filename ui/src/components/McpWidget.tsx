@@ -1,5 +1,6 @@
 import StatusDot from "./shared/StatusDot.tsx";
 import { useMcp } from "../hooks/useMcp.ts";
+import FadeScroll from "./FadeScroll.tsx";
 
 /**
  * The MCP HUD tab (US-007 v4.4, fixed): mirrors Claude's `/mcp` view as a flat
@@ -16,8 +17,10 @@ export default function McpWidget({ token }: { token?: string | null }) {
   const { servers, loading, error, refresh } = useMcp(token ?? null);
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Header — kept OUTSIDE the FadeScroll so the count + refresh stay
+          pinned at the top while the server list below scrolls. */}
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
         <span className="text-[11px] font-medium text-muted-foreground">
           MCP servers{servers.length > 0 && ` · ${servers.length}`}
         </span>
@@ -32,42 +35,44 @@ export default function McpWidget({ token }: { token?: string | null }) {
         </button>
       </div>
 
-      {servers.length === 0 ? (
-        <p className="px-3 py-3 text-[11px] text-muted-foreground">
-          {loading
-            ? "Checking MCP server health…"
-            : error
-              ? `Couldn't read MCP servers: ${error}`
-              : "No MCP servers configured."}
-        </p>
-      ) : (
-        <ul className="flex flex-col">
-          {servers.map((s, i) => (
-            <li
-              key={`${s.name}:${i}`}
-              className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 last:border-b-0"
-            >
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-[12px] font-semibold text-foreground">
-                  {s.name}
-                </span>
-                {s.url && (
-                  <span className="truncate text-[10px] text-muted-foreground">
-                    {s.url}
-                    {s.transport && ` · ${s.transport}`}
+      <FadeScroll>
+        {servers.length === 0 ? (
+          <p className="px-3 py-3 text-[11px] text-muted-foreground">
+            {loading
+              ? "Checking MCP server health…"
+              : error
+                ? `Couldn't read MCP servers: ${error}`
+                : "No MCP servers configured."}
+          </p>
+        ) : (
+          <ul className="flex flex-col">
+            {servers.map((s, i) => (
+              <li
+                key={`${s.name}:${i}`}
+                className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 last:border-b-0"
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-[12px] font-semibold text-foreground">
+                    {s.name}
                   </span>
-                )}
-              </span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                <StatusDot ping={false} tone={statusTone(s.status)} />
-                <span className="text-[11px] text-muted-foreground">
-                  {s.statusText || s.status}
+                  {s.url && (
+                    <span className="truncate text-[10px] text-muted-foreground">
+                      {s.url}
+                      {s.transport && ` · ${s.transport}`}
+                    </span>
+                  )}
                 </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <StatusDot ping={false} tone={statusTone(s.status)} />
+                  <span className="text-[11px] text-muted-foreground">
+                    {s.statusText || s.status}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </FadeScroll>
     </div>
   );
 }

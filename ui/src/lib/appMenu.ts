@@ -1,5 +1,6 @@
 import { isTauri } from "./gateway.ts";
 import type { ThemePreference } from "../hooks/useTheme.ts";
+import { sendNativeNotification } from "./nativeNotify.ts";
 
 export interface AppMenuActions {
   /** The user's stored theme choice (drives the radio checkmark). */
@@ -131,12 +132,40 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
         accelerator: "CmdOrCtrl+\\",
         action: () => a.onToggleTimeline(),
       }),
+      await sep(),
+      // Tauri doesn't wire Cmd+R to reload by default — without this, the
+      // user has no way to refresh the UI after a code change short of
+      // quitting the app. `window.location.reload()` runs in the webview and
+      // re-fetches the bundled (or dev-server) UI; the gateway sidecar is
+      // unaffected so ptys/sessions survive the reload (footgun #2 still
+      // applies — pty WS closes on reload until US-017/018 lands).
+      await MenuItem.new({
+        text: "Reload",
+        accelerator: "CmdOrCtrl+R",
+        action: () => window.location.reload(),
+      }),
     ],
   });
 
   const helpMenu = await Submenu.new({
     text: "Help",
-    items: [await about()],
+    items: [
+      // Self-test for the macOS notification pipeline. Click it once after a
+      // fresh launch — if a banner appears, permission is granted and the
+      // Notification → native flow works. If nothing happens, check
+      // System Settings → Notifications → Conan; Tauri's plugin caches a
+      // denial per launch, so re-launch after granting.
+      await MenuItem.new({
+        text: "Test Notification",
+        action: () =>
+          void sendNativeNotification(
+            "Conan",
+            "If you see this, native notifications are working.",
+          ),
+      }),
+      await sep(),
+      await about(),
+    ],
   });
 
   const menu = await Menu.new({

@@ -9,6 +9,7 @@ import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
+import { useRadio } from "./hooks/useRadio.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
@@ -34,6 +35,7 @@ export default function App() {
     lastSkillFired,
     lastSkillConsidered,
     lastPlan,
+    lastRadio,
     reconnectSeq,
   } = useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
@@ -84,6 +86,10 @@ export default function App() {
   // US-008: Claude Code's config mirror for the Settings view; refetch re-reads
   // after the Config tab writes a key (US-010) so the saved value sticks.
   const [claudeConfig, refetchConfig] = useConfig(config?.token ?? null);
+  // Claude Radio: current { videoId, title } the bottom-of-HUD player is
+  // pointed at. Drives RadioBar's player + label; live-updated by the
+  // bundled /conan-change-radio skill via {type:'radio'} broadcasts.
+  const radio = useRadio(config?.token ?? null, wsTrigger, lastRadio);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).
@@ -91,6 +97,7 @@ export default function App() {
     lastEvent,
     sessions,
     visibleSessionId: activeSession?.id ?? null,
+    tasks,
   });
 
   // Bootstrap config. RETRY until the gateway answers: under `tauri
@@ -163,7 +170,7 @@ export default function App() {
       <TerminalPane
         token={config?.token ?? null}
         theme={theme}
-        cwd={config?.cwd ?? null}
+        cwd={activeSession?.cwd ?? config?.cwd ?? null}
         git={widgetData?.git ?? null}
         onActiveTidChange={setActiveTid}
         tasks={tasks}
@@ -171,20 +178,23 @@ export default function App() {
         lastSkillFired={lastSkillFired}
         lastSkillConsidered={lastSkillConsidered}
         lastPlan={lastPlan}
+        activeSession={activeSession}
+        sessions={sessions}
+        widgetData={widgetData}
+        onRefetchWidgets={refetchWidgets}
       />
       <Hud
         hidden={!hudOpen}
         activeSession={activeSession}
-        sessions={sessions}
         data={widgetData}
         token={config?.token ?? null}
-        onRefetchWidgets={refetchWidgets}
         usage={usage}
         onRefetchUsage={refetchUsage}
         pulse={pulse}
         pulseMinutes={pulseMinutes}
         onPulseRange={setPulseMinutes}
         skills={skills}
+        radio={radio}
       />
       <SettingsView
         open={settingsOpen}

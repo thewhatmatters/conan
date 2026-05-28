@@ -28,7 +28,8 @@
     "targets": ["app", "dmg"],
     "externalBin": ["binaries/conan-gateway"],
     "resources": {
-      "binaries/runtime/": "runtime/"
+      "binaries/runtime/": "runtime/",
+      "../plugin/": "plugin/"
     },
     "icon": [
       "icons/32x32.png",

@@ -1,0 +1,6 @@
+{
+  "name": "conan",
+  "version": "0.1.0",
+  "description": "Skills bundled with the Conan desktop app. Lives inside the .app bundle; updated atomically with each Conan release.",
+  "homepage": "https://github.com/thewhatmatters/conan"
+}

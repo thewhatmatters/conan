@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
+import { ClockFading, Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
@@ -7,6 +7,8 @@ import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import Timeline from "./Timeline.tsx";
+import ContextHeader from "./ContextHeader.tsx";
+import type { Session } from "../hooks/useSessions.ts";
 import type {
   GatewayEvent,
   PlanEvent,
@@ -46,6 +48,15 @@ interface TerminalPaneProps {
   lastSkillConsidered?: SkillConsideredEvent | null;
   /** Live TodoWrite / ExitPlanMode broadcast (US-007 v4.5) — fed to PLAN rows. */
   lastPlan?: PlanEvent | null;
+  // — context-header bindings (dropped-Context-tab refactor) —
+  /** Active session — drives the per-terminal ContextHeader's data + actions. */
+  activeSession?: Session | null;
+  /** All known sessions — lets the estimate fallback infer a 1M window. */
+  sessions?: Session[];
+  /** Widgets payload (liveContext + estimate fallback) for ContextHeader. */
+  widgetData?: WidgetData | null;
+  /** Re-pull widgets after a /context capture lands. */
+  onRefetchWidgets?: () => void;
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
@@ -155,6 +166,10 @@ export default function TerminalPane({
   lastSkillFired,
   lastSkillConsidered,
   lastPlan,
+  activeSession,
+  sessions,
+  widgetData,
+  onRefetchWidgets,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
@@ -409,17 +424,13 @@ export default function TerminalPane({
           aria-label="Toggle timeline split"
           aria-pressed={timelineOpen.has(activeTid)}
           className={
-            "mr-1 shrink-0 rounded-md p-1 transition-colors hover:bg-muted hover:text-foreground " +
+            "mr-1 shrink-0 rounded-md p-1 transition-colors hover:bg-muted " +
             (timelineOpen.has(activeTid)
-              ? "text-foreground"
-              : "text-muted-foreground")
+              ? "text-primary hover:text-primary"
+              : "text-muted-foreground hover:text-foreground")
           }
         >
-          {timelineOpen.has(activeTid) ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <PanelRightOpen className="size-4" />
-          )}
+          <ClockFading className="size-4" />
         </button>
       </div>
 
@@ -442,13 +453,27 @@ export default function TerminalPane({
                   "absolute inset-0 flex " + (on ? "z-10" : "z-0 invisible")
                 }
               >
-                <div className="min-w-0 flex-1 bg-term-bg p-4">
-                  <Terminal
+                {/* Terminal column — flex-col so the ContextHeader sits above
+                    the terminal but stays constrained to THIS column's width
+                    (not the timeline split's). The banner replaces the HUD's
+                    Context tab; it binds to the app-wide active session so the
+                    visible column always shows the right data. */}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <ContextHeader
+                    activeSession={activeSession ?? null}
+                    sessions={sessions}
+                    data={widgetData ?? null}
                     token={token}
-                    theme={theme}
-                    tid={t.tid}
-                    closeOnUnmount={flagFor(t.tid)}
+                    onRefetch={onRefetchWidgets}
                   />
+                  <div className="min-h-0 flex-1 bg-term-bg p-4">
+                    <Terminal
+                      token={token}
+                      theme={theme}
+                      tid={t.tid}
+                      closeOnUnmount={flagFor(t.tid)}
+                    />
+                  </div>
                 </div>
                 {tlOn && (
                   <>

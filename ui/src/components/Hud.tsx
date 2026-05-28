@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { ContextWidget, UsageWidget } from "./Widgets.tsx";
+import { UsageWidget } from "./Widgets.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
@@ -9,7 +9,9 @@ import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
+import type { RadioState } from "../hooks/useRadio.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
+import FadeScroll from "./FadeScroll.tsx";
 
 // VS Code–style tabs: flat, the active tab marked by a top accent border (not a
 // filled pill) — matches the terminal tab strip so the two panes read as one
@@ -24,16 +26,12 @@ const WIDTH_KEY = "conan-hud-w";
 interface HudProps {
   /** Hidden without unmounting (the View ▾ HUD toggle) — content state survives. */
   hidden?: boolean;
-  // — Context widget (session-scoped) —
+  // — Usage widget (session-scoped via its rate-limit windows) —
   activeSession: Session | null;
-  /** All known sessions — lets the Context estimate infer a 1M window. */
-  sessions?: Session[];
+  /** Widgets payload — only `hasLivePty` is consumed here (UsageWidget refresh). */
   data: WidgetData | null;
-  /** Auth token for the token-gated /context Refresh POST (US-009). */
+  /** Auth token for the token-gated /usage Refresh POST. */
   token?: string | null;
-  /** Re-pull the widgets payload (after a /context capture lands, US-009). */
-  onRefetchWidgets?: () => void;
-  // — Usage widget (global) —
   usage: UsageState;
   /** Re-pull the usage payload (after a /usage capture lands, US-010). */
   onRefetchUsage?: () => void;
@@ -43,27 +41,29 @@ interface HudProps {
   onPulseRange?: (minutes: number) => void;
   // — Skills widget (US-006): VS Code-extensions-style list, always present —
   skills?: SkillEntry[];
+  /** Claude Radio state — videoId + title for the bottom RadioBar. */
+  radio?: RadioState | null;
 }
 
 /**
  * The DevTools-style HUD (US-003/US-004): a drag-resizable panel docked to the
  * right of the terminal with a flat tab bar. Width persists in localStorage
- * exactly like the old dock did. After US-004 the HUD shows exactly three tabs —
- * Context (session), Usage (global), and the live Pulse activity graph.
+ * exactly like the old dock did. The Context tab moved out of the HUD in
+ * favour of the always-visible ContextHeader banner pinned above the terminal
+ * — what remains here is Usage · Pulse · Skills · MCP.
  */
 export default function Hud({
   hidden,
   activeSession,
-  sessions,
   data,
   token,
-  onRefetchWidgets,
   usage,
   onRefetchUsage,
   pulse,
   pulseMinutes = 60,
   onPulseRange,
   skills,
+  radio,
 }: HudProps) {
   // US-007 (v4.5): the Plan HUD tab was removed — plan rows live on the
   // per-terminal Timeline split now (PlanWidget + usePlan are gone with it).
@@ -102,16 +102,13 @@ export default function Hud({
         className="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-primary/40"
       />
 
-      <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs defaultValue="usage" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center border-b border-border">
           {/* Tabs scroll horizontally so the bar still reads at the 320px min
-              width — Context | Usage | Pulse | Skills | MCP (US-007 dropped
-              the Plan tab; plan rows live in the per-terminal Timeline now).
-              Flush, contiguous (no gap/padding) so they read as real tabs. */}
+              width — Usage | Pulse | Skills | MCP. Context lives in the
+              banner above the terminal now, not in the HUD. Flush, contiguous
+              (no gap/padding) so they read as real tabs. */}
           <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start overflow-x-auto rounded-none bg-transparent p-0">
-            <TabsTrigger value="context" className={TAB_TRIGGER}>
-              Context
-            </TabsTrigger>
             <TabsTrigger value="usage" className={TAB_TRIGGER}>
               Usage
             </TabsTrigger>
@@ -127,54 +124,52 @@ export default function Hud({
           </TabsList>
         </div>
 
-        <TabsContent
-          value="context"
-          className="mt-0 flex min-h-0 flex-1 flex-col"
-        >
-          <ContextWidget
-            session={activeSession}
-            sessions={sessions}
-            data={data}
-            token={token}
-            onRefetch={onRefetchWidgets}
-          />
-        </TabsContent>
-
+        {/* Each panel wraps its scroller in <FadeScroll> so overflow above/
+            below the visible area surfaces a subtle gradient — same pattern
+            the Terminal + Timeline use. `min-h-0 flex-1` on the TabsContent
+            lets the FadeScroll's absolute-positioned inner scroller fill it. */}
         <TabsContent
           value="usage"
-          className="mt-0 min-h-0 flex-1 overflow-auto"
+          className="mt-0 flex min-h-0 flex-1 flex-col"
         >
-          <UsageWidget
-            usage={usage}
-            session={activeSession}
-            token={token}
-            hasLivePty={data?.hasLivePty ?? false}
-            onRefetch={onRefetchUsage}
-          />
-        </TabsContent>
-
-        <TabsContent value="pulse" className="mt-0 min-h-0 flex-1 overflow-auto">
-          {onPulseRange && (
-            <PulseChart
-              series={pulse ?? null}
-              minutes={pulseMinutes}
-              onRange={onPulseRange}
-              compact
+          <FadeScroll>
+            <UsageWidget
+              usage={usage}
+              session={activeSession}
+              token={token}
+              hasLivePty={data?.hasLivePty ?? false}
+              onRefetch={onRefetchUsage}
             />
-          )}
+          </FadeScroll>
         </TabsContent>
 
-        <TabsContent value="skills" className="mt-0 min-h-0 flex-1 overflow-auto">
+        <TabsContent value="pulse" className="mt-0 flex min-h-0 flex-1 flex-col">
+          <FadeScroll>
+            {onPulseRange && (
+              <PulseChart
+                series={pulse ?? null}
+                minutes={pulseMinutes}
+                onRange={onPulseRange}
+                compact
+              />
+            )}
+          </FadeScroll>
+        </TabsContent>
+
+        {/* Skills + MCP own their own FadeScroll internally so their headers
+            (User/System tabs, MCP refresh) stay pinned at the top. The
+            TabsContent just gives them the flex column slot to expand into. */}
+        <TabsContent value="skills" className="mt-0 flex min-h-0 flex-1 flex-col">
           <SkillsWidget skills={skills ?? []} />
         </TabsContent>
 
-        <TabsContent value="mcp" className="mt-0 min-h-0 flex-1 overflow-auto">
+        <TabsContent value="mcp" className="mt-0 flex min-h-0 flex-1 flex-col">
           <McpWidget token={token} />
         </TabsContent>
       </Tabs>
 
       {/* US-011: Claude Radio toolbar pinned at the bottom of the HUD panel. */}
-      <RadioBar />
+      <RadioBar radio={radio ?? null} />
     </aside>
   );
 }

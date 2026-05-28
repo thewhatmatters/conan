@@ -66,6 +66,27 @@ pub fn run() {
         "CONAN_GATEWAY_DIR",
         concat!(env!("CARGO_MANIFEST_DIR"), "/binaries/runtime"),
       );
+
+      // CONAN_PLUGIN_DIR: where the bundled `plugin/<name>/skills/...` tree
+      // lives on disk. The gateway symlinks each <name> subdir into
+      // ~/.claude/plugins/<name>/ on boot so Claude Code discovers the skills
+      // as plugin-sourced (and atomic app-updates carry the latest version).
+      // Debug: the repo-root plugin/ next to src-tauri/. Release: the bundled
+      // resource dir (Contents/Resources/plugin/ on macOS).
+      #[cfg(debug_assertions)]
+      let sidecar = sidecar.env(
+        "CONAN_PLUGIN_DIR",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../plugin"),
+      );
+      #[cfg(not(debug_assertions))]
+      let sidecar = {
+        let resource_plugin_dir = app
+          .path()
+          .resolve("plugin", tauri::path::BaseDirectory::Resource)
+          .map(|p| p.to_string_lossy().to_string())
+          .unwrap_or_default();
+        sidecar.env("CONAN_PLUGIN_DIR", resource_plugin_dir)
+      };
       let (mut rx, child) = sidecar.spawn()?;
       app
         .state::<GatewayChild>()

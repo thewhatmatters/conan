@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SkillEntry } from "../hooks/useSkills.ts";
+import FadeScroll from "./FadeScroll.tsx";
 
 /** "User" group = your own skills (User + Project); "System" = Plugin + Built-in. */
 type Group = "user" | "system";
@@ -37,9 +38,13 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
   const shown = group === "user" ? user : system;
 
   return (
-    <div className="flex min-h-0 flex-col">
-      {/* Flat tab group: User (N) / System (N) — matches the HUD's tab styling. */}
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Flat tab group: User (N) / System (N) — kept OUTSIDE the FadeScroll
+          so it stays pinned at the top while the skill list below it scrolls.
+          (When the strip lived inside the scroller, the top fade overlay
+          covered its text on overflow — moving it out fixes that and keeps
+          User/System always one click away.) */}
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <GroupTab
           label="User"
           count={user.length}
@@ -54,35 +59,37 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
         />
       </div>
 
-      {shown.length === 0 ? (
-        <p className="px-3 py-3 text-[11px] text-muted-foreground">
-          No {group} skills.
-        </p>
-      ) : (
-        <ul className="flex flex-col">
-          {shown.map((s, i) => (
-            <li
-              key={`${s.source}:${s.plugin ?? ""}:${s.name}:${i}`}
-              className="flex flex-col gap-1 border-b border-border px-3 py-2.5 last:border-b-0"
-            >
-              <span className="truncate text-[12px] font-semibold text-foreground">
-                {s.name}
-              </span>
-              {s.description && (
-                <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                  {s.description}
-                </p>
-              )}
-              {typeof s.lastFiredAt === "number" && (
-                <span className="text-[10px] text-muted-foreground/70">
-                  last fired {formatAgo(s.lastFiredAt)}
+      <FadeScroll>
+        {shown.length === 0 ? (
+          <p className="px-3 py-3 text-[11px] text-muted-foreground">
+            No {group} skills.
+          </p>
+        ) : (
+          <ul className="flex flex-col">
+            {shown.map((s, i) => (
+              <li
+                key={`${s.source}:${s.plugin ?? ""}:${s.name}:${i}`}
+                className="flex flex-col gap-1 border-b border-border px-3 py-2.5 last:border-b-0"
+              >
+                <span className="truncate text-[12px] font-semibold text-foreground">
+                  {s.name}
                 </span>
-              )}
-              <SkillPath path={s.path} plugin={s.plugin} />
-            </li>
-          ))}
-        </ul>
-      )}
+                {s.description && (
+                  <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                    {s.description}
+                  </p>
+                )}
+                {typeof s.lastFiredAt === "number" && (
+                  <span className="text-[10px] text-muted-foreground/70">
+                    last fired {formatAgo(s.lastFiredAt)}
+                  </span>
+                )}
+                <SkillPath path={s.path} plugin={s.plugin} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </FadeScroll>
     </div>
   );
 }

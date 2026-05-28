@@ -253,6 +253,62 @@ function usageInt(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
 
+/** One assistant turn's total token consumption (v4.5-timeline post-loop). */
+export interface AssistantTurnUsage {
+  /** Epoch ms of the assistant message's `timestamp`. */
+  ts: number;
+  /** input + cache_read + cache_creation + output — the full per-turn spend. */
+  totalTokens: number;
+}
+
+/**
+ * Walk a session's JSONL transcript and emit per-assistant-turn token totals,
+ * one row per assistant message that carries a `usage` block. Returned
+ * ascending by ts so the Timeline backend can match each Stop hook event to
+ * the most-recent preceding assistant turn with a binary-friendly walk.
+ *
+ * Empty when the transcript can't be read or has no usage blocks — callers
+ * just skip the badge in that case.
+ */
+export function readAssistantTurnUsages(
+  sessionId: string,
+  cwd?: string | null,
+): AssistantTurnUsage[] {
+  const file = transcriptPath(sessionId, cwd);
+  if (!file) return [];
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const out: AssistantTurnUsage[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.type !== "assistant") continue;
+    const ts = parseTs(o.timestamp);
+    if (ts === null) continue;
+    const msg = (o.message ?? {}) as Record<string, unknown>;
+    const usage = (msg.usage ?? null) as Record<string, unknown> | null;
+    if (!usage) continue;
+    const total =
+      usageInt(usage.input_tokens) +
+      usageInt(usage.cache_read_input_tokens) +
+      usageInt(usage.cache_creation_input_tokens) +
+      usageInt(usage.output_tokens);
+    if (total === 0) continue;
+    out.push({ ts, totalTokens: total });
+  }
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
+
 /**
  * Read the latest assistant message's usage from a session's transcript JSONL
  * and return its context consumption (US-013). Scans every assistant line and

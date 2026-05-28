@@ -15,6 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip.tsx";
+import { fmtTokens } from "./Widgets.tsx";
 
 // Per-terminal Timeline split (US-004 v4.5) — the live replacement for
 // TimelineMock.tsx. Mounts inside the active terminal pane, fetches the
@@ -52,6 +53,10 @@ export type TimelineRow =
       title: string;
       detail?: string;
       payload?: Record<string, unknown>;
+      /** Per-turn token total — only on STOP rows when the transcript JSONL
+       *  surfaced a matching assistant `usage` block. Rendered as a "+12k"
+       *  badge on the row's right edge. */
+      tokens?: number;
     }
   | {
       kind: "build";
@@ -215,6 +220,12 @@ function mapHookEventToRow(ev: GatewayEvent): TimelineRow | null {
     title,
     ...(detail ? { detail } : {}),
     ...(payload ? { payload } : {}),
+    // Carry per-turn tokens through on Stop events so the live-append path
+    // shows the +Nk badge identically to the REST backfill (the gateway
+    // enriches Stop broadcasts with `tokens` from the JSONL usage block).
+    ...(subtype === "STOP" && typeof ev.tokens === "number"
+      ? { tokens: ev.tokens }
+      : {}),
   };
 }
 
@@ -292,8 +303,12 @@ function kindColor(kind: TimelineRow["kind"]): {
     case "skill-fired":
       return { dot: "bg-chart-1", pillBg: "bg-chart-1/15", pillFg: "text-chart-1" };
     case "skill-considered":
+      // Solid color — alpha-based dim (`/40`) let the rail line show through
+      // the dot's center, which made the dim row visually look like the dot
+      // was missing. Full-opacity muted-foreground reads as "considered, not
+      // fired" without breaking the visual line.
       return {
-        dot: "bg-muted-foreground/40",
+        dot: "bg-muted-foreground",
         pillBg: "bg-muted",
         pillFg: "text-muted-foreground",
       };
@@ -412,6 +427,21 @@ export default function Timeline({
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [newCount, setNewCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Fade-edge indicators — true when there's clipped content above/below the
+  // visible viewport. Updated on scroll, content-change, and panel resize so a
+  // freshly-shrunk panel surfaces the fades without needing a user scroll.
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+  const updateFades = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      setCanScrollUp(false);
+      setCanScrollDown(false);
+      return;
+    }
+    setCanScrollUp(el.scrollTop > 1);
+    setCanScrollDown(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }, []);
   // Time tick — bumps every 15s so the Build-aging filter below re-runs and
   // stale Build rows / the Build chip drop out without needing a server poll.
   const [now, setNow] = useState(() => Date.now());
@@ -617,7 +647,22 @@ export default function Timeline({
 
   const onScroll = useCallback(() => {
     if (isAtTop()) setNewCount(0);
-  }, [isAtTop]);
+    updateFades();
+  }, [isAtTop, updateFades]);
+
+  // Recompute fades on content size change (rows appending, filter switching)
+  // and on panel resize (the per-tab Timeline split divider). One ResizeObserver
+  // on the scroll container catches both — no scroll event fires for either.
+  useEffect(() => {
+    updateFades();
+  }, [rows, filters, updateFades]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateFades);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateFades]);
 
   const allActive = filters.size === 0;
   // Filter chips are dynamic: a chip only renders when this session has at
@@ -639,7 +684,7 @@ export default function Timeline({
     <div className="flex h-full flex-col border-l border-border bg-card">
       {/* Header: visual tether (this panel is glued to one terminal) — the
           title carries the terminal label instead of a session picker. */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+      <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-sm font-medium text-foreground">Timeline</span>
           {terminalLabel && (
@@ -699,11 +744,14 @@ export default function Timeline({
         </div>
       </div>
 
-      {/* Scrollable body — one row per event, descending. */}
+      {/* Scrollable body — one row per event, descending. Wrapped in a
+          relative shell so the fade-edge overlays sit on top of the scroller
+          (not inside it, where they'd scroll with the content). */}
+      <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="relative min-h-0 flex-1 overflow-auto"
+        className="absolute inset-0 overflow-auto"
       >
         {!sessionId ? (
           <div className="px-4 py-6 text-center text-[11px] text-muted-foreground">
@@ -735,21 +783,29 @@ export default function Timeline({
                 return (
                   <li
                     key={rowKey(row)}
-                    className="group relative flex items-start gap-3 px-4 py-1.5 hover:bg-muted/40"
+                    className="group relative flex flex-col px-4 py-1.5 hover:bg-muted/40"
                   >
-                    <span className="w-16 shrink-0 pt-1 text-right text-[11px] tabular-nums text-muted-foreground">
-                      {formatTime(row.ts)}
-                    </span>
-                    <span className="relative flex w-3 shrink-0 justify-center pt-2">
-                      <span
-                        className={
-                          "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
-                          color.dot
-                        }
-                      />
-                    </span>
-                    <div className="min-w-0 flex-1 pb-1">
-                      <div className="flex flex-wrap items-baseline gap-2">
+                    {/* Title sub-row — `items-center` does the alignment work
+                        the row template used to fake with hand-tuned paddings.
+                        Time, dot, and the pill+title flex are all vertically
+                        centered on the row's height. The detail/reason/plan
+                        sub-rows below are siblings inside the flex-col li,
+                        indented (`pl-[100px]`) to land under the content
+                        column — math: w-16 (64) + gap-3 (12) + w-3 (12) +
+                        gap-3 (12) = 100px from the li's content-area edge. */}
+                    <div className="flex items-center gap-3">
+                      <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                        {formatTime(row.ts)}
+                      </span>
+                      <span className="relative flex w-3 shrink-0 justify-center">
+                        <span
+                          className={
+                            "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
+                            color.dot
+                          }
+                        />
+                      </span>
+                      <div className="flex min-w-0 flex-1 items-baseline gap-2">
                         <span
                           className={
                             "inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold tracking-wider " +
@@ -769,25 +825,43 @@ export default function Timeline({
                             ? planRowTitle(row)
                             : row.title}
                         </span>
+                        {/* Per-turn token-burn badge (STOP rows only). Pinned
+                            to the row's right edge so it reads like a column,
+                            tooltip explains what the number sums. */}
+                        {row.kind === "hook" &&
+                          row.subtype === "STOP" &&
+                          row.tokens != null && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="ml-auto shrink-0 cursor-help tabular-nums text-[10px] text-muted-foreground">
+                                  +{fmtTokens(row.tokens)}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                Turn total: input + cache + output
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                       </div>
-                      {(row.kind === "hook" ||
-                        row.kind === "build" ||
-                        row.kind === "loop") &&
-                        row.detail && (
-                          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                            {row.detail}
-                          </div>
-                        )}
-                      {row.kind === "skill-considered" && (
-                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                          {row.reason}
+                    </div>
+                    {(row.kind === "hook" ||
+                      row.kind === "build" ||
+                      row.kind === "loop") &&
+                      row.detail && (
+                        <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
+                          {row.detail}
                         </div>
                       )}
-                      {row.kind === "plan" &&
-                        row.subtype === "todo-write" &&
-                        row.items &&
-                        row.items.length > 0 && (
-                          <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
+                    {row.kind === "skill-considered" && (
+                      <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
+                        {row.reason}
+                      </div>
+                    )}
+                    {row.kind === "plan" &&
+                      row.subtype === "todo-write" &&
+                      row.items &&
+                      row.items.length > 0 && (
+                        <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
                             <ul className="flex flex-col gap-0.5">
                               {row.items.map((it, i) => (
                                 <li
@@ -821,17 +895,17 @@ export default function Timeline({
                             </ul>
                           </div>
                         )}
-                      {row.kind === "plan" &&
-                        row.subtype === "plan-mode" &&
-                        row.plan && (
-                          <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
-                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
-                              {row.plan}
-                            </pre>
-                          </div>
-                        )}
-                      {considered && considered.length > 0 && (
-                        <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
+                    {row.kind === "plan" &&
+                      row.subtype === "plan-mode" &&
+                      row.plan && (
+                        <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
+                            {row.plan}
+                          </pre>
+                        </div>
+                      )}
+                    {considered && considered.length > 0 && (
+                      <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
                           <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                             <span>
                               Skills considered ({considered.length}) ·{" "}
@@ -888,7 +962,6 @@ export default function Timeline({
                           </ul>
                         </div>
                       )}
-                    </div>
                   </li>
                 );
               })}
@@ -906,6 +979,25 @@ export default function Timeline({
             ↑ {newCount} new
           </button>
         )}
+      </div>
+      {/* Edge fades — sit on top of the scroller (not inside it) so the
+          gradient itself doesn't scroll. `pointer-events-none` so hover/scroll
+          still hit the rows underneath. Opacity-transitioned so the first
+          rows hide/unhide smoothly when the panel resizes or content grows. */}
+      <div
+        aria-hidden
+        className={
+          "pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent transition-opacity duration-200 " +
+          (canScrollUp ? "opacity-100" : "opacity-0")
+        }
+      />
+      <div
+        aria-hidden
+        className={
+          "pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-card to-transparent transition-opacity duration-200 " +
+          (canScrollDown ? "opacity-100" : "opacity-0")
+        }
+      />
       </div>
     </div>
   );

@@ -17,6 +17,10 @@ import {
   type PlanRecord,
   type PlanItem,
 } from "./transcriptScan.js";
+import {
+  readAssistantTurnUsages,
+  type AssistantTurnUsage,
+} from "../transcript/index.js";
 
 // Per-session Timeline (US-001 v4.5): the chronological feed that powers the
 // Timeline split panel inside each terminal tab. Source of truth on read is the
@@ -59,6 +63,10 @@ export type TimelineRow =
       title: string;
       detail?: string;
       payload?: unknown;
+      /** Per-turn token total — only set on STOP rows when a matching
+       *  assistant `usage` block can be read from the transcript. The
+       *  Timeline renders this as a "+12k" badge on the row's right edge. */
+      tokens?: number;
     }
   | {
       // The run-tasks.sh runner's progress.txt trail — niche, only meaningful
@@ -349,6 +357,14 @@ export interface BuildTimelineOpts {
   sessionCwd: string | null;
   /** The cwd progress.txt itself is read from (the build-loop's project). */
   activeCwd: string;
+  /**
+   * Per-assistant-turn token totals (post-loop polish) — one entry per
+   * assistant message with a `usage` block, ascending by ts. Each STOP hook
+   * row is matched to the latest entry with `ts <= row.ts` and gets a
+   * `tokens` field so the UI can render a "+12k" badge. Omitted when there's
+   * no transcript or the JSONL has no usage blocks.
+   */
+  assistantUsages?: AssistantTurnUsage[];
   /** Strict-greater-than ts filter (epoch ms). */
   since?: number;
   /** Clamped to [1, TIMELINE_LIMIT_MAX]. Default TIMELINE_LIMIT_DEFAULT. */
@@ -399,6 +415,27 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
       promptIds.push({ ts: row.ts, id: row.eventId });
     }
     if (since === undefined || row.ts > since) hookRows.push(row);
+  }
+  // Per-turn token-burn badges (post-loop polish): walk STOP rows and attach
+  // the assistant turn's total token usage. Each STOP fires after the
+  // matching assistant message lands in the JSONL, so the right entry is the
+  // latest `assistantUsages` row whose ts <= the STOP row's ts. The usages
+  // array is ascending by ts (small N — one per turn — so a tail-scan beats a
+  // binary search in practice).
+  const usages = opts.assistantUsages ?? [];
+  if (usages.length > 0) {
+    for (const row of hookRows) {
+      if (row.kind !== "hook" || row.subtype !== "STOP") continue;
+      let tokens: number | null = null;
+      for (let i = usages.length - 1; i >= 0; i--) {
+        const u = usages[i];
+        if (u && u.ts <= row.ts) {
+          tokens = u.totalTokens;
+          break;
+        }
+      }
+      if (tokens != null) row.tokens = tokens;
+    }
   }
   // Ascending ts so the "latest PROMPT before X" lookup is a binary-friendly walk.
   promptIds.sort((a, b) => a.ts - b.ts);
@@ -583,12 +620,16 @@ export function readTimeline(
   const skillsConsidered = listSkillConsideredFor(sessionId);
   // US-006: transcript-derived Plan records (TodoWrite + ExitPlanMode).
   const plans = readSessionPlans(sessionId, cwd);
+  // Post-loop polish: per-assistant-turn token totals from the JSONL — fuel
+  // for the +12k badge attached to STOP rows in buildTimeline.
+  const assistantUsages = readAssistantTurnUsages(sessionId, cwd);
   return buildTimeline({
     events,
     activity: activeActivity,
     skillsFired,
     skillsConsidered,
     plans,
+    assistantUsages,
     sessionCwd: cwd,
     activeCwd: getActiveCwd(),
     since: opts.since,

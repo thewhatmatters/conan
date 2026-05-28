@@ -168,3 +168,83 @@ aside .overflow-auto::-webkit-scrollbar-thumb {
 aside .overflow-auto::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
+
+/* Claude Radio playing-state equalizer — 5 bars in a gentle left-to-right
+   wave. Each bar's height oscillates between 30% and 100% of the container;
+   staggered `animation-delay` on the bars produces the wave. The bar's
+   background-color animates on the same timeline so the color tracks the
+   amplitude: short = green (chart-1), middle = amber (chart-3), peak = red
+   (destructive). Using CSS vars keeps it theme-aware (light/dark recolor
+   automatically). Kept here (not inline) so the keyframes are reusable +
+   don't bloat the React render. */
+@keyframes eq-wave {
+  0%,
+  100% {
+    height: 30%;
+    background-color: var(--chart-1);
+  }
+  25%,
+  75% {
+    height: 65%;
+    background-color: var(--chart-3);
+  }
+  50% {
+    height: 100%;
+    background-color: var(--destructive);
+  }
+}
+
+/* Radio title bounce-marquee — only activated by RadioBar when the title
+   overflows. translateX goes from 0 to `--marquee-shift` (a negative px value
+   the component computes from scrollWidth - clientWidth), pausing at each end
+   so the user actually has time to read the start + end of the title. */
+@keyframes radio-marquee {
+  0%,
+  8% {
+    transform: translateX(0);
+  }
+  42%,
+  58% {
+    transform: translateX(var(--marquee-shift, 0));
+  }
+  92%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Edge-fade overlays paired with the marquee — each fade only shows on the
+   side where content is actually being clipped. At the start position (text
+   left-aligned), the LEFT side has no overflow so the left fade is OFF and
+   the right fade is ON. At the end position, the inverse. Mid-scroll both
+   are visible. Sharing the marquee's 12s/ease-in-out timing keeps them in
+   lockstep with the text motion. */
+@keyframes radio-mask-left {
+  0%,
+  8% {
+    opacity: 0;
+  }
+  42%,
+  58% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes radio-mask-right {
+  0%,
+  8% {
+    opacity: 1;
+  }
+  42%,
+  58% {
+    opacity: 0;
+  }
+  92%,
+  100% {
+    opacity: 1;
+  }
+}
+

@@ -35,6 +35,10 @@ export interface GatewayEvent {
   /** Raw event payload as a JSON string (prompt text, tool input, etc.). */
   payload: string | null;
   ts: number;
+  /** Per-turn token total — only set on Stop events, matching the REST
+   *  backfill enrichment in src/timeline so live STOP rows render the
+   *  same "+Nk" badge without a refetch. */
+  tokens?: number;
 }
 
 /**
@@ -137,6 +141,11 @@ export interface GatewayState {
   lastSkillConsidered: SkillConsideredEvent | null;
   /** Latest `{type:'plan'}` broadcast (US-006/US-007 v4.5). Seq retriggers effects. */
   lastPlan: PlanEvent | null;
+  /** Latest `{type:'radio'}` broadcast — fed to useRadio. */
+  lastRadio: {
+    payload: { videoId: string; title: string | null };
+    seq: number;
+  } | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -166,6 +175,7 @@ export function useGateway(
   const [lastSkillConsidered, setLastSkillConsidered] =
     useState<SkillConsideredEvent | null>(null);
   const [lastPlan, setLastPlan] = useState<PlanEvent | null>(null);
+  const [lastRadio, setLastRadio] = useState<GatewayState["lastRadio"]>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -227,6 +237,14 @@ export function useGateway(
               payload: msg.payload as PlanEvent["payload"],
               seq: ++seq,
             });
+          else if (msg.type === "radio")
+            setLastRadio({
+              payload: msg.payload as {
+                videoId: string;
+                title: string | null;
+              },
+              seq: ++seq,
+            });
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -243,6 +261,7 @@ export function useGateway(
     lastSkillFired,
     lastSkillConsidered,
     lastPlan,
+    lastRadio,
     status,
     reconnectSeq,
   };

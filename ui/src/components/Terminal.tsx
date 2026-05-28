@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -36,6 +36,14 @@ interface TerminalProps {
 export default function Terminal({ token, theme, tid, closeOnUnmount }: TerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Xterm | null>(null);
+  // Edge-fade indicators — true when xterm's viewport isn't at the top/bottom
+  // of its scrollback (canScrollUp) or some content lies below it
+  // (canScrollDown — only true while the user has scrolled up; live output
+  // pins the viewport at the bottom). xterm fires onScroll on every viewport
+  // change including auto-follow at the bottom, so the bottom fade
+  // self-clears as soon as the user scrolls back to live.
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
 
   // Mount once: create xterm, connect WS, wire I/O + resize.
   useEffect(() => {
@@ -98,6 +106,19 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
       sock.send(JSON.stringify({ type: "input", data })),
     );
 
+    // Edge-fade flags: viewportY > 0 means scrollback is visible above; the
+    // bottom fade only lights up when the user has scrolled UP off the live
+    // tail (viewportY < baseY). Fires whenever the viewport moves — both user
+    // scrolls AND auto-follow on new output, so the bottom fade self-clears
+    // as soon as a new line lands and the terminal snaps back to baseY.
+    const recomputeFades = () => {
+      const buf = term.buffer.active;
+      setCanScrollUp(buf.viewportY > 0);
+      setCanScrollDown(buf.viewportY < buf.baseY);
+    };
+    const onScroll = term.onScroll(recomputeFades);
+    recomputeFades();
+
     const sendResize = () => {
       fit.fit();
       sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -108,6 +129,7 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
     return () => {
       ro.disconnect();
       onData.dispose();
+      onScroll.dispose();
       // If the Dock is closing this tab (not just a reload), tell the backend to
       // kill the pty + drop its terminal_session row now (US-026 criterion 3).
       if (closeOnUnmount?.current) {
@@ -129,5 +151,28 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
     term.refresh(0, term.rows - 1);
   }, [theme]);
 
-  return <div ref={hostRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={hostRef} className="h-full w-full" />
+      {/* Edge fades — sit on top of the xterm viewport so the gradient never
+          scrolls with the content. `pointer-events-none` so terminal
+          interaction (clicks, drags, text selection) still hits xterm
+          underneath. Color matches the terminal bg so the fade reads as
+          content dissolving rather than an overlay. */}
+      <div
+        aria-hidden
+        className={
+          "pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-term-bg to-transparent transition-opacity duration-200 " +
+          (canScrollUp ? "opacity-100" : "opacity-0")
+        }
+      />
+      <div
+        aria-hidden
+        className={
+          "pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-term-bg to-transparent transition-opacity duration-200 " +
+          (canScrollDown ? "opacity-100" : "opacity-0")
+        }
+      />
+    </div>
+  );
 }
