@@ -23,6 +23,7 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { getMcpServers } from "../mcp/index.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
@@ -374,6 +375,16 @@ app.get("/api/claude/usage", async (req, res) => {
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
   const liveUsage = sessionId ? getCapturedUsage(sessionId) : null;
   res.json({ ...base, planUtilization, liveUsage });
+});
+
+// Configured MCP servers + live health for the HUD's MCP tab (v4.4 fix). Sourced
+// from `claude mcp list` (global, health-checked) because the data is NOT in any
+// hook payload — see src/mcp/index.ts. Spawns a process, so token-gate it; cached
+// (30s TTL) unless `?force=1`. Returns 200 with `error` set on failure (no throw).
+app.get("/api/claude/mcp", async (req, res) => {
+  if (!authed(req, res)) return;
+  const result = await getMcpServers(req.query.force === "1");
+  res.json(result);
 });
 
 // The Tauri webview loads the bundled frontend and dev uses the Vite server

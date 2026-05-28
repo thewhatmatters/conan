@@ -192,7 +192,7 @@ export default function Hud({
         </TabsContent>
 
         <TabsContent value="mcp" className="mt-0 min-h-0 flex-1 overflow-auto">
-          <McpWidget data={data} />
+          <McpWidget token={token} />
         </TabsContent>
       </Tabs>
 

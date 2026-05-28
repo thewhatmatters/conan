@@ -1,55 +1,80 @@
 import StatusDot from "./shared/StatusDot.tsx";
-import type { WidgetData } from "../hooks/useWidgets.ts";
+import { useMcp } from "../hooks/useMcp.ts";
 
 /**
- * The MCP HUD tab (US-007 v4.4): mirrors Claude's `/mcp` view as a flat
- * `name · status` list for the active session's MCP servers (WidgetData.mcp,
- * parsed from the session's system/init `mcp_servers`). Each row carries a
- * StatusDot whose tone maps from the server status (connected→green,
- * failed→red, needs-authentication/pending→amber, disabled/other→muted).
+ * The MCP HUD tab (US-007 v4.4, fixed): mirrors Claude's `/mcp` view as a flat
+ * `name · status` list of the configured MCP servers and their live health.
  *
- * A hook-only session (no system/init) has `mcp === null`; an init session with
- * no servers has `mcp === []`. Both render the same graceful empty state — we
- * never fabricate servers. Flush, panel-native rows (no card chrome) per the
- * HUD's continuous-surface direction. Tool-counts + User/claude.ai/Built-in
- * grouping are a deliberate follow-up. Semantic tokens only.
+ * Data comes from `claude mcp list` via GET /api/claude/mcp — NOT from hooks:
+ * the SessionStart hook payload carries no `mcp_servers`, so the original
+ * per-session source was always empty. This list is therefore global (account/
+ * install-wide), exactly like the TUI `/mcp` screen. Each row carries a
+ * StatusDot whose tone maps from the status (connected→green, failed→red,
+ * needs-authentication/pending→amber, other→muted). Semantic tokens only.
  */
-export default function McpWidget({ data }: { data: WidgetData | null }) {
-  const servers = data?.mcp ?? null;
-
-  if (!servers || servers.length === 0) {
-    return (
-      <p className="px-3 py-3 text-[11px] text-muted-foreground">
-        No MCP servers for this session.
-      </p>
-    );
-  }
+export default function McpWidget({ token }: { token?: string | null }) {
+  const { servers, loading, error, refresh } = useMcp(token ?? null);
 
   return (
-    <ul className="flex flex-col">
-      {servers.map((s, i) => (
-        <li
-          key={`${s.name}:${i}`}
-          className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 last:border-b-0"
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          MCP servers{servers.length > 0 && ` · ${servers.length}`}
+        </span>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={loading || !token}
+          title="Re-check MCP server health (claude mcp list)"
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
-          <span className="truncate text-[12px] font-semibold text-foreground">
-            {s.name}
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            <StatusDot ping={false} tone={statusTone(s.status)} />
-            <span className="text-[11px] text-muted-foreground">
-              {s.status}
-            </span>
-          </span>
-        </li>
-      ))}
-    </ul>
+          {loading ? "checking…" : "↻ refresh"}
+        </button>
+      </div>
+
+      {servers.length === 0 ? (
+        <p className="px-3 py-3 text-[11px] text-muted-foreground">
+          {loading
+            ? "Checking MCP server health…"
+            : error
+              ? `Couldn't read MCP servers: ${error}`
+              : "No MCP servers configured."}
+        </p>
+      ) : (
+        <ul className="flex flex-col">
+          {servers.map((s, i) => (
+            <li
+              key={`${s.name}:${i}`}
+              className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 last:border-b-0"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-[12px] font-semibold text-foreground">
+                  {s.name}
+                </span>
+                {s.url && (
+                  <span className="truncate text-[10px] text-muted-foreground">
+                    {s.url}
+                    {s.transport && ` · ${s.transport}`}
+                  </span>
+                )}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <StatusDot ping={false} tone={statusTone(s.status)} />
+                <span className="text-[11px] text-muted-foreground">
+                  {s.statusText || s.status}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
-/** Map an MCP server status string to a StatusDot color class. */
+/** Map an MCP server status token to a StatusDot color class. */
 function statusTone(status: string): string {
-  switch (status.toLowerCase()) {
+  switch (status) {
     case "connected":
       return "bg-emerald-500";
     case "failed":
