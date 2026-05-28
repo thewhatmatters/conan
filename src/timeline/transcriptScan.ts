@@ -27,6 +27,23 @@ export interface SkillFiredRecord {
   ts: number;
 }
 
+/** One TodoWrite checklist item, as Claude Code emits it in tool_use input. */
+export interface PlanItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm?: string;
+}
+
+/**
+ * One TodoWrite or ExitPlanMode tool_use record extracted from a transcript
+ * JSONL (US-006). Discriminated union — `items` is set for `todo-write`,
+ * `plan` is set for `plan-mode`; the other field is omitted. Same `ts`
+ * convention as SkillFiredRecord (the assistant message's epoch ms).
+ */
+export type PlanRecord =
+  | { subtype: "todo-write"; ts: number; items: PlanItem[] }
+  | { subtype: "plan-mode"; ts: number; plan: string };
+
 /**
  * Parse a JSONL transcript's raw text into chronological Skill records.
  * Pure — no fs, no DB. Skips malformed lines, non-assistant lines, lines with
@@ -75,6 +92,97 @@ export function readTranscriptSkills(filePath: string): SkillFiredRecord[] {
     return [];
   }
   return extractSkillBlocks(raw);
+}
+
+/** Allow-list of TodoWrite item statuses. */
+function isPlanStatus(s: string): s is PlanItem["status"] {
+  return s === "pending" || s === "in_progress" || s === "completed";
+}
+
+/**
+ * Parse a JSONL transcript's raw text into chronological Plan records — every
+ * TodoWrite + ExitPlanMode tool_use block (US-006). Same shape as
+ * extractSkillBlocks: pure, no fs, no fabrication. A non-string `plan` field or
+ * a missing/non-array `todos` field skips that block. Source order is
+ * preserved (file order is chronological in Claude Code JSONL).
+ */
+export function extractPlanBlocks(raw: string): PlanRecord[] {
+  const out: PlanRecord[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line) continue;
+    // Cheap pre-filter — only parse lines that mention one of the two tool
+    // names. A megabyte transcript without plan blocks is then ~free.
+    if (
+      line.indexOf('"name":"TodoWrite"') === -1 &&
+      line.indexOf('"name":"ExitPlanMode"') === -1
+    )
+      continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.type !== "assistant") continue;
+    const ts = typeof o.timestamp === "string" ? Date.parse(o.timestamp) : NaN;
+    if (!Number.isFinite(ts)) continue;
+    const msg = (o.message ?? {}) as Record<string, unknown>;
+    const content = msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      if (b.type !== "tool_use") continue;
+      const input = (b.input ?? {}) as Record<string, unknown>;
+      if (b.name === "TodoWrite") {
+        const todosRaw = input.todos;
+        if (!Array.isArray(todosRaw)) continue;
+        const items: PlanItem[] = [];
+        for (const t of todosRaw) {
+          if (!t || typeof t !== "object") continue;
+          const ti = t as Record<string, unknown>;
+          const itemContent = typeof ti.content === "string" ? ti.content : "";
+          const status = typeof ti.status === "string" ? ti.status : "";
+          if (!itemContent || !isPlanStatus(status)) continue;
+          const item: PlanItem = { content: itemContent, status };
+          if (typeof ti.activeForm === "string" && ti.activeForm.length > 0) {
+            item.activeForm = ti.activeForm;
+          }
+          items.push(item);
+        }
+        out.push({ subtype: "todo-write", ts, items });
+      } else if (b.name === "ExitPlanMode") {
+        const plan = typeof input.plan === "string" ? input.plan : "";
+        if (!plan) continue;
+        out.push({ subtype: "plan-mode", ts, plan });
+      }
+    }
+  }
+  return out;
+}
+
+/** Read a JSONL file from disk and return its Plan records, or [] on error. */
+export function readTranscriptPlans(filePath: string): PlanRecord[] {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return [];
+  }
+  return extractPlanBlocks(raw);
+}
+
+/**
+ * Read a session's Plan records via the canonical transcriptPath resolver.
+ * Returns [] when the JSONL can't be located (no fabrication).
+ */
+export function readSessionPlans(
+  sessionId: string,
+  cwd?: string | null,
+): PlanRecord[] {
+  const file = transcriptPath(sessionId, cwd);
+  if (!file) return [];
+  return readTranscriptPlans(file);
 }
 
 /**
@@ -165,10 +273,16 @@ const watchers = new Map<string, WatcherState>(); // by sessionId
 /**
  * Tail the file once: read any bytes past our remembered offset, parse complete
  * lines (the trailing partial is kept until the next write), and fire
- * `onFire(record)` for every new Skill block. Handles file truncation/rotation
- * by resetting the offset down to the current size.
+ * `onFire(record)` for every new Skill block. When `onPlan` is supplied
+ * (US-006), also extracts TodoWrite + ExitPlanMode blocks from the same slice
+ * and emits them. Handles file truncation/rotation by resetting the offset
+ * down to the current size.
  */
-function tail(state: WatcherState, onFire: (record: SkillFiredRecord) => void): void {
+function tail(
+  state: WatcherState,
+  onFire: (record: SkillFiredRecord) => void,
+  onPlan?: (record: PlanRecord) => void,
+): void {
   let size: number;
   try {
     size = fs.statSync(state.filePath).size;
@@ -205,6 +319,9 @@ function tail(state: WatcherState, onFire: (record: SkillFiredRecord) => void): 
   const ready = state.buf.slice(0, nl);
   state.buf = state.buf.slice(nl + 1);
   for (const record of extractSkillBlocks(ready)) onFire(record);
+  if (onPlan) {
+    for (const record of extractPlanBlocks(ready)) onPlan(record);
+  }
 }
 
 /**
@@ -218,6 +335,7 @@ export function ensureSkillFiredWatcher(
   sessionId: string,
   opts: { transcriptPath?: string | null; cwd?: string | null },
   onFire: (record: SkillFiredRecord) => void,
+  onPlan?: (record: PlanRecord) => void,
 ): void {
   if (watchers.has(sessionId)) return;
   const file =
@@ -238,7 +356,9 @@ export function ensureSkillFiredWatcher(
     watcher: null,
   };
   try {
-    state.watcher = fs.watch(file, { persistent: false }, () => tail(state, onFire));
+    state.watcher = fs.watch(file, { persistent: false }, () =>
+      tail(state, onFire, onPlan),
+    );
   } catch {
     return; // platform refused the watch — skip silently (we'll backfill on read)
   }

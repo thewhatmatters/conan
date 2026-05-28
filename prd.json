@@ -122,7 +122,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001 (TimelineRow envelope) and US-002 (transcript scanner + watcher). Anchors: src/timeline/transcriptScan.ts (the scanner US-002 created), the Timeline route + WS broadcast in the gateway. The Plan HUD tab's existing data source (usePlan / readPlanState) is informative for shape — the tool input schemas for TodoWrite/ExitPlanMode are stable. No new tables — TimelineRow plan rows are derived live from the JSONL."
     },
     {

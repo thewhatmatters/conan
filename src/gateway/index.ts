@@ -30,6 +30,7 @@ import {
   scanRecentSkillFirings,
   stopAllSkillFiredWatchers,
   type SkillFiredRecord,
+  type PlanRecord,
 } from "../timeline/transcriptScan.js";
 import { getMcpServers } from "../mcp/index.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
@@ -253,6 +254,11 @@ app.post("/api/claude/events", (req, res) => {
       cwd: sessionCwdForScan,
     },
     (record) => emitSkillFired(sessionId, record),
+    // US-006 (v4.5): also broadcast TodoWrite + ExitPlanMode blocks as
+    // `{type:'plan'}` envelopes — separate from `{type:'event'}`,
+    // `{type:'skill-fired'}`, and `{type:'skill-considered'}` so consumers can
+    // subscribe granularly.
+    (record) => emitPlan(sessionId, record),
   );
 
   // US-003 (v4.5): on a new prompt, heuristically score every installed skill
@@ -419,6 +425,37 @@ function emitSkillFired(sessionId: string, record: SkillFiredRecord): void {
       detail: `Skill: ${record.skill}`,
     },
   });
+}
+
+/**
+ * Broadcast one new Plan record (TodoWrite or ExitPlanMode) over the app WS as
+ * a TimelineRow envelope (US-006). promptEventId is resolved the same way as
+ * the skill-fired path — latest UserPromptSubmit for this session before the
+ * block's ts. Kept on its own `{type:'plan'}` channel so existing
+ * {type:'event'}/{type:'skill-fired'}/{type:'skill-considered'} consumers don't
+ * have to parse the new kind.
+ */
+function emitPlan(sessionId: string, record: PlanRecord): void {
+  const promptEventId = latestPromptEventIdBefore(sessionId, record.ts);
+  const idFields =
+    promptEventId !== null ? { eventId: promptEventId, promptEventId } : {};
+  const payload =
+    record.subtype === "todo-write"
+      ? {
+          kind: "plan" as const,
+          ts: record.ts,
+          subtype: "todo-write" as const,
+          ...idFields,
+          items: record.items,
+        }
+      : {
+          kind: "plan" as const,
+          ts: record.ts,
+          subtype: "plan-mode" as const,
+          ...idFields,
+          plan: record.plan,
+        };
+  broadcast({ type: "plan", sessionId, payload });
 }
 
 // Session grid data (US-009): every persisted session, newest activity first.

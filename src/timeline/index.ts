@@ -4,7 +4,10 @@ import { readTasks } from "../tasks/index.js";
 import { getActiveCwd } from "../cwd/index.js";
 import {
   readSessionSkillFirings,
+  readSessionPlans,
   type SkillFiredRecord,
+  type PlanRecord,
+  type PlanItem,
 } from "./transcriptScan.js";
 
 // Per-session Timeline (US-001 v4.5): the chronological feed that powers the
@@ -64,6 +67,17 @@ export type TimelineRow =
       promptEventId?: number;
       reason: string;
       heuristic: true;
+    }
+  | {
+      kind: "plan";
+      ts: number;
+      subtype: "todo-write" | "plan-mode";
+      eventId?: number;
+      promptEventId?: number;
+      /** TodoWrite items; present only when subtype === 'todo-write'. */
+      items?: PlanItem[];
+      /** ExitPlanMode plan text; present only when subtype === 'plan-mode'. */
+      plan?: string;
     };
 
 /** Hard cap on `limit`; matches what the UI ever asks for in one backfill. */
@@ -265,6 +279,13 @@ export interface BuildTimelineOpts {
    * hasn't been DB-reconciled yet still doesn't double-render.
    */
   skillsConsidered?: SkillConsideredRecord[];
+  /**
+   * Transcript-derived Plan records (US-006): TodoWrite + ExitPlanMode tool_use
+   * blocks pulled from the same JSONL the skill firings come from. Empty when
+   * the session has no plan blocks (or no JSONL). promptEventId is resolved
+   * here against the mapped PROMPT rows — never fabricated.
+   */
+  plans?: PlanRecord[];
   /** The session's cwd, from the session row. Used to gate loop rows. */
   sessionCwd: string | null;
   /** The cwd progress.txt itself is read from (the build-loop's project). */
@@ -376,7 +397,37 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
     });
   }
 
-  const all = [...hookRows, ...loopRows, ...skillRows];
+  // US-006 (v4.5): transcript-derived Plan rows (TodoWrite + ExitPlanMode).
+  // promptEventId is the latest UserPromptSubmit event_id before the block's
+  // ts (same resolution as skill firings). eventId mirrors promptEventId so the
+  // UI can scope rows to their prompt the same way the skill-considered path
+  // does. Honest by construction — omitted when no preceding prompt exists.
+  const planRows: TimelineRow[] = [];
+  for (const record of opts.plans ?? []) {
+    if (since !== undefined && record.ts <= since) continue;
+    const promptEventId = latestPromptIdBefore(promptIds, record.ts);
+    const idFields =
+      promptEventId !== null ? { eventId: promptEventId, promptEventId } : {};
+    if (record.subtype === "todo-write") {
+      planRows.push({
+        kind: "plan",
+        ts: record.ts,
+        subtype: "todo-write",
+        ...idFields,
+        items: record.items,
+      });
+    } else {
+      planRows.push({
+        kind: "plan",
+        ts: record.ts,
+        subtype: "plan-mode",
+        ...idFields,
+        plan: record.plan,
+      });
+    }
+  }
+
+  const all = [...hookRows, ...loopRows, ...skillRows, ...planRows];
   // Descending by ts. Stable secondary key (hook event id) keeps two events at
   // the exact same epoch-ms in their persisted order — Stop after PostToolUse.
   all.sort((a, b) => {
@@ -462,11 +513,14 @@ export function readTimeline(
   // US-003: persisted skill-consideration rows (fired=0 only — the rest come
   // from the skill-fired path).
   const skillsConsidered = listSkillConsideredFor(sessionId);
+  // US-006: transcript-derived Plan records (TodoWrite + ExitPlanMode).
+  const plans = readSessionPlans(sessionId, cwd);
   return buildTimeline({
     events,
     activity: tasks.activity,
     skillsFired,
     skillsConsidered,
+    plans,
     sessionCwd: cwd,
     activeCwd: getActiveCwd(),
     since: opts.since,
