@@ -58,3 +58,20 @@ CREATE TABLE IF NOT EXISTS terminal_session (
   ring_buffer BLOB,                            -- recent output for reconnect replay (capped)
   created_at  INTEGER NOT NULL
 );
+
+-- US-003 (v4.5): the "skills considered but didn't fire" heuristic. One row per
+-- (UserPromptSubmit event, candidate skill) — the top N scoring skills from
+-- src/skills/match.ts. Reconciled at Stop time: any skill whose name shows up
+-- in the transcript JSONL slice since the prompt has fired=1 + a fired reason.
+-- Honest by construction: never labelled as Claude's real scoring (the UI
+-- displays a "Heuristic match" badge alongside it).
+CREATE TABLE IF NOT EXISTS prompt_consideration (
+  event_id   INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+  skill      TEXT NOT NULL,
+  score      REAL NOT NULL,
+  reason     TEXT NOT NULL,
+  fired      INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (event_id, skill)
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_consideration_event ON prompt_consideration (event_id);

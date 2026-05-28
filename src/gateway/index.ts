@@ -23,8 +23,10 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { scoreSkills, topMatches, CONSIDERATION_TOP_N } from "../skills/match.js";
 import {
   ensureSkillFiredWatcher,
+  readSessionSkillFirings,
   scanRecentSkillFirings,
   stopAllSkillFiredWatchers,
   type SkillFiredRecord,
@@ -242,17 +244,139 @@ app.post("/api/claude/events", (req, res) => {
     payload && typeof payload.transcript_path === "string"
       ? payload.transcript_path
       : null;
+  const sessionCwdForScan =
+    (typeof b.cwd === "string" ? b.cwd : null) ?? null;
   ensureSkillFiredWatcher(
     sessionId,
     {
       transcriptPath: transcriptPathHint,
-      cwd: typeof b.cwd === "string" ? b.cwd : null,
+      cwd: sessionCwdForScan,
     },
     (record) => emitSkillFired(sessionId, record),
   );
 
+  // US-003 (v4.5): on a new prompt, heuristically score every installed skill
+  // against the prompt text + persist the top N into prompt_consideration.
+  // Broadcast each as a `{type:'skill-considered'}` envelope (separate kind
+  // from {type:'event'} so existing consumers don't have to parse it). Honest
+  // by construction — labelled as a heuristic in the UI (US-004), never as
+  // Claude's real internal scoring.
+  if (hookEvent === "UserPromptSubmit" && payload) {
+    const promptText =
+      typeof payload.prompt === "string" ? payload.prompt : "";
+    if (promptText) {
+      considerSkillsForPrompt(sessionId, event.id, now, promptText);
+    }
+  }
+
+  // US-003 (v4.5): at turn end, reconcile prompt_consideration for the latest
+  // prompt: any considered skill whose name shows up in the transcript JSONL
+  // slice since the prompt is flipped to fired=1 + a fired reason. The
+  // skill-fired broadcast itself comes from US-002's live watcher; this step
+  // keeps the persisted state honest for backfill (timeline reads).
+  if (hookEvent === "Stop") {
+    reconcileFiredForLatestPrompt(sessionId, sessionCwdForScan);
+  }
+
   res.json({ ok: true, id: event.id });
 });
+
+/**
+ * Score every installed skill against the prompt text, persist the top N rows
+ * into prompt_consideration keyed by the prompt's event id, and broadcast each
+ * as a `{type:'skill-considered'}` envelope. The active cwd's project skills
+ * are included (Claude considers them in this run too) — this mirrors what the
+ * routing layer actually has visibility into.
+ */
+function considerSkillsForPrompt(
+  sessionId: string,
+  promptEventId: number,
+  promptTs: number,
+  promptText: string,
+): void {
+  const skills = readSkills(getActiveCwd());
+  if (skills.length === 0) return;
+  const scored = scoreSkills(promptText, skills);
+  const top = topMatches(scored, CONSIDERATION_TOP_N);
+  if (top.length === 0) return;
+
+  const insert = db.prepare(
+    `INSERT INTO prompt_consideration
+       (event_id, skill, score, reason, fired, created_at)
+     VALUES (?, ?, ?, ?, 0, ?)
+     ON CONFLICT(event_id, skill) DO UPDATE SET
+       score = excluded.score,
+       reason = excluded.reason,
+       created_at = excluded.created_at`,
+  );
+  const persist = db.transaction((rows: typeof top) => {
+    for (const r of rows) {
+      insert.run(promptEventId, r.skill, r.score, r.reason, promptTs);
+    }
+  });
+  persist(top);
+
+  for (const r of top) {
+    broadcast({
+      type: "skill-considered",
+      sessionId,
+      payload: {
+        kind: "skill-considered",
+        ts: promptTs,
+        eventId: promptEventId,
+        skill: r.skill,
+        promptEventId,
+        reason: r.reason,
+        heuristic: true,
+      },
+    });
+  }
+}
+
+/**
+ * Stop-time reconciliation: find the latest UserPromptSubmit event for the
+ * session, read the transcript JSONL for any Skill tool_use blocks whose ts
+ * lands after that prompt, and UPDATE prompt_consideration SET fired=1 +
+ * reason='<fired_reason>' WHERE event_id=<prompt> AND skill IN (<fired set>).
+ * Best-effort: a session with no transcript / no preceding prompt / no fired
+ * skills is a no-op. The matching rows' kind in subsequent timeline reads
+ * flips from skill-considered to skill-fired (Timeline excludes fired=1 rows).
+ */
+function reconcileFiredForLatestPrompt(
+  sessionId: string,
+  cwd: string | null,
+): void {
+  const latestPrompt = db
+    .prepare(
+      `SELECT id, ts FROM event
+        WHERE session_id = ?
+          AND stream_type = 'hook'
+          AND hook_event_name = 'UserPromptSubmit'
+        ORDER BY ts DESC, id DESC
+        LIMIT 1`,
+    )
+    .get(sessionId) as { id: number; ts: number } | undefined;
+  if (!latestPrompt) return;
+
+  const firings = readSessionSkillFirings(sessionId, cwd);
+  if (firings.length === 0) return;
+  const firedSinceLatest = firings.filter((f) => f.ts > latestPrompt.ts);
+  if (firedSinceLatest.length === 0) return;
+  const firedSet = new Set(firedSinceLatest.map((f) => f.skill));
+  if (firedSet.size === 0) return;
+
+  const update = db.prepare(
+    `UPDATE prompt_consideration
+        SET fired = 1, reason = ?
+      WHERE event_id = ? AND skill = ?`,
+  );
+  const apply = db.transaction((skillNames: string[]) => {
+    for (const name of skillNames) {
+      update.run("fired (matched transcript tool_use)", latestPrompt.id, name);
+    }
+  });
+  apply(Array.from(firedSet));
+}
 
 /**
  * Resolve the latest UserPromptSubmit event id whose ts < the firing's ts,

@@ -237,6 +237,17 @@ export function mapActivityLineToRow(line: string): TimelineRow | null {
   };
 }
 
+/**
+ * One persisted prompt_consideration row (US-003), as read by buildTimeline.
+ * `ts` is the prompt event's ts so the row sorts naturally next to its PROMPT.
+ */
+export interface SkillConsideredRecord {
+  promptEventId: number;
+  skill: string;
+  reason: string;
+  ts: number;
+}
+
 /** Options accepted by the Timeline route's pure-function core. */
 export interface BuildTimelineOpts {
   events: EventRow[];
@@ -247,6 +258,13 @@ export interface BuildTimelineOpts {
    * mapped PROMPT rows — never fabricated.
    */
   skillsFired?: SkillFiredRecord[];
+  /**
+   * Persisted skill-consideration rows (US-003) for this session. Only
+   * non-fired rows are passed (the SQL filters with WHERE fired=0); this layer
+   * additionally dedupes against `skillsFired` so a row that fired live but
+   * hasn't been DB-reconciled yet still doesn't double-render.
+   */
+  skillsConsidered?: SkillConsideredRecord[];
   /** The session's cwd, from the session row. Used to gate loop rows. */
   sessionCwd: string | null;
   /** The cwd progress.txt itself is read from (the build-loop's project). */
@@ -321,15 +339,40 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
   // when no preceding prompt exists, e.g. a build-loop session firing skills
   // before any user prompt).
   const skillRows: TimelineRow[] = [];
+  // Track (promptEventId, skill) pairs that have already fired so the US-003
+  // considered rows can't double-render alongside their own fired counterpart
+  // when the DB hasn't been Stop-reconciled yet (race between live skill-fired
+  // and Stop). The DB-side WHERE fired=0 already excludes reconciled rows; this
+  // is the in-memory safety net for the unreconciled gap.
+  const firedPairs = new Set<string>();
   for (const record of opts.skillsFired ?? []) {
-    if (since !== undefined && record.ts <= since) continue;
     const promptEventId = latestPromptIdBefore(promptIds, record.ts);
+    if (promptEventId !== null) {
+      firedPairs.add(`${promptEventId}|${record.skill}`);
+    }
+    if (since !== undefined && record.ts <= since) continue;
     skillRows.push({
       kind: "skill-fired",
       ts: record.ts,
       skill: record.skill,
       ...(promptEventId !== null ? { promptEventId } : {}),
       detail: `Skill: ${record.skill}`,
+    });
+  }
+
+  // US-003: skill-considered rows from prompt_consideration (fired=0 only).
+  // ts is the prompt's ts so the row sorts next to its PROMPT in the feed.
+  for (const considered of opts.skillsConsidered ?? []) {
+    if (since !== undefined && considered.ts <= since) continue;
+    if (firedPairs.has(`${considered.promptEventId}|${considered.skill}`)) continue;
+    skillRows.push({
+      kind: "skill-considered",
+      ts: considered.ts,
+      eventId: considered.promptEventId,
+      skill: considered.skill,
+      promptEventId: considered.promptEventId,
+      reason: considered.reason,
+      heuristic: true,
     });
   }
 
@@ -377,6 +420,30 @@ function listRecentHookEvents(
 }
 
 /**
+ * Persisted skill-consideration rows for a session (US-003). Joins
+ * prompt_consideration to event to scope by session_id and pick up the
+ * prompt's ts. Only non-fired rows are returned — fired ones come through the
+ * US-002 transcript-derived skill-fired path. Bounded by TIMELINE_LIMIT_MAX so
+ * the join never returns more than a sane page.
+ */
+function listSkillConsideredFor(sessionId: string): SkillConsideredRecord[] {
+  return getDb()
+    .prepare(
+      `SELECT pc.event_id AS promptEventId,
+              pc.skill    AS skill,
+              pc.reason   AS reason,
+              e.ts        AS ts
+         FROM prompt_consideration pc
+         JOIN event e ON e.id = pc.event_id
+        WHERE e.session_id = ?
+          AND pc.fired = 0
+        ORDER BY e.ts DESC, pc.skill ASC
+        LIMIT ?`,
+    )
+    .all(sessionId, TIMELINE_LIMIT_MAX) as SkillConsideredRecord[];
+}
+
+/**
  * Public read entrypoint backing GET /api/claude/timeline. Returns [] for an
  * unknown/missing session, never throws.
  */
@@ -392,10 +459,14 @@ export function readTimeline(
   const tasks = readTasks();
   // US-002: transcript-derived Skill firings. Skipped when there's no JSONL.
   const skillsFired = readSessionSkillFirings(sessionId, cwd);
+  // US-003: persisted skill-consideration rows (fired=0 only — the rest come
+  // from the skill-fired path).
+  const skillsConsidered = listSkillConsideredFor(sessionId);
   return buildTimeline({
     events,
     activity: tasks.activity,
     skillsFired,
+    skillsConsidered,
     sessionCwd: cwd,
     activeCwd: getActiveCwd(),
     since: opts.since,

@@ -63,7 +63,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "The novel piece. Honesty constraint: never label this 'why Claude didn't fire X' — only 'heuristic match against the skill's description'. Anchors: ingest path in src/gateway/index.ts (~:140); src/db (table init); src/skills/index.ts (readSkills). Real UserPromptSubmit payload key is `prompt` (verified). Memory mentions a native BM25 search skill in the conan-dashboard codebase (50 docs in 17ms, zero deps) — reuse its stop-word/token list if convenient, but the gateway can roll its own ~50-LOC BM25 with no new dep."
     },
     {

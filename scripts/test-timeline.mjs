@@ -24,6 +24,11 @@ const BASE = `http://127.0.0.1:${PORT}`;
 process.env.CONAN_DATA_DIR = path.join(tmp, "data");
 process.env.CONAN_AUTH_TOKEN = TOKEN;
 process.env.CONAN_PORT = String(PORT);
+// US-003 (v4.5): scoring runs over the user's installed skills on
+// UserPromptSubmit. Isolate HOME so readSkills sees nothing (this test asserts
+// hook-row counts exactly, and any real installed skill would otherwise show
+// up as a skill-considered row alongside the hook rows).
+process.env.HOME = tmp;
 
 let failed = false;
 const check = (name, cond) => {
