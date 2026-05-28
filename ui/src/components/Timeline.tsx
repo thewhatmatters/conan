@@ -605,6 +605,22 @@ export default function Timeline({
   }, [isAtTop]);
 
   const allActive = filters.size === 0;
+  // Filter chips are dynamic: a chip only renders when this session has at
+  // least one row of that kind. Eliminates the "what is this for?" cognitive
+  // load (e.g. Build only appears when the user is mid-run-tasks.sh; Loop only
+  // appears when the user has invoked /loop). Counts are from the unfiltered
+  // rows so chips reflect what's in the data, not what's currently showing.
+  const bucketCounts = useMemo(() => {
+    const c: Record<Filter, number> = {
+      hooks: 0,
+      skills: 0,
+      plan: 0,
+      loop: 0,
+      build: 0,
+    };
+    for (const r of rows) c[rowFilterBucket(r)]++;
+    return c;
+  }, [rows]);
 
   return (
     <div className="flex h-full flex-col border-l border-border bg-card">
@@ -621,31 +637,41 @@ export default function Timeline({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <FilterChip label="All" active={allActive} onClick={clearFilters} />
-          <FilterChip
-            label="Hooks"
-            active={filters.has("hooks")}
-            onClick={() => toggleFilter("hooks")}
-          />
-          <FilterChip
-            label="Skills"
-            active={filters.has("skills")}
-            onClick={() => toggleFilter("skills")}
-          />
-          <FilterChip
-            label="Plan"
-            active={filters.has("plan")}
-            onClick={() => toggleFilter("plan")}
-          />
-          <FilterChip
-            label="Loop"
-            active={filters.has("loop")}
-            onClick={() => toggleFilter("loop")}
-          />
-          <FilterChip
-            label="Build"
-            active={filters.has("build")}
-            onClick={() => toggleFilter("build")}
-          />
+          {bucketCounts.hooks > 0 && (
+            <FilterChip
+              label="Hooks"
+              active={filters.has("hooks")}
+              onClick={() => toggleFilter("hooks")}
+            />
+          )}
+          {bucketCounts.skills > 0 && (
+            <FilterChip
+              label="Skills"
+              active={filters.has("skills")}
+              onClick={() => toggleFilter("skills")}
+            />
+          )}
+          {bucketCounts.plan > 0 && (
+            <FilterChip
+              label="Plan"
+              active={filters.has("plan")}
+              onClick={() => toggleFilter("plan")}
+            />
+          )}
+          {bucketCounts.loop > 0 && (
+            <FilterChip
+              label="Loop"
+              active={filters.has("loop")}
+              onClick={() => toggleFilter("loop")}
+            />
+          )}
+          {bucketCounts.build > 0 && (
+            <FilterChip
+              label="Build"
+              active={filters.has("build")}
+              onClick={() => toggleFilter("build")}
+            />
+          )}
           {onClose && (
             <button
               type="button"
@@ -704,7 +730,7 @@ export default function Timeline({
                     <span className="relative flex w-3 shrink-0 justify-center pt-2">
                       <span
                         className={
-                          "size-2 shrink-0 translate-x-0.5 rounded-full ring-2 ring-card " +
+                          "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
                           color.dot
                         }
                       />
