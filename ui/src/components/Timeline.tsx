@@ -412,6 +412,21 @@ export default function Timeline({
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [newCount, setNewCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Time tick — bumps every 15s so the Build-aging filter below re-runs and
+  // stale Build rows / the Build chip drop out without needing a server poll.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  // Build rows are "actively running"-only: a row is dropped once its parsed
+  // ts is older than 60s (mirrors readTimeline's BUILD_ACTIVE_WINDOW_MS). A
+  // stale trail from a past run ages out of the open panel; the server-side
+  // gate already keeps it out of the initial fetch too.
+  const freshRows = useMemo(() => {
+    const buildCutoff = now - 60_000;
+    return rows.filter((r) => r.kind !== "build" || r.ts > buildCutoff);
+  }, [rows, now]);
 
   // Backfill on mount + whenever the bound session changes. An unknown/missing
   // session yields [] (route already returns []), which the empty state covers.
@@ -563,10 +578,10 @@ export default function Timeline({
     return map;
   }, [rows]);
 
-  // Apply filter-chip predicate. Empty set = "All".
+  // Apply filter-chip predicate on top of the fresh (aged-out) set. Empty set = "All".
   const visibleRows = useMemo(() => {
-    if (filters.size === 0) return rows;
-    return rows.filter((r) => {
+    if (filters.size === 0) return freshRows;
+    return freshRows.filter((r) => {
       // The nested-on-PROMPT card already surfaces the per-skill detail, so
       // hiding the standalone skill rows here keeps the surface uncluttered.
       // But keep them visible when the Skills filter is on (so a session
@@ -580,7 +595,7 @@ export default function Timeline({
       }
       return filters.has(rowFilterBucket(r));
     });
-  }, [rows, filters]);
+  }, [freshRows, filters]);
 
   const toggleFilter = useCallback((bucket: Filter) => {
     setFilters((prev) => {
@@ -606,10 +621,8 @@ export default function Timeline({
 
   const allActive = filters.size === 0;
   // Filter chips are dynamic: a chip only renders when this session has at
-  // least one row of that kind. Eliminates the "what is this for?" cognitive
-  // load (e.g. Build only appears when the user is mid-run-tasks.sh; Loop only
-  // appears when the user has invoked /loop). Counts are from the unfiltered
-  // rows so chips reflect what's in the data, not what's currently showing.
+  // least one row of that kind in the *fresh* set. So Build vanishes when its
+  // rows age out; Loop only appears when the user has invoked /loop.
   const bucketCounts = useMemo(() => {
     const c: Record<Filter, number> = {
       hooks: 0,
@@ -618,9 +631,9 @@ export default function Timeline({
       loop: 0,
       build: 0,
     };
-    for (const r of rows) c[rowFilterBucket(r)]++;
+    for (const r of freshRows) c[rowFilterBucket(r)]++;
     return c;
-  }, [rows]);
+  }, [freshRows]);
 
   return (
     <div className="flex h-full flex-col border-l border-border bg-card">

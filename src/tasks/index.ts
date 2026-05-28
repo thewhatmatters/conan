@@ -8,6 +8,20 @@ import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 const prdPath = () => path.join(getActiveCwd(), "prd.json");
 const progressPath = () => path.join(getActiveCwd(), "progress.txt");
 
+/**
+ * Last-modified time of progress.txt in epoch ms — used by the Timeline to gate
+ * Build rows on a recent write (v4.5-timeline polish: the Build chip is
+ * "actively running"-only, not "ever ran here"-only). Returns null when there's
+ * no progress.txt or stat fails.
+ */
+export function progressMtimeMs(): number | null {
+  try {
+    return fs.statSync(progressPath()).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 export interface TaskStory {
   id: string;
   title: string;

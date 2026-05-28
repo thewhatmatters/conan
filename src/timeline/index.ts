@@ -1,6 +1,14 @@
 import { type EventRow } from "../session/index.js";
 import { getDb } from "../db/index.js";
-import { readTasks } from "../tasks/index.js";
+import { readTasks, progressMtimeMs } from "../tasks/index.js";
+
+/**
+ * Build rows are "actively running"-only: progress.txt activity is included
+ * only when the file was written to within this window (no chip on stale
+ * trails from past runs). Mirrored client-side in Timeline.tsx so rows age
+ * out of the open panel after the runner stops.
+ */
+export const BUILD_ACTIVE_WINDOW_MS = 60_000;
 import { getActiveCwd } from "../cwd/index.js";
 import {
   readSessionSkillFirings,
@@ -559,6 +567,15 @@ export function readTimeline(
   const limit = clampLimit(opts.limit);
   const events = listRecentHookEvents(sessionId, opts.since, TIMELINE_LIMIT_MAX);
   const tasks = readTasks();
+  // v4.5-timeline polish: Build rows are gated to a "currently running" window
+  // — pass an empty activity list when progress.txt hasn't been written to in
+  // the last BUILD_ACTIVE_WINDOW_MS so a stale trail doesn't surface a Build
+  // chip after the runner has stopped.
+  const mtime = progressMtimeMs();
+  const activeActivity =
+    mtime !== null && Date.now() - mtime < BUILD_ACTIVE_WINDOW_MS
+      ? tasks.activity
+      : [];
   // US-002: transcript-derived Skill firings. Skipped when there's no JSONL.
   const skillsFired = readSessionSkillFirings(sessionId, cwd);
   // US-003: persisted skill-consideration rows (fired=0 only — the rest come
@@ -568,7 +585,7 @@ export function readTimeline(
   const plans = readSessionPlans(sessionId, cwd);
   return buildTimeline({
     events,
-    activity: tasks.activity,
+    activity: activeActivity,
     skillsFired,
     skillsConsidered,
     plans,
