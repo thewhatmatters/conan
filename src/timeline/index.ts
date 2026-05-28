@@ -30,8 +30,16 @@ export type HookSubtype =
   | "SESSION"
   | "EVENT";
 
-/** Loop event subtypes derived from a progress.txt activity line. */
-export type LoopSubtype = "iteration" | "pass" | "trail";
+/** Build event subtypes derived from a progress.txt activity line. */
+export type BuildSubtype = "iteration" | "pass" | "trail";
+
+/** Loop event subtypes — the Claude Code `/loop` skill + its scheduling tools.
+ *  Distinct from `kind:"build"`, which surfaces the run-tasks.sh runner trail. */
+export type LoopSubtype = "invocation" | "schedule";
+
+/** The Claude Code tools `/loop` uses to self-pace; surfacing them as Loop rows
+ *  is how the user sees the iteration cadence rather than just the first prompt. */
+const LOOP_SCHEDULING_TOOLS = new Set(["ScheduleWakeup", "CronCreate"]);
 
 /** Discriminated union of every row the Timeline can render. */
 export type TimelineRow =
@@ -45,11 +53,28 @@ export type TimelineRow =
       payload?: unknown;
     }
   | {
+      // The run-tasks.sh runner's progress.txt trail — niche, only meaningful
+      // for users running our autonomous prd→json→build workflow. Renamed
+      // from `kind:"loop"` (v4.5-timeline) to disambiguate from Claude's own
+      // `/loop` skill, which now owns the `loop` kind below.
+      kind: "build";
+      ts: number;
+      subtype: BuildSubtype;
+      title: string;
+      detail?: string;
+    }
+  | {
+      // Claude Code's `/loop` skill — both the initial invocation (a
+      // UserPromptSubmit whose prompt starts with "/loop") and the
+      // ScheduleWakeup/CronCreate tool calls the skill uses to self-pace.
+      // Detected at map time so these rows don't pollute the Hooks lane.
       kind: "loop";
       ts: number;
+      eventId?: number;
       subtype: LoopSubtype;
       title: string;
       detail?: string;
+      payload?: unknown;
     }
   | {
       kind: "skill-fired";
@@ -132,17 +157,43 @@ export function mapHookEventToRow(row: EventRow): TimelineRow | null {
 
   switch (name) {
     case "UserPromptSubmit": {
-      subtype = "PROMPT";
       const prompt = typeof payload?.prompt === "string" ? payload.prompt : "";
+      // `/loop <task>` is Claude Code's self-iteration skill — route it to the
+      // Loop lane so the Hooks lane doesn't get polluted with what's really
+      // about iteration scheduling. The "/loop" prefix is a stable contract.
+      if (/^\/loop(?:\s|$)/i.test(prompt)) {
+        return {
+          kind: "loop",
+          ts: row.ts,
+          eventId: row.id,
+          subtype: "invocation",
+          title: truncate(prompt, 160),
+          ...(payload ? { payload } : {}),
+        };
+      }
+      subtype = "PROMPT";
       title = prompt ? truncate(prompt, 160) : "(empty prompt)";
       break;
     }
     case "PreToolUse":
     case "PostToolUse": {
-      subtype = name === "PreToolUse" ? "PRETOOL" : "POSTTOOL";
       const tool =
         row.tool_name ?? (typeof payload?.tool_name === "string" ? payload.tool_name : "");
       const arg = firstStringArg(payload?.tool_input);
+      // ScheduleWakeup / CronCreate are how `/loop` self-paces — surface them
+      // as Loop rows so the user sees the cadence, not just the first prompt.
+      // Only PreToolUse (one row per scheduling call, not a duplicate Post).
+      if (name === "PreToolUse" && LOOP_SCHEDULING_TOOLS.has(tool)) {
+        return {
+          kind: "loop",
+          ts: row.ts,
+          eventId: row.id,
+          subtype: "schedule",
+          title: arg ? `${tool} · ${truncate(arg, 120)}` : tool,
+          ...(payload ? { payload } : {}),
+        };
+      }
+      subtype = name === "PreToolUse" ? "PRETOOL" : "POSTTOOL";
       title = arg ? `${tool || "tool"} · ${truncate(arg, 120)}` : tool || "tool";
       break;
     }
@@ -238,13 +289,13 @@ export function mapActivityLineToRow(line: string): TimelineRow | null {
   const body = stripActivityTimestamp(line);
   if (!body) return null;
 
-  let subtype: LoopSubtype = "trail";
+  let subtype: BuildSubtype = "trail";
   if (/iteration\s+\d+/i.test(body) || /→\s*US-/.test(body)) subtype = "iteration";
   else if (/\bUS-\d+\b.*\b(?:done|pass(?:es)?)\b/i.test(body) || /passes:\s*true/i.test(body))
     subtype = "pass";
 
   return {
-    kind: "loop",
+    kind: "build",
     ts,
     subtype,
     title: truncate(body, 160),

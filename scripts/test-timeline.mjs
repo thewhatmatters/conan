@@ -212,26 +212,87 @@ try {
   );
   check("garbage line → null timestamp", parseActivityTimestamp("nothing here") === null);
 
-  // --- mapActivityLineToRow: each loop subtype -----------------------------
+  // --- mapActivityLineToRow: each build subtype (renamed from 'loop' v4.5
+  //     to free up 'loop' for Claude Code's /loop skill) -------------------
   const iter = mapActivityLineToRow("[2026-05-27 13:46:06] iteration 10 → US-010: Bottom status bar");
   check(
-    "iteration line → subtype:iteration",
-    iter?.kind === "loop" && iter.subtype === "iteration" &&
+    "iteration line → kind:build subtype:iteration",
+    iter?.kind === "build" && iter.subtype === "iteration" &&
       iter.title.startsWith("iteration 10"),
   );
 
   const passRow = mapActivityLineToRow("2026-05-27 14:20 US-010 done: bottom status bar shipped");
   check(
-    "'<US-N> done' line → subtype:pass",
-    passRow?.kind === "loop" && passRow.subtype === "pass",
+    "'<US-N> done' line → kind:build subtype:pass",
+    passRow?.kind === "build" && passRow.subtype === "pass",
   );
 
   const trail = mapActivityLineToRow(
     "[2026-05-27 13:48:40] ⏳ usage limit — resumes in 1279s",
   );
   check(
-    "freeform trail line → subtype:trail",
-    trail?.kind === "loop" && trail.subtype === "trail",
+    "freeform trail line → kind:build subtype:trail",
+    trail?.kind === "build" && trail.subtype === "trail",
+  );
+
+  // --- mapHookEventToRow: `/loop` skill routing → kind:loop ----------------
+  // A UserPromptSubmit whose prompt starts with /loop is the user invoking
+  // Claude Code's /loop skill — surface it on the Loop lane (not Hooks) so
+  // the Hooks lane stays the catch-all and Loop becomes about iteration.
+  const loopInvoke = mapHookEventToRow(
+    hookEv("UserPromptSubmit", { prompt: "/loop find the leaky pipe" }, Date.now()),
+  );
+  check(
+    "/loop prompt → kind:loop subtype:invocation",
+    loopInvoke?.kind === "loop" &&
+      loopInvoke.subtype === "invocation" &&
+      loopInvoke.title.startsWith("/loop"),
+  );
+  const loopBareInvoke = mapHookEventToRow(
+    hookEv("UserPromptSubmit", { prompt: "/loop" }, Date.now()),
+  );
+  check(
+    "bare /loop → also kind:loop subtype:invocation",
+    loopBareInvoke?.kind === "loop" && loopBareInvoke.subtype === "invocation",
+  );
+  const notLoop = mapHookEventToRow(
+    hookEv("UserPromptSubmit", { prompt: "/loopy not really a loop" }, Date.now()),
+  );
+  check(
+    "'/loopy …' (different command) stays as kind:hook PROMPT",
+    notLoop?.kind === "hook" && notLoop.subtype === "PROMPT",
+  );
+
+  // ScheduleWakeup / CronCreate are how /loop self-paces — route the PreToolUse
+  // to the Loop lane too so the user sees the iteration cadence.
+  const sched = mapHookEventToRow(
+    hookEv(
+      "PreToolUse",
+      { tool_input: { delaySeconds: 60, reason: "next loop iteration" } },
+      Date.now(),
+      "ScheduleWakeup",
+    ),
+  );
+  check(
+    "PreToolUse ScheduleWakeup → kind:loop subtype:schedule",
+    sched?.kind === "loop" && sched.subtype === "schedule" &&
+      sched.title.startsWith("ScheduleWakeup"),
+  );
+  const cron = mapHookEventToRow(
+    hookEv("PreToolUse", { tool_input: { schedule: "*/5 * * * *" } }, Date.now(), "CronCreate"),
+  );
+  check(
+    "PreToolUse CronCreate → kind:loop subtype:schedule",
+    cron?.kind === "loop" && cron.subtype === "schedule",
+  );
+  // PostToolUse for the same tool should NOT also become a Loop row (avoid
+  // duplicates; one row per scheduling call).
+  const postSched = mapHookEventToRow(
+    hookEv("PostToolUse", {}, Date.now(), "ScheduleWakeup"),
+  );
+  check(
+    "PostToolUse ScheduleWakeup → stays kind:hook POSTTOOL (no duplicate)",
+    postSched?.kind === "hook" && postSched.subtype === "POSTTOOL",
   );
 
   check(
@@ -269,7 +330,7 @@ try {
     sessionCwd: "/p",
     activeCwd: "/p",
   });
-  check("merged result includes hook + loop rows", merged.length === 5);
+  check("merged result includes hook + build rows", merged.length === 5);
   check(
     "descending ts ordering",
     merged[0].ts >= merged[1].ts && merged[1].ts >= merged[2].ts,
@@ -286,7 +347,7 @@ try {
     activeCwd: "/p",
   });
   check(
-    "session in a different cwd → no loop rows",
+    "session in a different cwd → no build rows",
     noLoop.length === 3 && noLoop.every((r) => r.kind === "hook"),
   );
 
@@ -296,7 +357,7 @@ try {
     sessionCwd: null,
     activeCwd: "/p",
   });
-  check("session w/ null cwd → no loop rows", nullCwd.every((r) => r.kind === "hook"));
+  check("session w/ null cwd → no build rows", nullCwd.every((r) => r.kind === "hook"));
 
   const sinceFilter = buildTimeline({
     events,

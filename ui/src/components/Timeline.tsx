@@ -34,7 +34,13 @@ type HookSubtype =
   | "SESSION"
   | "EVENT";
 
-type LoopSubtype = "iteration" | "pass" | "trail";
+/** progress.txt activity subtypes — the `run-tasks.sh` runner trail. Renamed
+ *  from LoopSubtype (v4.5-timeline) to disambiguate from Claude Code's own
+ *  `/loop` skill, which now owns the Loop kind below. */
+type BuildSubtype = "iteration" | "pass" | "trail";
+/** Claude Code's `/loop` skill — invocation prompts + the ScheduleWakeup /
+ *  CronCreate calls it uses to self-pace. */
+type LoopSubtype = "invocation" | "schedule";
 
 /** Mirrors src/timeline/index.ts TimelineRow. */
 export type TimelineRow =
@@ -48,11 +54,20 @@ export type TimelineRow =
       payload?: Record<string, unknown>;
     }
   | {
+      kind: "build";
+      ts: number;
+      subtype: BuildSubtype;
+      title: string;
+      detail?: string;
+    }
+  | {
       kind: "loop";
       ts: number;
+      eventId?: number;
       subtype: LoopSubtype;
       title: string;
       detail?: string;
+      payload?: Record<string, unknown>;
     }
   | {
       kind: "skill-fired";
@@ -84,7 +99,7 @@ export type TimelineRow =
     };
 
 /** The active filter chips; an empty set means "All". */
-type Filter = "hooks" | "skills" | "plan" | "loop";
+type Filter = "hooks" | "skills" | "plan" | "loop" | "build";
 
 interface TimelineProps {
   token: string | null;
@@ -228,14 +243,14 @@ function mapActivityLineToRow(line: string): TimelineRow | null {
   if (ts === null) return null;
   const body = stripActivityTimestamp(line);
   if (!body) return null;
-  let subtype: LoopSubtype = "trail";
+  let subtype: BuildSubtype = "trail";
   if (/iteration\s+\d+/i.test(body) || /→\s*US-/.test(body)) subtype = "iteration";
   else if (
     /\bUS-\d+\b.*\b(?:done|pass(?:es)?)\b/i.test(body) ||
     /passes:\s*true/i.test(body)
   )
     subtype = "pass";
-  return { kind: "loop", ts, subtype, title: truncate(body, 160) };
+  return { kind: "build", ts, subtype, title: truncate(body, 160) };
 }
 
 /** Stable key for dedup + React lists across hook/loop/skill/plan rows. */
@@ -243,8 +258,10 @@ function rowKey(row: TimelineRow): string {
   switch (row.kind) {
     case "hook":
       return `h:${row.eventId}`;
+    case "build":
+      return `b:${row.ts}:${row.title}`;
     case "loop":
-      return `l:${row.ts}:${row.title}`;
+      return `l:${row.eventId ?? row.ts}:${row.subtype}`;
     case "skill-fired":
       return `sf:${row.ts}:${row.skill}:${row.promptEventId ?? ""}`;
     case "skill-considered":
@@ -280,8 +297,14 @@ function kindColor(kind: TimelineRow["kind"]): {
         pillBg: "bg-muted",
         pillFg: "text-muted-foreground",
       };
-    case "loop":
+    case "build":
+      // The runner trail keeps the chart-4 violet it always had — visual
+      // continuity for users who knew it as "Loop" before the rename.
       return { dot: "bg-chart-4", pillBg: "bg-chart-4/15", pillFg: "text-chart-4" };
+    case "loop":
+      // Claude Code's `/loop` skill — distinct color so it never visually
+      // collides with build-trail rows on the same surface.
+      return { dot: "bg-chart-3", pillBg: "bg-chart-3/15", pillFg: "text-chart-3" };
     case "plan":
       return { dot: "bg-chart-5", pillBg: "bg-chart-5/15", pillFg: "text-chart-5" };
     case "hook":
@@ -299,6 +322,7 @@ function formatTime(ts: number): string {
 /** Pill label rendered on the left of each row. */
 function rowPillLabel(row: TimelineRow): string {
   if (row.kind === "hook") return row.subtype;
+  if (row.kind === "build") return "BUILD";
   if (row.kind === "loop") return "LOOP";
   if (row.kind === "plan") return "PLAN";
   if (row.kind === "skill-fired") return "SKILL";
@@ -307,6 +331,7 @@ function rowPillLabel(row: TimelineRow): string {
 
 /** Filter-bucket a row belongs to (matches the chips). */
 function rowFilterBucket(row: TimelineRow): Filter {
+  if (row.kind === "build") return "build";
   if (row.kind === "loop") return "loop";
   if (row.kind === "plan") return "plan";
   if (row.kind === "skill-fired" || row.kind === "skill-considered") return "skills";
@@ -616,6 +641,11 @@ export default function Timeline({
             active={filters.has("loop")}
             onClick={() => toggleFilter("loop")}
           />
+          <FilterChip
+            label="Build"
+            active={filters.has("build")}
+            onClick={() => toggleFilter("build")}
+          />
           {onClose && (
             <button
               type="button"
@@ -701,7 +731,9 @@ export default function Timeline({
                             : row.title}
                         </span>
                       </div>
-                      {(row.kind === "hook" || row.kind === "loop") &&
+                      {(row.kind === "hook" ||
+                        row.kind === "build" ||
+                        row.kind === "loop") &&
                         row.detail && (
                           <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                             {row.detail}
