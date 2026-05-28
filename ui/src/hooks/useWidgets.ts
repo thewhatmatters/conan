@@ -45,6 +45,8 @@ export interface WidgetData {
   liveContext: LiveContext | null;
   /** Whether the session has a live correlated pty right now (US-009). */
   hasLivePty: boolean;
+  /** Claude Code version captured from the SessionStart hook (US-001), or null. */
+  claudeVersion: string | null;
 }
 
 /**

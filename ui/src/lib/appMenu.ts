@@ -11,7 +11,9 @@ export interface AppMenuActions {
   onCloseTerminal: () => void;
 }
 
-const ABOUT = { name: "Conan", version: "0.1.0" };
+/** Conan's own version, shown in the About box and the session header (US-008). */
+export const CONAN_VERSION = "0.1.0";
+const ABOUT = { name: "Conan", version: CONAN_VERSION };
 
 /**
  * Build + install the native macOS menu bar (Conan / File / Edit / View / Help)

@@ -19,6 +19,8 @@ export interface Session {
   worktree_path: string | null;
   /** Base ref the worktree branch was cut from (US-043). */
   worktree_base_ref: string | null;
+  /** Claude Code version captured from the SessionStart hook (US-001), or null. */
+  claude_version: string | null;
 }
 
 /**

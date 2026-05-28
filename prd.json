@@ -139,7 +139,7 @@
         "Verify in browser using automate-browser skill (header pinned at the pane top shows both versions + model(context) + cwd for the active session, follows tab switches, no layout shift), light + dark"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001 (claude_version) and US-003 (active-tab binding). Anchors: ui/src/components/TerminalPane.tsx (above the terminal body), WidgetData.liveContext (ui/src/hooks/useWidgets.ts), Session.cwd/config.cwd, ABOUT in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
     },
     {

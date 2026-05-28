@@ -160,6 +160,8 @@ export default function App() {
         theme={theme}
         cwd={config?.cwd ?? null}
         git={widgetData?.git ?? null}
+        session={activeSession}
+        data={widgetData}
         onActiveTidChange={setActiveTid}
       />
       <Hud

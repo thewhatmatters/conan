@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
+import SessionHeader from "./SessionHeader.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
+import type { Session } from "../hooks/useSessions.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
@@ -21,6 +23,9 @@ interface TerminalPaneProps {
   cwd?: string | null;
   /** Active session's git branch/dirty for the status bar (US-004). */
   git?: WidgetData["git"] | null;
+  /** US-008: the active tab's session + widget payload for the pinned header. */
+  session?: Session | null;
+  data?: WidgetData | null;
   /** US-003: report the active terminal tab's tid upward (mount, switch, new,
    *  close) so the HUD can bind its session-scoped widgets to the visible tab. */
   onActiveTidChange?: (tid: string) => void;
@@ -73,6 +78,8 @@ export default function TerminalPane({
   theme,
   cwd,
   git,
+  session,
+  data,
   onActiveTidChange,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
@@ -211,6 +218,11 @@ export default function TerminalPane({
           <Plus className="size-4" />
         </button>
       </div>
+
+      {/* US-008: pinned Claude-banner-style header for the ACTIVE tab's session,
+          between the tab strip and the xterm surface. Describes whatever session
+          is visible (App derives it from activeTid); never tears down a pty. */}
+      <SessionHeader session={session ?? null} data={data ?? null} cwd={cwd} />
 
       <div className="relative min-h-0 flex-1">
         {/* Every terminal stays mounted and sized (stacked, absolute inset-0) so
