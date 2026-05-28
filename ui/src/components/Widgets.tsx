@@ -208,7 +208,7 @@ export function ContextWidget({
           </ProgressCircle>
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">
-              {barPct != null ? "context used" : "NO USAGE YET"}
+              {barPct != null ? "CONTEXT USED" : "NO USAGE YET"}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {ctxTokens != null
@@ -409,7 +409,7 @@ function LiveContextView({
         </ProgressCircle>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-foreground">
-            {live.modelDisplay ?? live.model ?? "context used"}
+            {live.modelDisplay ?? live.model ?? "CONTEXT USED"}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
             {live.usedTokens != null && live.windowTokens != null
