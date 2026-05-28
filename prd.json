@@ -1,197 +1,111 @@
 {
-  "project": "Conan — v4.4: HUD/UX polish (active-tab binding, session header, MCP tab, editable Settings, Pulse fixes, Claude Radio)",
-  "branchName": "loop/conan-v4.4",
-  "description": "v4.4 continues the Tauri terminal-wrapper's HUD/UX work: capture Claude Code's version from the SessionStart hook and add an editable Claude-config write route (backend foundations); bind the session-scoped HUD widgets to the ACTIVE terminal tab; a run of UI items — a slimmer bottom status bar (drop the gateway chip, flex cwd-left/branch-right, VS Code-style `*` dirty marker), Pulse-chart dark-mode legibility fixes, a user-facing Context 'Auto' toggle, a HUD MCP tab (servers + status), a fixed Claude-banner-style session header atop each terminal (logo placeholder + Conan & Claude Code versions + model/context + cwd), an editable tabbed (Status/Config) Settings dialog, and a Claude Radio play/pause bottom toolbar that streams a YouTube live stream. Backend/schema before UI; build stays green at every story. Source: docs/v4.4-backlog.md. Decisions (2026-05-27): show BOTH versions in the header (Conan + Claude Code); status bar uses a bare `*` for dirty (no count); MCP tab ships the flat name+status list first (tool-counts/grouping is a follow-up); Radio is its own app-wide bottom strip below the terminal+HUD row, default paused.",
-  "generatedAt": "2026-05-27",
-  "sourcePrd": "docs/v4.4-backlog.md",
+  "project": "Conan — v4.5-timeline: hook + skill firing per-terminal split panel (with honest 'considered but not fired' capture)",
+  "branchName": "loop/conan-v4.5-timeline",
+  "description": "A live, per-terminal-tab Timeline split panel showing hook events, build-loop iterations, skills fired (transcript ground truth), and the genuinely new bit — skills *considered but didn't fire* for each prompt, scored by a small BM25-over-descriptions matcher plus a categorical-reason rule layer. Labelled honestly as a heuristic in the UI (Claude doesn't expose its real skill scoring). The prototype split layout + tab-tethered UX is already on disk (loop/conan-v4.4: TimelineMock.tsx, TerminalPane.tsx split + toggle next to '+'). This loop wires up the four data lanes (3 of which already broadcast over /ws), adds the considered-scorer + a `prompt_consideration` table, replaces the mock with a live Timeline.tsx, and ships per-tab split persistence + ⌘\\ shortcut. The Skills HUD tab gains a 'last fired' stamp as a free side-effect of the transcript scan. Source: docs/timeline-prd.md. Decisions (2026-05-28): skills-considered ships as heuristic+transcript (Conan's BM25 + rule layer, labelled 'Heuristic match' in the UI); scope = per active terminal tab (the visual tether IS the binding); Timeline is a vertical split inside the active terminal pane, not a top-level tab. Backend foundations before UI; build stays green at every story.",
+  "generatedAt": "2026-05-28",
+  "sourcePrd": "docs/timeline-prd.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Capture Claude Code's version from the SessionStart hook",
-      "description": "As a Conan user, I want Conan to know which Claude Code version a session is running, so the session header can display it.",
+      "title": "Timeline read endpoint + normalized TimelineRow envelope",
+      "description": "As a Conan user, I want a single chronological read for a session's hook + loop events, so the Timeline UI can backfill on mount without juggling multiple sources.",
       "acceptanceCriteria": [
-        "The session table gains a nullable `claude_version` column (idempotent init, no crash on existing DBs)",
-        "The events ingestion route (POST /api/claude/events) persists `payload.version` from the SessionStart hook onto the session row when present, leaving it null otherwise (never fabricated)",
-        "GET /api/claude/sessions and the per-session widgets payload expose the captured `claude_version` (null when unknown)",
-        "scripts/hooks/send-event.mjs forwards the SessionStart payload's `version` field unchanged (no transformation)",
-        "A unit/integration check covers parsing/persisting the version from a SessionStart payload and the null fallback",
+        "GET /api/claude/timeline?session=…&since=…&limit=… returns a flat list of TimelineRow envelopes in descending ts order (newest first), token-gated",
+        "TimelineRow is a discriminated union with `kind: 'hook' | 'loop' | 'skill-fired' | 'skill-considered'` and a common `{ts: number}`; hook rows carry {eventId, subtype, title, detail?, payload?}; loop rows carry {subtype: 'iteration'|'pass'|'trail', title, detail?}",
+        "Hook rows come from the `event` table filtered by session_id (only stream_type='hook') with payload-derived subtype/title/detail (UserPromptSubmit → 'PROMPT' + truncated prompt; Pre/PostToolUse → 'PRETOOL'/'POSTTOOL' + tool name + first arg; Stop → 'STOP'; Notification → 'NOTIF'; SessionStart/End → 'SESSION')",
+        "Loop rows come from progress.txt's recent lines (`readTasks().activity`) filtered to the session's cwd (the session's cwd matches the progress.txt's project — match on substring of the activity text or via the session row's cwd); subtype 'iteration'|'pass'|'trail' derived from the line",
+        "skill-fired and skill-considered envelope shapes are defined in this story (carried by US-002/T03) but the endpoint returns [] for those kinds in THIS story",
+        "`since` filters strictly greater-than ts; `limit` clamps to [1, 500] with a default 200; an unknown/missing session returns an empty array",
+        "A unit test covers the envelope mapping (one fixture row per hook subtype) and the empty/clamp/limit branches",
         "npm test passes all suites",
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Backend/schema foundation for the session header (US-008). Anchors: events route in src/gateway/index.ts, session table in src/db/, parse in src/widgets/index.ts, scripts/hooks/send-event.mjs. SessionStart's payload carries `version`; only persist when present."
+      "passes": false,
+      "notes": "Backend foundation. The UI consumes existing {type:'event'} and {type:'tasks'} WS broadcasts for live updates — no new WS plumbing in this story. Anchors: POST /api/claude/events ingest + INSERT INTO event in src/gateway/index.ts (~:140/:189); broadcast({type:'event'}) ~:212; watchTasks + readTasks().activity in src/tasks/index.ts (~:125). Add the new route + envelope in src/timeline/index.ts (new module) wired from src/gateway/index.ts."
     },
     {
       "id": "US-002",
-      "title": "Editable Claude-config write route + editable-key schema",
-      "description": "As a Conan user, I want a safe backend path to change Claude Code config values, so the Settings dialog can become editable.",
+      "title": "Transcript-derived skills-fired feed + Skills tab 'last fired' stamp",
+      "description": "As a Conan user, I want to see which skills actually fired in each session and how recently each installed skill was used, so I can spot real usage from the timeline and the Skills tab.",
       "acceptanceCriteria": [
-        "Extend the config module (src/config/index.ts) so each editable key in SETTINGS_KEYS/GLOBAL_KEYS carries type metadata: kind ('boolean' | 'enum' | 'string' | 'number') and, for enums, the allowed values (e.g. theme, editorMode) extracted from the claude binary where applicable (not hand-guessed)",
-        "Add POST /api/claude/config (token-gated) that writes a single key via read-modify-write, preserving every other key in the target file (~/.claude/settings.json or ~/.claude.json) byte-for-byte except the changed value",
-        "The route rejects unknown keys and type-mismatched values with a 4xx and a clear error; it never writes a key not in the editable schema",
-        "GET /api/claude/config returns the value + type metadata so the UI can render the right control",
-        "A unit/integration test writes a key and asserts only that key changed (all other keys/permissions/hooks/mcp preserved), plus the reject paths",
+        "New src/timeline/transcriptScan.ts reads a session's JSONL (prefer `transcript_path` carried in the latest hook payload; fall back to transcriptPath() from src/transcript/index.ts when missing) and extracts every Skill tool_use block as a {skill, ts, promptEventId} record, where promptEventId is the latest UserPromptSubmit event_id before the Skill's ts",
+        "The Timeline read route (US-001) merges these rows into the response as `{kind: 'skill-fired', ts, eventId, skill, promptEventId, detail}` envelopes, in correct chronological order with the hook/loop rows",
+        "A live watcher (fs.watch + size-delta tail since last byte offset) emits each new Skill block as a `{type:'skill-fired', payload: TimelineRow}` WS broadcast (kept SEPARATE from {type:'event'} so existing WS consumers don't have to parse the new kind)",
+        "GET /api/claude/skills returns a `lastFiredAt: number | null` (epoch ms) on each SkillEntry, computed by scanning recent transcripts (bounded — e.g. the latest N JSONLs touched in the last 30 days) and taking the most recent Skill tool_use timestamp per skill name",
+        "The Skills HUD tab (SkillsWidget.tsx) renders a `last fired Xm ago` muted line on each row when lastFiredAt is set, or omits the line when null — never fabricates",
+        "A unit test on the JSONL parser covers a real fixture (a real session JSONL with ≥1 Skill block) and asserts skill/ts extraction + the null case",
+        "An integration test asserts SkillEntry.lastFiredAt is populated for at least one skill in a fixture session",
         "npm test passes all suites",
-        "Typecheck passes"
+        "Typecheck passes",
+        "cd ui && npm run build is clean",
+        "Verify in browser using automate-browser skill (a session with prior Skill firings shows 'last fired' stamps on Skills tab rows; the Timeline route returns at least one skill-fired row)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Backend foundation for editable Settings (US-010). Read-modify-write preserving all other keys is the proven-safe pattern (v4.3 theme write). Anchors: readClaudeConfig + SETTINGS_KEYS/GLOBAL_KEYS in src/config/index.ts, GET /api/claude/config in src/gateway/index.ts."
+      "passes": false,
+      "notes": "Anchors: transcriptPath() + TranscriptBlock 'tool_use' in src/transcript/index.ts (:27, :47); readSkills/SkillEntry in src/skills/index.ts (:25). The UserPromptSubmit hook payload carries `transcript_path` directly (verified: keys are session_id/transcript_path/cwd/permission_mode/hook_event_name/prompt) — prefer that over re-deriving. SkillEntry already gained `path?: string` post-v4.4. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
-      "title": "Bind the session-scoped HUD widgets to the ACTIVE terminal tab",
-      "description": "As a Conan user, I want the Context/Plan/Skills widgets to describe the terminal tab I'm looking at, so opening a new terminal doesn't keep showing the previous session's data.",
+      "title": "Skill-consideration scorer + prompt_consideration table + Stop-time reconciliation",
+      "description": "As a Conan user, I want to see which skills were considered for each of my prompts and the heuristic reason each didn't fire, so the most opaque thing about skills (`why didn't X trigger?`) becomes legible. (Labelled honestly as a heuristic — not the model's real internal scoring.)",
       "acceptanceCriteria": [
-        "TerminalPane surfaces its active terminal id upward via a callback prop, covering tab switch, new terminal, and close (the active tid always reflects the visible terminal)",
-        "App tracks the active tid and derives the active session from the terminal correlated to THAT tid (via useTerminals tid→sessionId), instead of `matched.find(running) ?? matched[0]`",
-        "The Context, Plan, and Skills widgets + the notification visibleSessionId all repoint to the active tab's session",
-        "Switching terminal tabs updates the HUD widgets to the newly active tab's session; a freshly opened tab shows an empty/uncorrelated state until its pty correlates (not the prior tab's data)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (open a 2nd terminal → HUD widgets repoint; switch back → they follow)"
+        "New src/skills/match.ts exports scoreSkills(prompt: string, skills: SkillEntry[]): {skill: string; score: number; reason: string}[] — BM25 (k1=1.2, b=0.75) over each skill's description (lower-cased, stop-word-stripped, single-word tokens) vs the prompt; pure function, zero deps",
+        "A small categorical-reason rule layer converts (score + cheap regexes) into the human-readable reason: `prompt mentions this skill` (skill name appears in prompt), `UI keyword match` (description contains 'browser'/'verify'/'UI' AND prompt has a UI verb like render/screenshot/click/style), `diagram intent` (description+prompt both reference diagram/chart/flowchart), `strong description match (terms: …)` (score ≥ HIGH), `partial match (terms: …)` (score in [LOW, HIGH)), `no description match (top terms: …)` (otherwise)",
+        "A new SQLite table `prompt_consideration (event_id INTEGER, skill TEXT, score REAL, reason TEXT, fired INTEGER DEFAULT 0, created_at INTEGER, PRIMARY KEY (event_id, skill))` is added with idempotent init (no crash on existing DBs)",
+        "POST /api/claude/events ingest path: on hook_event_name === 'UserPromptSubmit', scoreSkills(payload.prompt, readSkills(activeCwd())), keep the top 8 by score, INSERT them into prompt_consideration keyed by that event's row id, then broadcast each as `{type:'skill-considered', payload: TimelineRow}` over /ws (separate kind, like skill-fired)",
+        "POST /api/claude/events ingest path: on hook_event_name === 'Stop', run the US-002 scanner over the session's JSONL slice since the latest UserPromptSubmit and UPDATE prompt_consideration SET fired=1, reason='<fired_reason>' WHERE event_id=<promptEventId> AND skill IN (<fired skill names>); the matching rows' kind in subsequent reads flips from skill-considered to skill-fired",
+        "The Timeline read route (US-001) joins prompt_consideration on the prompt event and emits `{kind: 'skill-considered', ts, eventId, skill, promptEventId, reason, heuristic: true}` rows (heuristic flag always true) for non-fired rows",
+        "Unit tests on scoreSkills cover BM25 ranking on a small fixture (prompt + 4 skills) AND each rule's classification (prompt-mentions, UI-keyword, diagram, strong, partial, none)",
+        "An integration test posts a fake UserPromptSubmit event, asserts the expected prompt_consideration rows + a `{type:'skill-considered'}` WS broadcast",
+        "An integration test posts a Stop event after writing a transcript fixture containing a Skill tool_use; asserts the matching prompt_consideration row flipped fired=1 with the fired reason",
+        "npm test passes all suites",
+        "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Foundation for the per-session header (US-008) and MCP tab (US-007) to track the active tab. Anchors: correlatedSession/activeSession in ui/src/App.tsx, activeTid in ui/src/components/TerminalPane.tsx, useTerminals. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "The novel piece. Honesty constraint: never label this 'why Claude didn't fire X' — only 'heuristic match against the skill's description'. Anchors: ingest path in src/gateway/index.ts (~:140); src/db (table init); src/skills/index.ts (readSkills). Real UserPromptSubmit payload key is `prompt` (verified). Memory mentions a native BM25 search skill in the conan-dashboard codebase (50 docs in 17ms, zero deps) — reuse its stop-word/token list if convenient, but the gateway can roll its own ~50-LOC BM25 with no new dep."
     },
     {
       "id": "US-004",
-      "title": "Slim bottom status bar: drop gateway chip, flex cwd-left / branch-right, `*` dirty marker",
-      "description": "As a Conan user, I want a cleaner bottom status bar that reads at a glance, so cwd and branch sit at opposite ends and dirtiness is a simple asterisk.",
+      "title": "Replace TimelineMock with the live Timeline.tsx (filter chips, live append, honest 'Heuristic' badge, rail-alignment fix)",
+      "description": "As a Conan user, I want the Timeline split panel to render real events from my session, so I can actually use it instead of the mockup.",
       "acceptanceCriteria": [
-        "StatusBar removes the gateway-connection chip and its `status`/`port` props (and the ConnectionStatus render)",
-        "The bar lays out flexed: cwd hugs the left edge, git branch hugs the right edge (justify-between), preserving truncation on each",
-        "The numeric dirty/changes indicator is removed; instead a bare `*` is appended to the branch name when git.dirty > 0 (e.g. `main*`), and the plain branch shows when clean",
-        "The StatusBar call site (TerminalPane/App) stops passing status/port; any now-dead ConnStatus/useGateway.status wiring at that call site is cleaned up",
+        "New ui/src/components/Timeline.tsx (replacing TimelineMock.tsx) takes {token, sessionId, terminalLabel, onClose} props and fetches GET /api/claude/timeline?session=<sessionId>&limit=200 on mount; renders an empty state when there are no rows yet ('No activity yet for this terminal — the timeline fills as Claude Code emits hook events.')",
+        "Subscribes to the app /ws and appends incoming `{type:'event'}` (after mapping to a hook TimelineRow), `{type:'skill-considered'}`, and `{type:'skill-fired'}` messages whose session_id matches; ignores other sessions",
+        "Loop rows come from existing `{type:'tasks'}` broadcasts (already plumbed) — the latest TasksState.activity lines matching this session's cwd render as 'LOOP' rows interleaved chronologically",
+        "Filter chips (All / Hooks / Skills / Loop) are FUNCTIONAL: chips are multi-select (All clears all others), state held locally; filtering hides rows whose kind doesn't match — never tears down data",
+        "Each PROMPT row's nested 'Skills considered (N) · fired N' card carries a small 'Heuristic match' badge with a tooltip explaining the data is computed by BM25 description matching, not Claude's actual scoring (anti-fabrication framing per the PRD)",
+        "Auto-scroll on new event: ONLY when the user is already at the top (timeline is descending). Otherwise keep their scroll position and show a small `↑ N new` pill that scrolls to top on click",
+        "Rail-alignment math fixed: rail centers on the dot column at left-[98px] (px-4 + w-16 + gap-3 + w-3/2). No visible offset between the rail and the dots in any row",
+        "TimelineMock.tsx is removed; TerminalPane.tsx's import + per-tab split mounts the new Timeline.tsx passing terminalLabel + the active session id",
+        "Mockup footer ('sample data') is gone (replaced by the live data)",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (cwd left, branch right, `*` present on a dirty branch and absent when clean, no gateway chip, no layout shift on a long/dirty branch), light + dark"
+        "Verify in browser using automate-browser skill (open the split for the active tab; row appears live after a hook event; filter chips toggle correctly; 'Heuristic match' badge + tooltip readable; rail aligned to dots; light + dark)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Presentation-only; data (git.dirty) already on the StatusBar git prop. Anchors: ui/src/components/StatusBar.tsx (US-010), its caller in TerminalPane/App. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-001 (route), US-002 (skill-fired rows + WS kind), US-003 (skill-considered rows + WS kind). Anchors: ui/src/components/TimelineMock.tsx (the prototype to replace); ui/src/components/TerminalPane.tsx (split toggle next to '+' + per-tab state already plumbed); existing WS subscriber pattern in ui/src/hooks/useTasks.ts / useGateway. The PROMPT row's nested card already exists in the mock as a layout template. Suggested skills: automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Pulse chart: dark-mode axis legibility + remove redundant in-chart legend",
-      "description": "As a Conan user, I want the Pulse chart readable in dark mode without the tooltip colliding with a legend, so the activity graph is legible.",
+      "title": "Persist per-tab Timeline split state + ⌘\\ keyboard shortcut",
+      "description": "As a Conan user, I want my Timeline split (open/closed + width) per terminal tab to survive reload, so I don't have to re-open it every time.",
       "acceptanceCriteria": [
-        "The AreaChart X/Y axis tick labels use a legible token (e.g. fill-foreground/60–70 or a dedicated chart-axis token) instead of fill-muted-foreground, readable on the dark chart background",
-        "The hover cursor line stroke is theme-aware (semantic token) rather than the hard-coded #d1d5db",
-        "PulseChart no longer passes showLegend to <AreaChart> (the in-chart legend is dropped); PulseChart's own footer legend + per-category totals remain the source of truth, so the hover tooltip no longer overlaps any legend",
-        "Axis/cursor changes stay token-driven in AreaChart.tsx so any future chart inherits them; no other chart consumer regresses",
+        "TerminalPane.tsx persists the per-tab timeline split state to sessionStorage under `conan.terms.timeline` (a JSON string-array of tids with the split open) and `conan.terms.timeline.w` (a JSON `{tid: number}` map of widths); writes on every toggle/resize end (debounced)",
+        "On mount, restore from sessionStorage: tabs whose tid is in the list reopen with their saved width (defaulting to TIMELINE_DEFAULT_W if no width)",
+        "Closing a tab removes the tid from BOTH sessionStorage keys (in addition to the in-memory cleanup already done by closeTerm)",
+        "⌘\\ (CmdOrCtrl+Backslash) toggles the timeline split for the active tab; the shortcut works whether focus is on the terminal or the HUD; doesn't intercept ⌘\\ inside an input/textarea",
+        "The native menu (ui/src/lib/appMenu.ts) View submenu gains a 'Split Timeline' item with the ⌘\\ accelerator that fires the same action via a window event (conan:toggle-timeline) TerminalPane listens for — consistent with the New/Close Terminal bridge",
+        "Toggle button next to '+' continues to work (parity); aria-pressed reflects state",
         "Typecheck passes",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (axis labels clearly readable in dark mode; hover tooltip does not collide with any legend; footer legend + totals intact), light + dark"
+        "Verify in browser using automate-browser skill (toggle, resize, reload → split state survives; ⌘\\ toggles the active tab's split)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Anchors: ui/src/components/charts/AreaChart.tsx (XAxis/YAxis tick fill ~:698/:728, cursor stroke ~:751, ChartTooltip ~:395); ui/src/components/PulseChart.tsx (showLegend ~:151 + footer legend ~:164-183). Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-006",
-      "title": "Context tab: user-facing 'Auto' context-tracking toggle (inline with manual refresh)",
-      "description": "As a Conan user, I want to turn the adaptive /context auto-refresh on or off from the Context tab, so I control the observer-effect tradeoff instead of an env var.",
-      "acceptanceCriteria": [
-        "A toggle sits inline with the existing ↻ /context manual refresh button in the Context widget header (one control group)",
-        "Auto ON enables the adaptive auto-inject path (the v3 delta-triggered cadence, not every turn); Auto OFF stops auto-injects while the manual refresh button still works on click",
-        "The toggle drives a runtime-settable flag that gates the existing autoRefreshContextOnStop path (lifting the CONAN_CONTEXT_AUTOREFRESH env gate to a UI-controlled setting), defaulting from the env var; the preference persists and is reflected on reload",
-        "The toggle's label/tooltip notes that Auto spends context to measure context (honest cost), consistent with the live·from /context framing",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (toggle + button render inline; ON re-enables auto-refresh, OFF stops auto-injects while manual refresh still works), light + dark"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Surfaces an existing capability. Anchors: autoRefreshContextOnStop + CONAN_CONTEXT_AUTOREFRESH in src/terminal/index.ts (fired from the Stop branch in src/gateway/index.ts); manual button + ContextWidget in ui/src/components/Widgets.tsx; route POST /api/claude/sessions/:id/context/refresh. Decide global vs per-session scope at implementation; a small runtime flag endpoint is acceptable. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-007",
-      "title": "MCP tab in the HUD — servers + connection status",
-      "description": "As a Conan user, I want a HUD tab listing the active session's MCP servers and their status, so I can see MCP health like Claude's /mcp view.",
-      "acceptanceCriteria": [
-        "A new McpWidget.tsx renders WidgetData.mcp as a list of `name · status` rows, each with a StatusDot whose tone maps from the server status (connected→green, failed→destructive/red, needs-authentication/pending→amber, disabled/other→muted)",
-        "A new MCP tab is added to the HUD tab strip + TabsContent (next to Skills), fed by the active session's WidgetData",
-        "An empty/graceful state renders when the list is empty or the session is hook-only (mcp === null): e.g. 'No MCP servers for this session'",
-        "The tab follows the active terminal tab's session (consistent with US-003)",
-        "Flush panel styling consistent with the other HUD tabs (no card chrome)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (MCP tab lists the session's servers with correct status colors; empty state renders), light + dark"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Core data exists (WidgetData.mcp, parsed by parseMcp/McpServer in src/widgets/index.ts). Tool-counts + User/claude.ai/Built-in grouping are a deliberate follow-up (not in system/init mcp_servers). Model on ui/src/components/SkillsWidget.tsx; reuse StatusDot in ui/src/components/shared/. Add tab in ui/src/components/Hud.tsx. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-008",
-      "title": "Fixed Claude-banner-style session header atop each terminal",
-      "description": "As a Conan user, I want a pinned header on the terminal pane showing what's running (logo, versions, model/context, cwd), so I see it without scrolling the terminal back to Claude's banner.",
-      "acceptanceCriteria": [
-        "A new SessionHeader.tsx renders three lines mirroring Claude's banner: (1) a logo placeholder (text/lucide, artwork TBD) + product line showing BOTH versions, e.g. `Conan 0.1.0 · Claude Code v2.1.152` (Conan version from ABOUT/package.json; Claude version from the session's claude_version captured in US-001, shown as `—` when unknown); (2) model (context), e.g. `Opus 4.7 (1M context)` from WidgetData.liveContext.modelDisplay + windowTokens (falling back to context.model); (3) the session cwd (~-collapsed)",
-        "The header is mounted in TerminalPane above the terminal body (between the tab strip and the xterm surface), describing the ACTIVE terminal tab's session (US-003)",
-        "A graceful fallback renders when the tab is uncorrelated (logo + Conan version + cwd; model line muted, Claude version `—`) rather than a blank bar",
-        "Semantic tokens only; flush styling with a 1px bottom border; the terminal body is unaffected (no layout shift / no pty teardown)",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (header pinned at the pane top shows both versions + model(context) + cwd for the active session, follows tab switches, no layout shift), light + dark"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Depends on US-001 (claude_version) and US-003 (active-tab binding). Anchors: ui/src/components/TerminalPane.tsx (above the terminal body), WidgetData.liveContext (ui/src/hooks/useWidgets.ts), Session.cwd/config.cwd, ABOUT in ui/src/lib/appMenu.ts. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-009",
-      "title": "Settings dialog: reorganize into Status / Config tabs (mirroring Claude's /settings)",
-      "description": "As a Conan user, I want the Settings dialog split into the same Status and Config tabs Claude uses, so the layout is faithful and ready for editable controls.",
-      "acceptanceCriteria": [
-        "SettingsView is reorganized into two tabs — Status and Config — using the ui/* tabs primitive",
-        "Status tab (read-only): version, session, cwd, login/org/email, model, MCP servers, setting sources — the existing read-only mirror content",
-        "Config tab lists the editable keys from GET /api/claude/config grouped sensibly, rendered read-only in THIS story (display value + type), as the scaffold the next story makes interactive",
-        "No regression to opening the dialog (Conan ▸ Settings / ⌘,) or its data loading",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (dialog opens with Status + Config tabs; Status shows read-only info; Config lists keys/values), light + dark"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Anchors: ui/src/components/SettingsView.tsx (US-008), useConfig, GET /api/claude/config, ui/* tabs primitive. Splits the editable-Settings work: tabbing here, interactivity in US-010. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-010",
-      "title": "Settings Config tab: live editable controls wired to the write route",
-      "description": "As a Conan user, I want to change Claude config values from the Config tab with the right control per type, so Settings is editable, not just a mirror.",
-      "acceptanceCriteria": [
-        "Config rows become live controls driven by the type metadata from GET /api/claude/config: toggle switch for booleans, dropdown for enums (allowed values), text/number input otherwise",
-        "Changing a control persists via POST /api/claude/config (US-002) and reflects the saved value; a save error surfaces inline without losing the dialog",
-        "Each editable control carries an honest note that changes apply to Claude's config and may only take effect on the next Claude session (no false claim of live hot-reload)",
-        "Status tab stays read-only; only Config is editable",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (toggle a boolean and pick an enum value; the value persists across reopen; other settings untouched), light + dark"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Depends on US-002 (write route + type metadata) and US-009 (tabbed scaffold). Anchors: ui/src/components/SettingsView.tsx, POST /api/claude/config, ui/* select/switch primitives. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-011",
-      "title": "Claude Radio — app-wide bottom toolbar play/pause for the YouTube live stream",
-      "description": "As a Conan user, I want a play/pause toolbar that streams Claude Radio, so I can have ambient audio while I work.",
-      "acceptanceCriteria": [
-        "A new RadioBar.tsx hosts an offscreen (1×1 / visually hidden) YouTube IFrame Player for video id YmQ7jRgf4f0 (https://www.youtube.com/live/YmQ7jRgf4f0), controlled via the YouTube IFrame Player API (playVideo/pauseVideo)",
-        "A play/pause button reflects the player's real state via onStateChange; the bar starts PAUSED (audio plays only after the user clicks Play — the gesture satisfies the autoplay-with-sound policy)",
-        "A 'Claude Radio' label is shown; an offline/error state (stream ended/unavailable) disables the button with a muted label instead of a dead control",
-        "The bar is mounted as an app-wide full-width bottom strip in App.tsx, BELOW the TerminalPane + Hud row (its own strip, distinct from the terminal's cwd/branch status bar), slim with a 1px top border and semantic tokens; it does not shift or tear down the terminal/HUD",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (button toggles play↔pause and reflects player state; label reads 'Claude Radio'; layout stable — note audio can't be asserted headlessly, verify the player state + control instead), light + dark"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "CSP is null (permissive) so no allowlisting needed now. Anchors: new ui/src/components/RadioBar.tsx (YT IFrame API loaded lazily), ui/src/App.tsx shell (bottom strip below the terminal/HUD flex row), security.csp in src-tauri/tauri.conf.json (only if CSP is ever tightened). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Anchors: TerminalPane.tsx timelineOpen Set + timelineWidth Record + toggleTimelineForActive (already plumbed); persist alongside conan.terms (the existing tid list). Native menu bridge: window CustomEvent pattern in ui/src/lib/appMenu.ts (e.g. conan:new-terminal). Suggested skills: automate-browser."
     }
   ]
 }
