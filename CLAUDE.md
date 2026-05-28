@@ -92,8 +92,7 @@ npm run typecheck           # tsc --noEmit (gateway)
 - UI: `App.tsx` shell renders `components/TerminalPane.tsx` (the main surface — N
   `Terminal.tsx` tabs in a **real VS-Code-style tab strip** (v4.3 US-009, replacing
   the old `Term ▾` dropdown), mounted-but-hidden so switching never tears down a
-  pty; a pinned `SessionHeader.tsx` Claude-banner sits above the xterm, and a
-  `StatusBar.tsx` cwd/branch footer below it) beside `components/Hud.tsx` (the
+  pty; a `StatusBar.tsx` cwd/branch footer below) beside `components/Hud.tsx` (the
   DevTools-style widget HUD). The HUD tabs are **Context · Usage · Pulse · [Plan]
   · Skills · MCP** — `Widgets.tsx` (Context+Usage), `PulseChart.tsx`,
   `PlanWidget.tsx` (conditional), `SkillsWidget.tsx`, `McpWidget.tsx` — with a
@@ -155,16 +154,16 @@ npm run typecheck           # tsc --noEmit (gateway)
 ## Status (2026-05-27)
 **v4.4 done (`loop/conan-v4.4`, 11 stories + QA polish).** HUD/UX polish:
 **Claude Code version capture** from the SessionStart hook (US-001, `claude_version`
-column → session header); an **editable Claude-config write route** + binary-extracted
+column — backend only; the US-008 session header it fed was removed in QA as overkill,
+the column stays for Settings/future use); an **editable Claude-config write route** + binary-extracted
 enum schema (US-002, single-key read-modify-write preserving all other keys);
 **session-scoped HUD widgets bound to the active terminal tab** (US-003, fixes the
 "new terminal shows the old session" bug); a **slim status bar** (US-004, drop the
 gateway chip, cwd-left/branch-right, VS-Code `*` dirty marker); **Pulse dark-mode
 axis legibility** + dropped the redundant in-chart legend (US-005); a **Context
-"Auto" toggle** for the adaptive `/context` auto-refresh (US-006); a **fixed
-Claude-banner session header** atop the terminal (US-008, Conan + Claude Code
-versions + model/context + cwd); an **editable tabbed (Status/Config) Settings
-dialog** (US-009/010); and **Claude Radio** — a play/pause toolbar at the HUD's
+"Auto" toggle** for the adaptive `/context` auto-refresh (US-006); an **editable
+tabbed (Status/Config) Settings dialog** (US-009/010); and **Claude Radio** — a
+play/pause toolbar at the HUD's
 bottom streaming a YouTube live stream (US-011). **MCP tab** (US-007) ships too, but
 was **fixed post-loop** to source from `claude mcp list` (the per-session
 `system/init` mcp_servers it was built against never arrives over hooks). Post-loop

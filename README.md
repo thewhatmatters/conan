@@ -1,11 +1,10 @@
 # Conan
 
 **A terminal-primary native desktop app that wraps and observes Claude Code.**
-Conan puts Claude Code's `xterm.js` terminal front-and-center — with a pinned
-Claude-banner **session header** and a cwd/branch **status bar** — beside a
-DevTools-style **widget HUD** (**Context · Usage · Pulse · Plan · Skills · MCP**)
-and a **Claude Radio** play/pause toolbar, all backed by one loopback Node gateway
-packaged as a Tauri sidecar.
+Conan puts Claude Code's `xterm.js` terminal front-and-center — with a cwd/branch
+**status bar** — beside a DevTools-style **widget HUD** (**Context · Usage · Pulse
+· Plan · Skills · MCP**) and a **Claude Radio** play/pause toolbar, all backed by
+one loopback Node gateway packaged as a Tauri sidecar.
 
 - **Terminal** — a live `node-pty` running `claude` in the active cwd, the main
   surface of the app.
@@ -104,10 +103,9 @@ self-reports; the UI filters the firehose by the active cwd.
 
 The app is terminal-primary: the `xterm.js` terminal fills the main pane behind a
 **VS-Code-style tab strip** (multiple terminals, each its own pty; switching never
-tears one down), with a pinned Claude-banner **session header** above it (Conan +
-Claude Code versions · model/context · cwd) and a cwd/branch **status bar** below.
-A drag-resizable, width-persisted HUD docks to the right. The HUD's session-scoped
-tabs follow the **active terminal tab**.
+tears one down), with a cwd/branch **status bar** below it. A drag-resizable,
+width-persisted HUD docks to the right. The HUD's session-scoped tabs follow the
+**active terminal tab**.
 
 - **Context** tab — the live session's `/context` breakdown (model header, total %,
   per-category tokens incl. Free space) with a Tremor `ProgressCircle` gauge, an

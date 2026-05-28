@@ -11,7 +11,7 @@ export interface AppMenuActions {
   onCloseTerminal: () => void;
 }
 
-/** Conan's own version, shown in the About box and the session header (US-008). */
+/** Conan's own version, shown in the About box. */
 export const CONAN_VERSION = "0.1.0";
 const ABOUT = { name: "Conan", version: CONAN_VERSION };
 
