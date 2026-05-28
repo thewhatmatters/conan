@@ -208,7 +208,7 @@ export function ContextWidget({
           </ProgressCircle>
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">
-              {barPct != null ? "context used" : "no usage yet"}
+              {barPct != null ? "context used" : "NO USAGE YET"}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {ctxTokens != null
