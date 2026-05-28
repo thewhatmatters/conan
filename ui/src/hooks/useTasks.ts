@@ -37,6 +37,43 @@ export interface GatewayEvent {
   ts: number;
 }
 
+/**
+ * The skill-fired WS envelope (US-002): the live transcript-watcher emits one
+ * of these whenever a new Skill tool_use lands in a session's JSONL. The
+ * Timeline split panel (US-004) consumes these scoped to its active session.
+ */
+export interface SkillFiredEvent {
+  sessionId: string;
+  payload: {
+    kind: "skill-fired";
+    ts: number;
+    skill: string;
+    promptEventId?: number;
+    detail?: string;
+  };
+  /** Bumps on every received broadcast so effects retrigger. */
+  seq: number;
+}
+
+/**
+ * The skill-considered WS envelope (US-003): the ingest path emits one per
+ * top-scored skill for each UserPromptSubmit. Labelled `heuristic: true` —
+ * this is Conan's BM25 description match, NOT Claude's real scoring (US-004).
+ */
+export interface SkillConsideredEvent {
+  sessionId: string;
+  payload: {
+    kind: "skill-considered";
+    ts: number;
+    eventId?: number;
+    skill: string;
+    promptEventId?: number;
+    reason: string;
+    heuristic: true;
+  };
+  seq: number;
+}
+
 /** A streamed ultrareview run (US-046), mirrors the gateway UltrareviewRun. */
 export interface UltrareviewRun {
   id: string;
@@ -59,6 +96,10 @@ export interface GatewayState {
   lastEvent: (GatewayEvent & { seq: number; replay?: boolean }) | null;
   /** Latest ultrareview run pushed over /ws (US-046), or null until one streams. */
   lastUltrareview: UltrareviewRun | null;
+  /** Latest `{type:'skill-fired'}` broadcast (US-002 v4.5). Seq retriggers effects. */
+  lastSkillFired: SkillFiredEvent | null;
+  /** Latest `{type:'skill-considered'}` broadcast (US-003 v4.5). Seq retriggers effects. */
+  lastSkillConsidered: SkillConsideredEvent | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -84,6 +125,9 @@ export function useGateway(
   const [lastEvent, setLastEvent] =
     useState<(GatewayEvent & { seq: number; replay?: boolean }) | null>(null);
   const [lastUltrareview, setLastUltrareview] = useState<UltrareviewRun | null>(null);
+  const [lastSkillFired, setLastSkillFired] = useState<SkillFiredEvent | null>(null);
+  const [lastSkillConsidered, setLastSkillConsidered] =
+    useState<SkillConsideredEvent | null>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -127,6 +171,18 @@ export function useGateway(
             });
           else if (msg.type === "ultrareview")
             setLastUltrareview(msg.payload as UltrareviewRun);
+          else if (msg.type === "skill-fired")
+            setLastSkillFired({
+              sessionId: String(msg.sessionId ?? ""),
+              payload: msg.payload as SkillFiredEvent["payload"],
+              seq: ++seq,
+            });
+          else if (msg.type === "skill-considered")
+            setLastSkillConsidered({
+              sessionId: String(msg.sessionId ?? ""),
+              payload: msg.payload as SkillConsideredEvent["payload"],
+              seq: ++seq,
+            });
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -136,5 +192,13 @@ export function useGateway(
     return () => sock.close();
   }, [token]);
 
-  return { tasks, lastEvent, lastUltrareview, status, reconnectSeq };
+  return {
+    tasks,
+    lastEvent,
+    lastUltrareview,
+    lastSkillFired,
+    lastSkillConsidered,
+    status,
+    reconnectSeq,
+  };
 }

@@ -85,7 +85,7 @@
         "Verify in browser using automate-browser skill (open the split for the active tab; row appears live after a hook event; filter chips toggle correctly; 'Heuristic match' badge + tooltip readable; rail aligned to dots; light + dark)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001 (route), US-002 (skill-fired rows + WS kind), US-003 (skill-considered rows + WS kind). Anchors: ui/src/components/TimelineMock.tsx (the prototype to replace); ui/src/components/TerminalPane.tsx (split toggle next to '+' + per-tab state already plumbed); existing WS subscriber pattern in ui/src/hooks/useTasks.ts / useGateway. The PROMPT row's nested card already exists in the mock as a layout template. Suggested skills: automate-browser."
     },
     {

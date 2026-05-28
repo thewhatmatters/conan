@@ -6,7 +6,13 @@ import type { Theme } from "../hooks/useTheme.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
-import TimelineMock from "./TimelineMock.tsx";
+import Timeline from "./Timeline.tsx";
+import type {
+  GatewayEvent,
+  SkillConsideredEvent,
+  SkillFiredEvent,
+  TasksState,
+} from "../hooks/useTasks.ts";
 
 // PROTOTYPE: minimum + default width for the per-tab Timeline split (px).
 const TIMELINE_MIN_W = 320;
@@ -29,6 +35,14 @@ interface TerminalPaneProps {
   /** US-003: report the active terminal tab's tid upward (mount, switch, new,
    *  close) so the HUD can bind its session-scoped widgets to the visible tab. */
   onActiveTidChange?: (tid: string) => void;
+  /** Build-loop progress.txt activity (US-004 v4.5): forwarded to the
+   *  per-tab Timeline split so it can append loop rows live. */
+  tasks?: TasksState | null;
+  /** Shared app-WS signals (US-004 v4.5) forwarded to the Timeline split.
+   *  The Timeline filters them by its bound session id. */
+  lastEvent?: (GatewayEvent & { seq: number; replay?: boolean }) | null;
+  lastSkillFired?: SkillFiredEvent | null;
+  lastSkillConsidered?: SkillConsideredEvent | null;
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
@@ -79,6 +93,10 @@ export default function TerminalPane({
   cwd,
   git,
   onActiveTidChange,
+  tasks,
+  lastEvent,
+  lastSkillFired,
+  lastSkillConsidered,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
@@ -331,7 +349,9 @@ export default function TerminalPane({
                       style={{ width: tlW }}
                       className="shrink-0 bg-card"
                     >
-                      <TimelineMock
+                      <Timeline
+                        token={token}
+                        sessionId={byTid.get(t.tid)?.sessionId ?? null}
                         terminalLabel={terminalLabel(byTid.get(t.tid), i)}
                         onClose={() =>
                           setTimelineOpen((prev) => {
@@ -340,6 +360,10 @@ export default function TerminalPane({
                             return next;
                           })
                         }
+                        lastEvent={lastEvent ?? null}
+                        lastSkillFired={lastSkillFired ?? null}
+                        lastSkillConsidered={lastSkillConsidered ?? null}
+                        tasks={tasks ?? null}
                       />
                     </aside>
                   </>

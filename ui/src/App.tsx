@@ -29,10 +29,8 @@ export default function App() {
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, preference, setTheme } = useTheme();
-  const { tasks, lastEvent, reconnectSeq } = useGateway(
-    config?.token ?? null,
-    [],
-  );
+  const { tasks, lastEvent, lastSkillFired, lastSkillConsidered, reconnectSeq } =
+    useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
   // REST-backed hooks re-pull their snapshots after a connection gap.
   const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
@@ -164,6 +162,10 @@ export default function App() {
         cwd={config?.cwd ?? null}
         git={widgetData?.git ?? null}
         onActiveTidChange={setActiveTid}
+        tasks={tasks}
+        lastEvent={lastEvent}
+        lastSkillFired={lastSkillFired}
+        lastSkillConsidered={lastSkillConsidered}
       />
       <Hud
         hidden={!hudOpen}
