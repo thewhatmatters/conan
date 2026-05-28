@@ -20,10 +20,27 @@ export interface ConfigFile {
   present: boolean;
 }
 
-/** Shape of GET /api/claude/config (US-007). */
+/** How a config value is typed — mirrors ConfigKind in src/config/index.ts. */
+export type ConfigKind = "boolean" | "enum" | "string" | "number";
+
+/**
+ * Type metadata for one editable key — mirrors KeyType in src/config/index.ts
+ * (US-002). Drives the control the Config tab renders (read-only here in US-009,
+ * interactive in US-010). Enum `values` are extracted from the claude binary.
+ */
+export interface KeyType {
+  key: string;
+  label: string;
+  kind: ConfigKind;
+  scope: "settings" | "global";
+  values?: string[];
+}
+
+/** Shape of GET /api/claude/config (US-007 + US-002 `schema`). */
 export interface ClaudeConfig {
   entries: ConfigEntry[];
   files: ConfigFile[];
+  schema: KeyType[];
 }
 
 /**
@@ -47,7 +64,9 @@ export function useConfig(token: string | null): ClaudeConfig | null {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled && d && Array.isArray(d.entries)) setConfig(d as ClaudeConfig);
+        if (!cancelled && d && Array.isArray(d.entries)) {
+          setConfig({ ...d, schema: Array.isArray(d.schema) ? d.schema : [] } as ClaudeConfig);
+        }
       })
       .catch(() => {});
     return () => {

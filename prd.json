@@ -156,7 +156,7 @@
         "Verify in browser using automate-browser skill (dialog opens with Status + Config tabs; Status shows read-only info; Config lists keys/values), light + dark"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Anchors: ui/src/components/SettingsView.tsx (US-008), useConfig, GET /api/claude/config, ui/* tabs primitive. Splits the editable-Settings work: tabbing here, interactivity in US-010. Suggested skills: automate-browser."
     },
     {
