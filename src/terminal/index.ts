@@ -162,8 +162,13 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   }
 
   const db = getDb();
+  // INSERT OR REPLACE so reattaching a tid (US-017/018 pty-survival reuses
+  // tids, and a stale row left by a crashed prior process surfaces the same
+  // way) doesn't throw `UNIQUE constraint failed: terminal_session.id` and
+  // crash the gateway on terminal connect. The row carries ephemeral pty
+  // metadata (pid/cols/rows/created_at); a fresh attach legitimately replaces it.
   db.prepare(
-    `INSERT INTO terminal_session (id, session_id, pid, cols, rows, created_at)
+    `INSERT OR REPLACE INTO terminal_session (id, session_id, pid, cols, rows, created_at)
      VALUES (?, NULL, ?, ?, ?, ?)`,
   ).run(id, term.pid, cols, rows, Date.now());
 
