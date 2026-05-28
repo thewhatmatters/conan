@@ -190,7 +190,7 @@
         "Verify in browser using automate-browser skill (button toggles play↔pause and reflects player state; label reads 'Claude Radio'; layout stable — note audio can't be asserted headlessly, verify the player state + control instead), light + dark"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "CSP is null (permissive) so no allowlisting needed now. Anchors: new ui/src/components/RadioBar.tsx (YT IFrame API loaded lazily), ui/src/App.tsx shell (bottom strip below the terminal/HUD flex row), security.csp in src-tauri/tauri.conf.json (only if CSP is ever tightened). Suggested skills: automate-browser."
     }
   ]
