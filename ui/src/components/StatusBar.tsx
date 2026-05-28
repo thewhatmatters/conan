@@ -29,7 +29,7 @@ function prettyCwd(cwd: string): string {
  */
 export default function StatusBar({ cwd, git }: StatusBarProps) {
   return (
-    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+    <footer className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-3 text-xs text-muted-foreground">
       {cwd ? (
         <span title={cwd} className="inline-flex min-w-0 items-center gap-1.5">
           <FolderOpen className="size-3.5 shrink-0" />

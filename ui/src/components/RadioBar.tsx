@@ -148,7 +148,7 @@ export default function RadioBar() {
   };
 
   return (
-    <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+    <footer className="flex h-7 shrink-0 items-center gap-2 border-t border-border bg-card px-3 text-xs text-muted-foreground">
       <button
         type="button"
         onClick={toggle}
@@ -161,7 +161,7 @@ export default function RadioBar() {
               ? "Pause Claude Radio"
               : "Play Claude Radio"
         }
-        className="inline-flex size-6 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent"
+        className="inline-flex items-center justify-center rounded text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent"
       >
         {playing ? (
           <Pause className="size-3.5" />
