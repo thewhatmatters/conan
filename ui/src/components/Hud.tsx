@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import { ContextWidget, UsageWidget } from "./Widgets.tsx";
-import PlanWidget from "./PlanWidget.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
@@ -9,9 +8,7 @@ import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
-import type { PlanState } from "../hooks/usePlan.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
-import type { TasksState } from "../hooks/useTasks.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 
 // VS Code–style tabs: flat, the active tab marked by a top accent border (not a
@@ -44,10 +41,6 @@ interface HudProps {
   pulse?: PulseSeries | null;
   pulseMinutes?: number;
   onPulseRange?: (minutes: number) => void;
-  // — Plan widget (US-004): conditional 4th tab, shown only when active —
-  plan?: PlanState;
-  /** Build-loop tasks feed — the Plan widget's fallback source. */
-  tasks?: TasksState | null;
   // — Skills widget (US-006): VS Code-extensions-style list, always present —
   skills?: SkillEntry[];
 }
@@ -70,13 +63,10 @@ export default function Hud({
   pulse,
   pulseMinutes = 60,
   onPulseRange,
-  plan,
-  tasks,
   skills,
 }: HudProps) {
-  // US-004: the Plan tab only exists when the active session has a live plan
-  // (open TodoWrite items, a recent ExitPlanMode plan, or an active build loop).
-  const planActive = plan?.isActive ?? false;
+  // US-007 (v4.5): the Plan HUD tab was removed — plan rows live on the
+  // per-terminal Timeline split now (PlanWidget + usePlan are gone with it).
   const [width, setWidth] = useState<number>(
     () => Number(localStorage.getItem(WIDTH_KEY)) || 460,
   );
@@ -115,7 +105,8 @@ export default function Hud({
       <Tabs defaultValue="context" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center border-b border-border">
           {/* Tabs scroll horizontally so the bar still reads at the 320px min
-              width once Plan + Skills join Context | Usage | Pulse (US-006).
+              width — Context | Usage | Pulse | Skills | MCP (US-007 dropped
+              the Plan tab; plan rows live in the per-terminal Timeline now).
               Flush, contiguous (no gap/padding) so they read as real tabs. */}
           <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start overflow-x-auto rounded-none bg-transparent p-0">
             <TabsTrigger value="context" className={TAB_TRIGGER}>
@@ -127,11 +118,6 @@ export default function Hud({
             <TabsTrigger value="pulse" className={TAB_TRIGGER}>
               Pulse
             </TabsTrigger>
-            {planActive && (
-              <TabsTrigger value="plan" className={TAB_TRIGGER}>
-                Plan
-              </TabsTrigger>
-            )}
             <TabsTrigger value="skills" className={TAB_TRIGGER}>
               Skills
             </TabsTrigger>
@@ -177,15 +163,6 @@ export default function Hud({
             />
           )}
         </TabsContent>
-
-        {planActive && plan && (
-          <TabsContent
-            value="plan"
-            className="mt-0 min-h-0 flex-1 overflow-auto"
-          >
-            <PlanWidget plan={plan} tasks={tasks ?? null} />
-          </TabsContent>
-        )}
 
         <TabsContent value="skills" className="mt-0 min-h-0 flex-1 overflow-auto">
           <SkillsWidget skills={skills ?? []} />

@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import Timeline from "./Timeline.tsx";
 import type {
   GatewayEvent,
+  PlanEvent,
   SkillConsideredEvent,
   SkillFiredEvent,
   TasksState,
@@ -43,6 +44,8 @@ interface TerminalPaneProps {
   lastEvent?: (GatewayEvent & { seq: number; replay?: boolean }) | null;
   lastSkillFired?: SkillFiredEvent | null;
   lastSkillConsidered?: SkillConsideredEvent | null;
+  /** Live TodoWrite / ExitPlanMode broadcast (US-007 v4.5) — fed to PLAN rows. */
+  lastPlan?: PlanEvent | null;
 }
 
 const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
@@ -151,6 +154,7 @@ export default function TerminalPane({
   lastEvent,
   lastSkillFired,
   lastSkillConsidered,
+  lastPlan,
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
@@ -471,6 +475,7 @@ export default function TerminalPane({
                         lastEvent={lastEvent ?? null}
                         lastSkillFired={lastSkillFired ?? null}
                         lastSkillConsidered={lastSkillConsidered ?? null}
+                        lastPlan={lastPlan ?? null}
                         tasks={tasks ?? null}
                       />
                     </aside>

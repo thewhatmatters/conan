@@ -7,7 +7,6 @@ import { useTerminals } from "./hooks/useTerminals.ts";
 import TerminalPane from "./components/TerminalPane.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
-import { usePlan } from "./hooks/usePlan.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useWidgets } from "./hooks/useWidgets.ts";
@@ -29,8 +28,14 @@ export default function App() {
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { theme, preference, setTheme } = useTheme();
-  const { tasks, lastEvent, lastSkillFired, lastSkillConsidered, reconnectSeq } =
-    useGateway(config?.token ?? null, []);
+  const {
+    tasks,
+    lastEvent,
+    lastSkillFired,
+    lastSkillConsidered,
+    lastPlan,
+    reconnectSeq,
+  } = useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
   // REST-backed hooks re-pull their snapshots after a connection gap.
   const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
@@ -74,9 +79,6 @@ export default function App() {
     wsTrigger,
     true,
   );
-  // US-004: the active session's reduced plan-state (TodoWrite/ExitPlanMode,
-  // with a build-loop fallback) for the conditional Plan HUD tab.
-  const plan = usePlan(activeSession?.id ?? null, wsTrigger, config?.token ?? null);
   // US-006: installed skills (name + description + source) for the Skills tab.
   const skills = useSkills(config?.token ?? null);
   // US-008: Claude Code's config mirror for the Settings view; refetch re-reads
@@ -168,6 +170,7 @@ export default function App() {
         lastEvent={lastEvent}
         lastSkillFired={lastSkillFired}
         lastSkillConsidered={lastSkillConsidered}
+        lastPlan={lastPlan}
       />
       <Hud
         hidden={!hudOpen}
@@ -181,8 +184,6 @@ export default function App() {
         pulse={pulse}
         pulseMinutes={pulseMinutes}
         onPulseRange={setPulseMinutes}
-        plan={plan}
-        tasks={tasks}
         skills={skills}
       />
       <SettingsView

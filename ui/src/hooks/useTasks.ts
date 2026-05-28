@@ -74,6 +74,41 @@ export interface SkillConsideredEvent {
   seq: number;
 }
 
+/** TodoWrite item shape — mirrors PlanItem in src/timeline/transcriptScan.ts. */
+export interface PlanItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm?: string;
+}
+
+/**
+ * The plan WS envelope (US-006): the live transcript watcher emits one of
+ * these whenever a TodoWrite or ExitPlanMode tool_use block lands in a
+ * session's JSONL. The Timeline split panel (US-007) consumes these scoped to
+ * its bound session and renders them as PLAN rows.
+ */
+export interface PlanEvent {
+  sessionId: string;
+  payload:
+    | {
+        kind: "plan";
+        ts: number;
+        subtype: "todo-write";
+        eventId?: number;
+        promptEventId?: number;
+        items: PlanItem[];
+      }
+    | {
+        kind: "plan";
+        ts: number;
+        subtype: "plan-mode";
+        eventId?: number;
+        promptEventId?: number;
+        plan: string;
+      };
+  seq: number;
+}
+
 /** A streamed ultrareview run (US-046), mirrors the gateway UltrareviewRun. */
 export interface UltrareviewRun {
   id: string;
@@ -100,6 +135,8 @@ export interface GatewayState {
   lastSkillFired: SkillFiredEvent | null;
   /** Latest `{type:'skill-considered'}` broadcast (US-003 v4.5). Seq retriggers effects. */
   lastSkillConsidered: SkillConsideredEvent | null;
+  /** Latest `{type:'plan'}` broadcast (US-006/US-007 v4.5). Seq retriggers effects. */
+  lastPlan: PlanEvent | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -128,6 +165,7 @@ export function useGateway(
   const [lastSkillFired, setLastSkillFired] = useState<SkillFiredEvent | null>(null);
   const [lastSkillConsidered, setLastSkillConsidered] =
     useState<SkillConsideredEvent | null>(null);
+  const [lastPlan, setLastPlan] = useState<PlanEvent | null>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -183,6 +221,12 @@ export function useGateway(
               payload: msg.payload as SkillConsideredEvent["payload"],
               seq: ++seq,
             });
+          else if (msg.type === "plan")
+            setLastPlan({
+              sessionId: String(msg.sessionId ?? ""),
+              payload: msg.payload as PlanEvent["payload"],
+              seq: ++seq,
+            });
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -198,6 +242,7 @@ export function useGateway(
     lastUltrareview,
     lastSkillFired,
     lastSkillConsidered,
+    lastPlan,
     status,
     reconnectSeq,
   };

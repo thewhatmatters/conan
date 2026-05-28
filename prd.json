@@ -143,7 +143,7 @@
         "Verify in browser using automate-browser skill (open the timeline split for an active session; a TodoWrite produces a PLAN row that expands to the item list; an ExitPlanMode produces a PLAN row that expands to the plan text; the Plan tab no longer appears in the HUD tab strip; the Plan filter chip toggles plan-row visibility — light + dark)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-004 (live Timeline.tsx) and US-006 (plan rows in the timeline route + WS). Anchors: ui/src/components/Hud.tsx (the conditional Plan tab to remove), ui/src/components/PlanWidget.tsx + ui/src/hooks/usePlan.ts (to delete), ui/src/App.tsx (drops the usePlan call + the plan/tasks props passed to Hud). Suggested skills: automate-browser."
     }
   ]

@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import type {
   GatewayEvent,
+  PlanEvent,
+  PlanItem,
   SkillConsideredEvent,
   SkillFiredEvent,
   TasksState,
@@ -68,10 +70,21 @@ export type TimelineRow =
       promptEventId?: number;
       reason: string;
       heuristic: true;
+    }
+  | {
+      kind: "plan";
+      ts: number;
+      subtype: "todo-write" | "plan-mode";
+      eventId?: number;
+      promptEventId?: number;
+      /** TodoWrite items; present only when subtype === 'todo-write'. */
+      items?: PlanItem[];
+      /** ExitPlanMode plan text; present only when subtype === 'plan-mode'. */
+      plan?: string;
     };
 
 /** The active filter chips; an empty set means "All". */
-type Filter = "hooks" | "skills" | "loop";
+type Filter = "hooks" | "skills" | "plan" | "loop";
 
 interface TimelineProps {
   token: string | null;
@@ -87,6 +100,8 @@ interface TimelineProps {
   lastSkillFired: SkillFiredEvent | null;
   /** Latest live skill-considered broadcast. */
   lastSkillConsidered: SkillConsideredEvent | null;
+  /** Latest live plan broadcast (TodoWrite / ExitPlanMode). */
+  lastPlan: PlanEvent | null;
   /** Build-loop progress.txt activity (gated server-side by session cwd). */
   tasks: TasksState | null;
 }
@@ -223,7 +238,7 @@ function mapActivityLineToRow(line: string): TimelineRow | null {
   return { kind: "loop", ts, subtype, title: truncate(body, 160) };
 }
 
-/** Stable key for dedup + React lists across hook/loop/skill rows. */
+/** Stable key for dedup + React lists across hook/loop/skill/plan rows. */
 function rowKey(row: TimelineRow): string {
   switch (row.kind) {
     case "hook":
@@ -234,6 +249,8 @@ function rowKey(row: TimelineRow): string {
       return `sf:${row.ts}:${row.skill}:${row.promptEventId ?? ""}`;
     case "skill-considered":
       return `sc:${row.promptEventId ?? row.eventId ?? row.ts}:${row.skill}`;
+    case "plan":
+      return `p:${row.ts}:${row.subtype}:${row.promptEventId ?? row.eventId ?? ""}`;
   }
 }
 
@@ -265,6 +282,8 @@ function kindColor(kind: TimelineRow["kind"]): {
       };
     case "loop":
       return { dot: "bg-chart-4", pillBg: "bg-chart-4/15", pillFg: "text-chart-4" };
+    case "plan":
+      return { dot: "bg-chart-5", pillBg: "bg-chart-5/15", pillFg: "text-chart-5" };
     case "hook":
     default:
       return { dot: "bg-chart-2", pillBg: "bg-chart-2/15", pillFg: "text-chart-2" };
@@ -281,6 +300,7 @@ function formatTime(ts: number): string {
 function rowPillLabel(row: TimelineRow): string {
   if (row.kind === "hook") return row.subtype;
   if (row.kind === "loop") return "LOOP";
+  if (row.kind === "plan") return "PLAN";
   if (row.kind === "skill-fired") return "SKILL";
   return "SKILL?";
 }
@@ -288,8 +308,39 @@ function rowPillLabel(row: TimelineRow): string {
 /** Filter-bucket a row belongs to (matches the chips). */
 function rowFilterBucket(row: TimelineRow): Filter {
   if (row.kind === "loop") return "loop";
+  if (row.kind === "plan") return "plan";
   if (row.kind === "skill-fired" || row.kind === "skill-considered") return "skills";
   return "hooks";
+}
+
+/** Count completed items in a TodoWrite list (for the row title). */
+function countTodos(items: PlanItem[] | undefined): { total: number; done: number } {
+  if (!items?.length) return { total: 0, done: 0 };
+  let done = 0;
+  for (const it of items) if (it.status === "completed") done++;
+  return { total: items.length, done };
+}
+
+/** Title shown next to the PLAN pill — collapsed view. */
+function planRowTitle(row: TimelineRow & { kind: "plan" }): string {
+  if (row.subtype === "todo-write") {
+    const { total, done } = countTodos(row.items);
+    return `${total} todo${total === 1 ? "" : "s"} · ${done} done`;
+  }
+  return "Entered plan mode";
+}
+
+/** Status icon for one TodoWrite item — never fabricated. */
+function todoBadge(status: PlanItem["status"]): string {
+  if (status === "completed") return "✓";
+  if (status === "in_progress") return "◐";
+  return "○";
+}
+
+function todoBadgeColor(status: PlanItem["status"]): string {
+  if (status === "completed") return "text-chart-1";
+  if (status === "in_progress") return "text-chart-3";
+  return "text-muted-foreground/60";
 }
 
 function FilterChip({
@@ -329,6 +380,7 @@ export default function Timeline({
   lastEvent,
   lastSkillFired,
   lastSkillConsidered,
+  lastPlan,
   tasks,
 }: TimelineProps) {
   const [rows, setRows] = useState<TimelineRow[]>([]);
@@ -416,6 +468,15 @@ export default function Timeline({
     if (lastSkillConsidered.sessionId !== sessionId) return;
     appendOrNotify(lastSkillConsidered.payload as TimelineRow);
   }, [lastSkillConsidered, sessionId, appendOrNotify]);
+
+  // Append incoming `{type:'plan'}` (TodoWrite / ExitPlanMode) for this session.
+  // The Plan HUD tab was removed in US-007 — these PLAN rows are now the
+  // session's sole planning surface, scoped to its terminal tab.
+  useEffect(() => {
+    if (!lastPlan || !sessionId) return;
+    if (lastPlan.sessionId !== sessionId) return;
+    appendOrNotify(lastPlan.payload as TimelineRow);
+  }, [lastPlan, sessionId, appendOrNotify]);
 
   // Append new build-loop activity lines. We diff against rows we've already
   // seen by rowKey ("l:<ts>:<title>"). The server gates loop rows by
@@ -546,6 +607,11 @@ export default function Timeline({
             onClick={() => toggleFilter("skills")}
           />
           <FilterChip
+            label="Plan"
+            active={filters.has("plan")}
+            onClick={() => toggleFilter("plan")}
+          />
+          <FilterChip
             label="Loop"
             active={filters.has("loop")}
             onClick={() => toggleFilter("loop")}
@@ -630,11 +696,12 @@ export default function Timeline({
                             ? `${row.skill} fired`
                             : row.kind === "skill-considered"
                             ? `${row.skill} considered`
+                            : row.kind === "plan"
+                            ? planRowTitle(row)
                             : row.title}
                         </span>
                       </div>
-                      {row.kind !== "skill-fired" &&
-                        row.kind !== "skill-considered" &&
+                      {(row.kind === "hook" || row.kind === "loop") &&
                         row.detail && (
                           <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                             {row.detail}
@@ -645,6 +712,53 @@ export default function Timeline({
                           {row.reason}
                         </div>
                       )}
+                      {row.kind === "plan" &&
+                        row.subtype === "todo-write" &&
+                        row.items &&
+                        row.items.length > 0 && (
+                          <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
+                            <ul className="flex flex-col gap-0.5">
+                              {row.items.map((it, i) => (
+                                <li
+                                  key={i}
+                                  className="flex items-baseline gap-2 text-[11px]"
+                                >
+                                  <span
+                                    className={
+                                      "w-3 shrink-0 text-center font-bold " +
+                                      todoBadgeColor(it.status)
+                                    }
+                                  >
+                                    {todoBadge(it.status)}
+                                  </span>
+                                  <span
+                                    className={
+                                      "truncate " +
+                                      (it.status === "completed"
+                                        ? "text-muted-foreground line-through"
+                                        : it.status === "in_progress"
+                                        ? "font-medium text-foreground"
+                                        : "text-foreground")
+                                    }
+                                  >
+                                    {it.status === "in_progress" && it.activeForm
+                                      ? it.activeForm
+                                      : it.content}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      {row.kind === "plan" &&
+                        row.subtype === "plan-mode" &&
+                        row.plan && (
+                          <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
+                              {row.plan}
+                            </pre>
+                          </div>
+                        )}
                       {considered && considered.length > 0 && (
                         <div className="mt-1.5 rounded-md border border-border bg-background/40 p-2">
                           <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
