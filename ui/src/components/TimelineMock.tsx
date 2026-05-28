@@ -157,7 +157,7 @@ export default function TimelineMock({
               <span className="relative flex w-3 shrink-0 justify-center pt-2">
                 <span
                   className={
-                    "size-2 shrink-0 rounded-full ring-2 ring-card " +
+                    "size-2 shrink-0 translate-x-0.5 rounded-full ring-2 ring-card " +
                     kindColor(row.kind).dot
                   }
                 />

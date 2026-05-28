@@ -38,6 +38,13 @@ export interface SkillEntry {
    * have no on-disk SKILL.md.
    */
   path?: string;
+  /**
+   * Epoch ms of the most recent observed firing across recent transcripts
+   * (US-002 v4.5). Null when this skill has never been seen fire in the bounded
+   * scan window — never fabricated. Populated by the GET /api/claude/skills
+   * route, not by readSkills (which stays a pure SKILL.md reader).
+   */
+  lastFiredAt?: number | null;
 }
 
 /** Rewrite an absolute path to a `~/…` home-relative form for display. */

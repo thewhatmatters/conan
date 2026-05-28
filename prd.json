@@ -42,7 +42,7 @@
         "Verify in browser using automate-browser skill (a session with prior Skill firings shows 'last fired' stamps on Skills tab rows; the Timeline route returns at least one skill-fired row)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Anchors: transcriptPath() + TranscriptBlock 'tool_use' in src/transcript/index.ts (:27, :47); readSkills/SkillEntry in src/skills/index.ts (:25). The UserPromptSubmit hook payload carries `transcript_path` directly (verified: keys are session_id/transcript_path/cwd/permission_mode/hook_event_name/prompt) — prefer that over re-deriving. SkillEntry already gained `path?: string` post-v4.4. Suggested skills: automate-browser."
     },
     {

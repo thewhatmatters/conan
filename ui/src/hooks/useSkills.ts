@@ -14,6 +14,12 @@ export interface SkillEntry {
   plugin?: string;
   /** The skill's on-disk directory, home-relative (`~/…`); absent for Built-in. */
   path?: string;
+  /**
+   * Epoch ms of the most recent observed firing across recent transcripts
+   * (US-002 v4.5). Null when this skill has never been seen fire in the
+   * bounded scan window — never fabricated.
+   */
+  lastFiredAt?: number | null;
 }
 
 /**

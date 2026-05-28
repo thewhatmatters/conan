@@ -73,6 +73,11 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
                   {s.description}
                 </p>
               )}
+              {typeof s.lastFiredAt === "number" && (
+                <span className="text-[10px] text-muted-foreground/70">
+                  last fired {formatAgo(s.lastFiredAt)}
+                </span>
+              )}
               <SkillPath path={s.path} plugin={s.plugin} />
             </li>
           ))}
@@ -110,6 +115,22 @@ function GroupTab({
       </span>
     </button>
   );
+}
+
+/**
+ * Compact "X ago" formatter for the last-fired stamp. The transcript scan only
+ * runs on session events, so the precision the user sees is "minutes" at best —
+ * we render minutes under an hour, hours under a day, days otherwise. "just now"
+ * for sub-minute firings keeps the line honest without showing seconds.
+ */
+function formatAgo(ts: number): string {
+  const diff = Math.max(0, Date.now() - ts);
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 /**

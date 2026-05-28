@@ -2,6 +2,10 @@ import { type EventRow } from "../session/index.js";
 import { getDb } from "../db/index.js";
 import { readTasks } from "../tasks/index.js";
 import { getActiveCwd } from "../cwd/index.js";
+import {
+  readSessionSkillFirings,
+  type SkillFiredRecord,
+} from "./transcriptScan.js";
 
 // Per-session Timeline (US-001 v4.5): the chronological feed that powers the
 // Timeline split panel inside each terminal tab. Source of truth on read is the
@@ -237,6 +241,12 @@ export function mapActivityLineToRow(line: string): TimelineRow | null {
 export interface BuildTimelineOpts {
   events: EventRow[];
   activity: string[];
+  /**
+   * Transcript-derived Skill firings (US-002). Empty when the JSONL is missing
+   * or carries no Skill blocks. promptEventId is resolved here against the
+   * mapped PROMPT rows — never fabricated.
+   */
+  skillsFired?: SkillFiredRecord[];
   /** The session's cwd, from the session row. Used to gate loop rows. */
   sessionCwd: string | null;
   /** The cwd progress.txt itself is read from (the build-loop's project). */
@@ -245,6 +255,22 @@ export interface BuildTimelineOpts {
   since?: number;
   /** Clamped to [1, TIMELINE_LIMIT_MAX]. Default TIMELINE_LIMIT_DEFAULT. */
   limit?: number;
+}
+
+/**
+ * Latest prompt-event id whose ts is strictly less than `ts`, given an
+ * ascending-by-ts `promptIds` list. Linear scan from the end — the prompt list
+ * is small (one row per turn) so this is fine without a true binary search.
+ */
+function latestPromptIdBefore(
+  promptIds: { ts: number; id: number }[],
+  ts: number,
+): number | null {
+  for (let i = promptIds.length - 1; i >= 0; i--) {
+    const entry = promptIds[i];
+    if (entry && entry.ts < ts) return entry.id;
+  }
+  return null;
 }
 
 /** Clamp `limit` to [1, TIMELINE_LIMIT_MAX], defaulting when missing/invalid. */
@@ -264,10 +290,20 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
   const since = opts.since;
 
   const hookRows: TimelineRow[] = [];
+  // Track prompt-event id by ts so skill-fired rows can be linked to the
+  // prompt that triggered them. The map is ts → latest-PROMPT-event-id so a
+  // subsequent skill firing finds the correct turn boundary.
+  const promptIds: { ts: number; id: number }[] = [];
   for (const ev of opts.events) {
     const row = mapHookEventToRow(ev);
-    if (row && (since === undefined || row.ts > since)) hookRows.push(row);
+    if (!row) continue;
+    if (row.kind === "hook" && row.subtype === "PROMPT") {
+      promptIds.push({ ts: row.ts, id: row.eventId });
+    }
+    if (since === undefined || row.ts > since) hookRows.push(row);
   }
+  // Ascending ts so the "latest PROMPT before X" lookup is a binary-friendly walk.
+  promptIds.sort((a, b) => a.ts - b.ts);
 
   const loopRows: TimelineRow[] = [];
   // Loop rows only belong on the timeline when the session's cwd matches the
@@ -279,7 +315,25 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
     }
   }
 
-  const all = [...hookRows, ...loopRows];
+  // Transcript-derived Skill firings (US-002). Each record carries the skill
+  // name + ts; we resolve the prompt that triggered it as the latest
+  // UserPromptSubmit event id whose ts < skill.ts (never fabricated — omitted
+  // when no preceding prompt exists, e.g. a build-loop session firing skills
+  // before any user prompt).
+  const skillRows: TimelineRow[] = [];
+  for (const record of opts.skillsFired ?? []) {
+    if (since !== undefined && record.ts <= since) continue;
+    const promptEventId = latestPromptIdBefore(promptIds, record.ts);
+    skillRows.push({
+      kind: "skill-fired",
+      ts: record.ts,
+      skill: record.skill,
+      ...(promptEventId !== null ? { promptEventId } : {}),
+      detail: `Skill: ${record.skill}`,
+    });
+  }
+
+  const all = [...hookRows, ...loopRows, ...skillRows];
   // Descending by ts. Stable secondary key (hook event id) keeps two events at
   // the exact same epoch-ms in their persisted order — Stop after PostToolUse.
   all.sort((a, b) => {
@@ -336,9 +390,12 @@ export function readTimeline(
   const limit = clampLimit(opts.limit);
   const events = listRecentHookEvents(sessionId, opts.since, TIMELINE_LIMIT_MAX);
   const tasks = readTasks();
+  // US-002: transcript-derived Skill firings. Skipped when there's no JSONL.
+  const skillsFired = readSessionSkillFirings(sessionId, cwd);
   return buildTimeline({
     events,
     activity: tasks.activity,
+    skillsFired,
     sessionCwd: cwd,
     activeCwd: getActiveCwd(),
     since: opts.since,

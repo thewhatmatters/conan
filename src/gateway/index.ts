@@ -23,6 +23,12 @@ import { getActiveCwd } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import {
+  ensureSkillFiredWatcher,
+  scanRecentSkillFirings,
+  stopAllSkillFiredWatchers,
+  type SkillFiredRecord,
+} from "../timeline/transcriptScan.js";
 import { getMcpServers } from "../mcp/index.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
@@ -227,8 +233,69 @@ app.post("/api/claude/events", (req, res) => {
   // delta-triggered (US-002), and safe when the session has no live pty.
   if (hookEvent === "Stop") autoRefreshContextOnStop(sessionId);
 
+  // US-002 (v4.5): idempotently start a tail of the session's JSONL so each new
+  // Skill tool_use broadcasts as a `{type:'skill-fired'}` row over /ws (kept
+  // SEPARATE from {type:'event'} so existing consumers don't have to parse the
+  // new kind). Prefer the transcript_path the hook payload carries; fall back
+  // to resolving by cwd via transcriptPath() when missing.
+  const transcriptPathHint =
+    payload && typeof payload.transcript_path === "string"
+      ? payload.transcript_path
+      : null;
+  ensureSkillFiredWatcher(
+    sessionId,
+    {
+      transcriptPath: transcriptPathHint,
+      cwd: typeof b.cwd === "string" ? b.cwd : null,
+    },
+    (record) => emitSkillFired(sessionId, record),
+  );
+
   res.json({ ok: true, id: event.id });
 });
+
+/**
+ * Resolve the latest UserPromptSubmit event id whose ts < the firing's ts,
+ * scoped to this session. Used to link a skill-fired broadcast back to the
+ * prompt that triggered it; null when no preceding prompt exists.
+ */
+function latestPromptEventIdBefore(
+  sessionId: string,
+  ts: number,
+): number | null {
+  const row = db
+    .prepare(
+      `SELECT id FROM event
+        WHERE session_id = ?
+          AND stream_type = 'hook'
+          AND hook_event_name = 'UserPromptSubmit'
+          AND ts < ?
+        ORDER BY ts DESC, id DESC
+        LIMIT 1`,
+    )
+    .get(sessionId, ts) as { id: number } | undefined;
+  return row?.id ?? null;
+}
+
+/**
+ * Broadcast one new Skill firing over the app WS as a TimelineRow envelope.
+ * Kept separate from `{type:'event'}` so existing consumers don't have to parse
+ * the new kind (US-002 acceptance).
+ */
+function emitSkillFired(sessionId: string, record: SkillFiredRecord): void {
+  const promptEventId = latestPromptEventIdBefore(sessionId, record.ts);
+  broadcast({
+    type: "skill-fired",
+    sessionId,
+    payload: {
+      kind: "skill-fired",
+      ts: record.ts,
+      skill: record.skill,
+      ...(promptEventId !== null ? { promptEventId } : {}),
+      detail: `Skill: ${record.skill}`,
+    },
+  });
+}
 
 // Session grid data (US-009): every persisted session, newest activity first.
 // Read-only, like /api/tasks.
@@ -274,7 +341,17 @@ app.get("/api/claude/sessions/:id/plan", (req, res) => {
 // gateway, so none are listed (the reader supports them name-only when supplied).
 app.get("/api/claude/skills", (req, res) => {
   if (!authed(req, res)) return;
-  res.json(readSkills(getActiveCwd()));
+  // US-002 (v4.5): enrich each entry with `lastFiredAt` from a bounded scan of
+  // recent transcripts. The skill name in `input.skill` is matched against the
+  // installed skill name (frontmatter or dir basename) — never fabricated; null
+  // when no firing was found in the scan window.
+  const skills = readSkills(getActiveCwd());
+  const fired = scanRecentSkillFirings();
+  const enriched = skills.map((s) => ({
+    ...s,
+    lastFiredAt: fired.get(s.name) ?? null,
+  }));
+  res.json(enriched);
 });
 
 // Mirror of Claude Code's /config (US-007): the confidently-mapped settings rows
@@ -506,6 +583,7 @@ server.listen(PORT, HOST, () => {
 function shutdown(): void {
   stopWatching();
   stopReaper();
+  stopAllSkillFiredWatchers();
   closeAllTerminals();
   server.close();
   eventsWss.close();
