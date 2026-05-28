@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
+import TimelineMock from "./TimelineMock.tsx";
+
+// PROTOTYPE: minimum + default width for the per-tab Timeline split (px).
+const TIMELINE_MIN_W = 320;
+const TIMELINE_DEFAULT_W = 480;
 
 // VS Code–style tabs: flat (no pill/filled background); the active tab is marked
 // by a subtle top accent border + bolder foreground text instead of a bg fill.
@@ -77,6 +82,12 @@ export default function TerminalPane({
 }: TerminalPaneProps) {
   const [terms, setTerms] = useState<TermTab[]>(loadTerms);
   const [activeTid, setActiveTid] = useState<string>(() => terms[0]!.tid);
+  // PROTOTYPE: per-tab Timeline split state — which tabs have the right-hand
+  // Timeline panel open, and its current pixel width per tab. Keyed by tid so
+  // the split is *tethered* to a specific terminal (its session). Closes
+  // automatically when the tab closes (via closeTerm cleanup below).
+  const [timelineOpen, setTimelineOpen] = useState<Set<string>>(new Set());
+  const [timelineWidth, setTimelineWidth] = useState<Record<string, number>>({});
   // US-003: surface the active tab's tid upward on every change (initial mount,
   // tab switch, new, close) so App can repoint the session-scoped HUD widgets.
   useEffect(() => {
@@ -124,7 +135,54 @@ export default function TerminalPane({
       );
       return ensured;
     });
+    // PROTOTYPE: drop the Timeline split state for the closed tab too.
+    setTimelineOpen((prev) => {
+      if (!prev.has(tid)) return prev;
+      const next = new Set(prev);
+      next.delete(tid);
+      return next;
+    });
+    setTimelineWidth((prev) => {
+      if (!(tid in prev)) return prev;
+      const { [tid]: _, ...rest } = prev;
+      return rest;
+    });
   }, []);
+
+  // PROTOTYPE: toggle the right-hand Timeline split for the active tab.
+  const toggleTimelineForActive = useCallback(() => {
+    setTimelineOpen((prev) => {
+      const next = new Set(prev);
+      const tid = activeTidRef.current;
+      if (next.has(tid)) next.delete(tid);
+      else next.add(tid);
+      return next;
+    });
+  }, []);
+
+  // PROTOTYPE: drag-resize the Timeline split for a specific tab. Tracks the
+  // active mouse delta against the start width so the split feels smooth and
+  // never crosses TIMELINE_MIN_W on the left.
+  const startResizeTimeline = useCallback(
+    (tid: string) => (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = timelineWidth[tid] ?? TIMELINE_DEFAULT_W;
+      const onMove = (ev: MouseEvent) => {
+        const w = Math.max(TIMELINE_MIN_W, startW + (startX - ev.clientX));
+        setTimelineWidth((prev) => ({ ...prev, [tid]: w }));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.userSelect = "";
+      };
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [timelineWidth],
+  );
 
   // Bridge the native menu's File ▸ New/Close Terminal (App dispatches these
   // window events) to the local tab state. Close acts on the active terminal.
@@ -210,30 +268,82 @@ export default function TerminalPane({
         >
           <Plus className="size-4" />
         </button>
+        {/* PROTOTYPE: per-tab Timeline split toggle — tethered to the active tab. */}
+        <button
+          onClick={toggleTimelineForActive}
+          title={
+            timelineOpen.has(activeTid)
+              ? "Hide timeline for this terminal"
+              : "Show timeline for this terminal (split right)"
+          }
+          aria-label="Toggle timeline split"
+          aria-pressed={timelineOpen.has(activeTid)}
+          className={
+            "mr-1 shrink-0 rounded-md p-1 transition-colors hover:bg-muted hover:text-foreground " +
+            (timelineOpen.has(activeTid)
+              ? "text-foreground"
+              : "text-muted-foreground")
+          }
+        >
+          {timelineOpen.has(activeTid) ? (
+            <PanelRightClose className="size-4" />
+          ) : (
+            <PanelRightOpen className="size-4" />
+          )}
+        </button>
       </div>
 
       <div className="relative min-h-0 flex-1">
         {/* Every terminal stays mounted and sized (stacked, absolute inset-0) so
             switching tabs preserves scrollback and never tears down a pty. Only
             the active one sits on top + is interactive; the rest are hidden
-            behind it. bg-term-bg + padding matches the terminal's own bg. */}
+            behind it. Each container is itself a horizontal flex: terminal on
+            the left + an optional Timeline split on the right (PROTOTYPE) —
+            tethered to THIS tab's session, with a draggable col-resize divider. */}
         {token ? (
-          terms.map((t) => {
+          terms.map((t, i) => {
             const on = activeTid === t.tid;
+            const tlOn = timelineOpen.has(t.tid);
+            const tlW = timelineWidth[t.tid] ?? TIMELINE_DEFAULT_W;
             return (
               <div
                 key={t.tid}
                 className={
-                  "absolute inset-0 bg-term-bg p-4 " +
-                  (on ? "z-10" : "z-0 invisible")
+                  "absolute inset-0 flex " + (on ? "z-10" : "z-0 invisible")
                 }
               >
-                <Terminal
-                  token={token}
-                  theme={theme}
-                  tid={t.tid}
-                  closeOnUnmount={flagFor(t.tid)}
-                />
+                <div className="min-w-0 flex-1 bg-term-bg p-4">
+                  <Terminal
+                    token={token}
+                    theme={theme}
+                    tid={t.tid}
+                    closeOnUnmount={flagFor(t.tid)}
+                  />
+                </div>
+                {tlOn && (
+                  <>
+                    <div
+                      onMouseDown={startResizeTimeline(t.tid)}
+                      title="Drag to resize"
+                      className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/40"
+                    />
+                    <aside
+                      style={{ width: tlW }}
+                      className="shrink-0 bg-card"
+                    >
+                      <TimelineMock
+                        terminalLabel={terminalLabel(byTid.get(t.tid), i)}
+                        onClose={() =>
+                          setTimelineOpen((prev) => {
+                            const next = new Set(prev);
+                            next.delete(t.tid);
+                            return next;
+                          })
+                        }
+                      />
+                    </aside>
+                  </>
+                )}
               </div>
             );
           })
