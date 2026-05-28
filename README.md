@@ -2,9 +2,12 @@
 
 **A terminal-primary native desktop app that wraps and observes Claude Code.**
 Conan puts Claude Code's `xterm.js` terminal front-and-center — with a cwd/branch
-**status bar** — beside a DevTools-style **widget HUD** (**Context · Usage · Pulse
-· Plan · Skills · MCP**) and a **Claude Radio** play/pause toolbar, all backed by
-one loopback Node gateway packaged as a Tauri sidecar.
+**status bar** and an optional **per-terminal Timeline split panel** showing
+hooks, skill firing (and the heuristic *considered but didn't fire* reasons),
+plan rows, `/loop` cadence, and the build-loop trail — beside a DevTools-style
+**widget HUD** (**Context · Usage · Pulse · Skills · MCP**) and a **Claude
+Radio** play/pause toolbar, all backed by one loopback Node gateway packaged as
+a Tauri sidecar.
 
 - **Terminal** — a live `node-pty` running `claude` in the active cwd, the main
   surface of the app.
@@ -76,9 +79,10 @@ v4.2, then grown back deliberately in v4.3/v4.4 — is exactly what the app call
 | GET/POST | `/api/claude/context/autorefresh` | the adaptive `/context` auto-refresh gate |
 | GET | `/api/claude/usage` (`+?probe=1`) | plan usage / rate-limit windows |
 | GET | `/api/claude/pulse` | activity buckets for the Pulse chart |
-| GET | `/api/claude/skills` | installed skills (name + description + source) |
+| GET | `/api/claude/skills` | installed skills (name + description + source + `lastFiredAt`) |
 | GET | `/api/claude/mcp` (`+?force=1`) | configured MCP servers + health (`claude mcp list`) |
 | GET/POST | `/api/claude/config` | Claude config mirror (read) + single-key edit (write) |
+| GET | `/api/claude/timeline?session=…&since=…&limit=…` | the chronological per-session log (hook + build + skill-fired + skill-considered + plan + loop rows) |
 | POST | `/api/claude/events` | hook ingestion |
 
 Still gone (removed in v2/v4.2): the launch/steer drive routes, the read-only
@@ -86,9 +90,11 @@ catalog routes (`/agents`, `/stats`, …), and the web-served + TLS/remote-acces
 pm2 path. The `/skills`, `/mcp`, and `/config` routes here are the new, focused
 read/write surface the HUD + Settings actually use — not the old catalog.
 
-**WebSockets** — `/ws` (app events `{type:'event'}`, the build-loop trail
-`{type:'tasks'}`, snapshot on connect) and `/ws/terminal` (a `node-pty` that
-auto-launches `claude` in the active cwd). Both are **authenticated on upgrade**.
+**WebSockets** — `/ws` carries `{type:'event'}` hook events, `{type:'tasks'}` the
+build-loop trail, plus `{type:'skill-fired'}`, `{type:'skill-considered'}`, and
+`{type:'plan'}` broadcasts (added in v4.5-timeline US-002/003/006); snapshot on
+connect. `/ws/terminal` (a `node-pty` that auto-launches `claude` in the active
+cwd). Both are **authenticated on upgrade**.
 
 **Auth** (`src/gateway/auth.ts`) — a token (`CONAN_AUTH_TOKEN` | `.data/auth-token`
 | generated) **plus an Origin allowlist** (incl. `tauri://localhost`), required
@@ -103,10 +109,18 @@ self-reports; the UI filters the firehose by the active cwd.
 
 The app is terminal-primary: the `xterm.js` terminal fills the main pane behind a
 **VS-Code-style tab strip** (multiple terminals, each its own pty; switching never
-tears one down), with a cwd/branch **status bar** below it. A drag-resizable,
-width-persisted HUD docks to the right. The HUD's session-scoped tabs follow the
-**active terminal tab**.
+tears one down), with a cwd/branch **status bar** below it and an optional
+**Timeline split panel** to its right (toggle next to `+` or `⌘\`) tethered
+per-terminal. A drag-resizable, width-persisted HUD docks to the right of all
+that. The HUD's session-scoped tabs follow the **active terminal tab**.
 
+- **Timeline** — a per-tab vertical split that lists THIS terminal's session as a
+  chronological log: hook events, **skills fired** + the heuristic *considered
+  but didn't fire* reasons per prompt (BM25-scored against each skill's
+  description — labelled "Heuristic match"), TodoWrite/ExitPlanMode **plan**
+  rows, Claude Code `/loop` skill activity, and (when running our autonomous
+  build workflow) the **`run-tasks.sh`** build trail. Filter chips are dynamic
+  — a chip only appears when this session has at least one row of that kind.
 - **Context** tab — the live session's `/context` breakdown (model header, total %,
   per-category tokens incl. Free space) with a Tremor `ProgressCircle` gauge, an
   **Auto** auto-refresh toggle + manual `↻ /context`, and a top-pinned
@@ -115,9 +129,8 @@ width-persisted HUD docks to the right. The HUD's session-scoped tabs follow the
 - **Usage** tab — the `/usage` Session block + all three rate-limit windows,
   captured from the live pty with the throwaway probe as fallback.
 - **Pulse** tab — a Tremor `AreaChart` (stacked) of activity over 15m/1h/6h/24h.
-- **Plan** tab — conditional: the session's live plan (TodoWrite / ExitPlanMode /
-  build-loop).
-- **Skills** tab — installed skills (name + description from SKILL.md), grouped
+- **Skills** tab — installed skills (name + description from SKILL.md, plus a
+  `last fired` timestamp derived from the transcript scan), grouped
   **User / System**.
 - **MCP** tab — configured MCP servers + live health from `claude mcp list`
   (connected / failed / needs-auth), with a refresh.
@@ -174,8 +187,8 @@ Validate the backlog after editing:
 python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
 ```
 
-Current spec: `docs/v4.4-backlog.md` (latest shipped). Per-version backlogs live
-under `docs/v4.x-backlog.md`. Regression QA: `docs/qa-checklist.md`.
+Current spec: `docs/timeline-prd.md` (v4.5-timeline, latest shipped). Prior
+loops: `docs/v4.4-backlog.md` etc. Regression QA: `docs/qa-checklist.md`.
 
 ## Gotchas
 

@@ -16,8 +16,9 @@ accurate.
 - **`run-tasks.sh`** — autonomous loop: a fresh agent per story until all pass.
 - Validate after editing the backlog:
   `python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json`
-- Current spec: `docs/v4.4-backlog.md` (latest shipped loop). Per-version backlogs
-  live under `docs/v4.x-backlog.md`; charting research in `docs/v4.2-research.md`.
+- Current spec: `docs/timeline-prd.md` (v4.5-timeline, latest shipped loop).
+  Prior loops: `docs/v4.4-backlog.md` and `docs/v4.x-backlog.md`; charting
+  research in `docs/v4.2-research.md`.
 - **Regression QA:** `docs/qa-checklist.md` — run it (mostly `automate-browser` at
   :5173, a few native-only) after each change set to catch regressions.
 
@@ -50,7 +51,7 @@ npm run typecheck           # tsc --noEmit (gateway)
   this repo self-reports over the WS (the launch/steer "drive" route surface was
   removed in v4.2). NOT a browser/login session.
 - Routes (only what the app calls — trimmed in v4.2, grown back deliberately in
-  v4.3/v4.4): `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
+  v4.3/v4.4/v4.5): `GET /api/health`, `GET /api/config` (`{token, port, cwd}`),
   `GET /api/tasks` (prd.json + progress.txt), `GET /api/terminals` (live
   terminals + their session labels), `GET /api/claude/sessions` (the sessions
   list), `GET /api/claude/sessions/:id/widgets` (Context breakdown),
@@ -60,13 +61,19 @@ npm run typecheck           # tsc --noEmit (gateway)
   `/handoff` for the Context-pressure Compact — v4.3 US-013),
   `GET/POST /api/claude/context/autorefresh` (the adaptive auto-refresh gate —
   v4.4 US-006), `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`,
-  `GET /api/claude/skills` (v4.3 US-006), `GET /api/claude/mcp` (`+?force=1`;
-  shells `claude mcp list` — v4.4 US-007), `GET /api/claude/config` +
-  `POST /api/claude/config` (read-only mirror + single-key read-modify-write
-  with an editable-key type schema — v4.3 US-007/008, v4.4 US-002/010), and
-  `POST /api/claude/events` (hook ingestion). The drive surface, the
-  web-serving/TLS/pm2 path, and the read-only catalog routes stay removed.
-- WS: `/ws` (app events + `{type:'tasks'}` broadcast, snapshot on connect),
+  `GET /api/claude/skills` (v4.3 US-006; carries `lastFiredAt` per skill from
+  v4.5 US-002), `GET /api/claude/mcp` (`+?force=1`; shells `claude mcp list` —
+  v4.4 US-007), `GET /api/claude/config` + `POST /api/claude/config`
+  (read-only mirror + single-key read-modify-write with an editable-key type
+  schema — v4.3 US-007/008, v4.4 US-002/010),
+  `GET /api/claude/timeline?session=…&since=…&limit=…` (the chronological
+  per-session log of hook + build + skill-fired + skill-considered + plan +
+  loop rows — v4.5-timeline US-001), and `POST /api/claude/events` (hook
+  ingestion). The drive surface, the web-serving/TLS/pm2 path, and the
+  read-only catalog routes stay removed.
+- WS: `/ws` carries app events + `{type:'tasks'}` (build-loop trail) +
+  `{type:'skill-fired'}`, `{type:'skill-considered'}`, and `{type:'plan'}`
+  broadcasts (v4.5-timeline US-002/003/006), snapshot on connect;
   `/ws/terminal` (node-pty). **Both authenticated on upgrade.**
 - Auth (`src/gateway/auth.ts`): token (`CONAN_AUTH_TOKEN` | `.data/auth-token` |
   generated) + **Origin allowlist** — required because browsers don't apply
@@ -92,17 +99,22 @@ npm run typecheck           # tsc --noEmit (gateway)
 - UI: `App.tsx` shell renders `components/TerminalPane.tsx` (the main surface — N
   `Terminal.tsx` tabs in a **real VS-Code-style tab strip** (v4.3 US-009, replacing
   the old `Term ▾` dropdown), mounted-but-hidden so switching never tears down a
-  pty; a `StatusBar.tsx` cwd/branch footer below) beside `components/Hud.tsx` (the
-  DevTools-style widget HUD). The HUD tabs are **Context · Usage · Pulse · [Plan]
-  · Skills · MCP** — `Widgets.tsx` (Context+Usage), `PulseChart.tsx`,
-  `PlanWidget.tsx` (conditional), `SkillsWidget.tsx`, `McpWidget.tsx` — with a
-  `RadioBar.tsx` (Claude Radio play/pause) pinned at the HUD's bottom (v4.4
+  pty; a `StatusBar.tsx` cwd/branch footer below; and an optional **per-tab
+  `Timeline.tsx` split panel** (v4.5-timeline) toggled via `PanelRightOpen` next
+  to `+` or `⌘\` — tethered visually to the terminal so its rows describe THAT
+  session's hooks/skills/plan/loop/build) beside `components/Hud.tsx` (the
+  DevTools-style widget HUD). The HUD tabs are **Context · Usage · Pulse ·
+  Skills · MCP** (Plan moved into the Timeline in v4.5-timeline US-007) —
+  `Widgets.tsx` (Context+Usage), `PulseChart.tsx`, `SkillsWidget.tsx`,
+  `McpWidget.tsx` — with a `RadioBar.tsx` (Claude Radio play/pause) pinned at
+  the HUD's bottom (v4.4
   US-011). The session-scoped tabs follow the **active terminal tab** (v4.4
   US-003). `SettingsView.tsx` is the tabbed Status/Config dialog (⌘,). Charts live
   in `components/charts/` (vendored Tremor `AreaChart`/`ProgressCircle`); build-loop
   `tasks` feed `Toaster.tsx`. Hooks `hooks/{useTheme,useTasks,useWidgets,usePulse,
-  useUsage,useSessions,useTerminals,usePlan,useSkills,useMcp,useConfig,
-  useNativeNotifications}.ts`; `lib/{chartUtils,nativeNotify,appMenu,gateway}.ts`.
+  useUsage,useSessions,useTerminals,useSkills,useMcp,useConfig,
+  useNativeNotifications}.ts` (`usePlan.ts` deleted in v4.5-timeline US-007);
+  `lib/{chartUtils,nativeNotify,appMenu,gateway}.ts`.
 
 ## Conventions
 - **Semantic theme tokens only** — `bg-background`, `text-foreground`,
@@ -151,7 +163,29 @@ npm run typecheck           # tsc --noEmit (gateway)
 3. Safest model for now: run the *building* session externally (or a separate
    Conan instance on another port) and use this dashboard to **observe**.
 
-## Status (2026-05-27)
+## Status (2026-05-28)
+**v4.5-timeline done (`loop/conan-v4.5-timeline`, 7 stories + post-loop polish).**
+A live, per-terminal **Timeline split panel** is now the per-session observation
+surface — toggle right of `+` (or `⌘\`) for the active tab. Stories shipped:
+**Timeline read endpoint** + `TimelineRow` envelope (US-001, `GET /api/claude/timeline`);
+**transcript-derived skills-fired feed** + Skills tab `last fired` stamp via the
+JSONL scanner (US-002); **the novel piece — BM25 skill-consideration scorer +
+`prompt_consideration` table + Stop-time reconciliation** (US-003), labelled
+honestly as a heuristic in the UI ("Heuristic match" badge) since Claude
+doesn't expose its real internal scoring; **live `Timeline.tsx`** replacing the
+mock with filter chips, live append, and an `↑ N new` pill (US-004); **per-tab
+split persistence** (sessionStorage) + `⌘\` shortcut + View ▸ Split Timeline
+menu (US-005); **scanner extended** to TodoWrite + ExitPlanMode (US-006);
+**Plan HUD tab removed** — PLAN rows render in the Timeline + a Plan filter
+chip; `PlanWidget.tsx` and `usePlan.ts` deleted (US-007). Post-loop polish:
+**Loop/Build split** — old `kind:'loop'` (runner trail) renamed to `kind:'build'`
+("Build" chip); new `kind:'loop'` for Claude Code's `/loop` skill (detected
+from `UserPromptSubmit` prompts + `ScheduleWakeup`/`CronCreate` PreToolUse
+hooks); **dynamic filter chips** — a chip only renders when this session has at
+least one row of that kind; **dot centered on the rail** (`translate-x-px`).
+Also fixed: the long-open **terminal reattach crash** (`attachTerminal` now
+uses `INSERT OR REPLACE`).
+
 **v4.4 done (`loop/conan-v4.4`, 11 stories + QA polish).** HUD/UX polish:
 **Claude Code version capture** from the SessionStart hook (US-001, `claude_version`
 column — backend only; the US-008 session header it fed was removed in QA as overkill,

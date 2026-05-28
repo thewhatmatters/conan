@@ -17,7 +17,6 @@ lifecycle) and must be run in the built/`tauri dev` app.
 ### Browser-automated pass (the bulk of it)
 ```bash
 # 1. Clean state + start the gateway (no watch) and Vite
-sqlite3 .data/conan.db "DELETE FROM terminal_session;"   # avoids the reattach crash (see Watch-list W1)
 npm start &                 # gateway on :3747
 (cd ui && npm run dev &)    # Vite on :5173  (IPv6 — use http://localhost:5173, NOT 127.0.0.1)
 ```
@@ -53,10 +52,10 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🖥 `File ▸ New Terminal` (⌘T) / `Close Terminal` (⌘W) drive the same tab actions.
 
 ## 3 · HUD panel  (v4.1/v4.3)
-- [ ] 🌐 Tab strip reads: **Context · Usage · Pulse · [Plan] · Skills · MCP** (Plan only when a plan is active); VS-Code styling matches the terminal strip.
+- [ ] 🌐 Tab strip reads: **Context · Usage · Pulse · Skills · MCP** (Plan moved to the Timeline split in v4.5-timeline US-007); VS-Code styling matches the terminal strip.
 - [ ] 🌐 Drag the left edge resizes the HUD; width persists across reload (localStorage).
 - [ ] 🖥 `View ▸ Hide HUD` (⌘⇧H) hides/shows the panel; tab state survives the toggle (HUD stays mounted).
-- [ ] 🌐 The session-scoped tabs (Context, Plan, Skills) follow the **active terminal tab** (v4.4 US-003): open a 2nd terminal → they repoint; switch back → they follow.
+- [ ] 🌐 The session-scoped tabs (Context, Skills) follow the **active terminal tab** (v4.4 US-003): open a 2nd terminal → they repoint; switch back → they follow.
 
 ## 4 · Context tab  (v4.2 US-009, v4.3 US-013, v4.4 US-006 + toolbar redesign)
 - [ ] 🌐☀️🌙 Live face renders the exact `/context` breakdown (ring %, model, per-category rows incl. Free space) when a capture exists; on-disk `≈ estimated` fallback otherwise.
@@ -80,13 +79,23 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🌐 Hover cursor line is theme-aware (not a hard-coded grey).
 - [ ] 🌐 Empty window shows "No activity in this window yet."
 
-## 7 · Plan tab  (v4.3 US-004)
-- [ ] 🌐 Tab appears **only** when the active session has a live plan (TodoWrite items / recent ExitPlanMode / active build loop); absent otherwise.
-- [ ] 🌐 Renders the plan items; build-loop tasks feed the fallback.
+## 7 · Timeline split panel  (v4.5-timeline US-001..007 + post-loop polish)
+- [ ] 🌐☀️🌙 Per-terminal vertical split — toggle next to `+` (`PanelRightOpen`/`PanelRightClose` icon) opens/closes for the **active tab only**; different tabs hold independent state; col-resize divider (min 320px); ⌘\\ also toggles.
+- [ ] 🌐 Header reads `Timeline · Term N`; small `×` collapses the split; closing a terminal tab cleans up its split state.
+- [ ] 🌐 Per-tab state survives reload (sessionStorage `conan.terms.timeline` + `conan.terms.timeline.w`).
+- [ ] 🖥 `View ▸ Split Timeline` menu item fires the same toggle (window event bridge).
+- [ ] 🌐 Filter chips are **dynamic** — a chip only renders when this session has at least one row of that kind. Most sessions show `All · Hooks · Skills · Plan`; runner sessions also show `Build`; `/loop` sessions also show `Loop`.
+- [ ] 🌐 Rows are descending; **dots sit centered on the rail** (no horizontal offset); colors are token-driven (Hooks=chart-2, Skills=chart-1, Build=chart-4, Loop=chart-3, Plan=chart-5).
+- [ ] 🌐 Live append: new rows arrive via the existing `{type:'event'}` + `{type:'skill-fired'}` + `{type:'skill-considered'}` + `{type:'plan'}` + `{type:'tasks'}` WS broadcasts; auto-scroll **only** when at top, otherwise show an `↑ N new` pill that scrolls on click.
+- [ ] 🌐 PROMPT rows expand to a `Skills considered (N) · fired N` card with a **"Heuristic match"** badge + tooltip explaining the data is computed by BM25 description matching, **not** Claude's actual scoring.
+- [ ] 🌐 PLAN rows: `todo-write` shows `N todos · M done` + an expanded item list with `○/◐/✓` status badges; `plan-mode` shows the plan text.
+- [ ] 🌐 Loop rows: `/loop` prompts and `ScheduleWakeup`/`CronCreate` PreToolUse calls route to Loop (NOT Hooks); `/loopy …` (different command) stays under Hooks; `PostToolUse` for the same scheduling tools is NOT duplicated into Loop.
+- [ ] 🌐 Build rows: `progress.txt` activity (`iteration N → US-X`, `US-X PASS`, trail) appears only when the session's cwd matches the trail.
 
-## 8 · Skills tab  (v4.3 US-006)
+## 8 · Skills tab  (v4.3 US-006, + v4.5 `lastFiredAt`)
 - [ ] 🌐☀️🌙 Lists installed skills (name + description from SKILL.md frontmatter, never fabricated).
 - [ ] 🌐 **User / System** group toggle works; counts are correct (User+Project vs Plugin+Built-in).
+- [ ] 🌐 Each row shows a `last fired Xm ago` muted line when the transcript scan found a `Skill` tool_use for that name; absent when never fired (never fabricated).
 
 ## 9 · MCP tab  (v4.4 US-007, fixed to `claude mcp list`)
 - [ ] 🌐☀️🌙 Lists the configured MCP servers with live status from `claude mcp list` (NOT hooks): name + url/transport + a StatusDot.
@@ -138,7 +147,7 @@ bundled gateway is stale otherwise (see Watch-list W2).
 ---
 
 ## Watch-list — known regression hotspots
-- **W1 · Terminal reattach crash (OPEN BUG):** `attachTerminal` does a plain `INSERT` into `terminal_session`, so a reused `tid` (reattach, or a leftover row from a prior browser-verify run) throws `UNIQUE constraint failed: terminal_session.id` and **crashes the gateway** on terminal connect. Workaround for QA: `DELETE FROM terminal_session;` before a run. Fix = `INSERT OR REPLACE` at [src/terminal/index.ts](../src/terminal/index.ts).
+- **W1 · Terminal reattach crash (CLOSED 2026-05-28 · `ff46868`):** `attachTerminal` now uses `INSERT OR REPLACE` at [src/terminal/index.ts](../src/terminal/index.ts), so a reused `tid` (US-017/018 pty-survival, or a stale row from a prior crash) no longer throws `UNIQUE constraint failed`. The `DELETE FROM terminal_session;` workaround is no longer needed.
 - **W2 · Stale sidecar:** after any `src/**` (gateway) change, the built `.app`/`.dmg` and `tauri dev` run a STALE bundled gateway until `npm run build:sidecar`. Symptom: new routes 404, new tabs empty. Always rebuild the sidecar before a native QA pass.
 - **W3 · Dogfooding pty kill:** `npm run dev` (tsx **watch**) restarts on `src/**` edits and kills ALL ptys; `tsx watch`/HMR/HUD-hide/UI-reload also kill ptys (pre-US-017/018). Don't QA terminal survival under a watching gateway — use `npm start`.
 - **W4 · Vite is IPv6:** the dev server binds `[::1]:5173` — use `http://localhost:5173`, not `127.0.0.1` (connection-refused otherwise).
