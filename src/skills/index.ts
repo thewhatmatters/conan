@@ -32,6 +32,18 @@ export interface SkillEntry {
   source: SkillSource;
   /** Plugin key (e.g. "example-skills@anthropic-agent-skills") when source==Plugin. */
   plugin?: string;
+  /**
+   * The skill's on-disk directory, home-relative (`~/…`) — this is what the HUD
+   * shows in place of a source badge. Absent for Built-in harness skills, which
+   * have no on-disk SKILL.md.
+   */
+  path?: string;
+}
+
+/** Rewrite an absolute path to a `~/…` home-relative form for display. */
+function homeRelative(abs: string): string {
+  if (abs === HOME) return "~";
+  return abs.startsWith(HOME + path.sep) ? "~" + abs.slice(HOME.length) : abs;
 }
 
 /**
@@ -77,7 +89,12 @@ function readSkillDir(root: string, dirName: string, source: SkillSource, plugin
     return null; // not a skill dir (no readable SKILL.md) → caller skips it
   }
   const name = frontmatterField(text, "name") ?? dirName;
-  const entry: SkillEntry = { name, description: frontmatterDescription(text), source };
+  const entry: SkillEntry = {
+    name,
+    description: frontmatterDescription(text),
+    source,
+    path: homeRelative(path.join(root, dirName)),
+  };
   if (plugin) entry.plugin = plugin;
   return entry;
 }

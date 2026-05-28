@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SkillEntry, SkillSource } from "../hooks/useSkills.ts";
+import type { SkillEntry } from "../hooks/useSkills.ts";
 
 /** "User" group = your own skills (User + Project); "System" = Plugin + Built-in. */
 type Group = "user" | "system";
@@ -12,8 +12,9 @@ const isUserSkill = (s: SkillEntry) =>
  * them into **User** (your own ~/.claude + project skills) and **System** (Plugin
  * + Built-in), each with its count, so the two are easy to tell apart. Each row
  * shows the bold skill name, a clamped description (the panel is only ~320px
- * wide), and a source badge. Built-in skills with no readable SKILL.md show name
- * + badge only — the backend never fabricates a description. Flush, panel-native
+ * wide), and the skill's on-disk **path** (home-relative `~/…`) in place of a
+ * source badge. Built-in skills with no readable SKILL.md show name only (+ a
+ * "built-in" marker) — the backend never fabricates a description. Flush, panel-native
  * rows (no card chrome) per the HUD's continuous-surface direction (US-014).
  * Themed with semantic tokens only.
  */
@@ -64,17 +65,15 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
               key={`${s.source}:${s.plugin ?? ""}:${s.name}:${i}`}
               className="flex flex-col gap-1 border-b border-border px-3 py-2.5 last:border-b-0"
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-[12px] font-semibold text-foreground">
-                  {s.name}
-                </span>
-                <SourceBadge source={s.source} plugin={s.plugin} />
-              </div>
+              <span className="truncate text-[12px] font-semibold text-foreground">
+                {s.name}
+              </span>
               {s.description && (
                 <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
                   {s.description}
                 </p>
               )}
+              <SkillPath path={s.path} plugin={s.plugin} />
             </li>
           ))}
         </ul>
@@ -113,22 +112,27 @@ function GroupTab({
   );
 }
 
-/** Small pill tagging a skill's origin; Plugin carries its plugin key. */
-function SourceBadge({
-  source,
-  plugin,
-}: {
-  source: SkillSource;
-  plugin?: string;
-}) {
-  const label =
-    source === "Plugin" && plugin ? `Plugin (${plugin})` : source;
+/**
+ * Where the skill lives on disk (home-relative `~/…`) — shown in place of the
+ * old source badge. Built-in harness skills have no path, so they render a plain
+ * "built-in" marker. Truncated to fit the ~320px panel; the full path is the
+ * `title` tooltip.
+ */
+function SkillPath({ path, plugin }: { path?: string; plugin?: string }) {
+  if (!path) {
+    return (
+      <span className="text-[10px] italic text-muted-foreground/70">
+        built-in
+      </span>
+    );
+  }
+  const full = plugin ? `${path}  ·  ${plugin}` : path;
   return (
-    <span
-      title={label}
-      className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+    <code
+      title={full}
+      className="truncate font-mono text-[10px] text-muted-foreground/80"
     >
-      {label}
-    </span>
+      {path}
+    </code>
   );
 }

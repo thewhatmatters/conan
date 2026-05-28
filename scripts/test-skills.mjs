@@ -60,6 +60,14 @@ try {
     const a = byName("alpha");
     return a && a.description === "The alpha skill." && a.source === "Project";
   })());
+  check("project skill carries its on-disk path (the dir, not SKILL.md)", (() => {
+    const a = byName("alpha");
+    return a && typeof a.path === "string" && a.path.endsWith(path.join(".claude", "skills", "alpha"));
+  })());
+  check("built-in skills have no path (no on-disk SKILL.md)", (() => {
+    const i = byName("init");
+    return i && i.path === undefined;
+  })());
   check("skill missing description -> listed name-only (no fabrication)", (() => {
     const b = byName("beta");
     return b && b.description === null && b.source === "Project";

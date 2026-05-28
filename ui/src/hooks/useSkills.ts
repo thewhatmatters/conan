@@ -12,6 +12,8 @@ export interface SkillEntry {
   source: SkillSource;
   /** Plugin key when source === "Plugin". */
   plugin?: string;
+  /** The skill's on-disk directory, home-relative (`~/…`); absent for Built-in. */
+  path?: string;
 }
 
 /**
