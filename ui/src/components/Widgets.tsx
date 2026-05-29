@@ -244,19 +244,21 @@ export function ContextWidget({
 
 /**
  * Context-pressure action toolbar (US-013). A fixed bar pinned to the TOP of the
- * Context tab (just under the tab strip) — always visible so the checkpoint
- * actions stay in view however far the breakdown below scrolls (intentionally
- * always-on while we iterate on the design). Two pressure thresholds gate it:
+ * Context tab (just under the tab strip) — always visible so the Compact action
+ * stays in view however far the breakdown below scrolls. Two pressure tiers:
  *
- *  - **< 80%** — calm/neutral; both actions inert.
- *  - **80–95% (armed)** — destructive-red "running low"; "Remind me later"
- *    snoozes the prompt back to calm until 95%, and Compact is available.
- *  - **≥ 95% (critical)** — forced urgent (snooze no longer applies); "Remind me
- *    later" is disabled, leaving Compact as the only way out.
+ *  - **< 80%** — calm/neutral; Compact inert.
+ *  - **80–95% (running low)** — destructive-red label; Compact armed.
+ *  - **≥ 95% (critical)** — same red, label escalated; Compact armed.
  *
  * Compact injects `/handoff` into the correlated pty so the SESSION writes
  * HANDOFF.md (Conan can't author it — only the live conversation knows its own
- * state); it also needs a live correlated pty to type into.
+ * state); the user then runs `/compact` themselves to fold the context. Needs
+ * a live correlated pty to type into.
+ *
+ * (The "Remind me later" snooze that gated this between 80–95% in the original
+ * design was dropped — the bar is already passive enough that an extra dismiss
+ * step felt like ceremony, not signal.)
  */
 const CTX_ARM_THRESHOLD = 80;
 const CTX_CRITICAL_THRESHOLD = 95;
@@ -273,20 +275,10 @@ function ContextActionBar({
 }) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
-  // "Remind me later" snoozes the urgent prompt back to calm until context
-  // climbs to the critical threshold, where the snooze no longer applies.
-  const [snoozed, setSnoozed] = useState(false);
 
   const pressured = ctxPct != null && ctxPct >= CTX_ARM_THRESHOLD;
   const critical = ctxPct != null && ctxPct >= CTX_CRITICAL_THRESHOLD;
-  // Urgent (red) whenever pressured, unless the user snoozed and we're not yet
-  // critical. At/above critical the prompt is forced on regardless of snooze.
-  const urgent = pressured && (critical || !snoozed);
-  // "Remind me later" only acts while armed-but-not-critical and not already snoozed.
-  const canRemind = pressured && !critical && !snoozed;
-  // Compact is the real action — available whenever the prompt is urgent and a
-  // live pty exists to type `/handoff` into.
-  const canCompact = urgent && !!session && !!token && hasLivePty && !busy;
+  const canCompact = pressured && !!session && !!token && hasLivePty && !busy;
 
   const compact = async () => {
     if (!canCompact) return;
@@ -305,54 +297,38 @@ function ContextActionBar({
     }
   };
 
-  const compactTitle = !urgent
+  const compactTitle = !pressured
     ? "Available once context is running low (≥80%)"
-    : hasLivePty
-      ? "Runs /handoff in the live terminal session — the session writes HANDOFF.md, then you can /compact"
-      : "No live terminal correlated with this session";
-  const remindTitle = critical
-    ? "Context is critical (≥95%) — compact now"
-    : canRemind
-      ? "Snooze this reminder until context reaches 95%"
-      : "Available once context is running low (≥80%)";
+    : !hasLivePty
+      ? "No live terminal correlated with this session"
+      : "Runs /handoff in the live terminal session — the session writes HANDOFF.md, then you can /compact";
 
   return (
     <div
       className={
         "shrink-0 border-b px-3 py-2 " +
-        (urgent ? "border-destructive/30 bg-destructive/5" : "border-border")
+        (pressured ? "border-destructive/30 bg-destructive/5" : "border-border")
       }
     >
       <div className="flex items-center gap-2">
         <span
           className={
             "text-[11px] font-medium " +
-            (urgent ? "text-destructive" : "text-muted-foreground")
+            (pressured ? "text-destructive" : "text-muted-foreground")
           }
         >
           {ctxPct != null ? `Context ${Math.round(ctxPct)}%` : "Context —"}
-          {urgent ? (critical ? " — critical" : " — running low") : ""}
+          {pressured ? (critical ? " — critical" : " — running low") : ""}
         </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setSnoozed(true)}
-            disabled={!canRemind}
-            title={remindTitle}
-            className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            Remind me later
-          </button>
-          <button
-            type="button"
-            onClick={compact}
-            disabled={!canCompact}
-            title={compactTitle}
-            className="rounded bg-destructive px-2 py-0.5 text-[11px] font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
-          >
-            {busy ? "sending…" : sent ? "sent ✓" : "Compact"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={compact}
+          disabled={!canCompact}
+          title={compactTitle}
+          className="ml-auto rounded bg-destructive px-2 py-0.5 text-[11px] font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+        >
+          {busy ? "sending…" : sent ? "sent ✓" : "Compact"}
+        </button>
       </div>
       <p className="mt-1 text-[10px] leading-tight text-muted-foreground/70">
         Compact runs <span className="font-medium">/handoff</span> in the
