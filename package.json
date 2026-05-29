@@ -12,7 +12,7 @@
     "start": "tsx src/gateway/index.ts",
     "postinstall": "node scripts/fix-node-pty.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-terminal.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-context.mjs && tsx scripts/test-plan.mjs && tsx scripts/test-skills.mjs && tsx scripts/test-config.mjs && tsx scripts/test-reaper.mjs && tsx scripts/test-version.mjs && tsx scripts/test-timeline.mjs && tsx scripts/test-transcript-scan.mjs && tsx scripts/test-skill-match.mjs && tsx scripts/test-plan-scan.mjs && tsx scripts/test-mcp-auth.mjs",
+    "test": "tsx scripts/test-terminal.mjs && tsx scripts/test-usage.mjs && tsx scripts/test-context.mjs && tsx scripts/test-plan.mjs && tsx scripts/test-skills.mjs && tsx scripts/test-config.mjs && tsx scripts/test-reaper.mjs && tsx scripts/test-version.mjs && tsx scripts/test-timeline.mjs && tsx scripts/test-transcript-scan.mjs && tsx scripts/test-skill-match.mjs && tsx scripts/test-plan-scan.mjs && tsx scripts/test-mcp-auth.mjs && tsx scripts/test-themes.mjs",
     "hooks:install-global": "tsx scripts/install-global-hooks.mjs",
     "build:ui": "npm --prefix ui run build",
     "build": "npm run typecheck && npm run build:ui",

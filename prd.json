@@ -362,7 +362,7 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F9 (S3). Depends on US-020 (theme model). Token-gated like other /api/claude routes (src/gateway/auth.ts). Respect CONAN_DATA_DIR (see conan-live-data-pipeline data-dir gotcha). Live fs.watch reload is out of scope."
     },
     {
