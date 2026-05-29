@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useTheme } from "./hooks/useTheme.ts";
+import { useThemes } from "./hooks/useThemes.ts";
+import { useUserThemes } from "./hooks/useUserThemes.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import { useUsage } from "./hooks/useUsage.ts";
@@ -40,7 +41,14 @@ export default function App() {
   const hudCrampedHide = windowWidth < HUD_HIDE_BREAKPOINT;
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { theme, preference, setTheme } = useTheme();
+  // US-023: the full theme set (built-ins + user themes from ~/.conan/themes.json)
+  // and the active selection. useThemes registers the user themes into the shared
+  // apply store, so selecting one — in the Appearance picker or the View ▸ Theme
+  // menu — reskins app + terminal live and persists by id across reload. `theme`
+  // (the resolved light/dark) still drives TerminalPane's xterm theme prop.
+  const userThemes = useUserThemes(config?.token ?? null);
+  const { themes, activeId, activeTheme, setActiveTheme } = useThemes(userThemes);
+  const theme = activeTheme.type;
   const {
     tasks,
     lastEvent,
@@ -144,9 +152,10 @@ export default function App() {
   // the browser dev/web view.
   useEffect(() => {
     installAppMenu({
-      themePreference: preference,
+      themes,
+      activeThemeId: activeId,
       hudOpen,
-      onSetTheme: setTheme,
+      onSelectTheme: setActiveTheme,
       onToggleHud: () => setHudOpen((v) => !v),
       onNewTerminal: () =>
         window.dispatchEvent(new CustomEvent("conan:new-terminal")),
@@ -155,7 +164,7 @@ export default function App() {
       onToggleTimeline: () =>
         window.dispatchEvent(new CustomEvent("conan:toggle-timeline")),
     }).catch(() => {});
-  }, [preference, hudOpen, setTheme]);
+  }, [themes, activeId, hudOpen, setActiveTheme]);
 
   // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
   // (same window-event bridge the File items use). Listening here keeps the menu
@@ -215,6 +224,9 @@ export default function App() {
         config={claudeConfig}
         token={config?.token ?? null}
         onSaved={refetchConfig}
+        themes={themes}
+        activeThemeId={activeId}
+        onSelectTheme={setActiveTheme}
       />
     </div>
   );

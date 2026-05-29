@@ -379,7 +379,7 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F9 (S4). Depends on US-021 + US-022. Anchors: ui/src/components/SettingsView.tsx Appearance tab; ui/src/lib/appMenu.ts View ▸ Theme submenu. Suggested skills: automate-browser."
     },
     {

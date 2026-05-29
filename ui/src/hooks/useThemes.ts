@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import {
   applyTheme,
   BUILTIN_THEMES,
@@ -69,8 +69,24 @@ export function resolveTheme(id: string, themes: Theme[]): Theme {
   );
 }
 
+/** Merge built-ins with user themes; a user theme overrides a built-in by id. */
+function mergeThemes(userThemes: Theme[]): Theme[] {
+  if (userThemes.length === 0) return BUILTIN_THEMES;
+  const byId = new Map<string, Theme>();
+  for (const t of BUILTIN_THEMES) byId.set(t.id, t);
+  for (const t of userThemes) byId.set(t.id, t);
+  return Array.from(byId.values());
+}
+
 // --- Shared module-level store -------------------------------------------------
 let activeId: string = readInitialId();
+// User themes from ~/.conan/themes.json (US-022), registered into the store by
+// useThemes(userThemes) so the apply path + persistence cover them too (US-023):
+// selecting a user theme — or reloading with one persisted — reskins live, not
+// just the built-ins. `merged` is a cached, reference-stable snapshot so
+// useSyncExternalStore(getThemes) doesn't loop on a fresh array each call.
+let userThemesStore: Theme[] = [];
+let merged: Theme[] = BUILTIN_THEMES;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -86,14 +102,46 @@ export function getActiveId(): string {
   return activeId;
 }
 
+/** The merged theme list (built-ins + registered user themes), stable reference. */
+export function getThemes(): Theme[] {
+  return merged;
+}
+
 /**
- * Apply the active selection. Resolves against the BUILT-IN palette: built-ins
- * (incl. the auto pair) cover US-021; user themes (US-022/US-023) layer on
- * later. This is the one imperative apply, so a reload, the View menu, or the
- * Appearance picker all reskin immediately.
+ * Apply the active selection. Resolves against the MERGED palette (built-ins +
+ * any registered user themes), so a selected user theme — or one persisted from
+ * a prior session — reskins on apply. This is the one imperative apply, so a
+ * reload, the View menu, or the Appearance picker all reskin immediately.
  */
 function applyActive() {
-  applyTheme(resolveTheme(activeId, BUILTIN_THEMES));
+  applyTheme(resolveTheme(activeId, merged));
+}
+
+/**
+ * Register the user themes (US-022/US-023) into the apply store. Recomputes the
+ * merged snapshot and re-applies, so an active selection that resolves to a user
+ * theme (e.g. one persisted across reload, where the fetch lands after module
+ * load) reskins as soon as its theme becomes available. No-op when the set is
+ * unchanged (same ids + token references) to avoid a redundant re-apply/emit.
+ */
+export function setUserThemes(list: Theme[]) {
+  if (sameThemes(userThemesStore, list)) return;
+  userThemesStore = list;
+  merged = mergeThemes(list);
+  applyActive();
+  emit();
+}
+
+/** Shallow identity check on (id, name, type, tokens-ref) — cheap loop guard. */
+function sameThemes(a: Theme[], b: Theme[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.id !== y.id || x.name !== y.name || x.type !== y.type || x.tokens !== y.tokens)
+      return false;
+  }
+  return true;
 }
 
 export function setActiveIdStore(id: string) {
@@ -128,30 +176,27 @@ window.addEventListener("conan:set-theme", (e) => {
   if (typeof id === "string") setActiveIdStore(id);
 });
 
-/** Merge built-ins with user themes; a user theme overrides a built-in by id. */
-function mergeThemes(userThemes: Theme[]): Theme[] {
-  if (userThemes.length === 0) return BUILTIN_THEMES;
-  const byId = new Map<string, Theme>();
-  for (const t of BUILTIN_THEMES) byId.set(t.id, t);
-  for (const t of userThemes) byId.set(t.id, t);
-  return Array.from(byId.values());
-}
-
 /**
  * @param userThemes optional user-supplied themes (US-022 reads these from
  *   ~/.conan/themes.json); they merge over built-ins by id. Defaults to none.
+ *   The list is registered into the shared apply store so selecting a user theme
+ *   (US-023) — or reloading with one persisted — reskins live, not just the
+ *   built-ins. Pass a reference-stable array (e.g. from useUserThemes) so the
+ *   registration effect doesn't churn.
  */
 export function useThemes(userThemes: Theme[] = []) {
-  const activeIdValue = useSyncExternalStore(subscribe, getActiveId);
+  // Register the user themes into the apply store (the single source of truth
+  // the View menu, Appearance picker, and persisted-on-reload apply all read).
+  useEffect(() => {
+    setUserThemes(userThemes);
+  }, [userThemes]);
 
-  const themes = useMemo(() => mergeThemes(userThemes), [userThemes]);
+  const activeIdValue = useSyncExternalStore(subscribe, getActiveId);
+  const themes = useSyncExternalStore(subscribe, getThemes);
 
   // Resolve the active theme; fall back to the default if the stored id no
   // longer exists (e.g. a user theme was removed from themes.json).
-  const activeTheme = useMemo(
-    () => resolveTheme(activeIdValue, themes),
-    [themes, activeIdValue],
-  );
+  const activeTheme = resolveTheme(activeIdValue, themes);
 
   const setActiveTheme = useCallback((id: string) => setActiveIdStore(id), []);
 

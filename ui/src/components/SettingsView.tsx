@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,10 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select.tsx";
+import { Check } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
+import { AUTO_ID } from "../hooks/useThemes.ts";
+import { resolveTokens, type Theme } from "../lib/themes.ts";
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -57,12 +60,21 @@ export default function SettingsView({
   config,
   token,
   onSaved,
+  themes,
+  activeThemeId,
+  onSelectTheme,
 }: {
   open: boolean;
   onClose: () => void;
   config: ClaudeConfig | null;
   token: string | null;
   onSaved: () => void;
+  /** All selectable themes (built-ins + user themes) for the Appearance picker. */
+  themes: Theme[];
+  /** The active selection id (a theme id, or "auto"). */
+  activeThemeId: string;
+  /** Select a theme by id (or "auto"); applies live + persists, View-menu synced. */
+  onSelectTheme: (id: string) => void;
 }) {
   // Per-key inline save error, shared by both tabs (cleared on the next
   // successful save of that key). Lifted here so the Status and Config tabs write
@@ -130,7 +142,11 @@ export default function SettingsView({
             <ConfigTab config={config} errors={errors} onSave={save} />
           </TabsContent>
           <TabsContent value="appearance" className="mt-0">
-            <AppearanceTab />
+            <AppearanceTab
+              themes={themes}
+              activeThemeId={activeThemeId}
+              onSelectTheme={onSelectTheme}
+            />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -327,7 +343,15 @@ function ConfigTab({
  * are stored in the appearance pref and applied to live terminals in US-019. The
  * theme picker (US-020+) lands here too. Themed with semantic tokens only.
  */
-function AppearanceTab() {
+function AppearanceTab({
+  themes,
+  activeThemeId,
+  onSelectTheme,
+}: {
+  themes: Theme[];
+  activeThemeId: string;
+  onSelectTheme: (id: string) => void;
+}) {
   const { appearance, set } = useAppearance();
 
   // Detect the installed mono fonts once (canvas advance-width trick — works in
@@ -354,6 +378,12 @@ function AppearanceTab() {
         effect immediately; not part of Claude Code&rsquo;s config.
       </p>
       <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
+        <ThemeSection
+          themes={themes}
+          activeThemeId={activeThemeId}
+          onSelectTheme={onSelectTheme}
+        />
+
         <section>
           <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Terminal
@@ -425,6 +455,159 @@ function AppearanceTab() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Theme picker (US-023) inside the Appearance tab. Lists every selectable theme —
+ * the bundled built-ins + any user themes from ~/.conan/themes.json (US-022) —
+ * grouped + labelled by light/dark, each with a small palette-swatch preview. An
+ * "Auto" row follows the OS. Selecting applies live (US-021) and persists by id;
+ * the row reflects the active selection, staying in sync with the View ▸ Theme
+ * menu (both drive the same useThemes store). Semantic tokens only.
+ */
+function ThemeSection({
+  themes,
+  activeThemeId,
+  onSelectTheme,
+}: {
+  themes: Theme[];
+  activeThemeId: string;
+  onSelectTheme: (id: string) => void;
+}) {
+  const light = themes.filter((t) => t.type === "light");
+  const dark = themes.filter((t) => t.type === "dark");
+
+  return (
+    <>
+      <section>
+        <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Theme
+        </h3>
+        <ul>
+          <ThemeRow
+            name="Auto — match system"
+            description="Follow the OS light/dark setting"
+            selected={activeThemeId === AUTO_ID}
+            onSelect={() => onSelectTheme(AUTO_ID)}
+          />
+        </ul>
+      </section>
+
+      {light.length > 0 && (
+        <ThemeGroup
+          label="Light"
+          themes={light}
+          activeThemeId={activeThemeId}
+          onSelectTheme={onSelectTheme}
+        />
+      )}
+      {dark.length > 0 && (
+        <ThemeGroup
+          label="Dark"
+          themes={dark}
+          activeThemeId={activeThemeId}
+          onSelectTheme={onSelectTheme}
+        />
+      )}
+    </>
+  );
+}
+
+/** One light/dark group of theme rows under its own subheader. */
+function ThemeGroup({
+  label,
+  themes,
+  activeThemeId,
+  onSelectTheme,
+}: {
+  label: string;
+  themes: Theme[];
+  activeThemeId: string;
+  onSelectTheme: (id: string) => void;
+}) {
+  return (
+    <section>
+      <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </h3>
+      <ul>
+        {themes.map((t) => (
+          <ThemeRow
+            key={t.id}
+            name={t.name}
+            swatches={<ThemeSwatches theme={t} />}
+            selected={activeThemeId === t.id}
+            onSelect={() => onSelectTheme(t.id)}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** A selectable theme row: optional swatches + name on the left, check on right. */
+function ThemeRow({
+  name,
+  description,
+  swatches,
+  selected,
+  onSelect,
+}: {
+  name: string;
+  description?: string;
+  swatches?: ReactNode;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className={`flex w-full items-center justify-between gap-4 border-b border-border px-5 py-2.5 text-left last:border-b-0 hover:bg-muted/50 ${
+          selected ? "bg-muted/40" : ""
+        }`}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          {swatches}
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-medium text-foreground">
+              {name}
+            </div>
+            {description && (
+              <div className="truncate text-[11px] text-muted-foreground">
+                {description}
+              </div>
+            )}
+          </div>
+        </div>
+        {selected && (
+          <Check className="size-4 shrink-0 text-primary" aria-label="active" />
+        )}
+      </button>
+    </li>
+  );
+}
+
+/** A tiny preview of a theme's palette — a few representative resolved tokens. */
+function ThemeSwatches({ theme }: { theme: Theme }) {
+  // resolveTokens merges a (possibly partial) user theme over its type's default,
+  // so every swatch has a real color even for a partial themes.json entry.
+  const tokens = resolveTokens(theme);
+  const keys = ["background", "primary", "chart-1", "chart-2", "foreground"] as const;
+  return (
+    <div className="flex shrink-0 overflow-hidden rounded-sm border border-border">
+      {keys.map((k) => (
+        <span
+          key={k}
+          className="size-4"
+          style={{ backgroundColor: tokens[k] }}
+          aria-hidden
+        />
+      ))}
     </div>
   );
 }

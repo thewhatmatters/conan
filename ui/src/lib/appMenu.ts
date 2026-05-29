@@ -1,12 +1,16 @@
 import { isTauri } from "./gateway.ts";
-import type { ThemePreference } from "../hooks/useTheme.ts";
+import { AUTO_ID } from "../hooks/useThemes.ts";
+import type { Theme } from "./themes.ts";
 import { sendNativeNotification } from "./nativeNotify.ts";
 
 export interface AppMenuActions {
-  /** The user's stored theme choice (drives the radio checkmark). */
-  themePreference: ThemePreference;
+  /** All selectable themes (built-ins + user themes) for the Theme submenu. */
+  themes: Theme[];
+  /** The active selection id (a theme id, or "auto") — drives the radio check. */
+  activeThemeId: string;
   hudOpen: boolean;
-  onSetTheme: (p: ThemePreference) => void;
+  /** Select a theme by id (or "auto"); stays in sync with the Appearance picker. */
+  onSelectTheme: (id: string) => void;
   onToggleHud: () => void;
   onNewTerminal: () => void;
   onCloseTerminal: () => void;
@@ -94,22 +98,29 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     ],
   });
 
-  // View ▸ Theme radio submenu (US-011). CheckMenuItem carries the checkmark;
-  // selecting one calls onSetTheme, which flips React state and re-runs
-  // installAppMenu, rebuilding the menu so the check follows the active choice.
-  // (Tauri has no native radio group, so we model it as checks + a rebuild.)
-  const themeItem = (text: string, value: ThemePreference) =>
+  // View ▸ Theme radio submenu (US-011; full theme list in US-023). CheckMenuItem
+  // carries the checkmark; selecting one calls onSelectTheme, which flips React
+  // state and re-runs installAppMenu, rebuilding the menu so the check follows
+  // the active choice — staying in sync with the Appearance-tab picker (both
+  // drive the same useThemes store). (Tauri has no native radio group, so we
+  // model it as checks + a rebuild.) The list mirrors the picker: Auto first,
+  // then themes grouped Light / Dark.
+  const themeItem = (text: string, id: string) =>
     CheckMenuItem.new({
       text,
-      checked: a.themePreference === value,
-      action: () => a.onSetTheme(value),
+      checked: a.activeThemeId === id,
+      action: () => a.onSelectTheme(id),
     });
+  const lightThemes = a.themes.filter((t) => t.type === "light");
+  const darkThemes = a.themes.filter((t) => t.type === "dark");
   const themeMenu = await Submenu.new({
     text: "Theme",
     items: [
-      await themeItem("Light", "light"),
-      await themeItem("Dark", "dark"),
-      await themeItem("Auto — match system", "auto"),
+      await themeItem("Auto — match system", AUTO_ID),
+      await sep(),
+      ...(await Promise.all(lightThemes.map((t) => themeItem(t.name, t.id)))),
+      ...(darkThemes.length ? [await sep()] : []),
+      ...(await Promise.all(darkThemes.map((t) => themeItem(t.name, t.id)))),
     ],
   });
 
