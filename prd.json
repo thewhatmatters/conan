@@ -1,150 +1,436 @@
 {
-  "project": "Conan — v4.5-timeline: hook + skill firing per-terminal split panel (with honest 'considered but not fired' capture)",
-  "branchName": "loop/conan-v4.5-timeline",
-  "description": "A live, per-terminal-tab Timeline split panel showing hook events, build-loop iterations, skills fired (transcript ground truth), and the genuinely new bit — skills *considered but didn't fire* for each prompt, scored by a small BM25-over-descriptions matcher plus a categorical-reason rule layer. Labelled honestly as a heuristic in the UI (Claude doesn't expose its real skill scoring). The prototype split layout + tab-tethered UX is already on disk (loop/conan-v4.4: TimelineMock.tsx, TerminalPane.tsx split + toggle next to '+'). This loop wires up the four data lanes (3 of which already broadcast over /ws), adds the considered-scorer + a `prompt_consideration` table, replaces the mock with a live Timeline.tsx, and ships per-tab split persistence + ⌘\\ shortcut. The Skills HUD tab gains a 'last fired' stamp as a free side-effect of the transcript scan. Source: docs/timeline-prd.md. Decisions (2026-05-28): skills-considered ships as heuristic+transcript (Conan's BM25 + rule layer, labelled 'Heuristic match' in the UI); scope = per active terminal tab (the visual tether IS the binding); Timeline is a vertical split inside the active terminal pane, not a top-level tab. Backend foundations before UI; build stays green at every story.",
+  "project": "Conan — v4.6: HUD polish, fixable MCP, editable Settings, responsive bottom-dock, and Appearance (fonts + themes)",
+  "branchName": "loop/conan-v4.6",
+  "description": "Polish + extend the Conan HUD/observation surface and make it personalizable. Two real bug fixes (Pulse dark-mode X-axis legibility; redundant Timeline × close button), HUD secondary-toolbar unification (Pulse + Usage join Skills/MCP), the full /usage stats surfaced (contributing-factors insights + per-skill % — already buffered, just dropped), one-click MCP authenticate/reconnect (driving the /mcp TUI via a throwaway pty, since `claude mcp` has no auth subcommand), an editable Settings dialog (drop search, real tabs, Status rows become editable reusing the existing config-write path), a responsive bottom-dock HUD at narrow widths (replacing the auto-hide), and an Appearance Settings tab (terminal mono-font picker via curated-list + canvas detection because queryLocalFonts is Chromium-only/unavailable in macOS WKWebView; plus multiple themes from a ~/.conan/themes.json config file applied over the ~20 :root CSS tokens). Source: docs/v4.6-prd.md (compiled from docs/v4.6-backlog.md). Sequencing: quick bugs (F3/F6) → HUD toolbar (F2) → Usage stats (F5) → MCP auth (F1, spike first) → Settings chain (F4→F8→F9) → responsive (F7, largest). Build stays green at every story.",
   "generatedAt": "2026-05-28",
-  "sourcePrd": "docs/timeline-prd.md",
+  "sourcePrd": "docs/v4.6-prd.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Timeline read endpoint + normalized TimelineRow envelope",
-      "description": "As a Conan user, I want a single chronological read for a session's hook + loop events, so the Timeline UI can backfill on mount without juggling multiple sources.",
+      "title": "Pulse chart: fix dark-mode X-axis tick legibility",
+      "description": "As a Conan user in dark mode, I want the Pulse chart's time-axis labels to be readable, so the chart isn't dark-on-dark.",
       "acceptanceCriteria": [
-        "GET /api/claude/timeline?session=…&since=…&limit=… returns a flat list of TimelineRow envelopes in descending ts order (newest first), token-gated",
-        "TimelineRow is a discriminated union with `kind: 'hook' | 'loop' | 'skill-fired' | 'skill-considered'` and a common `{ts: number}`; hook rows carry {eventId, subtype, title, detail?, payload?}; loop rows carry {subtype: 'iteration'|'pass'|'trail', title, detail?}",
-        "Hook rows come from the `event` table filtered by session_id (only stream_type='hook') with payload-derived subtype/title/detail (UserPromptSubmit → 'PROMPT' + truncated prompt; Pre/PostToolUse → 'PRETOOL'/'POSTTOOL' + tool name + first arg; Stop → 'STOP'; Notification → 'NOTIF'; SessionStart/End → 'SESSION')",
-        "Loop rows come from progress.txt's recent lines (`readTasks().activity`) filtered to the session's cwd (the session's cwd matches the progress.txt's project — match on substring of the activity text or via the session row's cwd); subtype 'iteration'|'pass'|'trail' derived from the line",
-        "skill-fired and skill-considered envelope shapes are defined in this story (carried by US-002/T03) but the endpoint returns [] for those kinds in THIS story",
-        "`since` filters strictly greater-than ts; `limit` clamps to [1, 500] with a default 200; an unknown/missing session returns an empty array",
-        "A unit test covers the envelope mapping (one fixture row per hook subtype) and the empty/clamp/limit branches",
-        "npm test passes all suites",
+        "In ui/src/components/charts/AreaChart.tsx the X-axis (and Y-axis) tick text color is applied via the recharts `tick` prop (e.g. tick={{ className: 'fill-foreground', ... }}) so it lands on the <text> element and overrides recharts' per-tick default fill",
+        "The conflicting empty `fill=\"\"` attribute that was muddying the tick color is removed (or set to a real token value)",
+        "In dark mode the Pulse start/end X labels (e.g. 20:15 … 21:14) are clearly legible against the dark chart background",
+        "Light mode shows no regression; the standalone (non-compact) chart's Y-axis labels are also legible",
+        "docs/qa-checklist.md gains/updates a Pulse axis-legibility row so this can't silently regress",
+        "Verify in browser using automate-browser skill in both light and dark mode",
+        "cd ui && npm run build is clean",
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Backend foundation. The UI consumes existing {type:'event'} and {type:'tasks'} WS broadcasts for live updates — no new WS plumbing in this story. Anchors: POST /api/claude/events ingest + INSERT INTO event in src/gateway/index.ts (~:140/:189); broadcast({type:'event'}) ~:212; watchTasks + readTasks().activity in src/tasks/index.ts (~:125). Add the new route + envelope in src/timeline/index.ts (new module) wired from src/gateway/index.ts."
+      "passes": false,
+      "notes": "Quick bug. Backlog F3. Root cause: fill-foreground/70 class sits on the <XAxis> <g>, but recharts gives each tick <text> its own default fill (~#666) as a presentation attribute that beats inherited CSS. Anchors: ui/src/components/charts/AreaChart.tsx <XAxis> ~:681-714 and <YAxis> ~:715-746. Visible in HUD because Pulse runs compact → showYAxis=false + startEndOnly, so the X start/end labels are the only axis text. Note v4.4 US-005 claimed to fix this but put the class in the wrong place. Suggested skills: automate-browser."
     },
     {
       "id": "US-002",
-      "title": "Transcript-derived skills-fired feed + Skills tab 'last fired' stamp",
-      "description": "As a Conan user, I want to see which skills actually fired in each session and how recently each installed skill was used, so I can spot real usage from the timeline and the Skills tab.",
+      "title": "Timeline: remove the redundant × close button + dead onClose prop",
+      "description": "As a Conan user, I want one consistent way to close the Timeline split, so the in-panel × (redundant with the clock toggle) is gone.",
       "acceptanceCriteria": [
-        "New src/timeline/transcriptScan.ts reads a session's JSONL (prefer `transcript_path` carried in the latest hook payload; fall back to transcriptPath() from src/transcript/index.ts when missing) and extracts every Skill tool_use block as a {skill, ts, promptEventId} record, where promptEventId is the latest UserPromptSubmit event_id before the Skill's ts",
-        "The Timeline read route (US-001) merges these rows into the response as `{kind: 'skill-fired', ts, eventId, skill, promptEventId, detail}` envelopes, in correct chronological order with the hook/loop rows",
-        "A live watcher (fs.watch + size-delta tail since last byte offset) emits each new Skill block as a `{type:'skill-fired', payload: TimelineRow}` WS broadcast (kept SEPARATE from {type:'event'} so existing WS consumers don't have to parse the new kind)",
-        "GET /api/claude/skills returns a `lastFiredAt: number | null` (epoch ms) on each SkillEntry, computed by scanning recent transcripts (bounded — e.g. the latest N JSONLs touched in the last 30 days) and taking the most recent Skill tool_use timestamp per skill name",
-        "The Skills HUD tab (SkillsWidget.tsx) renders a `last fired Xm ago` muted line on each row when lastFiredAt is set, or omits the line when null — never fabricates",
-        "A unit test on the JSONL parser covers a real fixture (a real session JSONL with ≥1 Skill block) and asserts skill/ts extraction + the null case",
-        "An integration test asserts SkillEntry.lastFiredAt is populated for at least one skill in a fixture session",
-        "npm test passes all suites",
-        "Typecheck passes",
+        "The × close button, the `X` import, and the `onClose` prop are removed from ui/src/components/Timeline.tsx",
+        "The now-dead `onClose` is dropped from both <Timeline> call sites in ui/src/components/TerminalPane.tsx (overlay + side-by-side)",
+        "The reclaimed header width goes to the filter chips (All/Hooks/Skills/...) so they have more room at the 320px min",
+        "The clock toggle (ClockFading, ⌘\\, and View ▸ Split Timeline) still opens AND closes the split for the active tab — no loss of close ability",
+        "Verify in browser using automate-browser skill in both light and dark mode",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (a session with prior Skill firings shows 'last fired' stamps on Skills tab rows; the Timeline route returns at least one skill-fired row)"
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Anchors: transcriptPath() + TranscriptBlock 'tool_use' in src/transcript/index.ts (:27, :47); readSkills/SkillEntry in src/skills/index.ts (:25). The UserPromptSubmit hook payload carries `transcript_path` directly (verified: keys are session_id/transcript_path/cwd/permission_mode/hook_event_name/prompt) — prefer that over re-deriving. SkillEntry already gained `path?: string` post-v4.4. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Quick cleanup. Backlog F6 (S1). Verified lossless: Timeline onClose and toggleTimelineForActive both mutate the same timelineOpen set; no Esc handler rides on onClose. Anchors: Timeline.tsx X import :2, onClose prop :116; TerminalPane.tsx onClose call sites :505/:536, toggleTimelineForActive :290. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
-      "title": "Skill-consideration scorer + prompt_consideration table + Stop-time reconciliation",
-      "description": "As a Conan user, I want to see which skills were considered for each of my prompts and the heuristic reason each didn't fire, so the most opaque thing about skills (`why didn't X trigger?`) becomes legible. (Labelled honestly as a heuristic — not the model's real internal scoring.)",
+      "title": "Timeline: make the clock toggle read as a toggle (active state + tooltip)",
+      "description": "As a Conan user, I want the clock button to show whether the Timeline is open, so it's obvious it both opens and closes the panel.",
       "acceptanceCriteria": [
-        "New src/skills/match.ts exports scoreSkills(prompt: string, skills: SkillEntry[]): {skill: string; score: number; reason: string}[] — BM25 (k1=1.2, b=0.75) over each skill's description (lower-cased, stop-word-stripped, single-word tokens) vs the prompt; pure function, zero deps",
-        "A small categorical-reason rule layer converts (score + cheap regexes) into the human-readable reason: `prompt mentions this skill` (skill name appears in prompt), `UI keyword match` (description contains 'browser'/'verify'/'UI' AND prompt has a UI verb like render/screenshot/click/style), `diagram intent` (description+prompt both reference diagram/chart/flowchart), `strong description match (terms: …)` (score ≥ HIGH), `partial match (terms: …)` (score in [LOW, HIGH)), `no description match (top terms: …)` (otherwise)",
-        "A new SQLite table `prompt_consideration (event_id INTEGER, skill TEXT, score REAL, reason TEXT, fired INTEGER DEFAULT 0, created_at INTEGER, PRIMARY KEY (event_id, skill))` is added with idempotent init (no crash on existing DBs)",
-        "POST /api/claude/events ingest path: on hook_event_name === 'UserPromptSubmit', scoreSkills(payload.prompt, readSkills(activeCwd())), keep the top 8 by score, INSERT them into prompt_consideration keyed by that event's row id, then broadcast each as `{type:'skill-considered', payload: TimelineRow}` over /ws (separate kind, like skill-fired)",
-        "POST /api/claude/events ingest path: on hook_event_name === 'Stop', run the US-002 scanner over the session's JSONL slice since the latest UserPromptSubmit and UPDATE prompt_consideration SET fired=1, reason='<fired_reason>' WHERE event_id=<promptEventId> AND skill IN (<fired skill names>); the matching rows' kind in subsequent reads flips from skill-considered to skill-fired",
-        "The Timeline read route (US-001) joins prompt_consideration on the prompt event and emits `{kind: 'skill-considered', ts, eventId, skill, promptEventId, reason, heuristic: true}` rows (heuristic flag always true) for non-fired rows",
-        "Unit tests on scoreSkills cover BM25 ranking on a small fixture (prompt + 4 skills) AND each rule's classification (prompt-mentions, UI-keyword, diagram, strong, partial, none)",
-        "An integration test posts a fake UserPromptSubmit event, asserts the expected prompt_consideration rows + a `{type:'skill-considered'}` WS broadcast",
-        "An integration test posts a Stop event after writing a transcript fixture containing a Skill tool_use; asserts the matching prompt_consideration row flipped fired=1 with the fired reason",
-        "npm test passes all suites",
+        "The ClockFading toggle button in ui/src/components/TerminalPane.tsx gets a clear active/pressed visual state when the split is open for the active tab",
+        "The button has a tooltip like 'Toggle Timeline (⌘\\)'",
+        "The active state uses semantic theme tokens only",
+        "Verify in browser using automate-browser skill in both light and dark mode (clock + ⌘\\ open and close the split; clock reflects open/closed)",
+        "cd ui && npm run build is clean",
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "The novel piece. Honesty constraint: never label this 'why Claude didn't fire X' — only 'heuristic match against the skill's description'. Anchors: ingest path in src/gateway/index.ts (~:140); src/db (table init); src/skills/index.ts (readSkills). Real UserPromptSubmit payload key is `prompt` (verified). Memory mentions a native BM25 search skill in the conan-dashboard codebase (50 docs in 17ms, zero deps) — reuse its stop-word/token list if convenient, but the gateway can roll its own ~50-LOC BM25 with no new dep."
+      "passes": false,
+      "notes": "Backlog F6 (S2). Depends on US-002 (the × is gone, so the clock is the only visible close affordance). Anchors: ClockFading :448, onClick={toggleTimelineForActive} :433. Suggested skills: automate-browser."
     },
     {
       "id": "US-004",
-      "title": "Replace TimelineMock with the live Timeline.tsx (filter chips, live append, honest 'Heuristic' badge, rail-alignment fix)",
-      "description": "As a Conan user, I want the Timeline split panel to render real events from my session, so I can actually use it instead of the mockup.",
+      "title": "HUD: shared <HudTabHeader> secondary-toolbar component (retrofit Skills + MCP)",
+      "description": "As a Conan user, I want every HUD tab to share one consistent pinned toolbar, so the panel reads as one chrome.",
       "acceptanceCriteria": [
-        "New ui/src/components/Timeline.tsx (replacing TimelineMock.tsx) takes {token, sessionId, terminalLabel, onClose} props and fetches GET /api/claude/timeline?session=<sessionId>&limit=200 on mount; renders an empty state when there are no rows yet ('No activity yet for this terminal — the timeline fills as Claude Code emits hook events.')",
-        "Subscribes to the app /ws and appends incoming `{type:'event'}` (after mapping to a hook TimelineRow), `{type:'skill-considered'}`, and `{type:'skill-fired'}` messages whose session_id matches; ignores other sessions",
-        "Loop rows come from existing `{type:'tasks'}` broadcasts (already plumbed) — the latest TasksState.activity lines matching this session's cwd render as 'LOOP' rows interleaved chronologically",
-        "Filter chips (All / Hooks / Skills / Loop) are FUNCTIONAL: chips are multi-select (All clears all others), state held locally; filtering hides rows whose kind doesn't match — never tears down data",
-        "Each PROMPT row's nested 'Skills considered (N) · fired N' card carries a small 'Heuristic match' badge with a tooltip explaining the data is computed by BM25 description matching, not Claude's actual scoring (anti-fabrication framing per the PRD)",
-        "Auto-scroll on new event: ONLY when the user is already at the top (timeline is descending). Otherwise keep their scroll position and show a small `↑ N new` pill that scrolls to top on click",
-        "Rail-alignment math fixed: rail centers on the dot column at left-[98px] (px-4 + w-16 + gap-3 + w-3/2). No visible offset between the rail and the dots in any row",
-        "TimelineMock.tsx is removed; TerminalPane.tsx's import + per-tab split mounts the new Timeline.tsx passing terminalLabel + the active session id",
-        "Mockup footer ('sample data') is gone (replaced by the live data)",
-        "Typecheck passes",
+        "A new <HudTabHeader> component renders a flush `border-b border-border` strip with a name slot (left) and an actions slot (right), at one canonical height/padding, semantic tokens only",
+        "SkillsWidget and McpWidget are retrofit onto <HudTabHeader> (the User/System group strip and the MCP count + ↻ refresh now ride the shared header), unifying the previous h-9 vs py-2 inconsistency",
+        "Skills and MCP behavior is unchanged (group switching, refresh) — only the header chrome is unified",
+        "Verify in browser using automate-browser skill in both light and dark mode",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (open the split for the active tab; row appears live after a hook event; filter chips toggle correctly; 'Heuristic match' badge + tooltip readable; rail aligned to dots; light + dark)"
+        "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Depends on US-001 (route), US-002 (skill-fired rows + WS kind), US-003 (skill-considered rows + WS kind). Anchors: ui/src/components/TimelineMock.tsx (the prototype to replace); ui/src/components/TerminalPane.tsx (split toggle next to '+' + per-tab state already plumbed); existing WS subscriber pattern in ui/src/hooks/useTasks.ts / useGateway. The PROMPT row's nested card already exists in the mock as a layout template. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backlog F2 (S1). Foundation for US-005/US-006. Anchors: SkillsWidget.tsx group strip ~:46-58, McpWidget.tsx header. Suggested skills: automate-browser."
     },
     {
       "id": "US-005",
-      "title": "Persist per-tab Timeline split state + ⌘\\ keyboard shortcut",
-      "description": "As a Conan user, I want my Timeline split (open/closed + width) per terminal tab to survive reload, so I don't have to re-open it every time.",
+      "title": "HUD: Pulse tab secondary toolbar (name + range selector)",
+      "description": "As a Conan user, I want the Pulse range selector in the pinned toolbar, so it stays put and matches the other tabs.",
       "acceptanceCriteria": [
-        "TerminalPane.tsx persists the per-tab timeline split state to sessionStorage under `conan.terms.timeline` (a JSON string-array of tids with the split open) and `conan.terms.timeline.w` (a JSON `{tid: number}` map of widths); writes on every toggle/resize end (debounced)",
-        "On mount, restore from sessionStorage: tabs whose tid is in the list reopen with their saved width (defaulting to TIMELINE_DEFAULT_W if no width)",
-        "Closing a tab removes the tid from BOTH sessionStorage keys (in addition to the in-memory cleanup already done by closeTerm)",
-        "⌘\\ (CmdOrCtrl+Backslash) toggles the timeline split for the active tab; the shortcut works whether focus is on the terminal or the HUD; doesn't intercept ⌘\\ inside an input/textarea",
-        "The native menu (ui/src/lib/appMenu.ts) View submenu gains a 'Split Timeline' item with the ⌘\\ accelerator that fires the same action via a window event (conan:toggle-timeline) TerminalPane listens for — consistent with the New/Close Terminal bridge",
-        "Toggle button next to '+' continues to work (parity); aria-pressed reflects state",
-        "Typecheck passes",
+        "The Pulse tab renders a <HudTabHeader> with 'Pulse' (left) and the 15m/1h/6h/24h range selector (right)",
+        "The title + range selector are removed from PulseChart.tsx's internal (compact) header so there is no duplicate 'Pulse' label",
+        "The chart body still fills the scroller and the per-category legend/token footer survive",
+        "Range buttons still switch the window (15m/1h/6h/24h)",
+        "Verify in browser using automate-browser skill in both light and dark mode",
         "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (toggle, resize, reload → split state survives; ⌘\\ toggles the active tab's split)"
+        "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Anchors: TerminalPane.tsx timelineOpen Set + timelineWidth Record + toggleTimelineForActive (already plumbed); persist alongside conan.terms (the existing tid list). Native menu bridge: window CustomEvent pattern in ui/src/lib/appMenu.ts (e.g. conan:new-terminal). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backlog F2 (S2). Depends on US-004. Anchors: PulseChart.tsx RANGES + compact header block; Hud.tsx Pulse TabsContent. Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
-      "title": "Extend transcript scanner for TodoWrite + ExitPlanMode → emit Plan rows on the Timeline",
-      "description": "As a Conan user, I want the Timeline to show my TodoWrite items and ExitPlanMode plans as PLAN rows, so per-session planning state lives on the same surface as the rest of the session's activity.",
+      "title": "HUD: Usage tab secondary toolbar (name + ↻ /usage)",
+      "description": "As a Conan user, I want the Usage refresh in a pinned toolbar like the other tabs, so it doesn't move around with the content.",
       "acceptanceCriteria": [
-        "Extend src/timeline/transcriptScan.ts (from US-002) to ALSO extract TodoWrite tool_use blocks as `{kind: 'plan', subtype: 'todo-write', ts, items: [{content: string, activeForm?: string, status: 'pending'|'in_progress'|'completed'}], eventId, promptEventId}` (eventId/promptEventId resolved the same way as the Skill blocks)",
-        "Extend the same scanner to extract ExitPlanMode tool_use blocks as `{kind: 'plan', subtype: 'plan-mode', ts, plan: string, eventId, promptEventId}` (plan is the agent's plan text from the tool input)",
-        "The Timeline read route (US-001) merges these rows into the response in correct chronological order with hook/loop/skill rows",
-        "The live JSONL watcher (from US-002) emits each new TodoWrite/ExitPlanMode block as a `{type: 'plan', payload: TimelineRow}` WS broadcast (separate kind from {type:'event'}, {type:'skill-fired'}, {type:'skill-considered'} so consumers can subscribe granularly)",
-        "Unit test on the scanner extension: a JSONL fixture containing one TodoWrite block + one ExitPlanMode block asserts both are extracted with correct shape (items[] with statuses for TodoWrite; plan string for ExitPlanMode); a fixture with NO plan blocks asserts the empty result",
-        "Integration test: append a TodoWrite block to a fixture JSONL mid-watch, assert a `{type:'plan'}` WS broadcast lands with the expected payload",
-        "npm test passes all suites",
+        "The Usage tab renders a <HudTabHeader> with 'Usage' (left) and the ↻ /usage refresh action (right)",
+        "The refreshBtn is pulled out of UsageWidget's faces (LiveUsageView / probe face) and lives in the toolbar",
+        "The refresh keeps its live-pty enable gating (disabled when no live pty correlated, mirroring ↻ /context) and its 'capturing…' busy state",
+        "All four HUD tabs (Usage/Pulse/Skills/MCP) now show an identical pinned toolbar",
+        "Verify in browser using automate-browser skill in both light and dark mode (refresh fires; disabled with no live pty)",
+        "cd ui && npm run build is clean",
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Depends on US-001 (TimelineRow envelope) and US-002 (transcript scanner + watcher). Anchors: src/timeline/transcriptScan.ts (the scanner US-002 created), the Timeline route + WS broadcast in the gateway. The Plan HUD tab's existing data source (usePlan / readPlanState) is informative for shape — the tool input schemas for TodoWrite/ExitPlanMode are stable. No new tables — TimelineRow plan rows are derived live from the JSONL."
+      "passes": false,
+      "notes": "Backlog F2 (S3). Depends on US-004. Anchors: Widgets.tsx UsageWidget refreshBtn / ↻ /usage ~:565-577; route POST .../usage/refresh (gateway :603). Does NOT touch the separate Context-pressure bar. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
-      "title": "Replace the Plan HUD tab with Timeline PLAN rows + a Plan filter chip",
-      "description": "As a Conan user, I want Plan to live in the per-terminal Timeline split (where it belongs — it's session-scoped) instead of its own HUD tab, so per-session surfaces are consolidated.",
+      "title": "Usage: parse the dropped /usage sections (contributing insights + skills)",
+      "description": "As a Conan developer, I want parsers for the /usage 'What's contributing' insights and the per-skill % table, so the data can be surfaced.",
       "acceptanceCriteria": [
-        "ui/src/components/Timeline.tsx (the live one from US-004) renders the plan rows from US-006 as `PLAN` pill rows colored chart-5 (the existing-but-unused palette slot), with an expandable card per subtype",
-        "todo-write rows: title `N todos · M done` (counts from items); the expanded card lists every item with a status badge (○ pending, ◐ in_progress, ✓ completed) and the item's `content` (`activeForm` shown muted when in_progress)",
-        "plan-mode rows: title `Entered plan mode`; the expanded card shows the plan text (multi-line, preserves line breaks; no markdown rendering required for this story)",
-        "Filter chips in the Timeline header become: All · Hooks · Skills · Plan · Loop (multi-select; All clears the others; selecting any deselects All)",
-        "Timeline subscribes to the {type:'plan'} WS broadcast (in addition to event/skill-fired/skill-considered) and appends matching rows live, scoped to the active session's sessionId (same filtering as the other kinds)",
-        "Remove the conditional Plan TabsTrigger + TabsContent from ui/src/components/Hud.tsx; drop the PlanWidget import; remove the `plan` and `tasks` props from the HUD interface + the plan-active conditional rendering",
-        "Remove the usePlan hook call from ui/src/App.tsx and stop passing plan/tasks to <Hud>; delete ui/src/hooks/usePlan.ts and ui/src/components/PlanWidget.tsx (no remaining consumers after this story)",
-        "No data loss: every TodoWrite item (including statuses) and every ExitPlanMode plan text that the Plan widget surfaces today is visible in the Timeline PLAN rows + their expandable cards",
-        "Typecheck passes",
-        "cd ui && npm run build is clean",
-        "Verify in browser using automate-browser skill (open the timeline split for an active session; a TodoWrite produces a PLAN row that expands to the item list; an ExitPlanMode produces a PLAN row that expands to the plan text; the Plan tab no longer appears in the HUD tab strip; the Plan filter chip toggles plan-row visibility — light + dark)"
+        "src/usage/probe.ts gains parseUsageInsights(frame) returning a list of { headlinePct, factor, advice } triples, tolerant of count and phrasing variation (not hardcoded to '8+ hours'/'>150k')",
+        "src/usage/probe.ts gains parseUsageSkills(frame) returning a list of { name, pct } from the 'Skills · % of usage' table (any number of rows)",
+        "Both parsers are pure and unit-tested against a captured /usage sample frame fixture (like the existing parseUsageSession/parseUsageFrame tests)",
+        "Both return [] cleanly when the section is absent",
+        "npm test passes all suites",
+        "Typecheck passes"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Depends on US-004 (live Timeline.tsx) and US-006 (plan rows in the timeline route + WS). Anchors: ui/src/components/Hud.tsx (the conditional Plan tab to remove), ui/src/components/PlanWidget.tsx + ui/src/hooks/usePlan.ts (to delete), ui/src/App.tsx (drops the usePlan call + the plan/tasks props passed to Hud). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backlog F5 (S1). The data is already in the captured frame buffer — maybeCaptureUsage waits for the word 'contributing' as its end-of-frame sentinel (src/terminal/index.ts :371) — it's just never parsed. Anchors: src/usage/probe.ts parseUsageFrame/parseUsageSession/parseByModel. Out of scope: the separate /stats screen."
+    },
+    {
+      "id": "US-008",
+      "title": "Usage: extend LiveUsage shape + capture to carry insights + skills",
+      "description": "As a Conan developer, I want the live capture to store the parsed insights + skills, so the UI hook can read them.",
+      "acceptanceCriteria": [
+        "The LiveUsage interface (src/usage/probe.ts) gains `insights: {headlinePct,factor,advice}[]` and `skills: {name,pct}[]`",
+        "cacheCapturedUsage(...) is populated with parseUsageInsights/parseUsageSkills output from maybeCaptureUsage (src/terminal/index.ts) — the frame already includes these sections",
+        "ui/src/hooks/useUsage.ts mirrors the new LiveUsage fields",
+        "A capture with no insights/skills yields empty arrays (no crash)",
+        "npm test passes all suites",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Backlog F5 (S2). Depends on US-007. Anchors: src/usage/probe.ts LiveUsage + cacheCapturedUsage; src/terminal/index.ts maybeCaptureUsage ~:340-373; ui/src/hooks/useUsage.ts LiveUsage mirror."
+    },
+    {
+      "id": "US-009",
+      "title": "Usage: render 'What's contributing' + Skills % sections in the Usage tab",
+      "description": "As a Conan user, I want the full /usage stats (contributing factors + skills %) in the Usage tab, so I don't have to run /usage in the terminal.",
+      "acceptanceCriteria": [
+        "LiveUsageView (ui/src/components/Widgets.tsx) renders a 'What's contributing' section listing each insight (headline % + factor prominent, advice text small/secondary or one-line-clamped)",
+        "LiveUsageView renders a 'Skills · % of usage' list (name … %) like the per-model rows",
+        "Both sections carry the honest caveat (Last 24h · approximate, based on local sessions on this machine), consistent with the existing 'live · from /usage' framing",
+        "Layout holds at the 320px HUD min width; semantic tokens only",
+        "Sections are hidden gracefully when the capture has no insights/skills",
+        "Verify in browser using automate-browser skill in both light and dark mode against a session with a captured /usage frame",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Backlog F5 (S3). Depends on US-008. Anchors: LiveUsageView ui/src/components/Widgets.tsx ~:719+. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-010",
+      "title": "MCP auth SPIKE: capture the /mcp TUI navigation recipe",
+      "description": "As a Conan developer, I want a documented deterministic way to drive the /mcp menu, so the auth driver can navigate reliably.",
+      "acceptanceCriteria": [
+        "Drive /mcp in a real claude pty and record the frame sequence; document (a) server ordering vs `claude mcp list`, (b) the keypresses to select a given server and trigger its Authenticate action, (c) what the post-auth / pending frame looks like",
+        "The recipe is written to a doc (e.g. docs/mcp-auth-spike.md) as a deterministic navigation sequence keyed off the server name/index",
+        "If the TUI proves too brittle to drive deterministically (pagination/reordering), the doc records that verdict + a proposed alternative instead",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Backlog F1 (S1). Gating spike — `claude mcp --help` confirmed there is NO auth subcommand; OAuth auth is /mcp-TUI-only. This recipe drives US-011. Investigation/doc story (no app code)."
+    },
+    {
+      "id": "US-011",
+      "title": "MCP auth: throwaway-pty auth driver (backend)",
+      "description": "As a Conan developer, I want a backend driver that authenticates an MCP server by driving /mcp in a throwaway pty, so the UI can trigger it.",
+      "acceptanceCriteria": [
+        "src/mcp/ gains an auth driver that reuses the throwaway-pty lifecycle from src/usage/probe.ts: spawn `claude`, inject /mcp, run the US-010 navigation for a named server, fire Authenticate, then kill the pty",
+        "The driver never throws and always cleans up the pty (on success, error, or timeout) — no stray ptys",
+        "It uses a dedicated throwaway pty (not the user's correlated session) so the global MCP list and the user's terminal are untouched",
+        "Unit-tested against a captured frame for the navigation/parse logic",
+        "npm test passes all suites",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Backlog F1 (S2). Depends on US-010. Anchors: src/usage/probe.ts throwaway-pty lifecycle (maybeProbe spawn-drive-capture-kill); src/mcp/index.ts (getMcpServers, parseMcpList)."
+    },
+    {
+      "id": "US-012",
+      "title": "MCP auth: completion polling (backend)",
+      "description": "As a Conan developer, I want to detect when an MCP server finishes authenticating, so the UI can show success.",
+      "acceptanceCriteria": [
+        "After auth is fired, the backend polls getMcpServers(true) on an interval until the target server flips to `connected` or a timeout elapses",
+        "Exposes a status of `pending | connected | timeout` for the in-flight auth",
+        "The poll is bounded (timeout) and does not leak timers if abandoned",
+        "Unit-tested for the flip-to-connected and timeout branches",
+        "npm test passes all suites",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Backlog F1 (S3). Depends on US-011. OAuth consent happens out-of-band in the browser, so poll claude mcp list until the status flips. Anchors: src/mcp/index.ts getMcpServers(force)."
+    },
+    {
+      "id": "US-013",
+      "title": "MCP auth: token-gated authenticate + reconnect routes",
+      "description": "As a Conan developer, I want HTTP routes to kick off auth/reconnect, so the UI can call them.",
+      "acceptanceCriteria": [
+        "POST /api/claude/mcp/:name/authenticate starts the US-011/US-012 flow and returns the in-flight state",
+        "POST /api/claude/mcp/:name/reconnect runs a forced re-health-check, escalating to authenticate only when the failure is auth-shaped",
+        "Both routes are token-gated (401/blocked without a valid token + Origin), like the /usage probe route",
+        "A second auth for the same server while one is in flight is rejected/debounced",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Backlog F1 (S4). Depends on US-012. Anchors: src/gateway/index.ts (auth gate src/gateway/auth.ts; existing /api/claude/mcp route :669)."
+    },
+    {
+      "id": "US-014",
+      "title": "MCP tab: inline Authenticate / Reconnect row actions (UI)",
+      "description": "As a Conan user, I want to fix an unhealthy MCP server from the HUD, so I don't have to run /mcp in the terminal.",
+      "acceptanceCriteria": [
+        "In ui/src/components/McpWidget.tsx, `needs-authentication` rows show an 'Authenticate' button and `failed` rows show a 'Reconnect' button; `connected` rows show no action",
+        "Clicking sets a per-row in-flight state ('authenticating…' / 'reconnecting…'); on success the row repaints connected via useMcp refresh",
+        "Authenticate is an explicit user click (never auto-fired); copy makes clear it opens the browser for consent and that Reconnect only re-checks health (won't fix a down server)",
+        "Semantic tokens only; styling matches the existing ↻ refresh button",
+        "Verify in browser using automate-browser skill in both light and dark mode (correct action per status; in-flight state; no action on connected). Native note: the real OAuth browser handoff is verified in the built/tauri dev app",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Backlog F1 (S5). Depends on US-013. Anchors: ui/src/components/McpWidget.tsx statusTone/rows; ui/src/hooks/useMcp.ts refresh. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-015",
+      "title": "Settings: drop the search box + restyle Status/Config as real tabs",
+      "description": "As a Conan user, I want the Settings tabs to match the rest of the app and lose the unnecessary search, so it feels consistent.",
+      "acceptanceCriteria": [
+        "The StatusTab search is removed (the input, the `query` state, the filter, and the no-match empty state) — groups render directly",
+        "SettingsView's TabsList/TabsTrigger are restyled to the flat top-accent tab style used by the HUD (Hud.tsx TAB_TRIGGER) and the terminal tab strip, not the default shadcn segmented look",
+        "The TAB_TRIGGER style is extracted to one shared source so the HUD and Settings stay in sync",
+        "Verify in browser using automate-browser skill in both light and dark mode (no search box; tabs match the HUD/terminal look)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Backlog F4 (S1). Foundation for the Appearance tab (US-017, US-020). Anchors: ui/src/components/SettingsView.tsx StatusTab + Tabs; ui/src/components/Hud.tsx TAB_TRIGGER. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-016",
+      "title": "Settings: make the Status tab values editable (reuse the config-write path)",
+      "description": "As a Conan user, I want to change a setting where I read it, so I don't have to switch to the Config tab.",
+      "acceptanceCriteria": [
+        "Each Status ConfigEntry is matched to its config.schema KeyType by `key`; matched rows render the existing KeyControl (switch/enum-select/text-number) and save via the shared save() (lifted so both tabs use it) with inline error + onSaved re-read",
+        "Status entries with no matching editable schema key stay read-only (the current `code` value)",
+        "Editing writes to the key's schema scope (settings vs global), not the display group; a value read from Project is not written to the wrong file",
+        "The dialog subtitle no longer says 'read-only'; the 'edits apply on the next Claude session (no live hot-reload)' caveat is shown on Status too",
+        "Editing Theme / Always thinking / Notify after idle / Auto-updates from the Status tab persists (POST /api/claude/config fires; the value sticks on reopen)",
+        "Verify in browser using automate-browser skill in both light and dark mode",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Backlog F4 (S2). Depends on US-015. No new backend — POST /api/claude/config (v4.4 US-002/010) already writes these exact keys; Status values map 1:1 to configSchema() keys (theme/alwaysThinkingEnabled/messageIdleNotifThresholdMs/autoUpdates). Anchors: SettingsView.tsx StatusTab/ConfigRow/KeyControl/save; src/config/index.ts configSchema/EDITABLE_KEYS. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-017",
+      "title": "Settings: Appearance tab scaffold + Conan appearance pref hook",
+      "description": "As a Conan user, I want an Appearance tab for visual preferences, so font/theme controls have a home.",
+      "acceptanceCriteria": [
+        "SettingsView gains a third tab 'Appearance' using the flat tab style from US-015",
+        "A Conan-local preference hook (e.g. useAppearance) persists appearance settings in localStorage (like useTheme) — this is a Conan pref, NOT a Claude-config mirror, so it does not touch POST /api/claude/config",
+        "The tab shows a 'Terminal' section ready to host the font + (later) theme controls",
+        "Verify in browser using automate-browser skill in both light and dark mode",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Backlog F8 (S1). Depends on US-015. Foundation for US-018/US-019 (fonts) and US-020..US-023 (themes). Anchors: ui/src/components/SettingsView.tsx; ui/src/hooks/useTheme.ts (local-pref precedent). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-018",
+      "title": "Appearance: detect installed mono fonts (curated list + canvas) + picker",
+      "description": "As a Conan user, I want to pick from the mono fonts actually installed, so the terminal can use my preferred font.",
+      "acceptanceCriteria": [
+        "A util probes a curated mono-font candidate list (Menlo, Monaco, SF Mono, Courier New, Geist Mono, JetBrains Mono, Fira Code, Cascadia Code, Hack, Source Code Pro, IBM Plex Mono) via the canvas width-measurement trick (render vs a fallback, compare advance widths) — works in WKWebView, no queryLocalFonts",
+        "The Appearance tab renders a font-family dropdown (shadcn Select) of detected candidates, with the current default always present",
+        "A font-size control (replacing the hardcoded 13) is included in the same section",
+        "The selection is stored in the appearance pref (not yet necessarily applied — that's US-019)",
+        "Verify in browser using automate-browser skill in both light and dark mode; note that detection must be confirmed in the built/tauri dev WKWebView app (not just dev Chrome)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Backlog F8 (S2). Depends on US-017. queryLocalFonts() is Chromium-only and absent in macOS WKWebView — hence curated+canvas. Full gateway enumeration (font-list + fontkit isFixedPitch) deferred. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-019",
+      "title": "Appearance: apply the chosen font + size live to all terminals",
+      "description": "As a Conan user, I want my font choice to take effect immediately across all terminal tabs, so I see it without restarting.",
+      "acceptanceCriteria": [
+        "ui/src/components/Terminal.tsx reads the appearance pref; the chosen family is PREPENDED to the existing fallback stack ('<picked>', 'Geist Mono', ui-monospace, …) so a missing glyph still falls back",
+        "Changing the font/size updates ALL mounted xterm instances (term.options.fontFamily/fontSize) and re-fits them (fit addon) so glyph widths recompute — not just newly opened tabs",
+        "The choice persists across reload; an absent/unknown font falls back cleanly via the stack",
+        "Verify in browser using automate-browser skill in both light and dark mode (font changes live across tabs; persists across reload)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Backlog F8 (S3). Depends on US-018. Anchors: ui/src/components/Terminal.tsx :55-57 fontFamily/fontSize + fit addon. Ligatures (Fira Code etc.) need @xterm/addon-ligatures — out of scope. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-020",
+      "title": "Themes: theme model + bundled built-in themes + useThemes hook",
+      "description": "As a Conan developer, I want a theme model and built-in themes, so the app can switch among multiple palettes.",
+      "acceptanceCriteria": [
+        "A Theme type is defined as { id, name, type: 'light'|'dark', tokens: Record<tokenKey,string> }, with a documented canonical token-key contract covering the ~20 :root tokens (--background, --foreground, --card, --border, --muted(-foreground), --primary(-foreground), --chart-1..5, --term-bg, --term-fg, …)",
+        "Built-in themes are bundled in the UI: Light + Dark (matching the current :root/.dark values) plus at least one additional theme",
+        "A useThemes hook (or extended useTheme) merges built-ins with (later) user themes, exposes the active theme + a setter, and persists the active theme by `id`",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Backlog F9 (S1). Depends on US-017. Anchors: ui/src/index.css :root :50+ / .dark :89+ (token key list); ui/src/hooks/useTheme.ts. ANSI-16 terminal palette + in-app theme editor are out of scope."
+    },
+    {
+      "id": "US-021",
+      "title": "Themes: apply path (set tokens on :root + .dark per type; auto pair; terminal re-read)",
+      "description": "As a Conan user, I want selecting a theme to reskin the whole app live, so the change is immediate and complete.",
+      "acceptanceCriteria": [
+        "The apply path sets the active theme's tokens on document.documentElement via style.setProperty and toggles the .dark class per the theme's `type` (so Tailwind dark: variants + .dark-scoped CSS still behave)",
+        "'auto' maps to a chosen default light + default dark theme pair and still follows the OS prefers-color-scheme live",
+        "A partial theme (missing some tokens) is merged over the built-in default for its type so every required token has a value — the UI never breaks",
+        "After apply, getTerminalTheme() is re-read on all mounted terminals so the terminal reskins too",
+        "Verify in browser using automate-browser skill in both light and dark mode (switching reskins app + terminal live and persists across reload; auto follows OS)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Backlog F9 (S2). Depends on US-020. Replaces useTheme's .dark-only apply(). Anchors: ui/src/hooks/useTheme.ts apply(); ui/src/lib/terminalTheme.ts getTerminalTheme(). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-022",
+      "title": "Themes: config-file route reading + validating ~/.conan/themes.json",
+      "description": "As a Conan user, I want to add my own themes via a config file, so I'm not limited to the built-ins.",
+      "acceptanceCriteria": [
+        "GET /api/claude/themes (token-gated) reads ~/.conan/themes.json (or themes/*.json), CONAN_DATA_DIR-aware, and returns the user themes to merge",
+        "Validation accepts only KNOWN token keys with validated color values (hex/rgb/hsl); arbitrary keys, non-color values, and raw CSS strings are rejected (no url()/expression injection)",
+        "Invalid entries are skipped with a logged reason; a malformed/missing file yields [] without crashing",
+        "Unit tests cover: valid theme accepted, bad token key rejected, bad color value rejected, raw-CSS rejected",
+        "npm test passes all suites",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "Backlog F9 (S3). Depends on US-020 (theme model). Token-gated like other /api/claude routes (src/gateway/auth.ts). Respect CONAN_DATA_DIR (see conan-live-data-pipeline data-dir gotcha). Live fs.watch reload is out of scope."
+    },
+    {
+      "id": "US-023",
+      "title": "Themes: Appearance-tab theme picker + View ▸ Theme menu sync",
+      "description": "As a Conan user, I want to choose a theme in Settings and have the menu agree, so theme switching is discoverable and consistent.",
+      "acceptanceCriteria": [
+        "The Appearance tab renders a theme picker (list with palette swatches / small preview), grouped/labelled by light/dark, including built-ins + any user themes from ~/.conan/themes.json",
+        "Selecting a theme applies it live (US-021) and persists by id across reload",
+        "The View ▸ Theme submenu (ui/src/lib/appMenu.ts) is updated to reflect/select the available themes and stays in sync with the picker",
+        "A user theme defined in themes.json appears in the picker and applies; a partial/invalid one falls back to defaults without breaking",
+        "Verify in browser using automate-browser skill in both light and dark mode; confirm the View menu sync in the built/tauri dev app",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": "Backlog F9 (S4). Depends on US-021 + US-022. Anchors: ui/src/components/SettingsView.tsx Appearance tab; ui/src/lib/appMenu.ts View ▸ Theme submenu. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-024",
+      "title": "Responsive: HUD dock orientation (right | bottom) with per-axis resize + persistence",
+      "description": "As a Conan developer, I want the HUD to dock either right or bottom, so the layout can adapt to window shape.",
+      "acceptanceCriteria": [
+        "Hud gains a `dock: 'right' | 'bottom'` prop; the resize logic is abstracted to drive width + left drag handle + border-l + localStorage `conan-hud-w` for 'right', and height + top drag handle + border-t + a new `conan-hud-h` for 'bottom'",
+        "Sizes are clamped to per-axis min/max; the bottom dock defaults to ~33% of window height",
+        "conan-hud-w and conan-hud-h are independent keys so switching orientation restores each dock's last size",
+        "Both docks resize smoothly via their drag handle and persist across reload",
+        "Verify in browser using automate-browser skill in both light and dark mode",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": "Backlog F7 (S1). Largest feature. Anchors: ui/src/components/Hud.tsx right-dock aside (width/border-l/left handle, MIN_W/MAX_W/WIDTH_KEY=conan-hud-w, startResize); RadioBar pinned at bottom. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-025",
+      "title": "Responsive: shell reflow to a vertical stack at narrow widths",
+      "description": "As a Conan user on a narrow window, I want the HUD docked to the bottom instead of hidden, so I keep access to Usage/Pulse/Skills/MCP/Radio.",
+      "acceptanceCriteria": [
+        "In ui/src/App.tsx the root flips from flex-row to flex-col below the breakpoint (renamed from HUD_HIDE_BREAKPOINT — it no longer hides), rendering TerminalPane (top, flex-1) + <Hud dock=\"bottom\"> below; dock=\"right\" when wide",
+        "The `|| hudCrampedHide` force-hide is removed so `hidden` is purely `!hudOpen` — the View ▸ HUD toggle still hides it at any width",
+        "At narrow widths the Timeline still overlays the terminal (<720px) within the top region; the bottom HUD coexists whether the terminal is alone or the Timeline is open",
+        "Verify in browser using automate-browser skill at wide / narrow / narrow+timeline-open, in both light and dark mode (HUD bottom-docks at narrow instead of hiding; divider resizes it; menu toggle still hides it)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": "Backlog F7 (S2). Depends on US-024. Anchors: ui/src/App.tsx HUD_HIDE_BREAKPOINT :18, hudCrampedHide, root flex h-full, <Hud hidden=…>; TerminalPane TIMELINE_OVERLAY_BREAKPOINT :70. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-026",
+      "title": "Responsive: min-size enforcement + short-window guard",
+      "description": "As a Conan user on a small window, I want the bottom HUD to never collapse into an unusable sliver, so the layout stays usable.",
+      "acceptanceCriteria": [
+        "A useWindowHeight hook (sibling to useWindowWidth) provides the live window height",
+        "Terminal and HUD minimum heights are enforced in the bottom-dock layout so neither region collapses",
+        "Below a window-height floor, the bottom HUD is clamped (or kept toggleable via the View ▸ HUD menu) rather than rendered as an unusable sliver — the menu toggle remains the escape hatch",
+        "Switching wide↔narrow restores each dock's last size",
+        "Verify in browser using automate-browser skill at narrow+short, in both light and dark mode (no unusable sliver; sizes restore per orientation)",
+        "cd ui && npm run build is clean",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": "Backlog F7 (S3). Depends on US-024 + US-025. Anchors: new ui/src/hooks/useWindowHeight.ts (mirror useWindowWidth.ts). Suggested skills: automate-browser."
     }
   ]
 }
