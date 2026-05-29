@@ -47,6 +47,19 @@ export interface UsageSession {
   byModel: ModelUsage[];
 }
 
+/** One "What's contributing to your limits usage?" insight (US-007). */
+export interface UsageInsight {
+  headlinePct: number;
+  factor: string;
+  advice: string;
+}
+
+/** One row of the "Skills · % of usage" table (US-007). */
+export interface UsageSkill {
+  name: string;
+  pct: number;
+}
+
 /**
  * The EXACT /usage capture from the active session's live pty (US-010): the
  * session-specific block + all three windows, parsed from one rendered frame.
@@ -59,6 +72,10 @@ export interface LiveUsage {
   sevenDay: UsageWindow | null;
   sevenDaySonnet: UsageWindow | null;
   status: "ok" | "warning" | "limit";
+  /** "What's contributing" attributions (US-007); [] when absent. */
+  insights: UsageInsight[];
+  /** "Skills · % of usage" rows (US-007); [] when absent. */
+  skills: UsageSkill[];
   capturedAt: number;
 }
 
@@ -160,8 +177,34 @@ function parseLiveUsage(p: unknown): LiveUsage | null {
     sevenDay: parseWindow(o.sevenDay),
     sevenDaySonnet: parseWindow(o.sevenDaySonnet),
     status,
+    insights: Array.isArray(o.insights)
+      ? o.insights.map(parseInsight).filter((i): i is UsageInsight => !!i)
+      : [],
+    skills: Array.isArray(o.skills)
+      ? o.skills.map(parseSkill).filter((s): s is UsageSkill => !!s)
+      : [],
     capturedAt: num(o.capturedAt) ?? 0,
   };
+}
+
+/** Normalize one raw "What's contributing" insight (US-007). */
+function parseInsight(i: unknown): UsageInsight | null {
+  if (!i || typeof i !== "object") return null;
+  const o = i as Record<string, unknown>;
+  if (typeof o.headlinePct !== "number") return null;
+  return {
+    headlinePct: o.headlinePct,
+    factor: typeof o.factor === "string" ? o.factor : "",
+    advice: typeof o.advice === "string" ? o.advice : "",
+  };
+}
+
+/** Normalize one raw "Skills · % of usage" row (US-007). */
+function parseSkill(s: unknown): UsageSkill | null {
+  if (!s || typeof s !== "object") return null;
+  const o = s as Record<string, unknown>;
+  if (typeof o.name !== "string" || typeof o.pct !== "number") return null;
+  return { name: o.name, pct: o.pct };
 }
 
 function normalize(u: Record<string, unknown>): UsageState {

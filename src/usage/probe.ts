@@ -106,6 +106,10 @@ export interface LiveUsage {
   sevenDay: UsageWindow | null;
   sevenDaySonnet: UsageWindow | null;
   status: "ok" | "warning" | "limit";
+  /** "What's contributing" attributions parsed from the frame (US-007); [] when absent. */
+  insights: UsageInsight[];
+  /** "Skills · % of usage" rows parsed from the frame (US-007); [] when absent. */
+  skills: UsageSkill[];
   /** When this frame was captured (epoch ms). */
   capturedAt: number;
 }

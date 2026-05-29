@@ -16,7 +16,13 @@ import {
   resetContextGrowth,
   CONTEXT_MIN_SPACING_MS,
 } from "../context/autorefresh.js";
-import { parseUsageFrame, parseUsageSession, cacheCapturedUsage } from "../usage/probe.js";
+import {
+  parseUsageFrame,
+  parseUsageSession,
+  parseUsageInsights,
+  parseUsageSkills,
+  cacheCapturedUsage,
+} from "../usage/probe.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -365,6 +371,10 @@ function maybeCaptureUsage(s: TermSession, chunk: string): void {
     sevenDay: windows.sevenDay,
     sevenDaySonnet: windows.sevenDaySonnet,
     status: windows.status,
+    // The insights + skills sections render after the windows; parse from the
+    // same accumulated frame (empty arrays until/if they appear — no crash).
+    insights: parseUsageInsights(s.usageScan),
+    skills: parseUsageSkills(s.usageScan),
   });
   // Clear only once the frame is fully rendered (the detail section, which comes
   // after every window, has appeared) so we don't drop the later windows.

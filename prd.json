@@ -135,7 +135,7 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F5 (S2). Depends on US-007. Anchors: src/usage/probe.ts LiveUsage + cacheCapturedUsage; src/terminal/index.ts maybeCaptureUsage ~:340-373; ui/src/hooks/useUsage.ts LiveUsage mirror."
     },
     {
