@@ -314,7 +314,7 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F8 (S3). Depends on US-018. Anchors: ui/src/components/Terminal.tsx :55-57 fontFamily/fontSize + fit addon. Ligatures (Fira Code etc.) need @xterm/addon-ligatures — out of scope. Suggested skills: automate-browser."
     },
     {

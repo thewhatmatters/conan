@@ -7,6 +7,18 @@ import { getTerminalTheme } from "../lib/terminalTheme.ts";
 import { ResilientSocket } from "../lib/resilientSocket.ts";
 import { wsUrl } from "../lib/gateway.ts";
 import type { Theme } from "../hooks/useTheme.ts";
+import { useAppearance } from "../hooks/useAppearance.ts";
+
+/** The built-in fallback stack; a picked font is prepended so a missing glyph
+ *  still resolves down through Geist Mono → the OS monospaces. */
+const FALLBACK_FONTS =
+  '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+
+/** Build the xterm fontFamily from the appearance pref: the chosen family
+ *  prepended to the fallback stack, or just the fallback stack when unset. */
+function fontStack(picked: string | null): string {
+  return picked ? `"${picked}", ${FALLBACK_FONTS}` : FALLBACK_FONTS;
+}
 
 interface TerminalProps {
   /** Gateway auth token (from /api/config) — required for the WS upgrade. */
@@ -36,6 +48,13 @@ interface TerminalProps {
 export default function Terminal({ token, theme, tid, closeOnUnmount }: TerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Xterm | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  // Re-fit + tell the pty the new cols/rows. Set during mount so the appearance
+  // effect (which lives outside that effect's scope) can drive a reflow.
+  const sendResizeRef = useRef<(() => void) | null>(null);
+  // Conan appearance pref (shared store) — drives the terminal mono-font family
+  // + size. Changing it in Settings notifies every mounted Terminal at once.
+  const { appearance } = useAppearance();
   // Edge-fade indicators — true when xterm's viewport isn't at the top/bottom
   // of its scrollback (canScrollUp) or some content lies below it
   // (canScrollDown — only true while the user has scrolled up; live output
@@ -52,15 +71,15 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
 
     const term = new Xterm({
       cursorBlink: true,
-      fontFamily:
-        '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: 13,
+      fontFamily: fontStack(appearance.terminalFontFamily),
+      fontSize: appearance.terminalFontSize,
       theme: getTerminalTheme(),
       allowProposedApi: true,
     });
     xtermRef.current = term;
 
     const fit = new FitAddon();
+    fitRef.current = fit;
     term.loadAddon(fit);
     term.open(host);
     try {
@@ -123,6 +142,7 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
       fit.fit();
       sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     };
+    sendResizeRef.current = sendResize;
     const ro = new ResizeObserver(() => sendResize());
     ro.observe(host);
 
@@ -138,8 +158,25 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
       sock.close();
       term.dispose();
       xtermRef.current = null;
+      fitRef.current = null;
+      sendResizeRef.current = null;
     };
   }, [token, tid]);
+
+  // Apply the appearance pref live (US-019). Setting term.options.fontFamily/
+  // fontSize then re-fitting recomputes glyph cell widths so the layout stays
+  // correct; the ResizeObserver-driven sendResize already informs the pty, but
+  // we fit() explicitly here since the host box size hasn't changed. Runs on
+  // every shared-store change, so changing the font in Settings reskins ALL
+  // mounted tabs at once — not just newly opened ones.
+  useEffect(() => {
+    const term = xtermRef.current;
+    if (!term) return;
+    term.options.fontFamily = fontStack(appearance.terminalFontFamily);
+    term.options.fontSize = appearance.terminalFontSize;
+    // Re-fit AND notify the pty (cols/rows may shift with the new glyph size).
+    (sendResizeRef.current ?? (() => fitRef.current?.fit()))();
+  }, [appearance.terminalFontFamily, appearance.terminalFontSize]);
 
   // Re-apply the theme when the app theme toggles. Setting options.theme is the
   // supported path; refresh() forces a redraw so the WebGL renderer's glyph
