@@ -103,7 +103,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F2 (S3). Depends on US-004. Anchors: Widgets.tsx UsageWidget refreshBtn / ↻ /usage ~:565-577; route POST .../usage/refresh (gateway :603). Does NOT touch the separate Context-pressure bar. Suggested skills: automate-browser."
     },
     {

@@ -503,35 +503,25 @@ function ContextBreakdownBar({
 }
 
 /**
- * Usage monitor (US-004/US-005/US-025). When a fresh `/usage` scrape exists
- * (`planUtilization`, US-005) it shows the REAL plan utilization: the 5-hour and
- * 7-day "% used" with a per-window reset countdown and a warning/limit posture.
- * Otherwise it falls back to the token-trend baseline (recent token consumption
- * + a rate-limited state and reset countdown derived from api_retry events) and
- * marks itself an approximation via the "≈ approx" tag. It is never blank: with
- * no data at all it shows "—". The countdowns tick client-side off `resetAt`.
+ * The Usage tab's ↻ /usage refresh control (US-006). Lifted out of UsageWidget's
+ * faces so it can ride the shared <HudTabHeader> secondary toolbar like the
+ * other HUD tabs, instead of moving around with whichever Usage face renders.
+ * Injects `/usage` into the correlated pty (US-010), then polls the usage
+ * payload a few times so the passively-captured frame surfaces. Mirrors the
+ * Context tab's ↻ /context gating: it only renders when a live pty is correlated
+ * (it types into it), and shows a "capturing…" busy state while polling.
  */
-export function UsageWidget({
-  usage,
+export function UsageRefreshButton({
   session,
   token,
   hasLivePty,
   onRefetch,
 }: {
-  usage: UsageState;
   session?: Session | null;
   token?: string | null;
   hasLivePty?: boolean;
   onRefetch?: () => void;
 }) {
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setTick(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // On-demand refresh: inject `/usage` into the correlated pty (US-010), then
-  // poll the usage payload a few times so the passively-captured frame surfaces.
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(
@@ -564,31 +554,47 @@ export function UsageWidget({
     }, 700);
   };
 
-  // Refresh control: only when a live pty is correlated (it types into it).
-  const refreshBtn = hasLivePty ? (
+  // Only when a live pty is correlated (it types into it) — mirrors ↻ /context.
+  if (!hasLivePty) return null;
+  return (
     <button
       type="button"
       onClick={refresh}
       disabled={refreshing}
       title="Run /usage in the live terminal and capture the exact Session block + windows"
-      className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+      className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
     >
       {refreshing ? "capturing…" : "↻ /usage"}
     </button>
-  ) : null;
+  );
+}
+
+/**
+ * Usage monitor (US-004/US-005/US-025). When a fresh `/usage` scrape exists
+ * (`planUtilization`, US-005) it shows the REAL plan utilization: the 5-hour and
+ * 7-day "% used" with a per-window reset countdown and a warning/limit posture.
+ * Otherwise it falls back to the token-trend baseline (recent token consumption
+ * + a rate-limited state and reset countdown derived from api_retry events) and
+ * marks itself an approximation via the "≈ approx" tag. It is never blank: with
+ * no data at all it shows "—". The countdowns tick client-side off `resetAt`.
+ */
+export function UsageWidget({ usage }: { usage: UsageState }) {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // --- live face: the EXACT /usage capture (US-010) -------------------------
   if (usage.liveUsage) {
-    return (
-      <LiveUsageView live={usage.liveUsage} tick={tick} refreshBtn={refreshBtn} />
-    );
+    return <LiveUsageView live={usage.liveUsage} tick={tick} />;
   }
 
   // Prefer the real scrape (US-005) when it carries at least one parsed window.
   const plan = usage.planUtilization;
   const hasPlan = !!plan && (!!plan.fiveHour || !!plan.sevenDay);
   if (hasPlan && plan) {
-    return <PlanUsage plan={plan} tick={tick} refreshBtn={refreshBtn} />;
+    return <PlanUsage plan={plan} tick={tick} />;
   }
 
   // --- baseline (US-004): token-trend approximation -------------------------
@@ -625,7 +631,6 @@ export function UsageWidget({
           </span>
         )}
         <ApproxTag />
-        {refreshBtn}
       </div>
       <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
         {resetLabel
@@ -684,11 +689,9 @@ function worstWindow(
 function PlanUsage({
   plan,
   tick,
-  refreshBtn,
 }: {
   plan: NonNullable<UsageState["planUtilization"]>;
   tick: number;
-  refreshBtn?: ReactNode;
 }) {
   const worst = worstWindow(plan.fiveHour, plan.sevenDay, plan.sevenDaySonnet);
 
@@ -699,7 +702,6 @@ function PlanUsage({
           {worst}%
         </span>
         <StatusChip status={plan.status} />
-        {refreshBtn}
       </div>
       <div className="mt-1.5 space-y-1">
         <PlanWindowRow label="5h" win={plan.fiveHour} tick={tick} />
@@ -719,11 +721,9 @@ function PlanUsage({
 function LiveUsageView({
   live,
   tick,
-  refreshBtn,
 }: {
   live: LiveUsage;
   tick: number;
-  refreshBtn?: ReactNode;
 }) {
   const worst = worstWindow(live.fiveHour, live.sevenDay, live.sevenDaySonnet);
   const s = live.session;
@@ -734,7 +734,6 @@ function LiveUsageView({
           {worst >= 0 ? `${worst}%` : "—"}
         </span>
         <StatusChip status={live.status} />
-        {refreshBtn}
       </div>
 
       {/* account-global rate-limit windows */}

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { UsageWidget } from "./Widgets.tsx";
+import { UsageWidget, UsageRefreshButton } from "./Widgets.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
@@ -133,14 +133,27 @@ export default function Hud({
           value="usage"
           className="mt-0 flex min-h-0 flex-1 flex-col"
         >
+          {/* Pinned secondary toolbar (US-006): 'Usage' + the ↻ /usage refresh
+              ride the shared <HudTabHeader> outside the FadeScroll so they stay
+              put while the content scrolls — matching the Pulse/Skills/MCP tabs.
+              The refresh keeps its live-pty gating (hidden with no live pty). */}
+          <HudTabHeader
+            name={
+              <span className="px-1 text-[11px] font-medium text-muted-foreground">
+                Usage
+              </span>
+            }
+            actions={
+              <UsageRefreshButton
+                session={activeSession}
+                token={token}
+                hasLivePty={data?.hasLivePty ?? false}
+                onRefetch={onRefetchUsage}
+              />
+            }
+          />
           <FadeScroll>
-            <UsageWidget
-              usage={usage}
-              session={activeSession}
-              token={token}
-              hasLivePty={data?.hasLivePty ?? false}
-              onRefetch={onRefetchUsage}
-            />
+            <UsageWidget usage={usage} />
           </FadeScroll>
         </TabsContent>
 
