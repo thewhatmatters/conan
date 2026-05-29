@@ -437,3 +437,173 @@ export async function pollMcpAuthCompletion(
 
   return { server: serverName, status: "timeout", lastStatus, polls };
 }
+
+// --- US-013: in-flight auth registry + route entry points --------------------
+//
+// The gateway routes (POST /api/claude/mcp/:name/authenticate|reconnect) drive
+// the throwaway-pty auth (US-011) then poll for completion (US-012) as ONE
+// fire-and-forget flight per server. We keep a tiny registry, keyed by the
+// normalized server name, so a second authenticate while one is already pending
+// is debounced (the OAuth consent is happening in the browser — re-driving the
+// TUI would race a second pty against the same server). A flight stays in the
+// registry after it finishes (connected/timeout) so the UI can read the last
+// outcome; only a `pending` flight blocks a new start.
+
+/** Public snapshot of an in-flight (or just-finished) MCP auth flight. */
+export interface McpAuthFlightState {
+  /** The server name the flight is for. */
+  server: string;
+  /** pending while driving/polling; connected once it flips healthy; timeout otherwise. */
+  status: McpAuthStatus;
+  /** Which action actually fired ("authenticate"|"reconnect"), or null pre-fire. */
+  action: McpAuthAction | null;
+  /** When the flight started (epoch ms). */
+  startedAt: number;
+  /** Human error reason when the drive failed, else null. */
+  error: string | null;
+}
+
+interface Flight extends McpAuthFlightState {
+  /** Cancels the completion poll if the flight is abandoned. */
+  controller: AbortController;
+}
+
+const flights = new Map<string, Flight>();
+
+const snapshot = (f: Flight): McpAuthFlightState => ({
+  server: f.server,
+  status: f.status,
+  action: f.action,
+  startedAt: f.startedAt,
+  error: f.error,
+});
+
+/** True when an auth flight for this server is currently pending. */
+export function isMcpAuthInFlight(serverName: string): boolean {
+  const f = flights.get(normalizeServerName(serverName));
+  return f != null && f.status === "pending";
+}
+
+/** Last-known auth flight snapshot for a server (in-flight or finished), or null. */
+export function getMcpAuthState(serverName: string): McpAuthFlightState | null {
+  const f = flights.get(normalizeServerName(serverName));
+  return f ? snapshot(f) : null;
+}
+
+/** Result of attempting to start an auth flight. */
+export interface McpAuthStartResult {
+  /** True when a fresh flight was started; false when debounced. */
+  started: boolean;
+  /** True when rejected because a flight for this server was already pending. */
+  alreadyInFlight: boolean;
+  /** The current flight snapshot (the live one when debounced, the new one when started). */
+  state: McpAuthFlightState;
+}
+
+/** Injectable hooks for unit-testing the registry without a real claude pty. */
+interface AuthFlightDeps {
+  drive?: typeof driveMcpAuth;
+  poll?: typeof pollMcpAuthCompletion;
+}
+
+/**
+ * Start a fire-and-forget auth flight for `serverName`: drive the `/mcp` TUI
+ * (US-011) then poll `claude mcp list` for the flip to `connected` (US-012),
+ * mutating the registry's flight in place (pending → connected|timeout). If a
+ * flight is already pending for this server, NO new flight starts — the live
+ * snapshot is returned with `alreadyInFlight:true` (debounce). Never throws; the
+ * underlying helpers swallow their own errors. `action` defaults to "authenticate".
+ */
+export function startMcpAuth(
+  serverName: string,
+  opts: { action?: McpAuthAction } & AuthFlightDeps = {},
+): McpAuthStartResult {
+  const action: McpAuthAction = opts.action ?? "authenticate";
+  const key = normalizeServerName(serverName);
+
+  const existing = flights.get(key);
+  if (existing && existing.status === "pending") {
+    return { started: false, alreadyInFlight: true, state: snapshot(existing) };
+  }
+
+  const controller = new AbortController();
+  const flight: Flight = {
+    server: serverName,
+    status: "pending",
+    action: null,
+    startedAt: Date.now(),
+    error: null,
+    controller,
+  };
+  flights.set(key, flight);
+
+  const drive = opts.drive ?? driveMcpAuth;
+  const poll = opts.poll ?? pollMcpAuthCompletion;
+
+  void (async () => {
+    const driveResult = await drive(serverName, { action });
+    flight.action = driveResult.action ?? action;
+    if (!driveResult.ok) {
+      flight.status = "timeout";
+      flight.error = driveResult.error;
+      return;
+    }
+    const pollResult = await poll(serverName, { signal: controller.signal });
+    flight.status = pollResult.status === "connected" ? "connected" : "timeout";
+  })();
+
+  return { started: true, alreadyInFlight: false, state: snapshot(flight) };
+}
+
+/** Result of a reconnect (forced re-health-check, with optional auth escalation). */
+export interface McpReconnectResult {
+  /** The server name we re-checked. */
+  server: string;
+  /** The normalized status after the forced re-dial, or null if the server is gone. */
+  status: string | null;
+  /** True when the re-dial reported an auth-shaped failure and we started an auth flight. */
+  escalated: boolean;
+  /** True when escalation hit an already-pending flight (debounced). */
+  alreadyInFlight: boolean;
+  /** The started auth flight snapshot when escalated, else null. */
+  auth: McpAuthFlightState | null;
+}
+
+/**
+ * Reconnect = a FORCED re-health-check (`getMcpServers(true)` re-dials every
+ * server). We escalate to the authenticate flow ONLY when the target's refreshed
+ * status is auth-shaped (`needs-authentication`); a plain `failed` server just
+ * returns its refreshed status (reconnect can't fix a down server — that's the
+ * UI's honest copy). Never throws. `list` is injectable for tests.
+ */
+export async function reconnectMcp(
+  serverName: string,
+  opts: { list?: McpLister } & AuthFlightDeps = {},
+): Promise<McpReconnectResult> {
+  const list = opts.list ?? getMcpServers;
+  let status: string | null = null;
+  try {
+    const { servers } = await list(true);
+    const match = servers.find((s) => serversMatch(s.name, serverName));
+    status = match?.status ?? null;
+  } catch {
+    /* a failed re-dial leaves status null — reported as a non-escalated result */
+  }
+
+  if (status === "needs-authentication") {
+    const started = startMcpAuth(serverName, {
+      action: "authenticate",
+      drive: opts.drive,
+      poll: opts.poll,
+    });
+    return {
+      server: serverName,
+      status,
+      escalated: true,
+      alreadyInFlight: started.alreadyInFlight,
+      auth: started.state,
+    };
+  }
+
+  return { server: serverName, status, escalated: false, alreadyInFlight: false, auth: null };
+}

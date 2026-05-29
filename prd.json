@@ -214,7 +214,7 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F1 (S4). Depends on US-012. Anchors: src/gateway/index.ts (auth gate src/gateway/auth.ts; existing /api/claude/mcp route :669)."
     },
     {

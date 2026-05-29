@@ -33,6 +33,7 @@ import {
   type PlanRecord,
 } from "../timeline/transcriptScan.js";
 import { getMcpServers } from "../mcp/index.js";
+import { startMcpAuth, reconnectMcp } from "../mcp/auth.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
@@ -670,6 +671,28 @@ app.get("/api/claude/mcp", async (req, res) => {
   if (!authed(req, res)) return;
   const result = await getMcpServers(req.query.force === "1");
   res.json(result);
+});
+
+// MCP one-click Authenticate (US-013). Starts the throwaway-pty auth driver
+// (US-011) + completion poll (US-012) for the named server as one fire-and-forget
+// flight and returns its in-flight state. Token-gated (it spawns a process and
+// drives the /mcp TUI). A second authenticate while one is already pending for
+// the same server is debounced — 409 with the live flight state, no second pty.
+app.post("/api/claude/mcp/:name/authenticate", (req, res) => {
+  if (!authed(req, res)) return;
+  const result = startMcpAuth(req.params.name);
+  res.status(result.started ? 200 : 409).json(result.state);
+});
+
+// MCP Reconnect (US-013). Forces a re-health-check (re-dials the server),
+// escalating to the authenticate flow ONLY when the refreshed status is
+// auth-shaped (needs-authentication). A plain `failed` server just returns its
+// refreshed status — reconnect can't fix a down server. Token-gated; an
+// escalation that hits an already-pending auth is debounced (409).
+app.post("/api/claude/mcp/:name/reconnect", async (req, res) => {
+  if (!authed(req, res)) return;
+  const result = await reconnectMcp(req.params.name);
+  res.status(result.escalated && result.alreadyInFlight ? 409 : 200).json(result);
 });
 
 // Claude Radio state — read the current { videoId, title } the UI's player is
