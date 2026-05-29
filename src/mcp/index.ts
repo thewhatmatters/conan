@@ -85,8 +85,12 @@ export function parseMcpList(stdout: string): McpServer[] {
  * Run `claude mcp list` (a real health check — it dials each server, so it can
  * take a few seconds) and return the parsed servers. Resolves to `[]` with an
  * `error` when the binary is missing or the call fails/timeouts; never throws.
- * Runs through a login shell so the user's PATH resolves `claude` the same way
- * the terminal does.
+ *
+ * Runs through an **interactive login shell** (`-i -l -c`) so the user's PATH
+ * resolves `claude` the same way the terminal does. A bare `-l -c` reads
+ * `.zprofile`/`.profile` but skips `.zshrc`, where most macOS users put
+ * `~/.local/bin` on PATH — without `-i`, the bundled-sidecar gateway hits a
+ * `command not found: claude` even though it works in their terminal.
  */
 export function listMcpServers(
   timeoutMs = 15_000,
@@ -95,7 +99,7 @@ export function listMcpServers(
     const shell = process.env.SHELL || "/bin/bash";
     execFile(
       shell,
-      ["-l", "-c", `${CLAUDE_BIN} mcp list`],
+      ["-i", "-l", "-c", `${CLAUDE_BIN} mcp list`],
       { timeout: timeoutMs, windowsHide: true, maxBuffer: 1024 * 1024 },
       (err, stdout) => {
         const servers = parseMcpList(stdout || "");
