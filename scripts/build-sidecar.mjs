@@ -197,9 +197,17 @@ for (const mod of NATIVE_MODULES) {
 
 // 5. The node-pty spawn-helper footgun: keep its +x bit (research §3 / the
 //    posix_spawnp failure). cpSync preserves perms, but re-assert defensively.
+//    Also strip non-darwin-arm64 prebuilds — node-pty ships win32-* and
+//    darwin-x64 that we don't run, and Apple's notarization rejects the
+//    bundle when those unsigned Mach-O slip past (a build-time prune is
+//    safer than per-binary signing of dead weight).
 const ptyPrebuilds = path.join(nm, "node-pty", "prebuilds");
 if (existsSync(ptyPrebuilds)) {
   for (const dir of readdirSync(ptyPrebuilds)) {
+    if (dir !== "darwin-arm64") {
+      rmSync(path.join(ptyPrebuilds, dir), { recursive: true, force: true });
+      continue;
+    }
     const helper = path.join(ptyPrebuilds, dir, "spawn-helper");
     if (existsSync(helper)) chmodSync(helper, 0o755);
   }
@@ -219,16 +227,70 @@ execFileSync(
 rmSync(launcherSrc);
 chmodSync(LAUNCHER, 0o755);
 
-// 7. Ad-hoc codesign the launcher + the embedded node (arm64 kernel kills
-//    unsigned/locally-modified Mach-O). Distribution needs a Developer ID +
-//    notarization (see docs/tauri-desktop.md).
-console.log("[sidecar] ad-hoc codesigning …");
-for (const bin of [path.join(RUNTIME, "node"), LAUNCHER]) {
-  const r = spawnSync("codesign", ["--force", "-s", "-", bin], {
-    encoding: "utf8",
-  });
+// 7. Codesign the launcher + the embedded node. The arm64 kernel refuses to
+//    exec unsigned/locally-modified Mach-O at all — ad-hoc is the dev baseline.
+//    For a release build, scripts/release.mjs sets APPLE_SIGNING_IDENTITY +
+//    APPLE_ENTITLEMENTS so the same binaries arrive pre-signed with the
+//    hardened runtime; Tauri's later `--deep` re-sign then leaves them alone
+//    (and notarization needs all nested Mach-O signed with the SAME identity).
+const signingIdentity = process.env.APPLE_SIGNING_IDENTITY || "-";
+const entitlements = process.env.APPLE_ENTITLEMENTS || null;
+const useDeveloperId = signingIdentity !== "-";
+
+if (useDeveloperId) {
+  console.log(`[sidecar] codesigning with: ${signingIdentity}`);
+  if (!entitlements) {
+    throw new Error(
+      "APPLE_SIGNING_IDENTITY set but APPLE_ENTITLEMENTS isn't — refusing to ship a Developer-ID-signed binary without the hardened-runtime entitlements (notarization would reject it). scripts/release.mjs should set both.",
+    );
+  }
+} else {
+  console.log("[sidecar] ad-hoc codesigning …");
+}
+
+// Walk every Mach-O under runtime/: node + launcher + every .node addon +
+// node-pty's spawn-helper. Apple's notarization scans recursively and rejects
+// the bundle if ANY embedded Mach-O is missing a Developer ID signature, a
+// secure timestamp, or the hardened runtime — there is no "skip nested" knob.
+// Inner binaries are signed FIRST so the outer .app sign-pass (Tauri does it
+// at bundle time) has valid nested sigs to seal over.
+function walkMachO(dir) {
+  const out = [];
+  for (const name of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, name.name);
+    if (name.isDirectory()) {
+      out.push(...walkMachO(p));
+    } else if (name.isFile()) {
+      // Identify by extension/name; cheap and stable. (`spawn-helper` is the
+      // only Mach-O without a `.node` / well-known name.) `node` and the
+      // launcher are captured by name.
+      if (
+        p.endsWith(".node") ||
+        path.basename(p) === "spawn-helper" ||
+        p === path.join(RUNTIME, "node") ||
+        p === LAUNCHER
+      ) {
+        out.push(p);
+      }
+    }
+  }
+  return out;
+}
+
+const targets = walkMachO(RUNTIME);
+console.log(`[sidecar] codesigning ${targets.length} Mach-O binaries`);
+for (const bin of targets) {
+  const args = ["--force", "-s", signingIdentity];
+  if (useDeveloperId) {
+    args.push("--options", "runtime", "--timestamp");
+    if (entitlements) args.push("--entitlements", entitlements);
+  }
+  args.push(bin);
+  const r = spawnSync("codesign", args, { encoding: "utf8" });
   if (r.status !== 0) {
-    console.warn(`[sidecar] codesign warning for ${bin}: ${r.stderr?.trim()}`);
+    const msg = `[sidecar] codesign ${useDeveloperId ? "FAILED" : "warning"} for ${bin}: ${r.stderr?.trim()}`;
+    if (useDeveloperId) throw new Error(msg);
+    console.warn(msg);
   }
 }
 

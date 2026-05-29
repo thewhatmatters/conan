@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Hardened-runtime entitlements for Conan. Notarization REQUIRES the hardened
+    runtime, which then forbids most "dangerous" capabilities unless you opt in
+    here with a justification. Keep this list small — every entitlement Apple
+    sees that you don't actually need is one they may eventually flag.
+
+    Why each one is here:
+  -->
+
+  <!-- WebKit's WKWebView (the UI shell) JITs JavaScript. The hardened runtime
+       forbids executable memory by default; this re-allows it for the JIT. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- Backup for V8/JavaScriptCore JIT pages that aren't allocated via the
+       explicit JIT mmap path. Required by Tauri's webview in practice. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- The sidecar gateway spawns the bundled `node`, which dlopens native
+       addons (better-sqlite3.node, pty.node). Library Validation requires
+       every linked dylib to be signed by the SAME Team ID as the app — but
+       npm packages ship pre-built binaries signed by the packager's identity
+       (or unsigned). Disabling validation lets these load. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- node-pty forks a `spawn-helper` child to seed a pty before exec'ing the
+       user's shell. Hardened runtime restricts process spawning that touches
+       certain inherited file descriptors; this re-enables it. -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

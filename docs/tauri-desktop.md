@@ -86,20 +86,86 @@ Artifacts land under `src-tauri/target/release/bundle/{macos,dmg}/`
 
 - **Local run (ad-hoc):** `build-sidecar.mjs` ad-hoc-signs the launcher + the
   embedded `node` (`codesign -s -`) so the arm64 kernel doesn't kill them, and
-  `tauri build` ad-hoc-signs the `.app`. This is enough to launch on the build
-  machine. (`codesign --verify --deep --strict` reports a stale resource seal
-  because `runtime/` is added as a bundle resource after the linker signature —
-  harmless for local ad-hoc launch; a real Developer-ID re-sign reseals it.)
+  `tauri build` ad-hoc-signs the `.app`. Enough to launch on the build machine.
+
 - **Distribution (Developer ID + notarize):** required or users get
-  "damaged/unverified". Set the env Tauri reads and rebuild:
+  "damaged/unverified". One command:
+
   ```bash
-  export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-  export APPLE_ID="you@example.com"
-  export APPLE_PASSWORD="app-specific-password"   # or APPLE_API_KEY/_ISSUER
-  export APPLE_TEAM_ID="TEAMID"
-  npm run tauri:build
+  npm run release
   ```
-  Tauri signs the `.app` (and the embedded sidecar/`node`) with the Developer ID
-  and notarizes the bundle. Verify E2E that the **notarized** app still spawns the
-  gateway after Gatekeeper validation (research §5). The sidecar's `node` +
-  launcher are Mach-O specifically so they can carry a real signature.
+
+  [scripts/release.mjs](../scripts/release.mjs) is the locked release flow.
+  It:
+  1. Kills any running `Conan.app` (a live gateway writes to its own
+     `Contents/Resources/.claude/` → invalidates the resource seal).
+  2. Resolves the Developer ID identity from the Keychain (Team ID
+     `4P6GX328VY` for this project).
+  3. Confirms the `conan-notarize` notarytool keychain profile authenticates.
+  4. Rebuilds the sidecar with `APPLE_SIGNING_IDENTITY` + `--options runtime`
+     + `--timestamp` + the entitlements file — signing **every** Mach-O under
+     `runtime/` (the `.node` addons, `spawn-helper`, the embedded `node`, the
+     launcher). Apple's notarization scans recursively and rejects any nested
+     binary missing a Developer ID sig, secure timestamp, or hardened runtime.
+  5. Runs `tauri build` with the same env so Tauri's `--deep` re-sign seals
+     the outer bundle.
+  6. **Scrubs any `.claude/.data/.DS_Store` stray state** from
+     `Conan.app/Contents/Resources/` and re-signs (defensive — guards against
+     a race where macOS or a curious process touches the bundle between sign
+     and notarize).
+  7. Zips + submits the `.app` to `notarytool` with
+     `--keychain-profile conan-notarize --wait`. ~5 min round-trip.
+  8. Staples the ticket to the `.app`.
+  9. Regenerates the `.dmg` from the **stapled** `.app` using `hdiutil`
+     (the Tauri-built `.dmg` was created before the staple, so its hash is
+     stale and `notarytool` would reject the .app inside).
+  10. Submits the new `.dmg` to `notarytool`, staples it.
+  11. `spctl --assess` verifies both artifacts read
+      `source=Notarized Developer ID`.
+
+  **One-time setup (per developer):**
+
+  ```bash
+  # 1. Developer ID Application cert in Keychain — create in Xcode:
+  #    Settings ▸ Accounts ▸ Manage Certificates ▸ + ▸ Developer ID Application
+  security find-identity -v -p codesigning   # confirm
+
+  # 2. App-specific password stored under the `conan-notarize` profile
+  xcrun notarytool store-credentials conan-notarize \
+    --apple-id "<your-apple-id>" \
+    --team-id "4P6GX328VY"
+
+  # 3. Verify auth works (clean "No submission history" means success)
+  xcrun notarytool history --keychain-profile conan-notarize
+  ```
+
+  The password lives only in your login Keychain — never in env vars, never
+  in this repo, never in CI logs. The release script reads it through
+  `xcrun notarytool --keychain-profile`, which can decrypt the item without
+  the password leaving Apple's API surface.
+
+### Hardened-runtime entitlements
+
+[src-tauri/Conan.entitlements](../src-tauri/Conan.entitlements) declares the
+minimal set Apple's hardened runtime needs for Conan to function:
+
+| Entitlement | Why |
+|---|---|
+| `com.apple.security.cs.allow-jit` | WKWebView's V8 needs writable-then-executable memory pages for JIT. |
+| `com.apple.security.cs.allow-unsigned-executable-memory` | Backup for JIT pages allocated outside the explicit JIT mmap path. |
+| `com.apple.security.cs.disable-library-validation` | npm-shipped native addons (`better-sqlite3.node`, `pty.node`) are signed by their packagers, not by our Team ID — Library Validation would refuse to load them. |
+| `com.apple.security.cs.allow-dyld-environment-variables` | `node-pty` forks `spawn-helper`, which inherits some env. |
+
+If a future feature needs another entitlement, add it here AND re-submit for
+notarization — Apple flags new entitlements per submission.
+
+### What lives where
+
+- The Developer ID Application cert: in your **login Keychain**. Visible via
+  `security find-identity -v -p codesigning`.
+- The app-specific password for `notarytool`: in your **login Keychain**
+  under the `conan-notarize` notarytool profile. Apple's system manages the
+  storage; `security find-generic-password` can't see it.
+- The Team ID `4P6GX328VY`: hardcoded in [scripts/release.mjs](../scripts/release.mjs).
+- The Apple ID email: same.
+- The signing identity name: derived at runtime from `security find-identity`.

@@ -18,7 +18,8 @@
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
