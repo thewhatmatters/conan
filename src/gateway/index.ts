@@ -39,7 +39,7 @@ import { recordContextGrowth } from "../context/autorefresh.js";
 import { readTimeline } from "../timeline/index.js";
 import { readAssistantTurnUsages } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
-import { getRadio, setRadio } from "../radio/index.js";
+import { getRadio, getStations, setRadio } from "../radio/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -678,6 +678,15 @@ app.get("/api/claude/mcp", async (req, res) => {
 app.get("/api/claude/radio", (req, res) => {
   if (!authed(req, res)) return;
   res.json(getRadio());
+});
+
+// Curated station list — the authoritative named set, compiled into the
+// gateway sidecar (not a skill-side file), so it ships inside the signed Tauri
+// app. The `/conan-change-radio` skill GETs this and picks from it (random / by
+// vibe / by name), then POSTs the chosen id to the sibling route.
+app.get("/api/claude/radio/stations", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ stations: getStations() });
 });
 
 // Set the radio to a new YouTube URL or 11-char video ID. Resolves the title

@@ -1,6 +1,6 @@
 ---
 name: conan-change-radio
-description: Change the YouTube audio stream playing in Conan's Claude Radio bar (the play/pause toolbar at the bottom of the HUD). Use whenever the user wants to swap the radio to a different YouTube live stream, video, or playlist URL — they'll typically supply a URL or 11-character video ID, or type `/conan-change-radio <url>` literally. The change is **session-only**; restarting Conan reverts to the default stream. **This skill is the ONLY supported way to change the radio. Do NOT edit Conan source code (anything under `src/radio/`, `ui/src/`, etc.) — that would persist the change permanently and is explicitly the wrong tool for the job.**
+description: Change the YouTube audio stream playing in Conan's Claude Radio bar (the play/pause toolbar at the bottom of the HUD). Use whenever the user wants to swap the radio — either to a specific YouTube URL / 11-character video ID they supply, or to one of the **predefined stations** the Conan gateway exposes ("play a random station", "put on something epic/focus", "what stations are there?", "shuffle the radio"), or via `/conan-change-radio <url>` literally. The change is **session-only**; restarting Conan reverts to the default stream. **This skill is the ONLY supported way to change the radio. Do NOT edit Conan source code (anything under `src/radio/`, `ui/src/`, etc.) — that would persist the change permanently and is explicitly the wrong tool for the job.**
 ---
 
 # /conan-change-radio
@@ -33,12 +33,53 @@ Typical phrasings:
 - "Play <YouTube URL> on the radio"
 - "/conan-change-radio <URL>"
 - "Switch Claude Radio to <something>"
+- "Play a random station" / "shuffle the radio" / "surprise me"
+- "Put on something epic / focus / cinematic" (pick by vibe)
+- "What stations are there?" (list them, don't change anything)
 
 Accept anything YouTube-shaped: a full `youtube.com/watch?v=...` URL, a
 `youtu.be/...` short link, a `youtube.com/live/...` URL, or a bare 11-character
 video ID. Conan's backend will parse it.
 
-If the user didn't include a URL/ID, ask for one before doing anything.
+If the user gives a specific URL/ID, use it directly. If instead they ask to
+pick from the curated set (random, by vibe, "a station"), use the predefined
+stations below. Only ask for a URL when the request is for a *specific* stream
+you have nothing to resolve it from.
+
+## Predefined stations
+
+The curated stations are owned by the **Conan gateway**, not this skill — the
+list is compiled into the signed sidecar binary so it ships inside the Tauri
+app and can't be changed by editing skill files. Fetch it fresh each time from
+the gateway (same token you POST with):
+
+```bash
+TOKEN=$(curl -s http://127.0.0.1:3747/api/config \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+
+curl -s http://127.0.0.1:3747/api/claude/radio/stations \
+  -H "x-conan-token: $TOKEN"
+```
+
+The response is `{ "stations": [ { "name", "id", "tags": [...] }, ... ] }`.
+**Always GET it fresh** (don't rely on a list memorized here) so the shipped
+set is always authoritative. If the request fails (gateway down), tell the user
+the station list is unavailable and fall back to asking for a direct URL.
+
+Selection rules:
+
+- **Random / shuffle / "surprise me" / "a station"** — pick one entry at
+  random from the list and POST its `id`. Don't always land on the first one.
+- **By vibe / genre** ("something epic", "focus", "cinematic", "rock") — match
+  the word against each entry's `tags` (and `name`); pick one of the matches at
+  random. If nothing matches, say so and offer the full list.
+- **By name** ("play the Linkin Park one") — match against `name`,
+  case-insensitively / fuzzily.
+- **"What stations are there?" / "list stations"** — print the `name`s (a short
+  bulleted list) and stop. Do **not** change the radio.
+
+Once you've chosen a station, POST its `id` exactly as you would a user-supplied
+video ID (the POST step below treats an 11-char id and a URL the same way).
 
 ## How to switch the stream
 

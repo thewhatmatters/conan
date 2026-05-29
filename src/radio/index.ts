@@ -10,8 +10,60 @@
  * fetch only the title; the video itself is loaded by the UI player.
  */
 
-/** Default video — the Claude Radio live stream the UI ships pointing at. */
-export const DEFAULT_RADIO_VIDEO_ID = "YmQ7jRgf4f0";
+/**
+ * A curated radio station — a named YouTube video the user can pick by name or
+ * vibe via the `/conan-change-radio` skill.
+ */
+export interface RadioStation {
+  name: string;
+  /** 11-char YouTube video ID. */
+  id: string;
+  /** Free-form vibe/genre keywords the skill matches against ("epic", "focus"). */
+  tags: string[];
+}
+
+/**
+ * The authoritative curated station list. Lives here — compiled into the
+ * gateway sidecar binary — rather than in a skill-side `stations.json`, so the
+ * set of named stations ships inside the signed Tauri app and can't be altered
+ * by editing the (user-writable) skill files. The `/conan-change-radio` skill
+ * sources this via `GET /api/claude/radio/stations` and picks from it.
+ *
+ * Note: this is the canonical *named* set, not an allowlist — the POST route
+ * still accepts any valid YouTube URL/ID, matching the skill's primary use.
+ *
+ * STATIONS[0] is the default (Claude FM); keep it first.
+ */
+export const STATIONS: RadioStation[] = [
+  {
+    name: "Claude FM",
+    id: "YmQ7jRgf4f0",
+    tags: ["focus", "ambient", "default", "chill", "build"],
+  },
+  {
+    name: "System Of A Down — Symphonic Orchestra Instrumentals",
+    id: "B4levrgre1w",
+    tags: ["epic", "cinematic", "instrumental", "rock", "symphonic"],
+  },
+  {
+    name: "Dr. Dre — Symphonic Orchestra Instrumentals",
+    id: "Y0umYlXL7uY",
+    tags: ["epic", "cinematic", "instrumental", "hip-hop", "symphonic"],
+  },
+  {
+    name: "Linkin Park — Symphonic Orchestra Instrumentals",
+    id: "OqjX2v_JBRA",
+    tags: ["epic", "cinematic", "instrumental", "rock", "symphonic"],
+  },
+];
+
+/** Default video — the Claude Radio stream the UI ships pointing at (Claude FM). */
+export const DEFAULT_RADIO_VIDEO_ID = STATIONS[0]!.id;
+
+/** Deep copy of the curated station list (callers can't mutate STATIONS). */
+export function getStations(): RadioStation[] {
+  return STATIONS.map((s) => ({ ...s, tags: [...s.tags] }));
+}
 
 export interface RadioState {
   videoId: string;

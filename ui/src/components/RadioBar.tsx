@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Pause, Play, Radio } from "lucide-react";
+import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
 
 const YT_API_SRC = "https://www.youtube.com/iframe_api";
@@ -223,9 +223,9 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
         className="inline-flex items-center justify-center rounded text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent"
       >
         {playing ? (
-          <Pause className="size-3.5" />
+          <SquarePause className="size-3.5" />
         ) : (
-          <Play className="size-3.5" />
+          <SquarePlay className="size-3.5" />
         )}
       </button>
       {playing ? <Equalizer /> : <Radio className="size-3.5 shrink-0" />}
