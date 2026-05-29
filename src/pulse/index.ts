@@ -3,7 +3,9 @@
 // events-per-minute and token/cost burn over time, and surface api_retry events
 // distinctly. This is the time-series counterpart to the snapshot hero cards
 // (US-010) — those describe "now", this describes the recent past.
+import fs from "node:fs";
 import { getDb } from "../db/index.js";
+import { readAssistantTurnUsages, transcriptPath } from "../transcript/index.js";
 
 /**
  * Activity categories the stacked-area Pulse chart stacks by (US-016). Order is
@@ -52,9 +54,10 @@ export interface PulseBucket {
   types: Record<PulseCategory, number>;
   /** api_retry events in this slice, surfaced distinctly on the chart. */
   retries: number;
-  /** Output tokens produced (from ResultMessage usage). */
+  /** Total tokens spent in assistant turns ending in this slice (sum of
+   *  input + cache_read + cache_creation + output, from the transcript JSONL). */
   tokens: number;
-  /** Cost attributed to this slice (USD), from per-session total_cost_usd deltas. */
+  /** Reserved for cost (USD) once a source lands; currently always 0. */
   cost: number;
 }
 
@@ -92,9 +95,9 @@ function isRetry(row: EventRow): boolean {
 
 /**
  * Aggregate recent activity into ~60 evenly-spaced buckets over `windowMs`.
- * Token/cost figures come from `result` rows: output_tokens is per-turn, and
- * cost is derived from the per-session delta of the cumulative total_cost_usd
- * (so a session's running total isn't recounted into every bucket).
+ * Per-bucket tokens come from the transcript JSONL (`readAssistantTurnUsages`)
+ * for every session with events in the window — Conan's hook ingestion never
+ * carries a usage block, so the transcript is the canonical source.
  */
 export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
   const now = Date.now();
@@ -152,52 +155,30 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
     }
   }
 
-  // Token/cost from result rows. Walk ALL result rows in time order so the
-  // per-session cost delta has a correct baseline even when the prior result
-  // fell outside the window; only attribute slices that land inside it.
-  const results = db
+  // Tokens come from the Claude Code transcript JSONLs at
+  // ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl — every assistant
+  // message there carries a `usage` block with input + cache + output. We
+  // don't ingest the old stream-json `result` rows since the headless-drive
+  // path was removed in v4.2, so the transcript is the canonical source.
+  // Cached by file path + mtime so repeated Pulse polls don't re-read
+  // unchanged sessions; cleared whenever the JSONL grows.
+  const sessions = db
     .prepare(
-      `SELECT session_id, payload, ts
-         FROM event
-        WHERE stream_type = 'result'
-        ORDER BY ts ASC`,
+      `SELECT DISTINCT e.session_id, s.cwd
+         FROM event e
+         LEFT JOIN session s ON s.id = e.session_id
+        WHERE e.ts >= ?`,
     )
-    .all() as EventRow[];
+    .all(start) as { session_id: string; cwd: string | null }[];
 
-  const lastCost = new Map<string, number>();
-  for (const row of results) {
-    let payload: Record<string, unknown> | null = null;
-    try {
-      payload = row.payload ? JSON.parse(row.payload) : null;
-    } catch {
-      payload = null;
+  for (const { session_id, cwd } of sessions) {
+    const usages = readCachedTurnUsages(session_id, cwd);
+    for (const u of usages) {
+      const i = idxFor(u.ts);
+      const b = i < 0 ? undefined : buckets[i];
+      if (!b) continue;
+      b.tokens += u.totalTokens;
     }
-    const cumulative =
-      payload && typeof payload.total_cost_usd === "number"
-        ? payload.total_cost_usd
-        : undefined;
-    const usage =
-      payload && typeof payload.usage === "object"
-        ? (payload.usage as Record<string, unknown>)
-        : undefined;
-    const outTokens =
-      usage && typeof usage.output_tokens === "number"
-        ? usage.output_tokens
-        : 0;
-
-    let costDelta = 0;
-    if (cumulative !== undefined) {
-      const prev = lastCost.get(row.session_id) ?? 0;
-      // A drop means a fresh/relaunched session — count the new value whole.
-      costDelta = cumulative >= prev ? cumulative - prev : cumulative;
-      lastCost.set(row.session_id, cumulative);
-    }
-
-    const i = idxFor(row.ts);
-    const b = i < 0 ? undefined : buckets[i];
-    if (!b) continue; // outside the window: baseline only, not plotted.
-    b.tokens += outTokens;
-    b.cost += costDelta;
   }
 
   const totals = buckets.reduce(
@@ -211,4 +192,34 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
   );
 
   return { windowMs, bucketMs, now, buckets, totals };
+}
+
+/**
+ * Module-level cache for per-session transcript-turn usages, keyed by the
+ * resolved JSONL path with mtime invalidation. Pulse polls every few seconds
+ * and 24h windows can pull a dozen sessions; without this we'd re-read every
+ * (possibly multi-MB) JSONL on every request.
+ */
+const turnUsageCache = new Map<
+  string,
+  { mtimeMs: number; usages: { ts: number; totalTokens: number }[] }
+>();
+
+function readCachedTurnUsages(
+  sessionId: string,
+  cwd: string | null,
+): { ts: number; totalTokens: number }[] {
+  const file = transcriptPath(sessionId, cwd);
+  if (!file) return [];
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    return [];
+  }
+  const hit = turnUsageCache.get(file);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.usages;
+  const usages = readAssistantTurnUsages(sessionId, cwd);
+  turnUsageCache.set(file, { mtimeMs, usages });
+  return usages;
 }
