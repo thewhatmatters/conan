@@ -25,6 +25,21 @@ const MIN_H = 160;
 const MAX_H = 900;
 const HEIGHT_KEY = "conan-hud-h";
 
+/** US-026: the terminal region above the bottom dock never shrinks past this,
+ *  so a tall HUD (or a drag) can't collapse the terminal into a sliver. The
+ *  bottom dock's effective max height is therefore window.innerHeight minus
+ *  this floor (but never below MIN_H — see effectiveMaxBottomH). */
+const TERMINAL_MIN_H = 120;
+
+/** US-026: largest the bottom dock may be for a given window height — leave at
+ *  least TERMINAL_MIN_H for the terminal, but never clamp below MIN_H. On a
+ *  very short window (height < TERMINAL_MIN_H + MIN_H) this returns MIN_H, so
+ *  the HUD stays a usable strip rather than a sliver and the terminal takes the
+ *  squeeze (the View ▸ HUD toggle remains the escape hatch). */
+function effectiveMaxBottomH(winH: number): number {
+  return Math.min(MAX_H, Math.max(MIN_H, winH - TERMINAL_MIN_H));
+}
+
 /** Bottom dock defaults to ~1/3 of the window height. */
 function defaultBottomHeight(): number {
   const h =
@@ -38,6 +53,9 @@ interface HudProps {
   /** Which edge the HUD docks to (US-024). 'right' = width + left handle +
    *  border-l; 'bottom' = height + top handle + border-t. Default 'right'. */
   dock?: "right" | "bottom";
+  /** Live window height (US-026). Only consumed by the bottom dock to clamp its
+   *  rendered height so the terminal keeps TERMINAL_MIN_H on a short window. */
+  windowHeight?: number;
   // — Usage widget (session-scoped via its rate-limit windows) —
   activeSession: Session | null;
   /** Widgets payload — only `hasLivePty` is consumed here (UsageWidget refresh). */
@@ -67,6 +85,7 @@ interface HudProps {
 export default function Hud({
   hidden,
   dock = "right",
+  windowHeight,
   activeSession,
   data,
   token,
@@ -100,8 +119,10 @@ export default function Hud({
       e.preventDefault();
       const onMove = (ev: MouseEvent) => {
         if (isBottom) {
+          // US-026: cap the drag at effectiveMaxBottomH so dragging the handle
+          // up can't shrink the terminal past TERMINAL_MIN_H.
           const h = Math.min(
-            MAX_H,
+            effectiveMaxBottomH(window.innerHeight),
             Math.max(MIN_H, window.innerHeight - ev.clientY),
           );
           heightRef.current = h;
@@ -132,10 +153,19 @@ export default function Hud({
     [isBottom],
   );
 
+  // US-026: clamp the bottom dock's *rendered* height to the live window so the
+  // terminal keeps TERMINAL_MIN_H even after the window shrinks. We don't write
+  // this back to state/localStorage — the stored height is preserved, so when
+  // the window grows again the dock restores its last size.
+  const renderHeight = Math.min(
+    height,
+    effectiveMaxBottomH(windowHeight ?? height + TERMINAL_MIN_H),
+  );
+
   return (
     <aside
       style={{
-        ...(isBottom ? { height } : { width }),
+        ...(isBottom ? { height: renderHeight } : { width }),
         display: hidden ? "none" : undefined,
       }}
       className={

@@ -12,6 +12,7 @@ import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
 import { useWindowWidth } from "./hooks/useWindowWidth.ts";
+import { useWindowHeight } from "./hooks/useWindowHeight.ts";
 
 /** Window width at which the HUD reflows from a right dock to a bottom dock
  *  (US-025). Below this the terminal can't share horizontal space with a
@@ -39,6 +40,10 @@ export default function App() {
   // so both the HUD (bottom-docks when narrow) and TerminalPane (Timeline
   // overlays the terminal at very-narrow widths) agree on the same state.
   const windowWidth = useWindowWidth();
+  // US-026: live window height feeds the bottom dock's short-window guard so
+  // the terminal keeps a minimum height and the HUD clamps instead of becoming
+  // an unusable sliver.
+  const windowHeight = useWindowHeight();
   // US-025: below the breakpoint the shell stacks vertically — TerminalPane on
   // top, the HUD docked to the bottom (dock="bottom") — instead of the HUD
   // hiding. Wide windows keep the side-by-side right dock.
@@ -219,6 +224,7 @@ export default function App() {
       <Hud
         hidden={!hudOpen}
         dock={hudBottomDock ? "bottom" : "right"}
+        windowHeight={windowHeight}
         activeSession={activeSession}
         data={widgetData}
         token={config?.token ?? null}

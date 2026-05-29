@@ -116,6 +116,13 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🌐 **Equal height** with the status bar (both `h-7`, same `text-xs`, same `size-3.5` icons).
 - [ ] _Note:_ hiding the HUD also stops Radio (player unmounts with the panel).
 
+## 11b · Responsive HUD dock  (v4.6 US-024/025/026)
+- [ ] 🌐 Wide window (≥900px): HUD docks **right** (border-l, left drag handle); left-drag resizes + persists (`conan-hud-w`).
+- [ ] 🌐 Narrow window (<900px): shell stacks vertically — terminal on top, HUD **bottom**-docked (border-t, top drag handle); top-drag resizes + persists (`conan-hud-h`).
+- [ ] 🌐 Narrow **+ short** window: the bottom HUD clamps so the terminal keeps a minimum height — neither region collapses; on a very short window the HUD stays a usable strip (not a sliver) and `View ▸ Hide HUD` is the escape hatch.
+- [ ] 🌐 Growing the window back restores each dock's last size (right vs bottom kept independently; the clamp doesn't overwrite the stored size).
+- [ ] 🌐 At very-narrow (<720px) the Timeline overlays the terminal within the top region and coexists with the bottom HUD.
+
 ## 12 · Settings dialog  (v4.3 US-007/008, v4.4 US-009/010)
 - [ ] 🖥 `Conan ▸ Settings…` (⌘,) opens the dialog (🌐 also openable via the `conan:open-settings` event in dev).
 - [ ] 🌐☀️🌙 Two tabs: **Status** (read-only: version, session, cwd, login/org/email, model, MCP servers, setting sources) and **Config**.

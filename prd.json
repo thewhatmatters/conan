@@ -429,7 +429,7 @@
         "Typecheck passes"
       ],
       "priority": 26,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F7 (S3). Depends on US-024 + US-025. Anchors: new ui/src/hooks/useWindowHeight.ts (mirror useWindowWidth.ts). Suggested skills: automate-browser."
     }
   ]

@@ -380,7 +380,7 @@ export default function TerminalPane({
   }, []);
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col bg-card">
+    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-card">
       <div className="flex items-center border-b border-border">
         <Tabs
           value={activeTid}
