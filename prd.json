@@ -281,7 +281,7 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F8 (S1). Depends on US-015. Foundation for US-018/US-019 (fonts) and US-020..US-023 (themes). Anchors: ui/src/components/SettingsView.tsx; ui/src/hooks/useTheme.ts (local-pref precedent). Suggested skills: automate-browser."
     },
     {

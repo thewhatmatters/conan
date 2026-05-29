@@ -17,6 +17,7 @@ import {
 } from "./ui/select.tsx";
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
+import { useAppearance } from "../hooks/useAppearance.ts";
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -37,6 +38,10 @@ import type {
  *     `schema` (every editable key + its type), rendered as live controls
  *     (US-010): a switch for booleans, a dropdown for enums, a text/number input
  *     otherwise. Changes persist via POST /api/claude/config and re-read on save.
+ *   - **Appearance** — Conan-local visual preferences (US-017), persisted to
+ *     localStorage via useAppearance — NOT a Claude-config mirror, so it never
+ *     touches POST /api/claude/config. Scaffolds a Terminal section that hosts
+ *     the font picker (US-018/019) and theme picker (US-020+).
  *
  * Both tabs write through the same lifted `save()` (POST /api/claude/config,
  * read-modify-write). Writes route to the key's schema scope (settings vs global)
@@ -111,6 +116,9 @@ export default function SettingsView({
               <TabsTrigger value="config" className={TAB_TRIGGER}>
                 Config
               </TabsTrigger>
+              <TabsTrigger value="appearance" className={TAB_TRIGGER}>
+                Appearance
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -119,6 +127,9 @@ export default function SettingsView({
           </TabsContent>
           <TabsContent value="config" className="mt-0">
             <ConfigTab config={config} errors={errors} onSave={save} />
+          </TabsContent>
+          <TabsContent value="appearance" className="mt-0">
+            <AppearanceTab />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -302,6 +313,38 @@ function ConfigTab({
             </section>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Appearance tab — Conan-local visual preferences (US-017), persisted to
+ * localStorage via useAppearance. This is NOT a Claude-config mirror, so it does
+ * not POST to /api/claude/config and carries no "next Claude session" caveat.
+ * Scaffolded here with a Terminal section that the font picker (US-018/019) and
+ * theme picker (US-020+) will fill in. Themed with semantic tokens only.
+ */
+function AppearanceTab() {
+  // Subscribe so the (later) controls read/write the persisted pref; the hook is
+  // wired now so US-018+ can drop controls in without re-plumbing state.
+  useAppearance();
+
+  return (
+    <div className="flex flex-col">
+      <p className="border-b border-border px-5 py-2.5 text-[11px] text-muted-foreground">
+        Conan&rsquo;s own look &amp; feel — stored locally on this machine. Takes
+        effect immediately; not part of Claude Code&rsquo;s config.
+      </p>
+      <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
+        <section>
+          <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Terminal
+          </h3>
+          <p className="px-5 py-6 text-[13px] text-muted-foreground">
+            Font and theme controls are coming soon.
+          </p>
+        </section>
       </div>
     </div>
   );
