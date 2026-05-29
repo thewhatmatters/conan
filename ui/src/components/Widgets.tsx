@@ -605,57 +605,11 @@ export function UsageWidget({
     return <PlanUsage plan={plan} tick={tick} hasLivePty={hasLivePty} />;
   }
 
-  // --- baseline (US-004): token-trend approximation -------------------------
-  const remaining =
-    usage.resetAt != null ? Math.max(0, usage.resetAt - tick) : null;
-  const resetLabel =
-    remaining != null
-      ? remaining > 0
-        ? `resets in ${fmtDuration(remaining)}`
-        : "reset due"
-      : null;
-
-  let headline: string;
-  if (!usage.hasData) headline = "—";
-  else if (usage.tokensRecent.last5h > 0)
-    headline = `${fmtTokens(usage.tokensRecent.last5h)} tok`;
-  else if (usage.tokensToday > 0) headline = `${fmtTokens(usage.tokensToday)} tok`;
-  else headline = "—";
-
-  // `label` omitted from StatCard — the Usage tab's secondary toolbar
-  // (v4.6 US-006) already labels this section, so a second "Usage" inside the
-  // card was redundant. The `sub` chip stays — it conveys data-source state.
-  return (
-    <StatCard sub={usage.rateLimited ? "rate limited" : "last 5h"}>
-      <div className="flex items-center gap-2">
-        <span
-          className={
-            "text-xl font-semibold " +
-            (usage.rateLimited ? "text-destructive" : "text-foreground")
-          }
-        >
-          {headline}
-        </span>
-        {usage.rateLimited && (
-          <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive">
-            Limited
-          </span>
-        )}
-        <ApproxTag />
-      </div>
-      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-        {resetLabel
-          ? resetLabel
-          : usage.hasData
-            ? usage.tokensRecent.last7d > 0
-              ? `${fmtTokens(usage.tokensRecent.last7d)} tok · 7d`
-              : usage.costToday > 0
-                ? `$${usage.costToday.toFixed(2)} today`
-                : "active"
-            : "no usage data"}
-      </div>
-    </StatCard>
-  );
+  // --- baseline: no /usage scrape yet ---------------------------------------
+  // Render the same shape PlanUsage/LiveUsageView would, with `—` placeholders
+  // so the user sees the data layout that's waiting. A rate-limited posture
+  // still gets a visible Limited chip up top.
+  return <EmptyUsageView hasLivePty={hasLivePty} rateLimited={usage.rateLimited} />;
 }
 
 // STATUS_COLOR / StatusChip / worstWindow were removed when the Usage faces
@@ -699,12 +653,58 @@ function PlanUsage({
 }
 
 /**
- * The "waiting for /usage capture" empty-state of the Session block. Renders
- * the same shape `<LiveUsageView>` would once data lands — header, the
- * Cost/Code/API/Wall grid, and a hint at the bottom — but with `—` values and
- * a softened opacity so it reads as scaffold, not stale data. Clicking ↻ /usage
- * in the toolbar above triggers the capture; the live view replaces this
- * skeleton on the next refetch.
+ * The "waiting for /usage capture" empty-state mirror of LiveUsageView (US-010).
+ * Renders the same scaffolding — three rate-limit windows up top, then the
+ * Session block (Cost/Code/API/Wall grid + an All-models token row) — but with
+ * `—` placeholders and softened opacity so it reads as the layout that data
+ * will fill, not stale numbers. Clicking ↻ /usage in the toolbar above triggers
+ * the capture; LiveUsageView replaces this skeleton on the next refetch.
+ */
+function EmptyUsageView({
+  hasLivePty,
+  rateLimited,
+}: {
+  hasLivePty: boolean;
+  rateLimited: boolean;
+}) {
+  return (
+    <StatCard sub={rateLimited ? "rate limited" : "awaiting /usage capture"}>
+      <div className="space-y-3 opacity-60">
+        <EmptyPlanWindowRow kind="session" />
+        <EmptyPlanWindowRow kind="week-all" />
+        <EmptyPlanWindowRow kind="week-sonnet" />
+      </div>
+      <EmptySessionBlock hasLivePty={hasLivePty} />
+    </StatCard>
+  );
+}
+
+/**
+ * Empty scaffold for one rate-limit window row — mirrors PlanWindowRow's
+ * label + bar + reset-line shape, but with an empty bar and `—`/"Awaiting
+ * capture" placeholders. Wrapped by EmptyUsageView and (indirectly) by
+ * PlanUsage's empty Session footer.
+ */
+function EmptyPlanWindowRow({ kind }: { kind: WindowKind }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-2 text-[11px]">
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {WINDOW_LABELS[kind]}
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">—</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted" />
+      <div className="text-[10px] text-muted-foreground">Awaiting capture</div>
+    </div>
+  );
+}
+
+/**
+ * The Session-block portion of the empty state. Used both by EmptyUsageView
+ * (no windows captured yet) and by PlanUsage (windows captured, but no
+ * session-specific block yet). Cost/Code/API/Wall grid + an All-models row
+ * with `—` token counts so the per-model layout is visible too.
  */
 function EmptySessionBlock({ hasLivePty }: { hasLivePty: boolean }) {
   return (
@@ -717,6 +717,15 @@ function EmptySessionBlock({ hasLivePty }: { hasLivePty: boolean }) {
         <SessionStat label="Code" value="—" />
         <SessionStat label="API" value="—" />
         <SessionStat label="Wall" value="—" />
+      </div>
+      <div className="mt-1.5 text-[11px]">
+        <div className="truncate font-medium text-foreground">All models</div>
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-muted-foreground">
+          <span className="tabular-nums">— in</span>
+          <span className="tabular-nums">— out</span>
+          <span className="tabular-nums">— cache-r</span>
+          <span className="tabular-nums">— cache-w</span>
+        </div>
       </div>
       <div className="mt-1.5 text-[10px] text-muted-foreground">
         {hasLivePty
@@ -921,26 +930,6 @@ function fmtResetAbsolute(resetAt: number | null, now: number): string {
     day: "numeric",
   }).format(reset);
   return `Resets ${dateStr} at ${hourStr} (${tz})`;
-}
-
-/**
- * The "≈ approx" marker for the Usage widget: a hover tooltip making clear that
- * the figures approximate plan usage from our own token counts — the true live
- * plan % lives in response headers Conan can't read. Group-hover panel (no
- * tooltip dependency), semantic tokens only, themed for light + dark.
- */
-function ApproxTag() {
-  return (
-    <span className="group/approx relative ml-auto inline-block">
-      <span className="cursor-help rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        ≈ approx
-      </span>
-      <span className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-52 rounded-md border border-border bg-card p-2 text-left text-[11px] leading-snug text-muted-foreground shadow-md group-hover/approx:block">
-        Approximation from our own token counts. The real plan % lives in the
-        Claude process's rate-limit response headers, which Conan can't read.
-      </span>
-    </span>
-  );
 }
 
 /* ---- shared bits --------------------------------------------------------- */
