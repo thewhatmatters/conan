@@ -231,7 +231,7 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F1 (S5). Depends on US-013. Anchors: ui/src/components/McpWidget.tsx statusTone/rows; ui/src/hooks/useMcp.ts refresh. Suggested skills: automate-browser."
     },
     {

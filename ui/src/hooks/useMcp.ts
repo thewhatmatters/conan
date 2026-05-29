@@ -27,7 +27,11 @@ export interface McpState {
  * (the gateway caches it 30s, so this is cheap); `refresh()` re-pulls with
  * `?force=1` to re-dial the servers on demand. Resets when there's no token.
  */
-export function useMcp(token: string | null): McpState & { refresh: () => void } {
+export function useMcp(token: string | null): McpState & {
+  refresh: () => void;
+  authenticate: (name: string) => Promise<Response>;
+  reconnect: (name: string) => Promise<Response>;
+} {
   const [state, setState] = useState<McpState>({
     servers: [],
     loading: false,
@@ -66,5 +70,26 @@ export function useMcp(token: string | null): McpState & { refresh: () => void }
     load(false);
   }, [token, load]);
 
-  return { ...state, refresh: () => load(true) };
+  // US-014: fire the token-gated one-click auth/reconnect routes (the backend
+  // drives the /mcp TUI in a throwaway pty + polls for the flip to connected —
+  // src/mcp/auth.ts). Both are explicit user clicks; the response (the in-flight
+  // flight state) is returned to the caller, which then polls via refresh().
+  const post = useCallback(
+    (name: string, action: "authenticate" | "reconnect"): Promise<Response> => {
+      if (!token) return Promise.reject(new Error("no token"));
+      return fetch(
+        apiBase() +
+          `/api/claude/mcp/${encodeURIComponent(name)}/${action}`,
+        { method: "POST", headers: { "x-conan-token": token } },
+      );
+    },
+    [token],
+  );
+
+  return {
+    ...state,
+    refresh: () => load(true),
+    authenticate: (name: string) => post(name, "authenticate"),
+    reconnect: (name: string) => post(name, "reconnect"),
+  };
 }
