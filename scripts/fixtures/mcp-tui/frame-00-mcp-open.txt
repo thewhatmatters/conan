@@ -1,0 +1,36 @@
+[>0q ▐▛███▜▌ClaudeCodev2.1.156
+▝▜█████▛▘Opus4.8(1Mcontext)·ClaudeMax
+ ▘▘▝▝/Users/digitalalchemist
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try"createautillogging.pythat..."
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←foragents●high·/effort
+ [Opus 4.8 (1M context)] │ ⎇ digitalalchemist
+←foragents
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────❯  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[Opus 4.8 (1M context)] │ ⎇ digitalalchemist● high · /effort
+←foragents
+❯ /mcp                                                                                                                  
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ManageMCPservers
+7servers
+
+LocalMCPs (/Users/digitalalchemist/.claude.json[project:/Users/digitalalchemist])
+❯refero·✔connected·8tools
+
+UserMCPs (/Users/digitalalchemist/.claude.json)
+paper ·◯reconnecting(3/3)…
+
+claude.ai
+claude.aiFigma ·✔ connected·17tools
+claude.aiGmail ·✔ connected·12tools
+claude.aiGoogleCalendar ·✔ connected·8tools
+claude.aiGoogleDrive ·△ needsauthentication
+
+Built-inMCPs (alwaysavailable)
+computer-use ·◯disabled
+
+https://code.claude.com/docs/en/mcpforhelp
+↑/↓tonavigate·Entertoconfirm·Esctocancel
+✘failed※ Run clau --debug to see error logs https://code.claude.com/docs/en/mcp for help
+↑/↓tonavigate·Entertoconfirm·Esctocancel

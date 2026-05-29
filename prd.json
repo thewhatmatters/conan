@@ -167,7 +167,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F1 (S1). Gating spike — `claude mcp --help` confirmed there is NO auth subcommand; OAuth auth is /mcp-TUI-only. This recipe drives US-011. Investigation/doc story (no app code)."
     },
     {
