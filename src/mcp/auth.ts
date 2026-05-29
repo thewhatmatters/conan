@@ -20,6 +20,7 @@
 
 import * as pty from "node-pty";
 import { stripAnsi } from "../usage/probe.js";
+import { getMcpServers, type McpServer } from "./index.js";
 
 /** A throwaway-pty MCP auth attempt result. Never thrown — always returned. */
 export interface McpAuthResult {
@@ -332,4 +333,107 @@ export async function driveMcpAuth(
     kill();
   }
   return result;
+}
+
+// --- US-012: completion polling ----------------------------------------------
+//
+// driveMcpAuth (US-011) only FIRES Authenticate — the OAuth consent then happens
+// out-of-band in the user's browser, so the throwaway pty can't observe the
+// finish. Instead we poll `claude mcp list` (getMcpServers(true), bypassing its
+// TTL cache so each poll re-dials) until the target server flips to `connected`
+// or a bounded timeout elapses. The poll is cancellable via an AbortSignal and
+// clears its sleep timer on abort/finish so an abandoned attempt leaks nothing.
+
+/** The lifecycle status of an in-flight MCP auth attempt. */
+export type McpAuthStatus = "pending" | "connected" | "timeout";
+
+/** Terminal result of polling for an MCP auth to complete. */
+export interface McpAuthPollResult {
+  /** The server we were polling for. */
+  server: string;
+  /** `connected` once it flips healthy, else `timeout` (incl. abort). */
+  status: McpAuthStatus;
+  /** The last-seen normalized status of the server (for diagnostics), or null. */
+  lastStatus: string | null;
+  /** How many list polls were issued. */
+  polls: number;
+}
+
+/** The injectable lister shape — defaults to getMcpServers; fakeable in tests. */
+type McpLister = (
+  force: boolean,
+) => Promise<{ servers: McpServer[]; error: string | null; at: number }>;
+
+const POLL_INTERVAL_MS = clampEnvInt("CONAN_MCP_POLL_INTERVAL_MS", 2_500, 250, 30_000);
+const POLL_TIMEOUT_MS = clampEnvInt("CONAN_MCP_POLL_TIMEOUT_MS", 120_000, 1_000, 600_000);
+
+/** A timer-clean sleep that resolves early (and clears its timer) on abort. */
+function cancellableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    let onAbort: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      if (onAbort) signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Poll `claude mcp list` (forced, cache-bypassing) until `serverName` reports
+ * `connected` or the timeout elapses. Resolves with `connected` on the flip, or
+ * `timeout` when the deadline passes / the attempt is aborted — never throws (a
+ * failed list call is swallowed and retried). Bounded by `timeoutMs`; honors an
+ * AbortSignal and clears its sleep timer so an abandoned poll leaks no timers.
+ * The `list` dep is injectable so the flip-to-connected / timeout branches are
+ * unit-testable without a real `claude`.
+ */
+export async function pollMcpAuthCompletion(
+  serverName: string,
+  opts: {
+    intervalMs?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    list?: McpLister;
+  } = {},
+): Promise<McpAuthPollResult> {
+  const intervalMs = opts.intervalMs ?? POLL_INTERVAL_MS;
+  const timeoutMs = opts.timeoutMs ?? POLL_TIMEOUT_MS;
+  const list = opts.list ?? getMcpServers;
+  const signal = opts.signal;
+  const deadline = Date.now() + timeoutMs;
+
+  let polls = 0;
+  let lastStatus: string | null = null;
+
+  while (Date.now() < deadline && !signal?.aborted) {
+    polls++;
+    try {
+      const { servers } = await list(true);
+      const match = servers.find((s) => serversMatch(s.name, serverName));
+      if (match) {
+        lastStatus = match.status;
+        if (match.status === "connected") {
+          return { server: serverName, status: "connected", lastStatus, polls };
+        }
+      }
+    } catch {
+      /* a failed list poll is non-fatal — retry until the deadline */
+    }
+
+    if (signal?.aborted) break;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await cancellableSleep(Math.min(intervalMs, remaining), signal);
+  }
+
+  return { server: serverName, status: "timeout", lastStatus, polls };
 }

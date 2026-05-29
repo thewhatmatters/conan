@@ -113,6 +113,92 @@ try {
   check("disabled driver reports the reason", /disabled/i.test(disabled.error ?? ""));
   check("disabled driver echoes the server name", disabled.server === "claude.ai Google Drive");
   check("disabled driver fired no action", disabled.action === null && disabled.pending === false);
+
+  // --- US-012: pollMcpAuthCompletion (injectable lister, no real claude) ------
+  const srv = (name, status) => ({ name, status, url: null, transport: null, statusText: status });
+  const listResult = (servers) => ({ servers, error: null, at: 0 });
+
+  // flip-to-connected: stays needs-authentication, then flips on the 3rd poll.
+  {
+    let calls = 0;
+    const list = async (force) => {
+      calls++;
+      check(`poll forces a cache-bypass list (call ${calls})`, force === true);
+      const status = calls >= 3 ? "connected" : "needs-authentication";
+      return listResult([srv("claude.ai Google Drive", status)]);
+    };
+    const res = await auth.pollMcpAuthCompletion("claude.ai Google Drive", {
+      intervalMs: 5,
+      timeoutMs: 4_000,
+      list,
+    });
+    check("flip: status connected", res.status === "connected");
+    check("flip: lastStatus connected", res.lastStatus === "connected");
+    check("flip: polled exactly until the flip (3)", res.polls === 3);
+    check("flip: server echoed", res.server === "claude.ai Google Drive");
+    // name match is whitespace-tolerant (glued TUI name vs spaced list name).
+    const glued = await auth.pollMcpAuthCompletion("claude.aiGoogleDrive", {
+      intervalMs: 5,
+      timeoutMs: 4_000,
+      list: async () => listResult([srv("claude.ai Google Drive", "connected")]),
+    });
+    check("flip: glued name matches spaced server", glued.status === "connected");
+  }
+
+  // timeout: never connects -> bounded timeout, status 'timeout', last status kept.
+  {
+    const t0 = Date.now();
+    const res = await auth.pollMcpAuthCompletion("paper", {
+      intervalMs: 5,
+      timeoutMs: 80,
+      list: async () => listResult([srv("paper", "failed")]),
+    });
+    const elapsed = Date.now() - t0;
+    check("timeout: status timeout", res.status === "timeout");
+    check("timeout: lastStatus kept (failed)", res.lastStatus === "failed");
+    check("timeout: bounded by timeoutMs (no overrun)", elapsed < 2_000);
+    check("timeout: issued at least one poll", res.polls >= 1);
+  }
+
+  // missing server: never appears -> timeout with null lastStatus, no crash.
+  {
+    const res = await auth.pollMcpAuthCompletion("ghost", {
+      intervalMs: 5,
+      timeoutMs: 60,
+      list: async () => listResult([srv("paper", "failed")]),
+    });
+    check("missing: status timeout", res.status === "timeout");
+    check("missing: lastStatus null", res.lastStatus === null);
+  }
+
+  // failed list call is non-fatal: swallowed + retried, then flips to connected.
+  {
+    let calls = 0;
+    const res = await auth.pollMcpAuthCompletion("paper", {
+      intervalMs: 5,
+      timeoutMs: 4_000,
+      list: async () => {
+        calls++;
+        if (calls < 2) throw new Error("list dial failed");
+        return listResult([srv("paper", "connected")]);
+      },
+    });
+    check("resilient: a thrown list poll is retried, then connects", res.status === "connected");
+  }
+
+  // abort: a pre-aborted signal returns timeout promptly without leaking timers.
+  {
+    const ac = new AbortController();
+    ac.abort();
+    const res = await auth.pollMcpAuthCompletion("paper", {
+      intervalMs: 5,
+      timeoutMs: 4_000,
+      signal: ac.signal,
+      list: async () => listResult([srv("paper", "failed")]),
+    });
+    check("abort: pre-aborted signal -> timeout", res.status === "timeout");
+    check("abort: no polling after abort", res.polls === 0);
+  }
 } catch (err) {
   console.log("FAIL - threw:", err?.stack ?? err?.message ?? err);
   failed = true;
