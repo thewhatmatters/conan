@@ -37,7 +37,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Quick cleanup. Backlog F6 (S1). Verified lossless: Timeline onClose and toggleTimelineForActive both mutate the same timelineOpen set; no Esc handler rides on onClose. Anchors: Timeline.tsx X import :2, onClose prop :116; TerminalPane.tsx onClose call sites :505/:536, toggleTimelineForActive :290. Suggested skills: automate-browser."
     },
     {

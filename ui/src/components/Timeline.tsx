@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import type {
   GatewayEvent,
@@ -112,8 +111,6 @@ interface TimelineProps {
   sessionId: string | null;
   /** The label of the terminal tab this timeline is tethered to. */
   terminalLabel?: string;
-  /** Close the split (called by the small × in the header). */
-  onClose?: () => void;
   /** Latest hook event from the shared app WS. */
   lastEvent: (GatewayEvent & { seq: number; replay?: boolean }) | null;
   /** Latest live skill-fired broadcast. */
@@ -416,7 +413,6 @@ export default function Timeline({
   token,
   sessionId,
   terminalLabel,
-  onClose,
   lastEvent,
   lastSkillFired,
   lastSkillConsidered,
@@ -729,17 +725,6 @@ export default function Timeline({
               active={filters.has("build")}
               onClick={() => toggleFilter("build")}
             />
-          )}
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close timeline"
-              title="Close timeline"
-              className="ml-1 inline-flex rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
           )}
         </div>
       </div>

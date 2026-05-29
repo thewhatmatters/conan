@@ -502,13 +502,6 @@ export default function TerminalPane({
                         token={token}
                         sessionId={byTid.get(t.tid)?.sessionId ?? null}
                         terminalLabel={terminalLabel(byTid.get(t.tid), i)}
-                        onClose={() =>
-                          setTimelineOpen((prev) => {
-                            const next = new Set(prev);
-                            next.delete(t.tid);
-                            return next;
-                          })
-                        }
                         lastEvent={lastEvent ?? null}
                         lastSkillFired={lastSkillFired ?? null}
                         lastSkillConsidered={lastSkillConsidered ?? null}
@@ -533,13 +526,6 @@ export default function TerminalPane({
                           token={token}
                           sessionId={byTid.get(t.tid)?.sessionId ?? null}
                           terminalLabel={terminalLabel(byTid.get(t.tid), i)}
-                          onClose={() =>
-                            setTimelineOpen((prev) => {
-                              const next = new Set(prev);
-                              next.delete(t.tid);
-                              return next;
-                            })
-                          }
                           lastEvent={lastEvent ?? null}
                           lastSkillFired={lastSkillFired ?? null}
                           lastSkillConsidered={lastSkillConsidered ?? null}
