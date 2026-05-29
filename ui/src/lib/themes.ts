@@ -232,3 +232,45 @@ export function defaultThemeForType(type: "light" | "dark"): Theme {
     ? BUILTIN_THEMES.find((t) => t.id === DEFAULT_DARK_ID)!
     : BUILTIN_THEMES.find((t) => t.id === DEFAULT_LIGHT_ID)!;
 }
+
+// --- Apply path (US-021) ------------------------------------------------------
+
+/**
+ * Resolve a (possibly partial) theme to a complete token map by merging its
+ * tokens over the built-in default for its `type`. A user theme (US-022) may
+ * omit keys; this guarantees every canonical token resolves so the UI never
+ * breaks with a missing value.
+ */
+export function resolveTokens(theme: Theme): FullTokens {
+  const base = defaultThemeForType(theme.type).tokens as FullTokens;
+  return { ...base, ...theme.tokens };
+}
+
+/**
+ * Window event dispatched after a theme is applied. Live consumers that read
+ * computed CSS custom properties at call time — the xterm terminals via
+ * getTerminalTheme() — listen for this to re-read, so a same-type switch
+ * (e.g. Dark → Dracula, where the `.dark` class and the coarse light/dark prop
+ * don't change) still reskins the terminal.
+ */
+export const THEME_APPLIED_EVENT = "conan:theme-applied";
+
+/**
+ * Apply a theme to the document: set every canonical token as an inline custom
+ * property on <html> (overriding the :root/.dark stylesheet values), toggle the
+ * `.dark` class per the theme's `type` (so Tailwind `dark:` variants +
+ * `.dark`-scoped CSS — including `color-scheme` — still behave), then notify
+ * live consumers (terminals) to re-read via THEME_APPLIED_EVENT.
+ *
+ * Replaces useTheme's old `.dark`-only apply: the full token set now drives the
+ * look, so multiple palettes (not just light/dark) reskin the whole app live.
+ */
+export function applyTheme(theme: Theme): void {
+  const tokens = resolveTokens(theme);
+  const root = document.documentElement;
+  for (const key of TOKEN_KEYS) {
+    root.style.setProperty(`--${key}`, tokens[key]);
+  }
+  root.classList.toggle("dark", theme.type === "dark");
+  window.dispatchEvent(new Event(THEME_APPLIED_EVENT));
+}

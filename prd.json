@@ -346,7 +346,7 @@
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F9 (S2). Depends on US-020. Replaces useTheme's .dark-only apply(). Anchors: ui/src/hooks/useTheme.ts apply(); ui/src/lib/terminalTheme.ts getTerminalTheme(). Suggested skills: automate-browser."
     },
     {

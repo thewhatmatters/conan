@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { getTerminalTheme } from "../lib/terminalTheme.ts";
+import { THEME_APPLIED_EVENT } from "../lib/themes.ts";
 import { ResilientSocket } from "../lib/resilientSocket.ts";
 import { wsUrl } from "../lib/gateway.ts";
 import type { Theme } from "../hooks/useTheme.ts";
@@ -178,14 +179,23 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
     (sendResizeRef.current ?? (() => fitRef.current?.fit()))();
   }, [appearance.terminalFontFamily, appearance.terminalFontSize]);
 
-  // Re-apply the theme when the app theme toggles. Setting options.theme is the
-  // supported path; refresh() forces a redraw so the WebGL renderer's glyph
-  // atlas can't keep stale colors.
+  // Re-apply the theme whenever a theme is applied (US-021): the apply path
+  // dispatches THEME_APPLIED_EVENT after writing the tokens, so a same-type
+  // switch (e.g. Dark → Dracula, where the coarse `theme` prop doesn't change)
+  // still reskins the terminal. Setting options.theme is the supported path;
+  // refresh() forces a redraw so the WebGL renderer's glyph atlas can't keep
+  // stale colors. The `theme` prop dependency re-reads on the light/dark flip
+  // too (belt-and-suspenders) and re-reads on mount.
   useEffect(() => {
-    const term = xtermRef.current;
-    if (!term) return;
-    term.options.theme = getTerminalTheme();
-    term.refresh(0, term.rows - 1);
+    const reread = () => {
+      const term = xtermRef.current;
+      if (!term) return;
+      term.options.theme = getTerminalTheme();
+      term.refresh(0, term.rows - 1);
+    };
+    reread();
+    window.addEventListener(THEME_APPLIED_EVENT, reread);
+    return () => window.removeEventListener(THEME_APPLIED_EVENT, reread);
   }, [theme]);
 
   return (
