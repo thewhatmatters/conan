@@ -13,11 +13,12 @@ import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
 import { useWindowWidth } from "./hooks/useWindowWidth.ts";
 
-/** Window width at which the HUD auto-hides. Below this the terminal can't
- *  share horizontal space with a 320px-min HUD without becoming unusable.
- *  Mirrored client-side only — `hudOpen` (the user's manual toggle) stays
- *  intact across resizes so a wide window restores the user's intent. */
-const HUD_HIDE_BREAKPOINT = 900;
+/** Window width at which the HUD reflows from a right dock to a bottom dock
+ *  (US-025). Below this the terminal can't share horizontal space with a
+ *  320px-min HUD, so instead of hiding it we stack: terminal on top, HUD
+ *  docked to the bottom. The View ▸ HUD toggle (`hudOpen`) still hides it at
+ *  any width and survives resizes so a wide window restores the user's intent. */
+const HUD_BOTTOM_BREAKPOINT = 900;
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
@@ -35,10 +36,13 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [hudOpen, setHudOpen] = useState(true);
   // Horizontal responsiveness: window-width-driven layout decisions live here
-  // so both the HUD (hidden when narrow) and TerminalPane (Timeline overlays
-  // the terminal at very-narrow widths) agree on the same breakpoint state.
+  // so both the HUD (bottom-docks when narrow) and TerminalPane (Timeline
+  // overlays the terminal at very-narrow widths) agree on the same state.
   const windowWidth = useWindowWidth();
-  const hudCrampedHide = windowWidth < HUD_HIDE_BREAKPOINT;
+  // US-025: below the breakpoint the shell stacks vertically — TerminalPane on
+  // top, the HUD docked to the bottom (dock="bottom") — instead of the HUD
+  // hiding. Wide windows keep the side-by-side right dock.
+  const hudBottomDock = windowWidth < HUD_BOTTOM_BREAKPOINT;
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   // US-023: the full theme set (built-ins + user themes from ~/.conan/themes.json)
@@ -186,7 +190,14 @@ export default function App() {
     // survives the toggle; terminals always stay mounted so ptys survive.
     // US-011: the Claude Radio toolbar lives at the bottom of the HUD panel
     // (inside Hud.tsx), not the app shell.
-    <div className="flex h-full bg-background text-foreground">
+    // US-025: flex-row when wide (HUD right dock), flex-col when narrow (HUD
+    // bottom dock) so the terminal keeps the full width and the HUD stacks below.
+    <div
+      className={
+        "flex h-full bg-background text-foreground " +
+        (hudBottomDock ? "flex-col" : "flex-row")
+      }
+    >
       <Toaster tasks={tasks} lastEvent={lastEvent} />
       <TerminalPane
         token={config?.token ?? null}
@@ -206,7 +217,8 @@ export default function App() {
         windowWidth={windowWidth}
       />
       <Hud
-        hidden={!hudOpen || hudCrampedHide}
+        hidden={!hudOpen}
+        dock={hudBottomDock ? "bottom" : "right"}
         activeSession={activeSession}
         data={widgetData}
         token={config?.token ?? null}

@@ -412,7 +412,7 @@
         "Typecheck passes"
       ],
       "priority": 25,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F7 (S2). Depends on US-024. Anchors: ui/src/App.tsx HUD_HIDE_BREAKPOINT :18, hudCrampedHide, root flex h-full, <Hud hidden=…>; TerminalPane TIMELINE_OVERLAY_BREAKPOINT :70. Suggested skills: automate-browser."
     },
     {
