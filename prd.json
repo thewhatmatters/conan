@@ -183,7 +183,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F1 (S2). Depends on US-010. Anchors: src/usage/probe.ts throwaway-pty lifecycle (maybeProbe spawn-drive-capture-kill); src/mcp/index.ts (getMcpServers, parseMcpList)."
     },
     {
