@@ -86,7 +86,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F2 (S2). Depends on US-004. Anchors: PulseChart.tsx RANGES + compact header block; Hud.tsx Pulse TabsContent. Suggested skills: automate-browser."
     },
     {

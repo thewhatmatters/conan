@@ -12,6 +12,39 @@ const RANGES: Range[] = [
 ];
 
 /**
+ * The 15m/1h/6h/24h window selector. Exported so the HUD can mount it in the
+ * shared <HudTabHeader> toolbar (US-005) instead of the chart's own header,
+ * keeping the range buttons pinned and the Pulse tab consistent with the
+ * Skills/MCP/Usage tabs.
+ */
+export function PulseRange({
+  minutes,
+  onRange,
+}: {
+  minutes: number;
+  onRange: (minutes: number) => void;
+}) {
+  return (
+    <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
+      {RANGES.map((r) => (
+        <button
+          key={r.minutes}
+          onClick={() => onRange(r.minutes)}
+          className={
+            "rounded px-2 py-0.5 " +
+            (minutes === r.minutes
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted")
+          }
+        >
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Activity categories the area stacks by (bottom → top), mapped 1:1 onto the
  * --color-chart-1..5 theme tokens (US-006 chartUtils). Mirrors PULSE_CATEGORIES
  * on the backend (src/pulse/index.ts). The display `label` is the data key fed
@@ -107,36 +140,20 @@ export default function PulseChart({
           : "rounded-xl border border-border bg-card p-4")
       }
     >
-      <div
-        className={
-          "flex flex-wrap items-center justify-between gap-3 " +
-          (compact ? "mb-2" : "mb-3")
-        }
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Pulse</span>
-          <span className="text-xs text-muted-foreground">
-            {compact ? "all sessions" : "throughput across sessions"}
-          </span>
+      {/* Compact (HUD) mode pulls the title + range selector up into the shared
+          <HudTabHeader> toolbar (US-005), so the chart's own header only renders
+          in the standalone panel — avoiding a duplicate "Pulse" label. */}
+      {!compact && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground">Pulse</span>
+            <span className="text-xs text-muted-foreground">
+              throughput across sessions
+            </span>
+          </div>
+          <PulseRange minutes={minutes} onRange={onRange} />
         </div>
-        {/* Window selector. */}
-        <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
-          {RANGES.map((r) => (
-            <button
-              key={r.minutes}
-              onClick={() => onRange(r.minutes)}
-              className={
-                "rounded px-2 py-0.5 " +
-                (minutes === r.minutes
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted")
-              }
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       <div className="min-h-0 flex-1">
         {hasData && categories.length > 0 ? (

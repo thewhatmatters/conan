@@ -3,7 +3,8 @@ import { UsageWidget } from "./Widgets.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
-import PulseChart from "./PulseChart.tsx";
+import PulseChart, { PulseRange } from "./PulseChart.tsx";
+import HudTabHeader from "./shared/HudTabHeader.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
@@ -144,16 +145,32 @@ export default function Hud({
         </TabsContent>
 
         <TabsContent value="pulse" className="mt-0 flex min-h-0 flex-1 flex-col">
-          <FadeScroll>
-            {onPulseRange && (
-              <PulseChart
-                series={pulse ?? null}
-                minutes={pulseMinutes}
-                onRange={onPulseRange}
-                compact
+          {onPulseRange && (
+            <>
+              {/* Pinned secondary toolbar (US-005): 'Pulse' + the range
+                  selector ride the shared <HudTabHeader> outside the FadeScroll
+                  so they stay put while the chart scrolls — matching the
+                  Skills/MCP/Usage tabs. */}
+              <HudTabHeader
+                name={
+                  <span className="px-1 text-[11px] font-medium text-muted-foreground">
+                    Pulse
+                  </span>
+                }
+                actions={
+                  <PulseRange minutes={pulseMinutes} onRange={onPulseRange} />
+                }
               />
-            )}
-          </FadeScroll>
+              <FadeScroll>
+                <PulseChart
+                  series={pulse ?? null}
+                  minutes={pulseMinutes}
+                  onRange={onPulseRange}
+                  compact
+                />
+              </FadeScroll>
+            </>
+          )}
         </TabsContent>
 
         {/* Skills + MCP own their own FadeScroll internally so their headers
