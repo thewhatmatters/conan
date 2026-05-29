@@ -683,19 +683,22 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               hide={!showXAxis}
               dataKey={index}
               interval={startEndOnly ? "preserveStartEnd" : intervalType}
-              tick={{ transform: "translate(0, 6)" }}
+              // text fill must land on each tick's <text> (recharts gives each
+              // tick a default presentation `fill` that beats inherited CSS),
+              // so set it via the `tick` prop className rather than on the <g>.
+              tick={{
+                transform: "translate(0, 6)",
+                className: "fill-foreground/70",
+              }}
               ticks={
                 startEndOnly
                   ? [data[0]?.[index], data[data.length - 1]?.[index]]
                   : undefined
               }
-              fill=""
               stroke=""
               className={cn(
                 // base
                 "text-xs",
-                // text fill — legible on both light and the dark chart bg
-                "fill-foreground/70",
               )}
               tickLine={false}
               axisLine={false}
@@ -718,14 +721,15 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               tickLine={false}
               type="number"
               domain={yAxisDomain as AxisDomain}
-              tick={{ transform: "translate(-3, 0)" }}
-              fill=""
+              // text fill must land on each tick's <text> (see XAxis note).
+              tick={{
+                transform: "translate(-3, 0)",
+                className: "fill-foreground/70",
+              }}
               stroke=""
               className={cn(
                 // base
                 "text-xs",
-                // text fill — legible on both light and the dark chart bg
-                "fill-foreground/70",
               )}
               tickFormatter={
                 type === "percent" ? valueToPercent : valueFormatter

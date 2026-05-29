@@ -20,7 +20,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Quick bug. Backlog F3. Root cause: fill-foreground/70 class sits on the <XAxis> <g>, but recharts gives each tick <text> its own default fill (~#666) as a presentation attribute that beats inherited CSS. Anchors: ui/src/components/charts/AreaChart.tsx <XAxis> ~:681-714 and <YAxis> ~:715-746. Visible in HUD because Pulse runs compact → showYAxis=false + startEndOnly, so the X start/end labels are the only axis text. Note v4.4 US-005 claimed to fix this but put the class in the wrong place. Suggested skills: automate-browser."
     },
     {

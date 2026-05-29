@@ -72,9 +72,10 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🌐☀️🌙 Renders the Session block + all 3 rate-limit windows when a `/usage` capture exists; honest approximation/empty state otherwise.
 - [ ] 🌐 Refresh path works when a live pty is correlated; no crash when none.
 
-## 6 · Pulse tab  (v4.2 charts, v4.4 US-005)
+## 6 · Pulse tab  (v4.2 charts, v4.4 US-005, v4.6 US-001)
 - [ ] 🌐☀️🌙 Stacked area chart renders across sessions; range toggle **15m / 1h / 6h / 24h** re-buckets.
-- [ ] 🌐🌙 **Axis tick labels are legible in dark mode** (the v4.4 fix — not the old dim `muted-foreground`).
+- [ ] 🌐🌙 **X-axis start/end time labels (e.g. `20:15 … 21:14`) are legible in dark mode** — not dark-on-dark. (v4.6 US-001: tick fill is set via the recharts `tick={{ className: 'fill-foreground/70' }}` prop so it lands on each `<text>`; the old `fill=""`/class-on-`<g>` approach from v4.4 US-005 didn't take.)
+- [ ] 🌐 Standalone (non-compact) chart's **Y-axis labels are also legible** in both light and dark mode.
 - [ ] 🌐 Hover tooltip does **not** collide with a legend (the redundant in-chart legend was removed); the footer legend + per-category totals (`N tools · N prompts · …`) are intact.
 - [ ] 🌐 Hover cursor line is theme-aware (not a hard-coded grey).
 - [ ] 🌐 Empty window shows "No activity in this window yet."
