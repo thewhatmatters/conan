@@ -775,6 +775,64 @@ function LiveUsageView({
           )}
         </div>
       )}
+
+      {/* "What's contributing" insights (US-009) */}
+      {live.insights.length > 0 && (
+        <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            What's contributing
+          </div>
+          <div className="space-y-1">
+            {live.insights.map((it, i) => (
+              <div key={i} className="rounded-md border border-border px-2 py-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-[11px] font-medium text-foreground">
+                    {it.factor}
+                  </span>
+                  {it.headlinePct > 0 && (
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {Math.round(it.headlinePct)}%
+                    </span>
+                  )}
+                </div>
+                {it.advice && (
+                  <div className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">
+                    {it.advice}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Last 24h · approximate, based on local sessions on this machine
+          </div>
+        </div>
+      )}
+
+      {/* "Skills · % of usage" (US-009) */}
+      {live.skills.length > 0 && (
+        <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Skills · % of usage
+          </div>
+          <div className="space-y-0.5">
+            {live.skills.map((sk, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-2 text-[11px]"
+              >
+                <span className="min-w-0 truncate text-foreground">{sk.name}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {Math.round(sk.pct)}%
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Last 24h · approximate, based on local sessions on this machine
+          </div>
+        </div>
+      )}
     </StatCard>
   );
 }

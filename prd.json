@@ -153,7 +153,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F5 (S3). Depends on US-008. Anchors: LiveUsageView ui/src/components/Widgets.tsx ~:719+. Suggested skills: automate-browser."
     },
     {
