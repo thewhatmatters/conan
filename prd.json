@@ -265,7 +265,7 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F4 (S2). Depends on US-015. No new backend — POST /api/claude/config (v4.4 US-002/010) already writes these exact keys; Status values map 1:1 to configSchema() keys (theme/alwaysThinkingEnabled/messageIdleNotifThresholdMs/autoUpdates). Anchors: SettingsView.tsx StatusTab/ConfigRow/KeyControl/save; src/config/index.ts configSchema/EDITABLE_KEYS. Suggested skills: automate-browser."
     },
     {

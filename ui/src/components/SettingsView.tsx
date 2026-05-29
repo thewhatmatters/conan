@@ -29,17 +29,21 @@ import type {
  * which dispatches a `conan:open-settings` window event App listens for. Split
  * into two tabs mirroring Claude Code's own `/settings` screen (US-009):
  *
- *   - **Status** — the read-only mirror of Claude Code's on-disk config: the
- *     concrete values currently set, grouped by the source scope (Project / User
- *     / Global) they were read from, plus the list of setting sources consulted.
+ *   - **Status** — the values Claude Code currently has set, grouped by the source
+ *     scope (Project / User / Global) they were read from, plus the list of
+ *     setting sources consulted. Rows whose key is in the editable schema are now
+ *     live controls (US-016) editing in place; unmatched rows stay read-only.
  *   - **Config** — the editable-key catalog from GET /api/claude/config's
  *     `schema` (every editable key + its type), rendered as live controls
  *     (US-010): a switch for booleans, a dropdown for enums, a text/number input
  *     otherwise. Changes persist via POST /api/claude/config and re-read on save.
  *
- * The Status tab stays a read-only mirror; only Config is editable. Edits apply
- * to Claude Code's on-disk config and may only take effect on the next Claude
- * session (no live hot-reload). Themed with semantic tokens only.
+ * Both tabs write through the same lifted `save()` (POST /api/claude/config,
+ * read-modify-write). Writes route to the key's schema scope (settings vs global)
+ * regardless of the display group a Status row was read from, so a Project-scoped
+ * read is never written to the wrong file. Edits apply to Claude Code's on-disk
+ * config and may only take effect on the next Claude session (no live hot-reload).
+ * Themed with semantic tokens only.
  */
 export default function SettingsView({
   open,
@@ -54,14 +58,47 @@ export default function SettingsView({
   token: string | null;
   onSaved: () => void;
 }) {
+  // Per-key inline save error, shared by both tabs (cleared on the next
+  // successful save of that key). Lifted here so the Status and Config tabs write
+  // through one `save()` — a key edited from either tab routes to the same file.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  async function save(key: string, value: unknown) {
+    if (!token) {
+      setErrors((e) => ({ ...e, [key]: "no gateway token" }));
+      return;
+    }
+    try {
+      const r = await fetch(apiBase() + "/api/claude/config", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-conan-token": token },
+        body: JSON.stringify({ key, value }),
+      });
+      const d = (await r.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!r.ok || !d?.ok) {
+        setErrors((e) => ({ ...e, [key]: d?.error || `save failed (${r.status})` }));
+        return;
+      }
+      setErrors((e) => {
+        if (!(key in e)) return e;
+        const rest = { ...e };
+        delete rest[key];
+        return rest;
+      });
+      onSaved();
+    } catch (err) {
+      setErrors((e) => ({ ...e, [key]: (err as Error).message }));
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-1.5 border-b border-border px-5 pb-4 pt-5">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Claude Code configuration — managed by Claude Code on disk, shown here
-            read-only.
+            Claude Code configuration — managed by Claude Code on disk. Edits apply
+            on the next Claude session (no live hot-reload).
           </DialogDescription>
         </DialogHeader>
 
@@ -78,10 +115,10 @@ export default function SettingsView({
           </div>
 
           <TabsContent value="status" className="mt-0">
-            <StatusTab config={config} />
+            <StatusTab config={config} errors={errors} onSave={save} />
           </TabsContent>
           <TabsContent value="config" className="mt-0">
-            <ConfigTab config={config} token={token} onSaved={onSaved} />
+            <ConfigTab config={config} errors={errors} onSave={save} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -90,11 +127,21 @@ export default function SettingsView({
 }
 
 /**
- * Status tab — the existing read-only mirror: the values Claude Code currently
- * has set, grouped by source scope, plus the setting sources that were
- * consulted. Groups render directly (no search box).
+ * Status tab — the values Claude Code currently has set, grouped by source scope,
+ * plus the setting sources that were consulted. Groups render directly (no search
+ * box). Rows whose key matches an editable schema KeyType render the shared
+ * KeyControl and save through the lifted `onSave` (US-016); unmatched rows stay
+ * read-only (the current `code` value).
  */
-function StatusTab({ config }: { config: ClaudeConfig | null }) {
+function StatusTab({
+  config,
+  errors,
+  onSave,
+}: {
+  config: ClaudeConfig | null;
+  errors: Record<string, string>;
+  onSave: (key: string, value: unknown) => void;
+}) {
   // Group by source scope so the list reads like Claude's /config (rows
   // clustered by where they're managed).
   const groups = useMemo(() => {
@@ -105,11 +152,22 @@ function StatusTab({ config }: { config: ClaudeConfig | null }) {
       .filter((g) => g.rows.length > 0);
   }, [config]);
 
+  // Editable schema keyed by `key` so each Status row can find its control type.
+  const schemaByKey = useMemo(() => {
+    const m = new Map<string, KeyType>();
+    for (const k of config?.schema ?? []) m.set(k.key, k);
+    return m;
+  }, [config]);
+
   const total = config?.entries.length ?? 0;
 
   return (
     <div className="flex flex-col">
-      <div className="max-h-[52vh] overflow-y-auto">
+      <p className="border-b border-border px-5 py-2.5 text-[11px] text-muted-foreground">
+        Edits apply to Claude Code&rsquo;s config on disk and may only take effect
+        on the next Claude session.
+      </p>
+      <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
         {config == null ? (
           <p className="px-5 py-6 text-[13px] text-muted-foreground">
             Loading configuration…
@@ -126,7 +184,13 @@ function StatusTab({ config }: { config: ClaudeConfig | null }) {
               </h3>
               <ul>
                 {g.rows.map((e) => (
-                  <ConfigRow key={`${e.source}:${e.key}`} entry={e} />
+                  <ConfigRow
+                    key={`${e.source}:${e.key}`}
+                    entry={e}
+                    keyType={schemaByKey.get(e.key)}
+                    error={errors[e.key]}
+                    onSave={(v) => onSave(e.key, v)}
+                  />
                 ))}
               </ul>
             </section>
@@ -177,12 +241,12 @@ function StatusTab({ config }: { config: ClaudeConfig | null }) {
  */
 function ConfigTab({
   config,
-  token,
-  onSaved,
+  errors,
+  onSave,
 }: {
   config: ClaudeConfig | null;
-  token: string | null;
-  onSaved: () => void;
+  errors: Record<string, string>;
+  onSave: (key: string, value: unknown) => void;
 }) {
   // Index the current values by key so each editable row starts from what's set.
   const valueByKey = useMemo(() => {
@@ -190,9 +254,6 @@ function ConfigTab({
     for (const e of config?.entries ?? []) m.set(e.key, e.value);
     return m;
   }, [config]);
-
-  // Per-key inline save error (cleared on the next successful save of that key).
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const groups = useMemo(() => {
     const schema = config?.schema ?? [];
@@ -204,34 +265,6 @@ function ConfigTab({
       .map((g) => ({ ...g, rows: schema.filter((k) => k.scope === g.scope) }))
       .filter((g) => g.rows.length > 0);
   }, [config]);
-
-  async function save(key: string, value: unknown) {
-    if (!token) {
-      setErrors((e) => ({ ...e, [key]: "no gateway token" }));
-      return;
-    }
-    try {
-      const r = await fetch(apiBase() + "/api/claude/config", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-conan-token": token },
-        body: JSON.stringify({ key, value }),
-      });
-      const d = (await r.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!r.ok || !d?.ok) {
-        setErrors((e) => ({ ...e, [key]: d?.error || `save failed (${r.status})` }));
-        return;
-      }
-      setErrors((e) => {
-        if (!(key in e)) return e;
-        const rest = { ...e };
-        delete rest[key];
-        return rest;
-      });
-      onSaved();
-    } catch (err) {
-      setErrors((e) => ({ ...e, [key]: (err as Error).message }));
-    }
-  }
 
   return (
     <div className="flex flex-col">
@@ -262,7 +295,7 @@ function ConfigTab({
                     hasValue={valueByKey.has(k.key)}
                     value={valueByKey.get(k.key)}
                     error={errors[k.key]}
-                    onSave={(v) => save(k.key, v)}
+                    onSave={(v) => onSave(k.key, v)}
                   />
                 ))}
               </ul>
@@ -274,24 +307,53 @@ function ConfigTab({
   );
 }
 
-/** One read-only config row: label + value, with its source file as the affordance. */
-function ConfigRow({ entry }: { entry: ConfigEntry }) {
+/**
+ * One Status-tab config row: label + source affordance on the left. When the
+ * row's key is in the editable schema (`keyType`), the right side is the live
+ * KeyControl and saves through `onSave` — the write routes to the key's schema
+ * scope (settings vs global), not the display group it was read from (US-016).
+ * Without a matching schema key it stays read-only (the current `code` value).
+ */
+function ConfigRow({
+  entry,
+  keyType,
+  error,
+  onSave,
+}: {
+  entry: ConfigEntry;
+  keyType?: KeyType;
+  error?: string;
+  onSave: (value: unknown) => void;
+}) {
   return (
-    <li className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5 last:border-b-0">
-      <div className="min-w-0">
-        <div className="truncate text-[13px] font-medium text-foreground">
-          {entry.label}
+    <li className="border-b border-border px-5 py-2.5 last:border-b-0">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-medium text-foreground">
+            {entry.label}
+          </div>
+          <div
+            className="truncate text-[11px] text-muted-foreground"
+            title={`Managed by Claude Code · ${entry.sourcePath}`}
+          >
+            {entry.source} · {entry.sourcePath}
+          </div>
         </div>
-        <div
-          className="truncate text-[11px] text-muted-foreground"
-          title={`Managed by Claude Code · ${entry.sourcePath}`}
-        >
-          {entry.source} · {entry.sourcePath}
+        <div className="flex shrink-0 items-center">
+          {keyType ? (
+            <KeyControl keyType={keyType} hasValue value={entry.value} onSave={onSave} />
+          ) : (
+            <code className="rounded-sm bg-muted px-2 py-0.5 font-mono text-[12px] text-foreground">
+              {formatValue(entry.value)}
+            </code>
+          )}
         </div>
       </div>
-      <code className="shrink-0 rounded-sm bg-muted px-2 py-0.5 font-mono text-[12px] text-foreground">
-        {formatValue(entry.value)}
-      </code>
+      {error && (
+        <p className="mt-1.5 text-[11px] text-destructive" role="alert">
+          {error}
+        </p>
+      )}
     </li>
   );
 }
