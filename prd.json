@@ -329,7 +329,7 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F9 (S1). Depends on US-017. Anchors: ui/src/index.css :root :50+ / .dark :89+ (token key list); ui/src/hooks/useTheme.ts. ANSI-16 terminal palette + in-app theme editor are out of scope."
     },
     {
