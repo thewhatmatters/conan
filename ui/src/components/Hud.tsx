@@ -235,7 +235,7 @@ export default function Hud({
             }
           />
           <FadeScroll>
-            <UsageWidget usage={usage} />
+            <UsageWidget usage={usage} hasLivePty={data?.hasLivePty ?? false} />
           </FadeScroll>
         </TabsContent>
 

@@ -78,6 +78,20 @@ export interface AuthResult {
 }
 
 /**
+ * Predicate version of the Origin allow-list for the HTTP CORS reflector
+ * (v4.6 hotfix). The HTTP fetch path needs the same allow-list the WS upgrade
+ * uses so the bundled Tauri webview (`tauri://localhost`) can read `/api/*`
+ * cross-origin — modern WKWebView enforces CORS strictly on `tauri://` →
+ * `http://127.0.0.1` and blocks unflagged responses, leaving the UI stuck on
+ * "connecting…". Used by the gateway's `corsReflect` middleware; the security
+ * floor is unchanged (same allow-list, no wildcard).
+ */
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true;
+  return ALLOWED.has(origin);
+}
+
+/**
  * Validate the Origin of a WebSocket upgrade against the allow-list. Split out
  * from verifyUpgrade so the live-preview proxy (US-011) can gate /preview/ HMR
  * upgrades on Origin alone: that WebSocket originates inside Conan's same-origin

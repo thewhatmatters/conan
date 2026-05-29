@@ -2,7 +2,7 @@ import http from "node:http";
 import express from "express";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
-import { AUTH_TOKEN, verifyUpgrade } from "./auth.js";
+import { AUTH_TOKEN, isAllowedOrigin, verifyUpgrade } from "./auth.js";
 import {
   attachTerminal,
   closeAllTerminals,
@@ -13,6 +13,7 @@ import {
   autoRefreshContextOnStop,
   getContextAutoRefresh,
   setContextAutoRefresh,
+  setUsageCapturedListener,
 } from "../terminal/index.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
@@ -42,6 +43,7 @@ import { readTimeline } from "../timeline/index.js";
 import { readAssistantTurnUsages } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
 import { getRadio, getStations, setRadio } from "../radio/index.js";
+import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -51,6 +53,37 @@ const PORT = Number(process.env.CONAN_PORT ?? 3747);
 const HOST = "127.0.0.1";
 
 const app = express();
+
+// CORS reflector (v4.6 hotfix) — modern WKWebView treats the bundled-app
+// fetch from `tauri://localhost` to `http://127.0.0.1:3747` as a cross-origin
+// request and requires `Access-Control-Allow-Origin` on the response. Without
+// it, /api/config returns 200 with the token but the webview rejects the body
+// before App.tsx sees it, leaving the UI stuck on "connecting…". We reflect
+// the Origin **only when allow-listed** (same set the WS upgrade checks via
+// auth.ts's `isAllowedOrigin`) so a rogue cross-origin page still can't read
+// the token. `Vary: Origin` prevents caches from leaking the per-origin header.
+app.use((req, res, next) => {
+  const origin = req.header("origin");
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "content-type, x-conan-token",
+    );
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET, POST, OPTIONS",
+    );
+    res.setHeader("Vary", "Origin");
+  }
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: "2mb" }));
 
 // Open the database up front so a bad schema fails fast at boot (US-001).
@@ -715,6 +748,33 @@ app.get("/api/claude/radio", (req, res) => {
   res.json(getRadio());
 });
 
+// Radio embed-host page (v4.6 WKWebView fix). RadioBar.tsx loads this in an
+// offscreen <iframe> so the YouTube player runs at this *http* loopback origin
+// instead of the bundled app's `tauri://localhost` scheme — which YouTube
+// refuses to embed (onError 153), the root cause of "the radio won't play in
+// the packaged app". Unauthenticated on purpose: it exposes nothing sensitive
+// (just plays a public, query-supplied YouTube id) and an <iframe> navigation
+// can't carry the x-conan-token header. `?v=` is validated/normalised, falling
+// back to the default station. `frame-ancestors` lets only the app origins
+// embed it; YouTube needs frame-src + script/connect to its hosts.
+app.get("/radio/embed", (req, res) => {
+  const videoId = sanitizeEmbedVideoId(req.query.v);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'none'",
+      "script-src 'unsafe-inline' https://www.youtube.com https://s.ytimg.com",
+      "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+      "connect-src https://www.youtube.com https://*.googlevideo.com https://*.ytimg.com",
+      "img-src https://*.ytimg.com https://*.youtube.com data:",
+      "style-src 'unsafe-inline'",
+      "frame-ancestors tauri://localhost http://tauri.localhost https://tauri.localhost http://localhost:5173 http://127.0.0.1:3747",
+    ].join("; "),
+  );
+  res.send(radioEmbedHtml(videoId));
+});
+
 // Curated station list — the authoritative named set, compiled into the
 // gateway sidecar (not a skill-side file), so it ships inside the signed Tauri
 // app. The `/conan-change-radio` skill GETs this and picks from it (random / by
@@ -806,6 +866,15 @@ function broadcast(message: unknown): void {
   }
 }
 const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: state }));
+
+// Wire the live /usage capture broadcast: when the terminal's passive scanner
+// lands a fresh frame, push `{type:'usage-captured', sessionId}` over /ws so
+// the HUD's useUsage hook re-pulls. Slash commands don't fire hook events on
+// their own — without this the cached capture would sit unused until the user
+// clicked ↻ /usage. Cheap, one broadcast per capture (deduped at scan time).
+setUsageCapturedListener((sessionId) =>
+  broadcast({ type: "usage-captured", sessionId }),
+);
 
 // Bundled plugins: symlink CONAN_PLUGIN_DIR/<name>/ into ~/.claude/plugins/<name>/
 // on boot so Claude Code discovers them with the same plugin source path it

@@ -1,204 +1,107 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
+import { radioEmbedUrl } from "../lib/gateway.ts";
 
-const YT_API_SRC = "https://www.youtube.com/iframe_api";
 /** Fallback when the gateway hasn't reported its current state yet (first
  *  paint, or the radio API is unavailable). Mirrors src/radio/index.ts's
  *  `DEFAULT_RADIO_VIDEO_ID`. */
 const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
 
-// Minimal shape of the bits of the YouTube IFrame Player API we touch.
-interface YTPlayer {
-  playVideo(): void;
-  pauseVideo(): void;
-  loadVideoById(videoId: string): void;
-  seekTo(seconds: number, allowSeekAhead?: boolean): void;
-  destroy(): void;
-}
-interface YTPlayerEvent {
-  data: number;
-}
+/** Origin of the embed-host page — the target for command postMessages, and the
+ *  origin we accept state messages from. Derived from the embed URL so it stays
+ *  in lockstep with `radioEmbedUrl` (the loopback gateway, http origin). */
+const EMBED_ORIGIN = new URL(radioEmbedUrl("x")).origin;
 
-declare global {
-  interface Window {
-    YT?: {
-      Player: new (
-        el: HTMLElement,
-        opts: {
-          videoId: string;
-          width?: number;
-          height?: number;
-          playerVars?: Record<string, number | string>;
-          events?: {
-            onReady?: () => void;
-            onStateChange?: (e: YTPlayerEvent) => void;
-            onError?: (e: YTPlayerEvent) => void;
-          };
-        },
-      ) => YTPlayer;
-      PlayerState: {
-        UNSTARTED: number;
-        ENDED: number;
-        PLAYING: number;
-        PAUSED: number;
-        BUFFERING: number;
-        CUED: number;
-      };
-    };
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-// Load the IFrame API script once (lazily); resolve when window.YT.Player exists.
-// Chains any existing onYouTubeIframeAPIReady so we don't clobber a prior loader.
-let apiPromise: Promise<void> | null = null;
-function loadYouTubeApi(): Promise<void> {
-  if (window.YT?.Player) return Promise.resolve();
-  if (apiPromise) return apiPromise;
-  apiPromise = new Promise<void>((resolve) => {
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      prev?.();
-      resolve();
-    };
-    const tag = document.createElement("script");
-    tag.src = YT_API_SRC;
-    document.head.appendChild(tag);
-  });
-  return apiPromise;
+/** State the embed-host page reports up over postMessage. */
+interface EmbedState {
+  source: "conan-radio-embed";
+  ready: boolean;
+  playing: boolean;
+  offline: boolean;
 }
 
 /**
  * Claude Radio (US-011): a toolbar pinned at the bottom of the HUD panel with a
  * single play/pause control that streams a YouTube live stream as ambient audio.
- * The player is an offscreen (1×1, visually hidden) YouTube IFrame Player; the
- * `radio` prop comes from `useRadio` (initial GET + WS broadcasts) so the
- * bundled `/conan-change-radio` skill can swap the stream + title at runtime
- * without remounting this component or interrupting playback for stale state.
  *
- * The bar starts PAUSED: audio plays only after the user clicks Play, so the
- * click gesture satisfies the browser autoplay-with-sound policy. The button
- * reflects the player's *real* state via onStateChange (not optimistic). If the
- * stream has ended or errors (unavailable / not embeddable), the control is
- * disabled with a muted "offline" label rather than a dead button — until the
- * radio state is changed again, at which point we re-enable + retry.
+ * v4.6 WKWebView fix — the YouTube player does NOT run in this component's
+ * document. The bundled app's webview origin is the custom scheme
+ * `tauri://localhost`, and YouTube's IFrame embed refuses to play for any
+ * non-http(s) origin (fires `onError` 153, never starts audio) — so the radio
+ * worked in a browser / `tauri dev` (http origins) but was dead in the packaged
+ * app. Instead we host the player in an offscreen `<iframe>` pointed at the
+ * gateway's loopback **http** origin (`/radio/embed`), which YouTube accepts,
+ * and drive it over `postMessage`:
+ *  - parent → iframe: `{ source:'conan-radio', action:'play'|'pause'|'load', videoId? }`
+ *  - iframe → parent: `{ source:'conan-radio-embed', ready, playing, offline }`
+ *
+ * The `radio` prop (from `useRadio`) supplies the current videoId + title; a
+ * swap sends a `load` command so the bundled `/conan-change-radio` skill can
+ * change the stream without reloading the iframe. The bar starts PAUSED — audio
+ * begins only after the user clicks Play. The button reflects the embed's *real*
+ * player state (not optimistic); forgiving error-recovery + auto-loop live in
+ * the embed page (src/radio/embed.ts).
  */
 export default function RadioBar({ radio }: { radio: RadioState | null }) {
-  // The node YT.Player replaces with its <iframe>; kept inside an offscreen box.
-  const mountRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayer | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [offline, setOffline] = useState(false);
-  // Track the videoId the *player* is actually pointed at so a re-render with
-  // the same id doesn't trigger a needless loadVideoById (which would reset
-  // playback to the start). Initialised to "" so the first known id always
-  // applies.
+  // The videoId the embed player is actually pointed at, so a re-render with the
+  // same id doesn't re-send a needless `load` (which would restart playback).
   const loadedIdRef = useRef<string>("");
 
   const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
   const title = radio?.title ?? FALLBACK_TITLE;
 
+  // The iframe src is set ONCE (from the first known id) — subsequent swaps go
+  // over the `load` postMessage so the iframe + YouTube API aren't torn down and
+  // reloaded on every change. Lazy init captures the id at first render.
+  const [embedSrc] = useState(() => radioEmbedUrl(videoId));
+
+  // Listen for state the embed page reports up. Guarded on both the message
+  // source tag AND that it came from our iframe's window, so unrelated frames
+  // (or the YouTube iframe nested inside the embed) can't spoof state.
   useEffect(() => {
-    let cancelled = false;
-    loadYouTubeApi().then(() => {
-      if (cancelled || !mountRef.current || !window.YT) return;
-      playerRef.current = new window.YT.Player(mountRef.current, {
-        videoId,
-        width: 1,
-        height: 1,
-        // No autoplay (start paused), no native chrome — we drive it.
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          playsinline: 1,
-        },
-        events: {
-          onReady: () => {
-            if (cancelled) return;
-            setReady(true);
-            loadedIdRef.current = videoId;
-          },
-          onStateChange: (e) => {
-            if (cancelled || !window.YT) return;
-            const st = window.YT.PlayerState;
-            if (e.data === st.PLAYING || e.data === st.BUFFERING) {
-              setPlaying(true);
-            } else if (e.data === st.PAUSED) {
-              setPlaying(false);
-            } else if (e.data === st.ENDED) {
-              // Auto-loop: finite videos reach END at their natural runtime;
-              // restart from frame 0 so the radio keeps playing. A truly-dead
-              // live stream will return ENDED briefly then hit onError on
-              // retry, which marks the bar offline cleanly. The 50ms gap
-              // dodges a race where playVideo() called inline from
-              // onStateChange is swallowed by the player's own state machine.
-              setTimeout(() => {
-                if (cancelled) return;
-                const p = playerRef.current;
-                if (!p) return;
-                try {
-                  p.seekTo(0);
-                  p.playVideo();
-                } catch {
-                  /* player disposed mid-loop — ignore */
-                }
-              }, 50);
-            }
-          },
-          // Invalid/unavailable/not-embeddable video -> disable the control.
-          onError: () => {
-            if (cancelled) return;
-            setPlaying(false);
-            setOffline(true);
-          },
-        },
-      });
-    });
-    return () => {
-      cancelled = true;
-      try {
-        playerRef.current?.destroy();
-      } catch {
-        /* player may not have finished initializing */
-      }
-      playerRef.current = null;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data as EmbedState | undefined;
+      if (!d || d.source !== "conan-radio-embed") return;
+      setReady(d.ready);
+      setPlaying(d.playing);
+      setOffline(d.offline);
     };
-    // Player is created exactly once — videoId changes are handled by the
-    // loadVideoById effect below to avoid tearing down the iframe + reloading
-    // the YouTube API for every swap.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  // Live stream-swap: when the gateway reports a new videoId, point the
-  // existing player at it via loadVideoById. Resets the offline flag so a
-  // previously-ended stream gets a fresh shot; preserves play/pause state
-  // across the swap (YouTube continues playback on the new id if we were
-  // playing, otherwise it stays CUED until the user hits Play).
+  const sendCommand = (msg: Record<string, unknown>) => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { source: "conan-radio", ...msg },
+      EMBED_ORIGIN,
+    );
+  };
+
+  // Live stream-swap: when the gateway reports a new videoId, tell the embed to
+  // load it (preserving play/pause intent). Waits for `ready` so the command
+  // isn't dropped before the player exists; the embed also buffers a too-early
+  // command as a backstop.
   useEffect(() => {
-    const p = playerRef.current;
-    if (!p || !ready) return;
+    if (!ready) return;
+    if (loadedIdRef.current === "") loadedIdRef.current = embedSrcVideoId(embedSrc);
     if (loadedIdRef.current === videoId) return;
-    try {
-      p.loadVideoById(videoId);
-      loadedIdRef.current = videoId;
-      setOffline(false);
-    } catch {
-      /* player might have been disposed in the same tick — retry on next change */
-    }
-  }, [videoId, ready]);
+    sendCommand({ action: "load", videoId });
+    loadedIdRef.current = videoId;
+    setOffline(false);
+  }, [videoId, ready, embedSrc]);
 
   const disabled = !ready || offline;
 
   const toggle = () => {
-    const p = playerRef.current;
-    if (!p || disabled) return;
-    if (playing) p.pauseVideo();
-    else p.playVideo();
+    if (disabled) return;
+    sendCommand({ action: playing ? "pause" : "play" });
   };
 
   // Title shown in the toolbar — the gateway's resolved YouTube title when
@@ -233,16 +136,31 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
         text={displayTitle}
         className={offline ? "text-muted-foreground" : "text-foreground"}
       />
-      {/* Offscreen 1×1 player: YT.Player replaces the inner div with its iframe.
-          Visually hidden but not display:none (display:none can stop audio). */}
-      <div
+      {/* Offscreen 1×1 iframe hosting the actual YouTube player at the gateway's
+          http origin (v4.6 WKWebView fix). Visually hidden but not display:none
+          (display:none can stop audio). */}
+      <iframe
+        ref={iframeRef}
+        src={embedSrc}
+        title="Claude Radio player"
         aria-hidden
-        className="pointer-events-none fixed left-0 top-0 size-px overflow-hidden opacity-0"
-      >
-        <div ref={mountRef} />
-      </div>
+        // `allow` grants the cross-origin frame the autoplay + media permissions
+        // a YouTube embed needs once Play is pressed.
+        allow="autoplay; encrypted-media"
+        className="pointer-events-none fixed left-0 top-0 size-px overflow-hidden border-0 opacity-0"
+      />
     </footer>
   );
+}
+
+/** Recover the videoId from an embed URL so the swap effect can compare against
+ *  the id the iframe was first pointed at without threading extra state. */
+function embedSrcVideoId(src: string): string {
+  try {
+    return new URL(src).searchParams.get("v") ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**

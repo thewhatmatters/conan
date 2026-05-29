@@ -37,11 +37,13 @@ bundled gateway is stale otherwise (see Watch-list W2).
 
 ---
 
-## 1 · Startup & shell  (v4.1/v4.3)
+## 1 · Startup & shell  (v4.1/v4.3, + v4.6 CORS hotfix)
 - [ ] 🌐 App loads at :5173: terminal pane fills the main area, HUD docked right; no permanent "connecting…".
 - [ ] 🌐 Startup race: with the gateway slow/late, the app still resolves once `/api/config` answers (config-retry loop), not stuck on "connecting…".
 - [ ] 🖥 Sidecar lifecycle: launching `Conan.app` boots the gateway on :3747; **quitting frees :3747** (stdin-EOF watchdog) — relaunch doesn't hit "already running".
 - [ ] 🖥 Single-instance: a 2nd gateway on :3747 exits with a clear message, not a raw `EADDRINUSE` stack.
+- [ ] 🖥 **CORS for the bundled webview (v4.6 hotfix):** `Conan.app` exits "connecting…" without manual reload — modern WKWebView (macOS 25.3+) enforces CORS on `tauri://localhost` → `http://127.0.0.1:3747`, so the gateway's CORS reflector ([src/gateway/index.ts](../src/gateway/index.ts) `app.use((req, res, …)`) must echo `Access-Control-Allow-Origin: tauri://localhost` for the App.tsx config-poll to land the token. Verify with: `curl -i -H 'Origin: tauri://localhost' http://127.0.0.1:3747/api/config | grep -i access-control` — must include the reflected header.
+- [ ] 🖥 **TCC / Files-and-Folders prompts:** ad-hoc signed builds re-prompt for Desktop/Documents/Downloads/iCloud per rebuild (CDHash rotates). Interim: grant **Full Disk Access** to `Conan.app` (System Settings → Privacy & Security → Full Disk Access). Permanent fix is Developer ID signing — see [memory:project-conan-developer-id-signing](../../.claude/projects/-Users-digitalalchemist-Development-conan/memory/project_conan_developer_id_signing.md). On a rebuild the FDA entry may go struck-through; remove + re-add the new `.app`.
 
 ## 2 · Terminal pane & tabs  (v4.3 US-009, US-017)
 - [ ] 🌐 A terminal tab strip renders (VS-Code style: flat, 1px top accent + darker bg on the active tab, no pill).
@@ -68,21 +70,27 @@ bundled gateway is stale otherwise (see Watch-list W2).
   - [ ] `≥ 95%`: red `Context N% — critical`; **Remind me later disabled**, Compact the only action.
   - [ ] Compact `POST`s `/handoff` to the correlated pty (disabled with a tooltip when no live pty); copy states the session writes HANDOFF.md.
 
-## 5 · Usage tab  (v4.2 US-010)
+## 5 · Usage tab  (v4.2 US-010, v4.6 US-006/007/008/009)
 - [ ] 🌐☀️🌙 Renders the Session block + all 3 rate-limit windows when a `/usage` capture exists; honest approximation/empty state otherwise.
+- [ ] 🌐 Secondary toolbar (v4.6 US-006): shared `<HudTabHeader>` shows `Usage` + the ↻ /usage refresh button pinned outside `FadeScroll` (same chrome as Skills/MCP/Pulse).
 - [ ] 🌐 Refresh path works when a live pty is correlated; no crash when none.
+- [ ] 🌐☀️🌙 **"What's contributing"** insights cards render (v4.6 US-009): factor + headline % + line-clamped advice; hidden when empty; each carries the `Last 24h · approximate, based on local sessions on this machine` caveat.
+- [ ] 🌐☀️🌙 **"Skills · % of usage"** list renders (v4.6 US-009): `name … %` rows; tolerates glued percents like `/automate-browser10%`; excludes the Subagents table; hidden when empty.
+- [ ] 🌐 Insights + skills survive narrow widths down to the HUD's 320px min (truncate / shrink-0 only — no layout break).
 
-## 6 · Pulse tab  (v4.2 charts, v4.4 US-005, v4.6 US-001)
+## 6 · Pulse tab  (v4.2 charts, v4.4 US-005, v4.6 US-001/005)
 - [ ] 🌐☀️🌙 Stacked area chart renders across sessions; range toggle **15m / 1h / 6h / 24h** re-buckets.
 - [ ] 🌐🌙 **X-axis start/end time labels (e.g. `20:15 … 21:14`) are legible in dark mode** — not dark-on-dark. (v4.6 US-001: tick fill is set via the recharts `tick={{ className: 'fill-foreground/70' }}` prop so it lands on each `<text>`; the old `fill=""`/class-on-`<g>` approach from v4.4 US-005 didn't take.)
 - [ ] 🌐 Standalone (non-compact) chart's **Y-axis labels are also legible** in both light and dark mode.
 - [ ] 🌐 Hover tooltip does **not** collide with a legend (the redundant in-chart legend was removed); the footer legend + per-category totals (`N tools · N prompts · …`) are intact.
 - [ ] 🌐 Hover cursor line is theme-aware (not a hard-coded grey).
 - [ ] 🌐 Empty window shows "No activity in this window yet."
+- [ ] 🌐 Secondary toolbar (v4.6 US-005): `Pulse` label + `<PulseRange>` selector pinned outside `FadeScroll`; no duplicate label inside the chart; chart + footer survive; ranges still switch.
 
-## 7 · Timeline split panel  (v4.5-timeline US-001..007 + post-loop polish)
-- [ ] 🌐☀️🌙 Per-terminal vertical split — toggle next to `+` (`PanelRightOpen`/`PanelRightClose` icon) opens/closes for the **active tab only**; different tabs hold independent state; col-resize divider (min 320px); ⌘\\ also toggles.
-- [ ] 🌐 Header reads `Timeline · Term N`; small `×` collapses the split; closing a terminal tab cleans up its split state.
+## 7 · Timeline split panel  (v4.5-timeline US-001..007 + v4.6 US-002/003 + post-loop polish)
+- [ ] 🌐☀️🌙 Per-terminal vertical split — toggle next to `+` (`ClockFading` icon, primary color when split is open — v4.6 US-003) opens/closes for the **active tab only**; different tabs hold independent state; col-resize divider (min 320px); ⌘\\ also toggles.
+- [ ] 🌐 Toggle reads as a real toggle: `aria-pressed` flips, `title` swaps `Open / Close split timeline` (v4.6 US-003).
+- [ ] 🌐 Header reads `Timeline · Term N`; **no redundant `×` close button in the header** (removed v4.6 US-002 — the rail toggle is the only close); closing a terminal tab cleans up its split state.
 - [ ] 🌐 Per-tab state survives reload (sessionStorage `conan.terms.timeline` + `conan.terms.timeline.w`).
 - [ ] 🖥 `View ▸ Split Timeline` menu item fires the same toggle (window event bridge).
 - [ ] 🌐 Filter chips are **dynamic** — a chip only renders when this session has at least one row of that kind. Most sessions show `All · Hooks · Skills · Plan`; runner sessions also show `Build`; `/loop` sessions also show `Loop`.
@@ -93,16 +101,18 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🌐 Loop rows: `/loop` prompts and `ScheduleWakeup`/`CronCreate` PreToolUse calls route to Loop (NOT Hooks); `/loopy …` (different command) stays under Hooks; `PostToolUse` for the same scheduling tools is NOT duplicated into Loop.
 - [ ] 🌐 Build rows: `progress.txt` activity (`iteration N → US-X`, `US-X PASS`, trail) appears only when the session's cwd matches the trail.
 
-## 8 · Skills tab  (v4.3 US-006, + v4.5 `lastFiredAt`)
+## 8 · Skills tab  (v4.3 US-006, + v4.5 `lastFiredAt`, + v4.6 US-004 shared header)
 - [ ] 🌐☀️🌙 Lists installed skills (name + description from SKILL.md frontmatter, never fabricated).
+- [ ] 🌐 Secondary toolbar (v4.6 US-004): shared `<HudTabHeader>` chrome — identical look + height across Skills/MCP/Pulse/Usage; User/System group toggle pinned in the header.
 - [ ] 🌐 **User / System** group toggle works; counts are correct (User+Project vs Plugin+Built-in).
 - [ ] 🌐 Each row shows a `last fired Xm ago` muted line when the transcript scan found a `Skill` tool_use for that name; absent when never fired (never fabricated).
 
-## 9 · MCP tab  (v4.4 US-007, fixed to `claude mcp list`)
+## 9 · MCP tab  (v4.4 US-007 + v4.6 US-004 shared header)
 - [ ] 🌐☀️🌙 Lists the configured MCP servers with live status from `claude mcp list` (NOT hooks): name + url/transport + a StatusDot.
 - [ ] 🌐 Status colors map correctly: Connected → green, Failed → red, Needs authentication / pending → amber.
-- [ ] 🌐 Header shows the count; `↻ refresh` re-checks health (`?force=1`); loading shows "Checking MCP server health…".
+- [ ] 🌐 Header shows the count via shared `<HudTabHeader>` (v4.6 US-004); `↻ refresh` re-checks health (`?force=1`); loading shows "Checking MCP server health…".
 - [ ] 🌐 Graceful states: "No MCP servers configured." (none) / "Couldn't read MCP servers: …" (binary missing/timeout).
+- [ ] 🌐 **No inline row actions.** Authenticate / Reconnect buttons were removed post-v4.6 — the throwaway-pty OAuth driver didn't complete reliably in practice. Users authenticate MCP servers manually via Claude's `/mcp` menu in the terminal. (Backend routes + driver stay registered for the future v4.7 US-105 watchdog.)
 - [ ] _Note:_ this list is **global** (account-wide), not per-session — it does not follow the active tab (by design).
 
 ## 10 · Bottom status bar  (v4.4 US-004)
@@ -123,17 +133,23 @@ bundled gateway is stale otherwise (see Watch-list W2).
 - [ ] 🌐 Growing the window back restores each dock's last size (right vs bottom kept independently; the clamp doesn't overwrite the stored size).
 - [ ] 🌐 At very-narrow (<720px) the Timeline overlays the terminal within the top region and coexists with the bottom HUD.
 
-## 12 · Settings dialog  (v4.3 US-007/008, v4.4 US-009/010)
+## 12 · Settings dialog  (v4.3 US-007/008, v4.4 US-009/010, v4.6 US-015/016/017/018/019)
 - [ ] 🖥 `Conan ▸ Settings…` (⌘,) opens the dialog (🌐 also openable via the `conan:open-settings` event in dev).
-- [ ] 🌐☀️🌙 Two tabs: **Status** (read-only: version, session, cwd, login/org/email, model, MCP servers, setting sources) and **Config**.
+- [ ] 🌐☀️🌙 Three tabs (v4.6 US-017): **Status** · **Config** · **Appearance**; tabs styled flat with the top-accent treatment (shared `tabStyles.ts` w/ HUD) — **no search box** (dropped v4.6 US-015).
 - [ ] 🌐 Config rows are live controls by type: toggle for booleans, dropdown for enums (allowed values), text/number otherwise.
-- [ ] 🌐 Changing a control persists via `POST /api/claude/config` and survives reopen; **only that key changes** (other settings/permissions/hooks/mcp preserved); errors surface inline.
+- [ ] 🌐 Changing a Config control persists via `POST /api/claude/config` and survives reopen; **only that key changes** (other settings/permissions/hooks/mcp preserved); errors surface inline.
+- [ ] 🌐 **Status tab values are editable too (v4.6 US-016)**: rows whose key matches a schema entry render the same KeyControl as the Config tab and round-trip through `POST /api/claude/config`; unmatched rows stay read-only; subtitle drops "read-only"; next-session caveat shows on Status as well.
 - [ ] 🌐 Each editable control notes changes may only take effect next Claude session (no false hot-reload claim).
+- [ ] 🌐☀️🌙 **Appearance ▸ Terminal section (v4.6 US-018/019):** font-family dropdown (always lists Geist Mono first, plus detected mono fonts via canvas advance-width — no `queryLocalFonts` so it's WKWebView-safe) and a font-size input; selection persists in `useAppearance` (localStorage, Conan-local — NOT Claude config).
+- [ ] 🌐 Font change applies **live to every mounted terminal** (active + hidden tabs both), prepended to the Geist Mono/ui-monospace fallback stack; pty resizes after re-fit; unset falls back to Geist Mono.
 
-## 13 · Native menu & theme  (v4.3 US-011, v4.4)
+## 13 · Native menu & theme  (v4.3 US-011, v4.4, v4.6 US-020/021/022/023)
 - [ ] 🖥 Menu bar: **Conan** (About, Settings… ⌘,, Hide, Quit) · **File** (New/Close Terminal) · **Edit** (Undo/Redo/Cut/Copy/Paste/SelectAll work in terminal + HUD) · **View** (Theme, Hide HUD) · **Help**.
-- [ ] 🖥 `View ▸ Theme` radio submenu (Light / Dark / Auto — match system); the checkmark follows the active choice.
-- [ ] 🌐☀️🌙 Switching theme recolors HUD + charts + terminal in lockstep; `Auto` follows the OS appearance live (matchMedia).
+- [ ] 🖥 `View ▸ Theme` submenu lists **all themes** (v4.6 US-023) — built-ins (Light · Dark · Solarized Light · Dracula) **plus** any user themes from `~/.conan/themes.json`; the checkmark follows the active choice; selecting one applies live + persists by id across reload.
+- [ ] 🌐 **Appearance ▸ Theme picker (v4.6 US-023)** renders swatches grouped by light/dark, mirrors the menu's selection, and drives the same apply path.
+- [ ] 🌐☀️🌙 Switching theme recolors HUD + charts + terminal in lockstep (apply sets ~31 canonical tokens on `<html>` via `setProperty` + toggles `.dark` per type — v4.6 US-020/021); `Auto` follows the OS appearance live (matchMedia).
+- [ ] 🌐 User themes (v4.6 US-022): a `~/.conan/themes.json` (or `themes/*.json`) with valid hex/rgb/hsl values is loaded via token-gated `GET /api/claude/themes`; bad token keys or non-color values (e.g. `url(...)`, `expression(...)`) are rejected silently and never reach the picker; a malformed file yields `[]` (never throws).
+- [ ] 🌐 Partial user themes merge over the matching built-in (paired by `type`) — undeclared tokens fall back to the built-in.
 - [ ] 🌐 Light is the default.
 
 ## 14 · Native notifications  (v4.2 US-011)

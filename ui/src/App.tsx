@@ -65,11 +65,16 @@ export default function App() {
     lastSkillConsidered,
     lastPlan,
     lastRadio,
+    lastUsageCapture,
     reconnectSeq,
   } = useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
-  // REST-backed hooks re-pull their snapshots after a connection gap.
-  const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
+  // REST-backed hooks re-pull their snapshots after a connection gap. We also
+  // fold in `lastUsageCapture.seq` so a passively-captured /usage frame (no
+  // hook event fires) still kicks useUsage into refetching — the trigger that
+  // makes a user-typed `/usage` populate the HUD without a manual ↻ click.
+  const wsTrigger =
+    (lastEvent?.seq ?? 0) + reconnectSeq + (lastUsageCapture?.seq ?? 0);
   const { sessions } = useSessions(wsTrigger);
   // US-006/US-003: the Claude session running inside a live dock pty, correlated
   // by src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.

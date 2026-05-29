@@ -26,11 +26,16 @@ export interface McpState {
  * which shells out to `claude mcp list`. Fetched once when the token arrives
  * (the gateway caches it 30s, so this is cheap); `refresh()` re-pulls with
  * `?force=1` to re-dial the servers on demand. Resets when there's no token.
+ *
+ * The v4.6 US-014 `authenticate(name)` and `reconnect(name)` POSTs were removed
+ * — the backend driver didn't reliably complete the OAuth flow in the throwaway
+ * pty, and a half-working button is worse than no button. The backend routes
+ * (`POST /api/claude/mcp/:name/{authenticate,reconnect}`) stay registered for
+ * the future v4.7 US-105 watchdog. Users authenticate via Claude's `/mcp` menu
+ * in the terminal manually.
  */
 export function useMcp(token: string | null): McpState & {
   refresh: () => void;
-  authenticate: (name: string) => Promise<Response>;
-  reconnect: (name: string) => Promise<Response>;
 } {
   const [state, setState] = useState<McpState>({
     servers: [],
@@ -70,26 +75,8 @@ export function useMcp(token: string | null): McpState & {
     load(false);
   }, [token, load]);
 
-  // US-014: fire the token-gated one-click auth/reconnect routes (the backend
-  // drives the /mcp TUI in a throwaway pty + polls for the flip to connected —
-  // src/mcp/auth.ts). Both are explicit user clicks; the response (the in-flight
-  // flight state) is returned to the caller, which then polls via refresh().
-  const post = useCallback(
-    (name: string, action: "authenticate" | "reconnect"): Promise<Response> => {
-      if (!token) return Promise.reject(new Error("no token"));
-      return fetch(
-        apiBase() +
-          `/api/claude/mcp/${encodeURIComponent(name)}/${action}`,
-        { method: "POST", headers: { "x-conan-token": token } },
-      );
-    },
-    [token],
-  );
-
   return {
     ...state,
     refresh: () => load(true),
-    authenticate: (name: string) => post(name, "authenticate"),
-    reconnect: (name: string) => post(name, "reconnect"),
   };
 }

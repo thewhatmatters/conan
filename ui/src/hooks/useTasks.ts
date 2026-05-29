@@ -146,6 +146,11 @@ export interface GatewayState {
     payload: { videoId: string; title: string | null };
     seq: number;
   } | null;
+  /** Latest `{type:'usage-captured'}` broadcast — fires whenever the terminal's
+   *  passive scanner lands a fresh /usage frame. `seq` is folded into the App's
+   *  wsTrigger so useUsage re-pulls and the HUD's Usage tab populates without an
+   *  explicit ↻ click. */
+  lastUsageCapture: { sessionId: string; seq: number } | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -176,6 +181,8 @@ export function useGateway(
     useState<SkillConsideredEvent | null>(null);
   const [lastPlan, setLastPlan] = useState<PlanEvent | null>(null);
   const [lastRadio, setLastRadio] = useState<GatewayState["lastRadio"]>(null);
+  const [lastUsageCapture, setLastUsageCapture] =
+    useState<GatewayState["lastUsageCapture"]>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -245,6 +252,11 @@ export function useGateway(
               },
               seq: ++seq,
             });
+          else if (msg.type === "usage-captured")
+            setLastUsageCapture({
+              sessionId: String(msg.sessionId ?? ""),
+              seq: ++seq,
+            });
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -262,6 +274,7 @@ export function useGateway(
     lastSkillConsidered,
     lastPlan,
     lastRadio,
+    lastUsageCapture,
     status,
     reconnectSeq,
   };

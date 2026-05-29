@@ -578,7 +578,15 @@ export function UsageRefreshButton({
  * marks itself an approximation via the "≈ approx" tag. It is never blank: with
  * no data at all it shows "—". The countdowns tick client-side off `resetAt`.
  */
-export function UsageWidget({ usage }: { usage: UsageState }) {
+export function UsageWidget({
+  usage,
+  hasLivePty = false,
+}: {
+  usage: UsageState;
+  /** True when the active terminal has a correlated live `claude` pty — drives
+   *  the empty-Session hint (clickable vs "no live session"). */
+  hasLivePty?: boolean;
+}) {
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setTick(Date.now()), 1000);
@@ -594,7 +602,7 @@ export function UsageWidget({ usage }: { usage: UsageState }) {
   const plan = usage.planUtilization;
   const hasPlan = !!plan && (!!plan.fiveHour || !!plan.sevenDay);
   if (hasPlan && plan) {
-    return <PlanUsage plan={plan} tick={tick} />;
+    return <PlanUsage plan={plan} tick={tick} hasLivePty={hasLivePty} />;
   }
 
   // --- baseline (US-004): token-trend approximation -------------------------
@@ -689,9 +697,12 @@ function worstWindow(
 function PlanUsage({
   plan,
   tick,
+  hasLivePty,
 }: {
   plan: NonNullable<UsageState["planUtilization"]>;
   tick: number;
+  /** Drives the empty-Session hint copy — clickable vs "no live session". */
+  hasLivePty: boolean;
 }) {
   const worst = worstWindow(plan.fiveHour, plan.sevenDay, plan.sevenDaySonnet);
 
@@ -708,7 +719,40 @@ function PlanUsage({
         <PlanWindowRow label="7d" win={plan.sevenDay} tick={tick} />
         <PlanWindowRow label="7d-S" win={plan.sevenDaySonnet} tick={tick} />
       </div>
+      {/* The Session block scaffold renders empty here so users see the data
+          shape that's waiting — clicking ↻ /usage above captures the real
+          numbers and the same skeleton fills with values (LiveUsageView). */}
+      <EmptySessionBlock hasLivePty={hasLivePty} />
     </StatCard>
+  );
+}
+
+/**
+ * The "waiting for /usage capture" empty-state of the Session block. Renders
+ * the same shape `<LiveUsageView>` would once data lands — header, the
+ * Cost/Code/API/Wall grid, and a hint at the bottom — but with `—` values and
+ * a softened opacity so it reads as scaffold, not stale data. Clicking ↻ /usage
+ * in the toolbar above triggers the capture; the live view replaces this
+ * skeleton on the next refetch.
+ */
+function EmptySessionBlock({ hasLivePty }: { hasLivePty: boolean }) {
+  return (
+    <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5 opacity-60">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Session
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+        <SessionStat label="Cost" value="—" />
+        <SessionStat label="Code" value="—" />
+        <SessionStat label="API" value="—" />
+        <SessionStat label="Wall" value="—" />
+      </div>
+      <div className="mt-1.5 text-[10px] text-muted-foreground">
+        {hasLivePty
+          ? "Click ↻ /usage above to capture this session's stats."
+          : "Awaiting a live Claude session to capture /usage from."}
+      </div>
+    </div>
   );
 }
 

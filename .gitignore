@@ -10,6 +10,8 @@ ui/dist/
 .data/
 # git worktrees minted for isolated driven sessions (US-043)
 .conan-worktrees/
+# Claude Code worktrees (isolated agent sessions)
+.claude/worktrees/
 *.db
 *.db-shm
 *.db-wal

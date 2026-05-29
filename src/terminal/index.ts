@@ -376,9 +376,38 @@ function maybeCaptureUsage(s: TermSession, chunk: string): void {
     insights: parseUsageInsights(s.usageScan),
     skills: parseUsageSkills(s.usageScan),
   });
+  // Notify the gateway so it can broadcast a `{type:'usage-captured'}` event
+  // over /ws — the HUD's useUsage hook listens and re-pulls so a user-typed
+  // `/usage` populates the Session block without an extra ↻ click. Slash
+  // commands don't fire hook events on their own, so without this broadcast
+  // the freshly-cached frame would sit unused until something else moved
+  // `eventSeq` forward.
+  if (usageCapturedListener) {
+    try {
+      usageCapturedListener(info.sessionId);
+    } catch {
+      /* listener throwing must not break the scan loop */
+    }
+  }
   // Clear only once the frame is fully rendered (the detail section, which comes
   // after every window, has appeared) so we don't drop the later windows.
   if (s.usageScan.includes("contributing")) s.usageScan = "";
+}
+
+/** Notified each time `maybeCaptureUsage` lands a fresh /usage frame for a
+ *  correlated session. Wired by the gateway at boot to broadcast over /ws. */
+let usageCapturedListener: ((sessionId: string) => void) | null = null;
+
+/**
+ * Register a callback fired whenever a passive `/usage` capture completes. The
+ * gateway uses this to broadcast `{type:'usage-captured', sessionId}` so the
+ * HUD refetches without the user having to click ↻ /usage. Single listener —
+ * setting again overwrites; pass `null` to clear.
+ */
+export function setUsageCapturedListener(
+  fn: ((sessionId: string) => void) | null,
+): void {
+  usageCapturedListener = fn;
 }
 
 /**

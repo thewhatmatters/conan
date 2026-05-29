@@ -52,6 +52,22 @@ export function apiBase(): string {
 }
 
 /**
+ * URL of the gateway's radio embed-host page (v4.6 WKWebView fix), for the
+ * offscreen `<iframe>` in `RadioBar.tsx`.
+ *
+ * This is ALWAYS the absolute loopback `http://` origin — never relative and
+ * never the `tauri://` scheme — because that is the whole point of the fix:
+ * YouTube's IFrame embed refuses to play under a non-http(s) origin (onError
+ * 153), so the player must live in a document served from `http://127.0.0.1:3747`.
+ * Using the absolute base in every context (browser, `tauri dev`, bundled app)
+ * keeps the embed's origin a valid http origin YouTube accepts; cross-origin
+ * `postMessage` between this iframe and the parent works regardless of scheme.
+ */
+export function radioEmbedUrl(videoId: string): string {
+  return `http://${TAURI_GATEWAY_HOST}/radio/embed?v=${encodeURIComponent(videoId)}`;
+}
+
+/**
  * Build a WebSocket URL for a gateway path (e.g. `/ws`, `/ws/terminal`). In the
  * bundled Tauri app this targets the loopback gateway over `ws://`; in the
  * browser and in `tauri dev` it follows the page's host + protocol (`wss://`
