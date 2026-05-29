@@ -18,6 +18,7 @@ import {
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
 import { useAppearance } from "../hooks/useAppearance.ts";
+import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -322,13 +323,29 @@ function ConfigTab({
  * Appearance tab — Conan-local visual preferences (US-017), persisted to
  * localStorage via useAppearance. This is NOT a Claude-config mirror, so it does
  * not POST to /api/claude/config and carries no "next Claude session" caveat.
- * Scaffolded here with a Terminal section that the font picker (US-018/019) and
- * theme picker (US-020+) will fill in. Themed with semantic tokens only.
+ * Hosts the terminal mono-font picker + size control (US-018); the chosen values
+ * are stored in the appearance pref and applied to live terminals in US-019. The
+ * theme picker (US-020+) lands here too. Themed with semantic tokens only.
  */
 function AppearanceTab() {
-  // Subscribe so the (later) controls read/write the persisted pref; the hook is
-  // wired now so US-018+ can drop controls in without re-plumbing state.
-  useAppearance();
+  const { appearance, set } = useAppearance();
+
+  // Detect the installed mono fonts once (canvas advance-width trick — works in
+  // WKWebView where queryLocalFonts() is unavailable). The default is always
+  // included so the dropdown can represent the built-in fallback even when
+  // detection finds nothing. If a previously-picked font is no longer detected
+  // (e.g. uninstalled), keep it selectable so the UI still reflects the pref.
+  const fonts = useMemo(() => {
+    const detected = detectMonoFonts();
+    const picked = appearance.terminalFontFamily;
+    if (picked && !detected.includes(picked)) return [...detected, picked];
+    return detected;
+  }, [appearance.terminalFontFamily]);
+
+  // The "use the default stack" sentinel — null in the pref maps to this so the
+  // Select always has a concrete value (Radix Select can't bind to null).
+  const DEFAULT_VALUE = "__default__";
+  const fontValue = appearance.terminalFontFamily ?? DEFAULT_VALUE;
 
   return (
     <div className="flex flex-col">
@@ -341,9 +358,71 @@ function AppearanceTab() {
           <h3 className="bg-muted/50 px-5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Terminal
           </h3>
-          <p className="px-5 py-6 text-[13px] text-muted-foreground">
-            Font and theme controls are coming soon.
-          </p>
+
+          <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5">
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-foreground">
+                Font family
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                Detected monospace fonts on this machine
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center">
+              <Select
+                value={fontValue}
+                onValueChange={(v) =>
+                  set({ terminalFontFamily: v === DEFAULT_VALUE ? null : v })
+                }
+              >
+                <SelectTrigger className="h-8 w-48 text-[12px]" aria-label="Terminal font family">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_VALUE} className="text-[12px]">
+                    Default ({DEFAULT_MONO})
+                  </SelectItem>
+                  {fonts.map((f) => (
+                    <SelectItem
+                      key={f}
+                      value={f}
+                      className="text-[12px]"
+                      style={{ fontFamily: `"${f}", ui-monospace, monospace` }}
+                    >
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5 last:border-b-0">
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-foreground">
+                Font size
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                Terminal text size in pixels
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center">
+              <input
+                type="number"
+                min={8}
+                max={32}
+                value={appearance.terminalFontSize}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n >= 8 && n <= 32) {
+                    set({ terminalFontSize: n });
+                  }
+                }}
+                aria-label="Terminal font size"
+                className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
         </section>
       </div>
     </div>

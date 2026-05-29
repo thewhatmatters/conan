@@ -298,7 +298,7 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F8 (S2). Depends on US-017. queryLocalFonts() is Chromium-only and absent in macOS WKWebView — hence curated+canvas. Full gateway enumeration (font-list + fontkit isFixedPitch) deferred. Suggested skills: automate-browser."
     },
     {
