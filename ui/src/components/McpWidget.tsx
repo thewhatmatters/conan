@@ -1,6 +1,7 @@
 import StatusDot from "./shared/StatusDot.tsx";
 import { useMcp } from "../hooks/useMcp.ts";
 import FadeScroll from "./FadeScroll.tsx";
+import HudTabHeader from "./shared/HudTabHeader.tsx";
 
 /**
  * The MCP HUD tab (US-007 v4.4, fixed): mirrors Claude's `/mcp` view as a flat
@@ -18,22 +19,27 @@ export default function McpWidget({ token }: { token?: string | null }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header — kept OUTSIDE the FadeScroll so the count + refresh stay
-          pinned at the top while the server list below scrolls. */}
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-[11px] font-medium text-muted-foreground">
-          MCP servers{servers.length > 0 && ` · ${servers.length}`}
-        </span>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={loading || !token}
-          title="Re-check MCP server health (claude mcp list)"
-          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-        >
-          {loading ? "checking…" : "↻ refresh"}
-        </button>
-      </div>
+      {/* Header — rides the shared <HudTabHeader> (pinned outside the FadeScroll
+          so the count + refresh stay put while the server list below scrolls),
+          unifying its chrome with the Skills / Pulse / Usage tabs. */}
+      <HudTabHeader
+        name={
+          <span className="px-1 text-[11px] font-medium text-muted-foreground">
+            MCP servers{servers.length > 0 && ` · ${servers.length}`}
+          </span>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading || !token}
+            title="Re-check MCP server health (claude mcp list)"
+            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {loading ? "checking…" : "↻ refresh"}
+          </button>
+        }
+      />
 
       <FadeScroll>
         {servers.length === 0 ? (

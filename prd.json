@@ -69,7 +69,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F2 (S1). Foundation for US-005/US-006. Anchors: SkillsWidget.tsx group strip ~:46-58, McpWidget.tsx header. Suggested skills: automate-browser."
     },
     {

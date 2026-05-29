@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SkillEntry } from "../hooks/useSkills.ts";
 import FadeScroll from "./FadeScroll.tsx";
+import HudTabHeader from "./shared/HudTabHeader.tsx";
 
 /** "User" group = your own skills (User + Project); "System" = Plugin + Built-in. */
 type Group = "user" | "system";
@@ -39,25 +40,28 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Flat tab group: User (N) / System (N) — kept OUTSIDE the FadeScroll
-          so it stays pinned at the top while the skill list below it scrolls.
-          (When the strip lived inside the scroller, the top fade overlay
-          covered its text on overflow — moving it out fixes that and keeps
-          User/System always one click away.) */}
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
-        <GroupTab
-          label="User"
-          count={user.length}
-          active={group === "user"}
-          onClick={() => setGroup("user")}
-        />
-        <GroupTab
-          label="System"
-          count={system.length}
-          active={group === "system"}
-          onClick={() => setGroup("system")}
-        />
-      </div>
+      {/* Flat tab group: User (N) / System (N) — rides the shared
+          <HudTabHeader> so it stays pinned at the top (outside the FadeScroll,
+          which would otherwise fade its text on overflow) and matches the MCP /
+          Pulse / Usage header chrome. User/System stays one click away. */}
+      <HudTabHeader
+        name={
+          <>
+            <GroupTab
+              label="User"
+              count={user.length}
+              active={group === "user"}
+              onClick={() => setGroup("user")}
+            />
+            <GroupTab
+              label="System"
+              count={system.length}
+              active={group === "system"}
+              onClick={() => setGroup("system")}
+            />
+          </>
+        }
+      />
 
       <FadeScroll>
         {shown.length === 0 ? (
