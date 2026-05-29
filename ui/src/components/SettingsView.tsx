@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "./ui/select.tsx";
 import { apiBase } from "../lib/gateway.ts";
+import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -65,10 +66,14 @@ export default function SettingsView({
         </DialogHeader>
 
         <Tabs defaultValue="status" className="flex min-w-0 flex-col gap-0">
-          <div className="border-b border-border px-5 py-2.5">
-            <TabsList>
-              <TabsTrigger value="status">Status</TabsTrigger>
-              <TabsTrigger value="config">Config</TabsTrigger>
+          <div className="flex items-center border-b border-border px-5">
+            <TabsList className={TAB_LIST}>
+              <TabsTrigger value="status" className={TAB_TRIGGER}>
+                Status
+              </TabsTrigger>
+              <TabsTrigger value="config" className={TAB_TRIGGER}>
+                Config
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -86,45 +91,24 @@ export default function SettingsView({
 
 /**
  * Status tab — the existing read-only mirror: the values Claude Code currently
- * has set, grouped by source scope, with a search box, plus the setting sources
- * that were consulted.
+ * has set, grouped by source scope, plus the setting sources that were
+ * consulted. Groups render directly (no search box).
  */
 function StatusTab({ config }: { config: ClaudeConfig | null }) {
-  const [query, setQuery] = useState("");
-
-  // Filter by label / key / stringified value, then group by source scope so the
-  // list reads like Claude's /config (rows clustered by where they're managed).
+  // Group by source scope so the list reads like Claude's /config (rows
+  // clustered by where they're managed).
   const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const entries = (config?.entries ?? []).filter((e) => {
-      if (!q) return true;
-      return (
-        e.label.toLowerCase().includes(q) ||
-        e.key.toLowerCase().includes(q) ||
-        formatValue(e.value).toLowerCase().includes(q)
-      );
-    });
+    const entries = config?.entries ?? [];
     const order: ConfigScope[] = ["Project", "User", "Global"];
     return order
       .map((scope) => ({ scope, rows: entries.filter((e) => e.source === scope) }))
       .filter((g) => g.rows.length > 0);
-  }, [config, query]);
+  }, [config]);
 
   const total = config?.entries.length ?? 0;
 
   return (
     <div className="flex flex-col">
-      <div className="border-b border-border px-5 py-3">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search settings…"
-          aria-label="Search settings"
-          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
       <div className="max-h-[52vh] overflow-y-auto">
         {config == null ? (
           <p className="px-5 py-6 text-[13px] text-muted-foreground">
@@ -133,10 +117,6 @@ function StatusTab({ config }: { config: ClaudeConfig | null }) {
         ) : total === 0 ? (
           <p className="px-5 py-6 text-[13px] text-muted-foreground">
             No Claude Code configuration found.
-          </p>
-        ) : groups.length === 0 ? (
-          <p className="px-5 py-6 text-[13px] text-muted-foreground">
-            No settings match “{query}”.
           </p>
         ) : (
           groups.map((g) => (

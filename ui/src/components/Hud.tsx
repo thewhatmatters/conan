@@ -13,12 +13,7 @@ import type { SkillEntry } from "../hooks/useSkills.ts";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import FadeScroll from "./FadeScroll.tsx";
-
-// VS Code–style tabs: flat, the active tab marked by a top accent border (not a
-// filled pill) — matches the terminal tab strip so the two panes read as one
-// chrome. border-t-2 border-transparent reserves the space so nothing shifts.
-const TAB_TRIGGER =
-  "shrink-0 rounded-none border-t border-transparent px-3 py-1.5 text-xs font-normal text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-muted data-[state=active]:border-primary data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
+import { TAB_TRIGGER } from "../lib/tabStyles.ts";
 
 const MIN_W = 320;
 const MAX_W = 900;

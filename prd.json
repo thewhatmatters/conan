@@ -247,7 +247,7 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F4 (S1). Foundation for the Appearance tab (US-017, US-020). Anchors: ui/src/components/SettingsView.tsx StatusTab + Tabs; ui/src/components/Hud.tsx TAB_TRIGGER. Suggested skills: automate-browser."
     },
     {
