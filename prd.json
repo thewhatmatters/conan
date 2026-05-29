@@ -119,7 +119,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F5 (S1). The data is already in the captured frame buffer — maybeCaptureUsage waits for the word 'contributing' as its end-of-frame sentinel (src/terminal/index.ts :371) — it's just never parsed. Anchors: src/usage/probe.ts parseUsageFrame/parseUsageSession/parseByModel. Out of scope: the separate /stats screen."
     },
     {

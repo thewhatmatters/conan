@@ -38,6 +38,29 @@ export interface PlanUtilization {
   probedAt: number;
 }
 
+/**
+ * One "What's contributing to your limits usage?" insight (US-007). Each is an
+ * approximate attribution the /usage screen prints, e.g. headlinePct=73,
+ * factor="of your usage came from sessions active for 8+ hours", with an
+ * explanatory advice line. Parsed generically — count + phrasing vary.
+ */
+export interface UsageInsight {
+  /** The leading percentage of the headline (0–100). */
+  headlinePct: number;
+  /** The headline text after the percent (the contributing factor). */
+  factor: string;
+  /** The explanatory/advice line(s) below the headline; "" when none. */
+  advice: string;
+}
+
+/** One row of the "Skills · % of usage" table (US-007): skill name + percent. */
+export interface UsageSkill {
+  /** Skill name with any leading "/" stripped, e.g. "automate-browser". */
+  name: string;
+  /** Percent of usage attributed to this skill (0–100). */
+  pct: number;
+}
+
 /** Per-model token usage from the /usage Session block (US-010). */
 export interface ModelUsage {
   /** Model slug, e.g. "claude-opus-4-7", or null for the aggregate "Usage:" line. */
@@ -139,6 +162,115 @@ export function parseUsageFrame(
     sevenDaySonnet,
     status: deriveStatus(fiveHour, sevenDay, sevenDaySonnet),
   };
+}
+
+/**
+ * Strip ANSI then split into trimmed, single-spaced lines. Unlike the window /
+ * session parsers (which collapse ALL whitespace because their labels are
+ * absolute-column-positioned), the contributing-insights + skills sections are
+ * naturally line-wrapped prose, so we keep line + word boundaries.
+ */
+function cleanLines(frame: string): string[] {
+  return stripAnsi(frame)
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim());
+}
+
+// The /usage stats screen is rendered with absolute-column cursor moves, so
+// after ANSI stripping the *words within a line* run together ("43% of your" →
+// "43%ofyour") even though the NEWLINES between rows survive. So unlike the
+// fully-collapsed window/session parsers, these key off line STRUCTURE (headline
+// vs advice vs table-row) but tolerate the missing intra-line spaces — every
+// pattern below works whether or not a space rendered.
+
+/** A line that ends a /usage stats section: the "d to day · w to week" footer. */
+const USAGE_FOOTER = /\bto\s*day\b.*\bto\s*week\b/i;
+
+/** The "Skills · % of usage" table header (also where the insights section ends). */
+const SKILLS_HEADER = /Skills\b.*?(?:%\s*of\s*usage|·)/i;
+
+/** The "Subagents · % of usage" table header (separate from skills; ends both sections). */
+const SUBAGENTS_HEADER = /Subagents\b.*?(?:%\s*of\s*usage|·)/i;
+
+/**
+ * Parse the "What's contributing to your limits usage?" section (US-007) into a
+ * list of { headlinePct, factor, advice } triples. Generic on purpose — the
+ * count and phrasing vary (Claude may render zero, one, or several with
+ * different thresholds), so we key off the headline shape "NN%<factor>" (the
+ * space after % may not have rendered) and attach any following non-headline
+ * line(s) as advice. Deduped by headline so a re-rendered frame doesn't double
+ * up. Returns [] when the section is absent.
+ */
+export function parseUsageInsights(frame: string): UsageInsight[] {
+  const lines = cleanLines(frame);
+  const start = lines.findIndex((l) => /What'?s\s*contributing/i.test(l));
+  if (start < 0) return [];
+
+  // The section runs until the Skills/Subagents table, the footer, or end.
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const l = lines[i] ?? "";
+    if (SKILLS_HEADER.test(l) || SUBAGENTS_HEADER.test(l) || USAGE_FOOTER.test(l)) {
+      end = i;
+      break;
+    }
+  }
+
+  const out: UsageInsight[] = [];
+  const seen = new Set<string>();
+  let current: UsageInsight | null = null;
+  const flush = () => {
+    if (!current) return;
+    const key = `${current.headlinePct}|${current.factor}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(current);
+    }
+    current = null;
+  };
+  for (let i = start + 1; i < end; i++) {
+    const line = lines[i] ?? "";
+    if (!line) continue;
+    const head = /^(\d{1,3})%\s*(.+)$/.exec(line);
+    if (head) {
+      flush();
+      current = { headlinePct: Number(head[1]), factor: (head[2] ?? "").trim(), advice: "" };
+    } else if (current) {
+      // Advice line(s) for the current headline; skip the caveat boilerplate.
+      if (/^Approximate|Last\s*24h|independent\s*characteristic|Scanning|Refreshing|Esc\s*to\s*cancel/i.test(line)) {
+        continue;
+      }
+      current.advice = current.advice ? `${current.advice} ${line}` : line;
+    }
+    // Lines before the first headline (the caveat) are ignored (current is null).
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Parse the "Skills · % of usage" table (US-007) into { name, pct } rows. Any
+ * number of rows; a leading "/" on the skill name is stripped; the percent may
+ * be glued to the name ("/automate-browser10%"). Stops at the Subagents table or
+ * the footer (so subagents aren't counted as skills). Returns [] when absent.
+ */
+export function parseUsageSkills(frame: string): UsageSkill[] {
+  const lines = cleanLines(frame);
+  const start = lines.findIndex((l) => SKILLS_HEADER.test(l));
+  if (start < 0) return [];
+
+  const out: UsageSkill[] = [];
+  const seen = new Set<string>();
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (!line) continue;
+    if (SUBAGENTS_HEADER.test(line) || USAGE_FOOTER.test(line)) break;
+    // Row: "<name><pct>%" — the name's lazy class excludes digits so a glued
+    // percent ("/automate-browser10%") splits cleanly; an optional space is fine.
+    const m = /^\/?([A-Za-z][A-Za-z._-]*)\s*(\d{1,3})%$/.exec(line);
+    if (m) out.push({ name: m[1] ?? "", pct: Number(m[2]) });
+  }
+  return out;
 }
 
 const MODELLESS_DURATION = /([0-9hms]+)/;

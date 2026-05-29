@@ -144,6 +144,45 @@ try {
   check("aggregate by-model is one model=null entry", sessAgg?.byModel?.length === 1 && sessAgg.byModel[0].model === null);
   check("garbage frame -> no session block", probe.parseUsageSession("just shell output\n$ ls") === null);
 
+  // --- US-007 "What's contributing" insights + Skills % parsers -----------
+  // (a) The clean synthetic full frame: precise headline/factor/advice + skills.
+  const insights = probe.parseUsageInsights(fullFrame);
+  check("insights: 2 parsed from the full frame", insights.length === 2);
+  check("insight[0] headlinePct = 43", insights[0]?.headlinePct === 43);
+  check("insight[0] factor carries the >150k text", /150k context/.test(insights[0]?.factor ?? ""));
+  check("insight[0] advice captured", /compact/.test(insights[0]?.advice ?? ""));
+  check("insight[1] headlinePct = 73", insights[1]?.headlinePct === 73);
+  check("insight[1] factor carries the 8+ hours text", /8\+ hours/.test(insights[1]?.factor ?? ""));
+  check("insight[1] advice captured", /clear/.test(insights[1]?.advice ?? ""));
+  check("insights: caveat line is not an insight", insights.every((i) => !/Approximate/i.test(i.factor)));
+
+  const skills = probe.parseUsageSkills(fullFrame);
+  check("skills: 2 rows parsed", skills.length === 2);
+  check("skills[0] = automate-browser 3% (slash stripped)", skills[0]?.name === "automate-browser" && skills[0]?.pct === 3);
+  check("skills[1] = deep-research 1%", skills[1]?.name === "deep-research" && skills[1]?.pct === 1);
+
+  // (b) The REAL captured frame (usage-frame.txt) — column-positioned, words
+  // glued, percents glued to skill names, and re-rendered twice. The parser must
+  // still extract the cleanly-rendered headlines + skill rows, deduped, without
+  // pulling in the Subagents table.
+  const realInsights = probe.parseUsageInsights(fixture);
+  check("real frame: 3 clean insights extracted (deduped)", realInsights.length === 3);
+  check("real frame insight pcts = [43,39,10]", JSON.stringify(realInsights.map((i) => i.headlinePct)) === "[43,39,10]");
+  check("real frame: factor survives glued (>150k)", /150kcontext/i.test(realInsights[0]?.factor ?? ""));
+  check("real frame: no caveat leaked as insight", realInsights.every((i) => !/Approximate|Last24h/i.test(i.factor)));
+
+  const realSkills = probe.parseUsageSkills(fixture);
+  check("real frame: 3 skills (glued pct split)", realSkills.length === 3);
+  check("real frame skills names", JSON.stringify(realSkills.map((s) => s.name)) === '["automate-browser","update-config","deep-research"]');
+  check("real frame skills pcts", JSON.stringify(realSkills.map((s) => s.pct)) === "[10,4,1]");
+  check("real frame: Subagents row NOT counted as a skill", !realSkills.some((s) => s.name === "general-purpose"));
+
+  // (c) Both return [] cleanly when the section is absent (garbage / non-usage).
+  check("parseUsageInsights -> [] on garbage", probe.parseUsageInsights("just shell output\n$ ls").length === 0);
+  check("parseUsageSkills -> [] on garbage", probe.parseUsageSkills("just shell output\n$ ls").length === 0);
+  check("parseUsageInsights -> [] on a windows-only frame", probe.parseUsageInsights("Current session\n50% used\nResets 1am (America/Chicago)").length === 0);
+  check("parseUsageSkills -> [] on a windows-only frame", probe.parseUsageSkills("Current session\n50% used\nResets 1am (America/Chicago)").length === 0);
+
   // Live-usage per-session cache round-trip (US-010).
   check("getCapturedUsage null before capture", probe.getCapturedUsage("sess-live") === null);
   probe.cacheCapturedUsage("sess-live", { session: sess, fiveHour: full.fiveHour, sevenDay: full.sevenDay, sevenDaySonnet: full.sevenDaySonnet, status: full.status });
