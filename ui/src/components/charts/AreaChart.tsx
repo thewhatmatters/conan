@@ -497,6 +497,10 @@ interface AreaChartProps extends React.HTMLAttributes<HTMLDivElement> {
   connectNulls?: boolean;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  /** Extra Tailwind classes merged into each X-axis tick's text element.
+   *  Use for per-chart typographic overrides (e.g. `font-mono text-[9px]`)
+   *  without touching the shared default `fill-foreground/70`. */
+  xAxisTickClassName?: string;
   type?: "default" | "stacked" | "percent";
   legendPosition?: "left" | "center" | "right";
   fill?: "gradient" | "solid" | "none";
@@ -530,6 +534,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
       enableLegendSlider = false,
       tickGap = 5,
       xAxisLabel,
+      xAxisTickClassName,
       yAxisLabel,
       type = "default",
       legendPosition = "right",
@@ -688,7 +693,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               // so set it via the `tick` prop className rather than on the <g>.
               tick={{
                 transform: "translate(0, 6)",
-                className: "fill-foreground/70",
+                className: cn("fill-foreground/70", xAxisTickClassName),
               }}
               ticks={
                 startEndOnly

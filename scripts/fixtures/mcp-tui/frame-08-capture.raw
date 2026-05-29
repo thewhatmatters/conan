@@ -1,191 +1,0 @@
-7[r8[?25h[?25l[?2004h[?1004h[?2031h[>0q[c]0;✳ Claude Code[38;2;215;119;87m ▐[48;2;0;0;0m▛███▜[49m▌[12G[39m[1mClaude[19GCode[24G[22m[38;2;153;153;153mv2.1.156[39m
-[38;2;215;119;87m▝▜[48;2;0;0;0m█████[49m▛▘[12G[38;2;153;153;153mOpus[17G4.8[21G(1M[25Gcontext)[34G·[36GClaude[43GMax[39m
-[38;2;215;119;87m [3G▘▘[6G▝▝[12G[38;2;153;153;153m/Users/digitalalchemist[39m
-
-[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-❯ [7mT[27m[2mry[7G"how[12Gdoes[17G<filepath>[28Gwork?"[22m
-[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[103G●[105Ghigh[110G·[112G/effort[39m
-[2C[3A[2D[3B[2C[3A[7m [27m[K
-
-
-[2C[3A[2D[3B[2C[1A[38;2;153;153;153m[2m[Opus 4.8 (1M context)][22m │ ⎇ digitalalchemist[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[39m
-[2C[4A[2D[4B[5A[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[1B[39m❯ [7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153m[2m[Opus 4.8 (1M context)][22m │ ⎇ digitalalchemist[103G● high · /effort[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[39m
-[2C[4A(B[2D[4B[2K[1A[2K[1A[2K[1A[2K[G[1A[1A[48;2;55;55;55m[38;2;80;80;80m❯ [38;2;255;255;255m/mcp[39m                                                                                                                  [1B[49m[K[1B[K[1B[K[1B[K[3A
-[38;2;177;185;249m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-[3G[38;2;177;185;249m[1mManage[10GMCP[14Gservers[22m[39m
-[3G[38;2;153;153;153m7[5Gservers[39m
-
-[5G[1mLocal[11GMCPs[22m[38;2;153;153;153m (/Users/digitalalchemist/.claude.json[54G[project:[64G/Users/digitalalchemist])[39m
-[3G[38;2;177;185;249m❯[5Grefero[12G[39m·[14G[38;2;78;186;101m✔[16G[39mconnected[26G·[28G8[30Gtools
-
-[5G[1mUser[10GMCPs[22m[38;2;153;153;153m (/Users/digitalalchemist/.claude.json)[39m
-[5Gpaper[38;2;153;153;153m ·[13G◯[15Greconnecting[28G(3/3)…[39m
-
-[5G[1mclaude.ai[22m
-[5Gclaude.ai[15GFigma[38;2;153;153;153m ·[23G[38;2;78;186;101m✔[38;2;153;153;153m connected[35G·[37G17[40Gtools[39m
-[5Gclaude.ai[15GGmail[38;2;153;153;153m ·[23G[38;2;78;186;101m✔[38;2;153;153;153m connected[35G·[37G12[40Gtools[39m
-[5Gclaude.ai[15GGoogle[22GCalendar[38;2;153;153;153m ·[33G[38;2;78;186;101m✔[38;2;153;153;153m connected[45G·[47G8[49Gtools[39m
-[5Gclaude.ai[15GGoogle[22GDrive[38;2;153;153;153m ·[30G[38;2;255;193;7m△[38;2;153;153;153m needs[38Gauthentication[39m
-
-[5G[1mBuilt-in[14GMCPs[22m[38;2;153;153;153m (always[27Gavailable)[39m
-[5Gcomputer-use[38;2;153;153;153m ·[20G◯[22Gdisabled[39m
-
-[3G[38;2;153;153;153mhttps://code.claude.com/docs/en/mcp[39Gfor[43Ghelp[39m
-[2G[38;2;153;153;153m[3m↑/↓[6Gto[9Gnavigate[18G·[20GEnter[26Gto[29Gconfirm[37G·[39GEsc[43Gto[46Gcancel[23m[39m
-[12C[13A[38;2;255;107;128m✘[15G[38;2;153;153;153mfailed[39m[K[2C[11B[38;2;153;153;153m※ Run clau[15G --debug to see error logs[39m[K[1C[1B [38;2;153;153;153mhttps://code.claude.com/docs/en/mcp for help[39m[K
-[2G[38;2;153;153;153m[3m↑/↓[6Gto[9Gnavigate[18G·[20GEnter[26Gto[29Gconfirm[37G·[39GEsc[43Gto[46Gcancel[23m[39m
-[2C[17A  refero[38;2;153;153;153m · [15G connected · 8 tools[2C[3B[38;2;177;185;249m❯ paper[39m · [14G failed
-
-
-
-
-
-
-
-
-
-
-
-
-
-[2C[14A  paper[38;2;153;153;153m · [14G failed[2C[3B[38;2;177;185;249m❯ claude.ai Figma[39m · [24G connected · 17 tools
-
-
-
-
-
-
-
-
-
-
-[2C[11A  claude.ai Figma[38;2;153;153;153m · [24G connected · 17 tools[2C[1B[38;2;177;185;249m❯ claude.ai Gmail[39m · [24G connected · 12 tools
-
-
-
-
-
-
-
-
-
-[2C[10A  claude.ai Gmail[38;2;153;153;153m · [24G connected · 12 tools[2C[1B[38;2;177;185;249m❯ claude.ai Google Calendar[39m · [34G connected · 8 tools
-
-
-
-
-
-
-
-
-[2C[9A  claude.ai Google Calendar[38;2;153;153;153m · [34G connected · 8 tools[2C[1B[38;2;177;185;249m❯ claude.ai Google Drive[39m · [31G needs authentication
-
-
-
-
-
-
-
-[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[1A[2C[10A[38;2;177;185;249m[1mClaud[9G.ai Googl[19G Drive MCP Server[2C[1B[22m[39m[K[2C[1B[1mStatus:[21G[22m[38;2;255;193;7m△[23G[39mneeds[29Gauthentication[2C[1B[1mUR[6G:[22m              [38;2;153;153;153mhttps://drivemcp.google[45Gpis[49Gcom/mc[56G/v1[39m[K[2C[1B[1mConfig location:[22m  [22G[38;2;153;153;153mlaude.ai[39m[K[2C[2B[38;2;177;185;249m❯[5G[38;2;153;153;153m1. [38;2;177;185;249mAuthenticate[39m[K[4C[1B[38;2;153;153;153m2. [39mDisable[K[2C[2B[38;2;153;153;153m[3m↑/↓ to navigate · Enter to select · Esc to back[1B[23m[39m[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[10A[2C[4A[2D[4B[11A[38;2;215;119;87mAuthenticating with claude.ai Google Drive…[39m[K[2C[1B[K[1B[38;2;255;255;255m✶[4G[39mA[6Gbrowser[14Gwindow[21Gwill[26Gopen[31Gfor[35Gauthentication[2C[1B[K[1B[38;2;153;153;153mIf your browser doesn'[24G open auto[35Gatically, copy this URL manually (c to copy)[1B[39mhttps://claude.ai/api/organizations/07f95835-ee4e-4868-a0f8-e84631b9dfcf/mcp/start-auth/mcpsrv_01CCR1x2xkB157c4dg7xD3m3?[1Bproduct_surface=claude-vscode[2C[1B[K[3C[1B[38;2;177;185;249mPress [1mEnter[22m after authenticating in your browser.[3C[1B[38;2;153;153;153m[3mEsc to back[2C[1B[23m[39m[K
-[9A[38;2;255;255;255m✻[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✽[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✶[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✳[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✢[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m·[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✢[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✳[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✶[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✻[39m
-
-
-
-
-
-
-
-
-[9A[38;2;255;255;255m✽[39m
-
-
-
-
-
-
-
-

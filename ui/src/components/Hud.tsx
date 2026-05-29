@@ -80,7 +80,8 @@ interface HudProps {
  * right of the terminal with a flat tab bar. Width persists in localStorage
  * exactly like the old dock did. The Context tab moved out of the HUD in
  * favour of the always-visible ContextHeader banner pinned above the terminal
- * — what remains here is Usage · Pulse · Skills · MCP.
+ * — what remains here is Usage · Skills · MCP. The Pulse throughput chart was
+ * folded into the Usage tab (v4.6), since it's usage-over-time itself.
  */
 export default function Hud({
   hidden,
@@ -188,15 +189,12 @@ export default function Hud({
       <Tabs defaultValue="usage" className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex items-center border-b border-border">
           {/* Tabs scroll horizontally so the bar still reads at the 320px min
-              width — Usage | Pulse | Skills | MCP. Context lives in the
-              banner above the terminal now, not in the HUD. Flush, contiguous
-              (no gap/padding) so they read as real tabs. */}
+              width — Usage | Skills | MCP (Pulse folded into Usage). Context
+              lives in the banner above the terminal now, not in the HUD. Flush,
+              contiguous (no gap/padding) so they read as real tabs. */}
           <TabsList className="hud-tabs h-auto min-w-0 flex-nowrap justify-start overflow-x-auto rounded-none bg-transparent p-0">
             <TabsTrigger value="usage" className={TAB_TRIGGER}>
               Usage
-            </TabsTrigger>
-            <TabsTrigger value="pulse" className={TAB_TRIGGER}>
-              Pulse
             </TabsTrigger>
             <TabsTrigger value="skills" className={TAB_TRIGGER}>
               Skills
@@ -236,36 +234,37 @@ export default function Hud({
           />
           <FadeScroll>
             <UsageWidget usage={usage} hasLivePty={data?.hasLivePty ?? false} />
-          </FadeScroll>
-        </TabsContent>
-
-        <TabsContent value="pulse" className="mt-0 flex min-h-0 flex-1 flex-col">
-          {onPulseRange && (
-            <>
-              {/* Pinned secondary toolbar (US-005): 'Pulse' + the range
-                  selector ride the shared <HudTabHeader> outside the FadeScroll
-                  so they stay put while the chart scrolls — matching the
-                  Skills/MCP/Usage tabs. */}
-              <HudTabHeader
-                name={
-                  <span className="px-1 text-[11px] font-medium text-muted-foreground">
-                    Pulse
-                  </span>
-                }
-                actions={
-                  <PulseRange minutes={pulseMinutes} onRange={onPulseRange} />
-                }
-              />
-              <FadeScroll>
-                <PulseChart
-                  series={pulse ?? null}
-                  minutes={pulseMinutes}
-                  onRange={onPulseRange}
-                  compact
+            {/* Pulse folded into the Usage tab (v4.6): the throughput chart is
+                itself usage-over-time, so it lives below the plan/session
+                numbers under a 'Pulse' sub-header carrying its own range
+                selector. No margin-top on the wrapper — the Pulse sub-header
+                sits flush below the SESSION block so its bar reads as the
+                same height as the Usage sub-header at the top of the tab
+                (`<HudTabHeader>`'s `h-9`, identical chrome). Fixed-height
+                wrapper because the compact chart sizes to `h-full`. */}
+            {onPulseRange && (
+              <div>
+                <HudTabHeader
+                  name={
+                    <span className="px-1 text-[11px] font-medium text-muted-foreground">
+                      Pulse
+                    </span>
+                  }
+                  actions={
+                    <PulseRange minutes={pulseMinutes} onRange={onPulseRange} />
+                  }
                 />
-              </FadeScroll>
-            </>
-          )}
+                <div className="h-72">
+                  <PulseChart
+                    series={pulse ?? null}
+                    minutes={pulseMinutes}
+                    onRange={onPulseRange}
+                    compact
+                  />
+                </div>
+              </div>
+            )}
+          </FadeScroll>
         </TabsContent>
 
         {/* Skills + MCP own their own FadeScroll internally so their headers

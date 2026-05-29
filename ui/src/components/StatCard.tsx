@@ -13,23 +13,34 @@ export default function StatCard({
   sub,
   children,
 }: {
-  label: string;
+  /** Optional — when omitted, only `sub` renders in the header row (right-
+   *  aligned), useful inside HUD tabs whose secondary toolbar already labels
+   *  the section (e.g. Usage). Skipping both `label` AND `sub` drops the
+   *  whole header row + its `mt-2` spacer for a chrome-free card. */
+  label?: string;
   sub?: string;
   children: React.ReactNode;
 }) {
+  const hasHeader = label || sub;
   return (
     <section className="border-b border-border px-3 py-3 last:border-b-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-xs text-muted-foreground">{label}</span>
-        </span>
-        {sub && (
-          <span className="shrink-0 truncate text-[10px] uppercase tracking-wide text-muted-foreground/70">
-            {sub}
-          </span>
-        )}
-      </div>
-      <div className="mt-2">{children}</div>
+      {hasHeader && (
+        <div className="flex items-center justify-between gap-2">
+          {label && (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-xs text-muted-foreground">
+                {label}
+              </span>
+            </span>
+          )}
+          {sub && (
+            <span className="shrink-0 truncate text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              {sub}
+            </span>
+          )}
+        </div>
+      )}
+      <div className={hasHeader ? "mt-2" : undefined}>{children}</div>
     </section>
   );
 }

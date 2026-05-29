@@ -25,13 +25,17 @@ export function PulseRange({
   onRange: (minutes: number) => void;
 }) {
   return (
-    <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
+    // Flat toggle row sized to match the Usage tab's `↻ /usage` button
+    // (px-1.5 py-0.5 text-[10px]) so the Pulse sub-header strip is the same
+    // height as the Usage sub-header strip in the HUD — the old bordered box
+    // (border + p-0.5 + text-xs) made the Pulse header visibly taller.
+    <div className="flex gap-0.5 text-[10px]">
       {RANGES.map((r) => (
         <button
           key={r.minutes}
           onClick={() => onRange(r.minutes)}
           className={
-            "rounded px-2 py-0.5 " +
+            "rounded px-1.5 py-0.5 font-medium transition-colors " +
             (minutes === r.minutes
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-muted")
@@ -96,10 +100,14 @@ export default function PulseChart({
   const hasData = totals.events > 0 || totals.tokens > 0 || totals.cost > 0;
 
   // Reshape the per-category bucket breakdown into flat rows keyed by the
-  // display labels, with a time-of-day index label for the X axis. Sub-hour
-  // windows show seconds-free HH:MM; the same key set is the chart's categories.
+  // display labels, with a date+time index label for the X axis. The format
+  // prepends the locale's short month/day so a 24h or 7d window doesn't read
+  // ambiguously when the start crosses midnight (e.g. `05/29 14:49`). 24h
+  // clock so users with `hour12: true` system prefs don't see AM/PM mixed in.
   const data = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(undefined, {
+      month: "2-digit",
+      day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -168,6 +176,11 @@ export default function PulseChart({
             startEndOnly={compact}
             valueFormatter={(v) => String(v)}
             yAxisWidth={40}
+            // Smaller + monospaced X-axis ticks. The date+time label
+            // (e.g. `05/29 14:49`) reads cleaner in mono since the digit
+            // widths line up — and the smaller size keeps the start/end
+            // labels from crowding when both edges carry the same width.
+            xAxisTickClassName="font-mono text-[9px] tabular-nums"
           />
         ) : (
           <div className="flex h-full min-h-48 items-center justify-center text-xs text-muted-foreground">

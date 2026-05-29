@@ -34,3 +34,4 @@ archive/
 # Local planning/handoff scratch (read-once, not versioned)
 HANDOFF.md
 .claude/current-task.txt
+.claude/handoff-archive/

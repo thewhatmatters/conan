@@ -63,6 +63,7 @@ export default function SettingsView({
   themes,
   activeThemeId,
   onSelectTheme,
+  doctor,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,6 +76,13 @@ export default function SettingsView({
   activeThemeId: string;
   /** Select a theme by id (or "auto"); applies live + persists, View-menu synced. */
   onSelectTheme: (id: string) => void;
+  /** Claude Code install detection — surfaced as the top row of Status. */
+  doctor?: {
+    installed: boolean | null;
+    version: string | null;
+    path: string | null;
+    error: string | null;
+  };
 }) {
   // Per-key inline save error, shared by both tabs (cleared on the next
   // successful save of that key). Lifted here so the Status and Config tabs write
@@ -136,7 +144,12 @@ export default function SettingsView({
           </div>
 
           <TabsContent value="status" className="mt-0">
-            <StatusTab config={config} errors={errors} onSave={save} />
+            <StatusTab
+              config={config}
+              errors={errors}
+              onSave={save}
+              doctor={doctor}
+            />
           </TabsContent>
           <TabsContent value="config" className="mt-0">
             <ConfigTab config={config} errors={errors} onSave={save} />
@@ -165,10 +178,17 @@ function StatusTab({
   config,
   errors,
   onSave,
+  doctor,
 }: {
   config: ClaudeConfig | null;
   errors: Record<string, string>;
   onSave: (key: string, value: unknown) => void;
+  doctor?: {
+    installed: boolean | null;
+    version: string | null;
+    path: string | null;
+    error: string | null;
+  };
 }) {
   // Group by source scope so the list reads like Claude's /config (rows
   // clustered by where they're managed).
@@ -195,6 +215,7 @@ function StatusTab({
         Edits apply to Claude Code&rsquo;s config on disk and may only take effect
         on the next Claude session.
       </p>
+      <ClaudeInstallRow doctor={doctor} />
       <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
         {config == null ? (
           <p className="px-5 py-6 text-[13px] text-muted-foreground">
@@ -267,6 +288,79 @@ function StatusTab({
  * re-reads the config (`onSaved`) so the value sticks across reopen; a save error
  * surfaces inline without closing the dialog.
  */
+
+/**
+ * Claude Code install diagnostic — the top row of the Status tab. Surfaces
+ * whether the gateway can find `claude` on PATH (via the shell init that the
+ * pty would use), the version, the resolved path, and any honest error from
+ * the probe. Hidden during the initial probe (`installed: null`) so a flash
+ * of "not detected" doesn't show on boot.
+ */
+function ClaudeInstallRow({
+  doctor,
+}: {
+  doctor?: {
+    installed: boolean | null;
+    version: string | null;
+    path: string | null;
+    error: string | null;
+  };
+}) {
+  if (!doctor || doctor.installed === null) return null;
+  const ok = doctor.installed;
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-border px-5 py-3">
+      <div className="flex items-baseline justify-between gap-3 text-[13px]">
+        <span className="font-medium text-foreground">Claude Code</span>
+        <span
+          className={
+            "shrink-0 tabular-nums " +
+            (ok
+              ? "text-foreground"
+              : "text-amber-600 dark:text-amber-400")
+          }
+        >
+          {ok
+            ? doctor.version
+              ? `v${doctor.version}`
+              : "installed"
+            : "not detected"}
+        </span>
+      </div>
+      <div className="text-[11px] text-muted-foreground">
+        {ok ? (
+          doctor.path ? (
+            <span className="break-all">{doctor.path}</span>
+          ) : (
+            "version from last observed session (not on PATH from this shell)"
+          )
+        ) : (
+          <>
+            Install:{" "}
+            <code className="rounded bg-muted px-1 py-px font-mono text-[10px]">
+              npm install -g @anthropic-ai/claude-code
+            </code>{" "}
+            ·{" "}
+            <a
+              href="https://claude.com/claude-code"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              docs
+            </a>
+          </>
+        )}
+        {doctor.error && (
+          <div className="mt-0.5 text-[10px] text-muted-foreground/80">
+            {doctor.error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ConfigTab({
   config,
   errors,

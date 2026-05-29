@@ -1,1 +1,0 @@
-ReferoSStatus:✔ connectedAuth:             ✔ authenticatedURL:           https://api.refero.design/mcpConfig location:/Users/digitalalchemist/.claude.json [project: /Users/digitalalchemist]Capabilities: tools · resourcesTools: 8 tools❯1. View tools2. Re-authenticate3. Clar authentication4. Reconnect5. Disable↑/↓ to navigate · Enter to select · Esc to back

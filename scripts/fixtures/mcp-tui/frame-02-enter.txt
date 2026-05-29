@@ -1,1 +1,0 @@
-Pper MCP ServerStatus:✘ failedIssue:            Unable o connct. Is the computer abl oaccs the ur?Auth:             ✘ not authenticatedURL:http://127.0.0.1:29979/mcpConfiglocation:  /Users/digitalalchemist/.claude.json❯1. Authenticate2. Reconnect3. Disable↑/↓ to navigate · Enter to select · Esc to back

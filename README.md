@@ -69,7 +69,7 @@ v4.2, then grown back deliberately in v4.3/v4.4 — is exactly what the app call
 | --- | --- | --- |
 | GET | `/api/health` | liveness |
 | GET | `/api/config` | `{token, port, cwd}` |
-| GET | `/api/tasks` | prd.json + progress.txt (build-loop backlog) |
+| GET | `/api/tasks` | build-loop trail for projects that ship a `prd.json`/`progress.txt` |
 | GET | `/api/terminals` | live terminals + their session labels |
 | GET | `/api/claude/sessions` | the observed-sessions list |
 | GET | `/api/claude/sessions/:id/widgets` | Context breakdown for a session |
@@ -119,8 +119,8 @@ that. The HUD's session-scoped tabs follow the **active terminal tab**.
   but didn't fire* reasons per prompt (BM25-scored against each skill's
   description — labelled "Heuristic match"), TodoWrite/ExitPlanMode **plan**
   rows, Claude Code `/loop` skill activity, and (when running our autonomous
-  build workflow) the **`run-tasks.sh`** build trail. Filter chips are dynamic
-  — a chip only appears when this session has at least one row of that kind.
+  build workflow) the build trail. Filter chips are dynamic — a chip only
+  appears when this session has at least one row of that kind.
 - **Context** tab — the live session's `/context` breakdown (model header, total %,
   per-category tokens incl. Free space) with a Tremor `ProgressCircle` gauge, an
   **Auto** auto-refresh toggle + manual `↻ /context`, and a top-pinned
@@ -169,26 +169,12 @@ Artifacts land in `src-tauri/target/release/bundle/{macos,dmg}/`. The local buil
 is **ad-hoc signed**; the Developer-ID sign + notarize path for distribution and
 the `CI=true` headless-DMG note are in **`docs/tauri-desktop.md`**.
 
-## Backlog & build loop
+## Roadmap
 
-Conan is built by an autonomous loop, and its own backlog lives in the repo:
-
-- **`prd.json`** — the build backlog. Each story has `passes`, `priority`, and
-  `acceptanceCriteria`. The loop picks the lowest-`priority` story with
-  `passes:false`, implements only that one, verifies it, sets `passes:true`,
-  and appends to `progress.txt`.
-- **`progress.txt`** — the loop's timestamped activity trail (gitignored).
-- **`run-tasks.sh`** — runs a fresh agent per story until all pass.
-- **`CLAUDE.md`** — project context auto-loaded by every Claude Code session.
-
-Validate the backlog after editing:
-
-```bash
-python3 ~/.claude/skills/decompose-prd/scripts/validate.py --in=prd.json
-```
-
-Current spec: `docs/timeline-prd.md` (v4.5-timeline, latest shipped). Prior
-loops: `docs/v4.4-backlog.md` etc. Regression QA: `docs/qa-checklist.md`.
+- **`docs/v4.7-licensing-design.md`** — Ed25519 JWT licensing (offline
+  verification, Polar.sh issuance).
+- **`docs/v4.7-update-design.md`** — Tauri-plugin-updater + minisign signing +
+  Cloudflare R2 hosting.
 
 ## Gotchas
 

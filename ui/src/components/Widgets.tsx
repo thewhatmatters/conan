@@ -622,8 +622,11 @@ export function UsageWidget({
   else if (usage.tokensToday > 0) headline = `${fmtTokens(usage.tokensToday)} tok`;
   else headline = "—";
 
+  // `label` omitted from StatCard — the Usage tab's secondary toolbar
+  // (v4.6 US-006) already labels this section, so a second "Usage" inside the
+  // card was redundant. The `sub` chip stays — it conveys data-source state.
   return (
-    <StatCard label="Usage" sub={usage.rateLimited ? "rate limited" : "last 5h"}>
+    <StatCard sub={usage.rateLimited ? "rate limited" : "last 5h"}>
       <div className="flex items-center gap-2">
         <span
           className={
@@ -655,38 +658,10 @@ export function UsageWidget({
   );
 }
 
-/** Posture → text color for the headline + status chip. */
-const STATUS_COLOR: Record<"ok" | "warning" | "limit", string> = {
-  ok: "text-foreground",
-  warning: "text-amber-600 dark:text-amber-400",
-  limit: "text-destructive",
-};
-
-/** The status chip (High/Limit) for the plan/live faces; null when ok. */
-function StatusChip({ status }: { status: "ok" | "warning" | "limit" }) {
-  if (status === "ok") return null;
-  return (
-    <span
-      className={
-        "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide " +
-        (status === "limit"
-          ? "bg-destructive/15 text-destructive"
-          : "bg-amber-500/15 text-amber-600 dark:text-amber-400")
-      }
-    >
-      {status === "limit" ? "Limit" : "High"}
-    </span>
-  );
-}
-
-/** The worst (binding) window % across the three windows, floored to an int. */
-function worstWindow(
-  ...windows: (UsageWindow | null | undefined)[]
-): number {
-  return (
-    Math.max(-1, ...windows.map((w) => w?.utilizationPct ?? -1)) | 0
-  );
-}
+// STATUS_COLOR / StatusChip / worstWindow were removed when the Usage faces
+// dropped their top-level worst-% headline (matching Claude's /usage TUI which
+// shows no aggregate). Per-window posture is conveyed through the bar color
+// (PlanWindowRow's `barColor`) + the rendered "% used" value.
 
 /**
  * The REAL plan-utilization face of the Usage widget (US-025/US-010): the 5-hour,
@@ -704,20 +679,16 @@ function PlanUsage({
   /** Drives the empty-Session hint copy — clickable vs "no live session". */
   hasLivePty: boolean;
 }) {
-  const worst = worstWindow(plan.fiveHour, plan.sevenDay, plan.sevenDaySonnet);
-
+  // The /usage TUI doesn't render a top-level worst-% headline — it just
+  // lists each window with its bar, "X% used", and reset line. We mirror that
+  // here for cohesion with the source the user might be checking against.
+  // Limit/Warning state is read from the bar color + the "% used" value.
   return (
-    <StatCard label="Usage" sub="plan · live">
-      <div className="flex items-center gap-2">
-        <span className={"text-xl font-semibold " + STATUS_COLOR[plan.status]}>
-          {worst}%
-        </span>
-        <StatusChip status={plan.status} />
-      </div>
-      <div className="mt-1.5 space-y-1">
-        <PlanWindowRow label="5h" win={plan.fiveHour} tick={tick} />
-        <PlanWindowRow label="7d" win={plan.sevenDay} tick={tick} />
-        <PlanWindowRow label="7d-S" win={plan.sevenDaySonnet} tick={tick} />
+    <StatCard sub="plan · live">
+      <div className="space-y-3">
+        <PlanWindowRow kind="session" win={plan.fiveHour} tick={tick} />
+        <PlanWindowRow kind="week-all" win={plan.sevenDay} tick={tick} />
+        <PlanWindowRow kind="week-sonnet" win={plan.sevenDaySonnet} tick={tick} />
       </div>
       {/* The Session block scaffold renders empty here so users see the data
           shape that's waiting — clicking ↻ /usage above captures the real
@@ -769,22 +740,16 @@ function LiveUsageView({
   live: LiveUsage;
   tick: number;
 }) {
-  const worst = worstWindow(live.fiveHour, live.sevenDay, live.sevenDaySonnet);
   const s = live.session;
   return (
-    <StatCard label="Usage" sub="live · from /usage">
-      <div className="flex items-center gap-2">
-        <span className={"text-xl font-semibold " + STATUS_COLOR[live.status]}>
-          {worst >= 0 ? `${worst}%` : "—"}
-        </span>
-        <StatusChip status={live.status} />
-      </div>
-
-      {/* account-global rate-limit windows */}
-      <div className="mt-1.5 space-y-1">
-        <PlanWindowRow label="5h" win={live.fiveHour} tick={tick} />
-        <PlanWindowRow label="7d" win={live.sevenDay} tick={tick} />
-        <PlanWindowRow label="7d-S" win={live.sevenDaySonnet} tick={tick} />
+    <StatCard sub="live · from /usage">
+      {/* account-global rate-limit windows — same layout as PlanUsage, mirrors
+          Claude's /usage TUI (no top-level worst-% headline; status conveyed
+          per-window through bar color + the "X% used" value). */}
+      <div className="space-y-3">
+        <PlanWindowRow kind="session" win={live.fiveHour} tick={tick} />
+        <PlanWindowRow kind="week-all" win={live.sevenDay} tick={tick} />
+        <PlanWindowRow kind="week-sonnet" win={live.sevenDaySonnet} tick={tick} />
       </div>
 
       {/* session-specific Session block */}
@@ -820,63 +785,13 @@ function LiveUsageView({
         </div>
       )}
 
-      {/* "What's contributing" insights (US-009) */}
-      {live.insights.length > 0 && (
-        <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            What's contributing
-          </div>
-          <div className="space-y-1">
-            {live.insights.map((it, i) => (
-              <div key={i} className="rounded-md border border-border px-2 py-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-[11px] font-medium text-foreground">
-                    {it.factor}
-                  </span>
-                  {it.headlinePct > 0 && (
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {Math.round(it.headlinePct)}%
-                    </span>
-                  )}
-                </div>
-                {it.advice && (
-                  <div className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">
-                    {it.advice}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="mt-1 text-[10px] text-muted-foreground">
-            Last 24h · approximate, based on local sessions on this machine
-          </div>
-        </div>
-      )}
-
-      {/* "Skills · % of usage" (US-009) */}
-      {live.skills.length > 0 && (
-        <div className="-mx-3 mt-2 border-t border-border px-3 pt-1.5">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Skills · % of usage
-          </div>
-          <div className="space-y-0.5">
-            {live.skills.map((sk, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-2 text-[11px]"
-              >
-                <span className="min-w-0 truncate text-foreground">{sk.name}</span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {Math.round(sk.pct)}%
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-1 text-[10px] text-muted-foreground">
-            Last 24h · approximate, based on local sessions on this machine
-          </div>
-        </div>
-      )}
+      {/* The v4.6 "What's contributing" insights + "Skills · % of usage"
+          sections (US-007/008/009) were removed: the parsers concatenated
+          words without spaces ("ofyourusagecamefromsessionsactivefor8+hours")
+          because Claude's /usage TUI uses tight kerning the ANSI strip
+          collapsed. The backend parsers + capture path stay wired (insights
+          + skills still land on liveUsage) — only the render is gone.
+          A future pass that fixes the parser whitespace can re-add the UI. */}
     </StatCard>
   );
 }
@@ -912,19 +827,34 @@ function ModelUsageRow({ usage }: { usage: ModelUsage }) {
   );
 }
 
-/** One window row: label, mini bar + %, and a reset countdown. */
+/** Window kinds map 1:1 onto the three rate-limit buckets Claude reports:
+ *  the 5-hour "current session", the 7-day all-models bucket, and the
+ *  7-day Sonnet-only bucket. Labels mirror what the user sees in /usage. */
+type WindowKind = "session" | "week-all" | "week-sonnet";
+const WINDOW_LABELS: Record<WindowKind, string> = {
+  session: "Current session",
+  "week-all": "Current week (all models)",
+  "week-sonnet": "Current week (Sonnet)",
+};
+
+/**
+ * One rate-limit window — mirrors the layout the `/usage` TUI uses: the
+ * sentence-cased label on top, the bar with "X% used" on the right, and a
+ * muted "Resets …" line below carrying the absolute reset time + timezone.
+ * Hidden entirely when the upstream window is null (e.g. /usage didn't
+ * render a Sonnet-only line for this account).
+ */
 function PlanWindowRow({
-  label,
+  kind,
   win,
   tick,
 }: {
-  label: string;
+  kind: WindowKind;
   win: UsageWindow | null;
   tick: number;
 }) {
   if (!win) return null;
   const pct = Math.max(0, Math.min(100, win.utilizationPct));
-  const remaining = win.resetAt != null ? Math.max(0, win.resetAt - tick) : null;
   const barColor =
     win.utilizationPct >= 100
       ? "bg-destructive"
@@ -932,26 +862,65 @@ function PlanWindowRow({
         ? "bg-amber-500"
         : "bg-primary";
   return (
-    <div className="flex items-center gap-2 text-[11px]">
-      <span className="w-5 shrink-0 text-muted-foreground">{label}</span>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-        <span
-          className={"block h-full rounded-full " + barColor}
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-2 text-[11px]">
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {WINDOW_LABELS[kind]}
+        </span>
+        <span className="shrink-0 tabular-nums text-foreground">
+          {win.utilizationPct}% used
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={"h-full rounded-full " + barColor}
           style={{ width: `${pct}%` }}
         />
-      </span>
-      <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
-        {win.utilizationPct}%
-      </span>
-      <span className="w-20 shrink-0 truncate text-right text-muted-foreground">
-        {remaining != null
-          ? remaining > 0
-            ? fmtDuration(remaining)
-            : "due"
-          : ""}
-      </span>
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        {fmtResetAbsolute(win.resetAt, tick)}
+      </div>
     </div>
   );
+}
+
+/** Format a window's reset time the way Claude's /usage prints it:
+ *   - same calendar day → "Resets 8pm (America/Chicago)"
+ *   - future day        → "Resets Jun 1 at 3pm (America/Chicago)"
+ *   - past / overdue    → "Resets due"
+ *   - unknown           → "" (caller renders an empty placeholder line)
+ *
+ * Timezone comes from the user's system via `Intl` — Claude's TUI similarly
+ * shows the local zone. Hours render without a `:00` minute (`8pm`, not
+ * `8:00pm`) to match Claude's formatting; non-zero minutes get included
+ * (`8:30pm`).
+ */
+function fmtResetAbsolute(resetAt: number | null, now: number): string {
+  if (resetAt == null) return "";
+  if (resetAt <= now) return "Resets due";
+
+  const reset = new Date(resetAt);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hourOpts: Intl.DateTimeFormatOptions =
+    reset.getMinutes() === 0
+      ? { hour: "numeric", hour12: true }
+      : { hour: "numeric", minute: "2-digit", hour12: true };
+  const hourStr = new Intl.DateTimeFormat(undefined, hourOpts)
+    .format(reset)
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+  // Same calendar day comparison in the *user's local* zone (matches Claude's
+  // "later today" framing). `toDateString` uses local time, so both Dates
+  // here are evaluated against the local zone — correct by construction.
+  const sameDay = reset.toDateString() === new Date(now).toDateString();
+  if (sameDay) return `Resets ${hourStr} (${tz})`;
+
+  const dateStr = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(reset);
+  return `Resets ${dateStr} at ${hourStr} (${tz})`;
 }
 
 /**

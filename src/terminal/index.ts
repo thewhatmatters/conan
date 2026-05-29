@@ -62,14 +62,21 @@ const USAGE_SCAN_MAX = 96 * 1024;
 /**
  * Resolve what the pty runs. `mode=claude` (default) launches Claude Code so the
  * terminal *is* a Claude session; `mode=shell` drops to a plain shell.
- * For claude we go through a login shell so PATH/nvm/aliases resolve, and fall
- * back to an interactive shell when claude exits (so the dock stays usable).
+ *
+ * We launch through an INTERACTIVE login shell (`-i -l`), not just a login shell
+ * (`-l`). On macOS users put their PATH customizations — including `~/.local/bin`,
+ * where the official `claude` launcher lives — in `~/.zshrc`, which is sourced
+ * only when the shell is interactive. A bare `zsh -l -c` reads `.zprofile`/
+ * `.zshenv` but NOT `.zshrc`, so under the minimal GUI env an app gets when
+ * launched from Finder, `claude` resolves to "command not found". `-i` fixes it.
+ * We fall back to an interactive login shell when claude exits so the dock stays
+ * usable.
  */
 function resolveCommand(mode: string): { file: string; args: string[] } {
   if (mode === "shell") return { file: DEFAULT_SHELL, args: [] };
   return {
     file: DEFAULT_SHELL,
-    args: ["-l", "-c", `${CLAUDE_BIN}; exec ${DEFAULT_SHELL} -i`],
+    args: ["-i", "-l", "-c", `${CLAUDE_BIN}; exec ${DEFAULT_SHELL} -i -l`],
   };
 }
 

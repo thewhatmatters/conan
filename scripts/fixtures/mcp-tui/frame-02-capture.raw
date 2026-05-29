@@ -1,37 +1,0 @@
-7[r8[?25h[?25l[?2004h[?1004h[?2031h[>0q[c]0;✳ Claude Code[38;2;215;119;87m ▐[48;2;0;0;0m▛███▜[49m▌[12G[39m[1mClaude[19GCode[24G[22m[38;2;153;153;153mv2.1.156[39m
-[38;2;215;119;87m▝▜[48;2;0;0;0m█████[49m▛▘[12G[38;2;153;153;153mOpus[17G4.8[21G(1M[25Gcontext)[34G·[36GClaude[43GMax[39m
-[38;2;215;119;87m [3G▘▘[6G▝▝[12G[38;2;153;153;153m/Users/digitalalchemist[39m
-
-[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-❯ [7mT[27m[2mry[7G"create[15Ga[17Gutil[22Glogging.py[33Gthat..."[22m
-[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[103G●[105Ghigh[110G·[112G/effort[39m
-[2C[3A[2D[3B[2C[3A[7m [27m[K[2C[2B[38;2;153;153;153m[2m[Opus 4.8 (1M context)][22m │ ⎇ digitalalchemist[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[39m
-[2C[4A[2D[4B[5A[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[1B[39m❯ [7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153m[2m[Opus 4.8 (1M context)][22m │ ⎇ digitalalchemist[103G● high · /effort[39m
-[3G[38;2;153;153;153m←[5Gfor[9Gagents[39m
-[2C[4A(B[2D[4B[2K[1A[2K[1A[2K[1A[2K[G[1A[1A[48;2;55;55;55m[38;2;80;80;80m❯ [38;2;255;255;255m/mcp[39m                                                                                                                  [1B[49m[K[1B[K[1B[K[1B[K[3A
-[38;2;177;185;249m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
-[3G[38;2;177;185;249m[1mManage[10GMCP[14Gservers[22m[39m
-[3G[38;2;153;153;153m7[5Gservers[39m
-
-[5G[1mLocal[11GMCPs[22m[38;2;153;153;153m (/Users/digitalalchemist/.claude.json[54G[project:[64G/Users/digitalalchemist])[39m
-[3G[38;2;177;185;249m❯[5Grefero[12G[39m·[14G[38;2;78;186;101m✔[16G[39mconnected[26G·[28G8[30Gtools
-
-[5G[1mUser[10GMCPs[22m[38;2;153;153;153m (/Users/digitalalchemist/.claude.json)[39m
-[5Gpaper[38;2;153;153;153m ·[13G◯[15Greconnecting[28G(3/3)…[39m
-
-[5G[1mclaude.ai[22m
-[5Gclaude.ai[15GFigma[38;2;153;153;153m ·[23G[38;2;78;186;101m✔[38;2;153;153;153m connected[35G·[37G17[40Gtools[39m
-[5Gclaude.ai[15GGmail[38;2;153;153;153m ·[23G[38;2;78;186;101m✔[38;2;153;153;153m connected[35G·[37G12[40Gtools[39m
-[5Gclaude.ai[15GGoogle[22GCalendar[38;2;153;153;153m ·[33G[38;2;78;186;101m✔[38;2;153;153;153m connected[45G·[47G8[49Gtools[39m
-[5Gclaude.ai[15GGoogle[22GDrive[38;2;153;153;153m ·[30G[38;2;255;193;7m△[38;2;153;153;153m needs[38Gauthentication[39m
-
-[5G[1mBuilt-in[14GMCPs[22m[38;2;153;153;153m (always[27Gavailable)[39m
-[5Gcomputer-use[38;2;153;153;153m ·[20G◯[22Gdisabled[39m
-
-[3G[38;2;153;153;153mhttps://code.claude.com/docs/en/mcp[39Gfor[43Ghelp[39m
-[2G[38;2;153;153;153m[3m↑/↓[6Gto[9Gnavigate[18G·[20GEnter[26Gto[29Gconfirm[37G·[39GEsc[43Gto[46Gcancel[23m[39m
-[12C[13A[38;2;255;107;128m✘[15G[38;2;153;153;153mfailed[39m[K[2C[11B[38;2;153;153;153m※ Run clau[15G --debug to see error logs[39m[K[1C[1B [38;2;153;153;153mhttps://code.claude.com/docs/en/mcp for help[39m[K
-[2G[38;2;153;153;153m[3m↑/↓[6Gto[9Gnavigate[18G·[20GEnter[26Gto[29Gconfirm[37G·[39GEsc[43Gto[46Gcancel[23m[39m
-[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[1A[2C[16A[38;2;177;185;249m[1mRefero[14GS[20G[22m[39m[K[2C[1B[K[2C[1B[1mStatus:[21G[22m[38;2;78;186;101m✔ [39mconnected[2C[1B[1mAuth:[22m             [38;2;78;186;101m✔ [39mauthenticated[K[2C[1B[1mURL:[22m    [12G [14G [16G     [38;2;153;153;153mhttps://api.refero.design/mcp[2C[1B[39m[1mConfig location:[21G[22m[38;2;153;153;153m/Users/digitalalchemist/.claude.json [project: /Users/digitalalchemist][2C[1B[39m[1mCapabilities: [22m[38;2;255;255;255mtools[38;2;153;153;153m · [38;2;255;255;255mresources[39m[K[2C[1B[1mTools: [22m[38;2;153;153;153m8 tools[39m[K[2C[2B[38;2;177;185;249m❯[5G[38;2;153;153;153m1. [38;2;177;185;249mView tools[4C[1B[38;2;153;153;153m2. [39mRe-authenticate[K[4C[1B[38;2;153;153;153m3. [39mCl[11Gar authentication[K[4C[1B[38;2;153;153;153m4. [39mReconnect[K[4C[1B[38;2;153;153;153m5. [39mDisable[K[2C[2B[38;2;153;153;153m[3m↑/↓ to navigate · Enter to select · Esc to back[1B[23m[39m[K[1B[K[1B[K[1B[K[1B[K[4A[2C[7A

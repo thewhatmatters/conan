@@ -43,6 +43,7 @@ import { readTimeline } from "../timeline/index.js";
 import { readAssistantTurnUsages } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
 import { getRadio, getStations, setRadio } from "../radio/index.js";
+import { detectClaude } from "../doctor/claude.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
@@ -740,6 +741,16 @@ app.post("/api/claude/mcp/:name/reconnect", async (req, res) => {
   res.status(result.escalated && result.alreadyInFlight ? 409 : 200).json(result);
 });
 
+// Claude Code install detection (the "doctor"). Probes the user's PATH via
+// an interactive login shell — same env the pty would launch into — so we
+// don't false-positive "not installed" when the Finder-launched .app has a
+// stripped env. Cached 10min in src/doctor/claude.ts; cheap to call. Token-
+// gated like the rest of the control plane.
+app.get("/api/claude/doctor", async (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(await detectClaude());
+});
+
 // Claude Radio state — read the current { videoId, title } the UI's player is
 // pointed at. Bundled `/conan-change-radio` skill POSTs to the sibling route
 // to swap streams. In-memory, session-only — gateway restart reverts to default.
@@ -881,6 +892,11 @@ setUsageCapturedListener((sessionId) =>
 // uses for any third-party plugin. Best-effort; logs a warning on failure but
 // doesn't block the gateway from starting.
 installBundledPlugins();
+
+// Warm the Claude-installed detection cache at boot so the UI's first /doctor
+// request returns instantly (the shell-init probe is bounded but takes ~200ms).
+// Fire-and-forget — failures are stored in the cache as error: <message>.
+void detectClaude();
 
 // Session-liveness reaper (US-001): reconcile the session table against process
 // ground truth at boot and on an interval, so the Active Sessions count reflects

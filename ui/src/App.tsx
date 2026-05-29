@@ -11,6 +11,7 @@ import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
+import { useDoctor } from "./hooks/useDoctor.ts";
 import { useWindowWidth } from "./hooks/useWindowWidth.ts";
 import { useWindowHeight } from "./hooks/useWindowHeight.ts";
 
@@ -124,6 +125,10 @@ export default function App() {
   // pointed at. Drives RadioBar's player + label; live-updated by the
   // bundled /conan-change-radio skill via {type:'radio'} broadcasts.
   const radio = useRadio(config?.token ?? null, wsTrigger, lastRadio);
+  // Probe whether the user has Claude Code installed (src/doctor/claude.ts).
+  // Drives the install banner above the terminal + the Settings ▸ Status line.
+  // Backend caches 10min so this is cheap.
+  const doctor = useDoctor(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).
@@ -225,6 +230,7 @@ export default function App() {
         widgetData={widgetData}
         onRefetchWidgets={refetchWidgets}
         windowWidth={windowWidth}
+        doctor={doctor}
       />
       <Hud
         hidden={!hudOpen}
@@ -250,6 +256,7 @@ export default function App() {
         themes={themes}
         activeThemeId={activeId}
         onSelectTheme={setActiveTheme}
+        doctor={doctor}
       />
     </div>
   );
