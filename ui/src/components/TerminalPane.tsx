@@ -428,21 +428,20 @@ export default function TerminalPane({
         >
           <Plus className="size-4" />
         </button>
-        {/* PROTOTYPE: per-tab Timeline split toggle — tethered to the active tab. */}
+        {/* PROTOTYPE: per-tab Timeline split toggle — tethered to the active tab.
+            US-003: reads as a real toggle — when the split is open it gets a
+            filled (bg-primary/10) pressed state + primary accent so it's clear
+            the same button also closes it. Semantic tokens only. */}
         <button
           onClick={toggleTimelineForActive}
-          title={
-            timelineOpen.has(activeTid)
-              ? "Hide timeline for this terminal"
-              : "Show timeline for this terminal (split right)"
-          }
-          aria-label="Toggle timeline split"
+          title="Toggle Timeline (⌘\)"
+          aria-label="Toggle Timeline (⌘\)"
           aria-pressed={timelineOpen.has(activeTid)}
           className={
-            "mr-1 shrink-0 rounded-md p-1 transition-colors hover:bg-muted " +
+            "mr-1 shrink-0 rounded-md p-1 transition-colors " +
             (timelineOpen.has(activeTid)
-              ? "text-primary hover:text-primary"
-              : "text-muted-foreground hover:text-foreground")
+              ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground")
           }
         >
           <ClockFading className="size-4" />

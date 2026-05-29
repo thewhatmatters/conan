@@ -53,7 +53,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Backlog F6 (S2). Depends on US-002 (the × is gone, so the clock is the only visible close affordance). Anchors: ClockFading :448, onClick={toggleTimelineForActive} :433. Suggested skills: automate-browser."
     },
     {
