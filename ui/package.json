@@ -21,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "lottie-react": "^2.4.1",
     "lucide-react": "^1.16.0",
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",

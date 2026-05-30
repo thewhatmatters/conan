@@ -24,6 +24,7 @@ import {
   clearLicense,
 } from "../hooks/useTier.ts";
 import type { VerifyResult } from "../lib/license.ts";
+import { PremiumUnlockBurst } from "./PremiumUnlockBurst.tsx";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
@@ -1065,17 +1066,29 @@ function LicenseTab({ token }: { token: string | null }) {
   // so the inline error is paired with the user's last action rather than
   // the boot-time verify (which might surface "no license" misleadingly here).
   const [applyResult, setApplyResult] = useState<VerifyResult | null>(null);
+  // Fires the lightning-bolt celebration when a paste succeeds. Tracked
+  // separately from applyResult so the burst is tied to the click event,
+  // not to applyResult.ok lingering across re-renders (would re-fire on
+  // any state change otherwise).
+  const [unlockBurst, setUnlockBurst] = useState(false);
 
   async function apply(): Promise<void> {
     if (!draft.trim() || applying) return;
     setApplying(true);
     setApplyResult(null);
     try {
+      const wasPremium = tier.tier === "premium";
       const r = await saveLicense(draft, token);
       setApplyResult(r);
       // Clear the draft only on success — keep it populated on failure so
       // the user can correct without re-pasting.
-      if (r.ok) setDraft("");
+      if (r.ok) {
+        setDraft("");
+        // Only celebrate a real Free → Premium transition. Re-applying or
+        // swapping an already-Premium license is a routine action and
+        // doesn't deserve the same flourish — would feel cheap on repeat.
+        if (!wasPremium) setUnlockBurst(true);
+      }
     } finally {
       setApplying(false);
     }
@@ -1093,7 +1106,14 @@ function LicenseTab({ token }: { token: string | null }) {
   }
 
   return (
-    <div className="space-y-4 px-5 py-5">
+    <div className="relative space-y-4 px-5 py-5">
+      {/* Celebration: lightning bolt overlay on first Free → Premium flip.
+          Positioned absolute over the tab body; `pointer-events: none` so it
+          never interrupts the user touching the Remove button or dismissing. */}
+      <PremiumUnlockBurst
+        play={unlockBurst}
+        onDone={() => setUnlockBurst(false)}
+      />
       {/* ── Tier banner ─────────────────────────────────────────────────── */}
       <div className="rounded-lg border border-border bg-card px-4 py-3">
         {tier.loading ? (
