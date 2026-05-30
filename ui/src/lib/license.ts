@@ -33,9 +33,9 @@ export const LICENSE_PUBLIC_KEY_BASE64 =
 
 /** Expected JWT issuer. Locked. */
 const ISSUER = "conan.sh";
-/** This build's accepted editions. v0 builds accept v0 licenses; future v1
- *  builds will accept v1, and MAY accept v0 for a deprecation window. */
-const ACCEPTED_EDITIONS = new Set<string>(["v0"]);
+/** This build's accepted editions. v1.x builds accept v1 licenses; future
+ *  v2.x builds will accept v2, and MAY accept v1 for a grandfathering window. */
+const ACCEPTED_EDITIONS = new Set<string>(["v1"]);
 
 /** Parsed + validated license claims. */
 export interface VerifiedLicense {
