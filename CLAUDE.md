@@ -166,8 +166,77 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 - **`docs/v4.7-update-design.md`** — Tauri-plugin-updater + minisign
   signing + Cloudflare R2 hosting.
 - **`docs/tauri-desktop.md`** — Developer-ID sign + notarize path for
-  distribution; `CI=true npm run tauri:build` headless-DMG note.
+  distribution; `npm run release` is the locked end-to-end flow
+  (sign + notarize + staple); `CI=true npm run tauri:build` headless-DMG note.
 - **`docs/sidecar.md`** — sidecar build internals (relocatable C launcher
   + `runtime/` tree with Node and the native addons as real files).
 - **`docs/global-hooks.md`** — global `~/.claude` hook setup so any
   `claude` run anywhere self-reports.
+
+## v0.1 → v1.0 launch progress (as of 2026-05-29 night)
+
+**Decided + locked.** Production domain `conan.sh`; first public release
+is `1.0.0` (skipping the v0.x semver); JWT `edition = "v1"`;
+`ACCEPTED_EDITIONS = {"v1"}`. License is **$39 one-time, lifetime 1.x,**
+no trial, no subscription, no per-device limit, day-one paid. Polar.sh
+is the Merchant of Record. Org slug `whatmatters`, product name
+`Conan Premium`. See [docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md)
+§1 + §5 + §11 for the full table.
+
+**Built + working.**
+- ✅ Developer ID signing + notarization end-to-end via `npm run release`
+  (Apple Developer Team `4P6GX328VY`, identity in login Keychain,
+  app-specific password under `notarytool` keychain profile `conan-notarize`).
+  Produces a Gatekeeper-accepted `.app` + `.dmg`; `spctl --assess` reports
+  `source=Notarized Developer ID`.
+- ✅ Ed25519 keypair generated; **private key only in 1Password + Vercel
+  env**; public key bundled into [ui/src/lib/license.ts](ui/src/lib/license.ts).
+- ✅ `conan-license/` separate repo
+  ([github.com/thewhatmatters/conan-license](https://github.com/thewhatmatters/conan-license))
+  deployed to Vercel at **`https://license.conan.sh`**. Upstash KV
+  attached, `KV_*` env vars auto-injected.
+- ✅ End-to-end loop verified: issuer signs JWT → Conan UI's
+  `verifyLicense()` returns `{ok: true}` with all 7 claims round-tripping.
+  Synthetic webhook test (`scripts/test-webhook.mjs` in conan-license)
+  proves Polar HMAC verify + JWT mint + KV write all work in production.
+- ✅ Polar org `WhatMatters` configured; product `Conan Premium` ($39
+  one-time) exists; webhook → `license.conan.sh/api/polar-webhook` with
+  `order.created` + `order.refunded`; Organization Access Token created
+  in **Settings → Preferences → Developers** section (scroll to bottom).
+
+**Resume here (in order):**
+1. **Polar Go Live + Stripe Connect onboarding** (~15–30 min KYC).
+   Polar refuses test payments until this is done — that's what blocked
+   the first real sandbox sale. Click "Go Live" banner in the Polar
+   dashboard, walk through Stripe Identity verification, bank info,
+   tax info. Required for **any** transaction (test or real).
+2. **Real test sale via the checkout link** — `4242 4242 4242 4242`,
+   any future expiry. Confirm: Vercel logs show
+   `issued license lic_… for order …`; receipt email arrives.
+3. **Customize Polar receipt email template** to embed
+   `{{order.metadata.license}}` so the JWT lands in the customer's inbox.
+4. **Generate the actual checkout link** (skipped tonight — there's no
+   live checkout link yet for the in-app "Buy Premium" button).
+   Save the URL for US-106.
+5. **US-101** — `useTier()` hook + license loader/saver
+   (`~/Library/Application Support/so.whatmatters.conan/license.jwt`).
+6. **US-106** — Settings ▸ License paste tab + Buy button → `open()`
+   the Polar checkout URL.
+7. **US-102/103/104/105** — per-surface gating (Timeline 7d cap,
+   Pulse range cap, Skills last-fired cap, MCP watchdog).
+8. **Tag `v1.0.0`**, run `npm run release`, attach `Conan_1.0.0_aarch64.dmg`
+   to a GitHub Release, point conan.sh's Buy button at the Polar link.
+
+**Don't lose:** the webhook signing secret was pasted in the
+2026-05-29 chat transcript. Rotate it in Polar → Settings → Webhooks
+before public launch (Settings → Regenerate Secret → update
+`POLAR_WEBHOOK_SECRET` in Vercel → redeploy). Same applies to the
+license private key — rotate before the first real sale if you want
+to be discipline-clean about it.
+
+**Anti-footgun:** scripts/release.mjs scrubs `.claude/.data/.DS_Store`
+out of the .app bundle before notarization to dodge a known race where
+a running Conan.app writes to its own Resources directory between sign
+and notarize. If notarization complains about "a sealed resource is
+missing or invalid", look for stray files in
+`Conan.app/Contents/Resources/`.
