@@ -324,6 +324,213 @@ export function readAssistantTurnUsages(
  * no usage is found, so the UI can fall back to the session's stored
  * context_tokens.
  */
+/* ───── Session-block derivation (replaces pty /usage modal inject) ──────
+ *
+ * The /usage TUI's Session block (cost · API+wall durations · token usage)
+ * is per-conversation data — every number in it already exists in the
+ * JSONL transcript Claude Code writes for every assistant turn. We derive
+ * the block from the transcript so the HUD's "refresh /usage" button
+ * doesn't need to inject /usage into the live pty (the inject pops a
+ * modal the user has to ESC out of, and programmatic ESC doesn't reach
+ * the TUI's input handler — see 8ee2dfe for the failed dismiss attempt).
+ *
+ * Phase 1 coverage: cost (computed from per-model token totals against the
+ * pricing table), wall duration (first → last assistant ts), per-model
+ * token breakdown. linesAdded/linesRemoved and apiDurationMs are nulled
+ * pending Phase 2 — those need tool-call-payload diffing for code changes
+ * and per-turn API timing extraction, which the transcript doesn't carry
+ * directly.
+ *
+ * Updated pricing reflects the current /pricing public table (anthropic.com
+ * as of 2026). Refresh when models / pricing change.
+ */
+
+/** Per-1M-token USD prices for the models we know about. Cache reads are
+ *  ~10% of input cost; cache writes (creation) are ~25% MORE than input. */
+const MODEL_PRICING: Record<string, { in: number; out: number }> = {
+  "claude-opus-4": { in: 15, out: 75 },
+  "claude-opus-4-5": { in: 15, out: 75 },
+  "claude-opus-4-6": { in: 15, out: 75 },
+  "claude-opus-4-7": { in: 15, out: 75 },
+  "claude-opus-4-8": { in: 15, out: 75 },
+  "claude-sonnet-4": { in: 3, out: 15 },
+  "claude-sonnet-4-5": { in: 3, out: 15 },
+  "claude-sonnet-4-6": { in: 3, out: 15 },
+  "claude-haiku-4-5": { in: 1, out: 5 },
+};
+/** Fall back to Opus pricing when an unknown model lands — better to
+ *  over-attribute than under-attribute when the table needs updating. */
+const FALLBACK_PRICING = { in: 15, out: 75 };
+
+function priceFor(model: string | null): { in: number; out: number } {
+  if (!model) return FALLBACK_PRICING;
+  // Strip the optional "[1m]" suffix some transcripts attach to extended-
+  // context variants; pricing is the same across context tiers.
+  const key = baseModel(model);
+  return MODEL_PRICING[key] ?? FALLBACK_PRICING;
+}
+
+export interface DerivedSessionUsage {
+  totalCostUsd: number;
+  apiDurationMs: number | null;
+  wallDurationMs: number | null;
+  linesAdded: number | null;
+  linesRemoved: number | null;
+  /** Matches src/usage/probe.ts's ModelUsage shape so the gateway can plug
+   *  this directly into the existing /api/claude/usage liveUsage envelope
+   *  without a re-shape step at the route. */
+  byModel: {
+    model: string | null;
+    modelDisplay: string | null;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  }[];
+}
+
+/** Mirror of probe.ts's modelDisplayFor, kept here so the transcript module
+ *  doesn't have to depend on the probe (which depends on node-pty + heavy
+ *  setup). Same regex; same output. */
+function modelDisplayFor(slug: string): string | null {
+  const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/i.exec(slug);
+  if (!m) return null;
+  const fam = (m[1] ?? "").toLowerCase();
+  const family = fam.charAt(0).toUpperCase() + fam.slice(1);
+  const version = m[3] ? `${m[2]}.${m[3]}` : m[2] ?? "";
+  return `Claude ${family} ${version}`.trim();
+}
+
+/**
+ * Walk the JSONL transcript and aggregate per-model token totals + USD cost
+ * + wall duration. Returns null when no transcript or no usage data.
+ *
+ * Cost math per assistant turn:
+ *   input          @ MODEL_PRICING[model].in   per-million
+ *   output         @ MODEL_PRICING[model].out  per-million
+ *   cache_read     @ 0.10 × in                 per-million
+ *   cache_creation @ 1.25 × in                 per-million
+ * Summed across every assistant turn that carries a usage block.
+ *
+ * Cheap enough to run on every widget fetch — the transcript stream is
+ * already memory-resident for context/usage parsing, and we walk it once.
+ */
+export function deriveSessionUsage(
+  sessionId: string,
+  cwd?: string | null,
+): DerivedSessionUsage | null {
+  const file = transcriptPath(sessionId, cwd);
+  if (!file) return null;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+
+  // Aggregate by model so per-model breakdown survives the walk. Tokens are
+  // summed into the bucket keyed by the assistant turn's model field; cost
+  // is computed per turn against that model's price table entry.
+  const byModelMap = new Map<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      costUsd: number;
+    }
+  >();
+  let firstTs: number | null = null;
+  let lastTs: number | null = null;
+
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (o.type !== "assistant") continue;
+    const ts = parseTs(o.timestamp);
+    if (ts !== null) {
+      if (firstTs === null || ts < firstTs) firstTs = ts;
+      if (lastTs === null || ts > lastTs) lastTs = ts;
+    }
+    const msg = (o.message ?? {}) as Record<string, unknown>;
+    const usage = (msg.usage ?? null) as Record<string, unknown> | null;
+    if (!usage) continue;
+
+    const inputTokens = usageInt(usage.input_tokens);
+    const outputTokens = usageInt(usage.output_tokens);
+    const cacheReadTokens = usageInt(usage.cache_read_input_tokens);
+    const cacheWriteTokens = usageInt(usage.cache_creation_input_tokens);
+    if (
+      inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens === 0
+    ) {
+      continue;
+    }
+
+    const model = typeof msg.model === "string" ? msg.model : null;
+    const price = priceFor(model);
+    // Pricing is per-million; tokens come in as raw counts.
+    const M = 1_000_000;
+    const turnCost =
+      (inputTokens * price.in) / M +
+      (outputTokens * price.out) / M +
+      (cacheReadTokens * price.in * 0.1) / M +
+      (cacheWriteTokens * price.in * 1.25) / M;
+
+    const key = model ?? "(unknown)";
+    const cur = byModelMap.get(key) ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 0,
+    };
+    cur.inputTokens += inputTokens;
+    cur.outputTokens += outputTokens;
+    cur.cacheReadTokens += cacheReadTokens;
+    cur.cacheWriteTokens += cacheWriteTokens;
+    cur.costUsd += turnCost;
+    byModelMap.set(key, cur);
+  }
+
+  if (byModelMap.size === 0) return null;
+
+  let totalCostUsd = 0;
+  const byModel: DerivedSessionUsage["byModel"] = [];
+  for (const [model, agg] of byModelMap.entries()) {
+    totalCostUsd += agg.costUsd;
+    const slug = model === "(unknown)" ? null : model;
+    byModel.push({
+      model: slug,
+      modelDisplay: slug ? modelDisplayFor(slug) : null,
+      inputTokens: agg.inputTokens,
+      outputTokens: agg.outputTokens,
+      cacheReadTokens: agg.cacheReadTokens,
+      cacheWriteTokens: agg.cacheWriteTokens,
+    });
+  }
+  // Sort heaviest-spending model first so the UI lists Opus before Haiku.
+  byModel.sort(
+    (a, b) =>
+      b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+  );
+
+  return {
+    totalCostUsd,
+    apiDurationMs: null,
+    wallDurationMs:
+      firstTs !== null && lastTs !== null ? lastTs - firstTs : null,
+    linesAdded: null,
+    linesRemoved: null,
+    byModel,
+  };
+}
+
 export function readContextUsage(
   sessionId: string,
   cwd?: string | null,

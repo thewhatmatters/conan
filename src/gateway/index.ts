@@ -40,7 +40,7 @@ import { readUserThemes } from "../themes/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
 import { readTimeline } from "../timeline/index.js";
-import { readAssistantTurnUsages } from "../transcript/index.js";
+import { readAssistantTurnUsages, deriveSessionUsage } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
 import { getRadio, getStations, setRadio } from "../radio/index.js";
 import { detectClaude } from "../doctor/claude.js";
@@ -672,13 +672,23 @@ app.post("/api/claude/context/autorefresh", (req, res) => {
   res.json({ ok: true, enabled: getContextAutoRefresh() });
 });
 
-// On-demand /usage refresh (US-010): inject `/usage` into the session's live pty
-// so its rendered frame (Session block + 3 windows) is captured passively and
-// surfaces in the next usage fetch. Token-gated (it types into a terminal).
-// {ok:false} when no live pty is correlated — the widget keeps the probe windows.
+// On-demand /usage refresh: prior versions injected `/usage` into the live
+// pty so its modal would be captured passively. Problem: the modal stays
+// open until the user presses ESC, and programmatic ESC doesn't reach the
+// TUI's input handler (see 8ee2dfe). The Session block is fully derivable
+// from the JSONL transcript anyway — see deriveSessionUsage in
+// src/transcript/index.ts — so the refresh now just broadcasts a
+// `usage-captured` event and lets the HUD re-fetch /api/claude/usage,
+// which computes the fresh session block server-side. No modal, no ESC,
+// no interruption of the user's terminal.
+//
+// `injectUsageRefresh` is still exported for the rate-limit-windows path
+// (the 5h/7d "% used" that the probe handles separately); this route just
+// stops triggering it.
 app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
   if (!authed(req, res)) return;
-  res.json({ ok: injectUsageRefresh(req.params.id) });
+  broadcast({ type: "usage-captured", sessionId: req.params.id });
+  res.json({ ok: true });
 });
 
 // Context-pressure compact (US-013): inject `/handoff` into the session's live
@@ -716,7 +726,40 @@ app.get("/api/claude/usage", async (req, res) => {
     planUtilization = await maybeProbe();
   }
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
-  const liveUsage = sessionId ? getCapturedUsage(sessionId) : null;
+  const captured = sessionId ? getCapturedUsage(sessionId) : null;
+  // Prefer derived-from-transcript Session block when available — it's
+  // always fresh (the transcript writes after every assistant turn), so
+  // the HUD refresh no longer needs to pop the /usage modal in the live
+  // pty just to capture data we already have on disk. Fall back to the
+  // captured frame for sessions whose transcript isn't readable (rare).
+  let liveUsage = captured;
+  if (sessionId) {
+    const row = getDb()
+      .prepare("SELECT cwd FROM session WHERE id = ?")
+      .get(sessionId) as { cwd?: string } | undefined;
+    const derived = deriveSessionUsage(sessionId, row?.cwd ?? null);
+    if (derived) {
+      liveUsage = {
+        // Empty-window stand-ins so the existing UI shape is preserved;
+        // the rate-limit windows still come from planUtilization above.
+        fiveHour: captured?.fiveHour ?? null,
+        sevenDay: captured?.sevenDay ?? null,
+        sevenDaySonnet: captured?.sevenDaySonnet ?? null,
+        status: captured?.status ?? "ok",
+        insights: captured?.insights ?? [],
+        skills: captured?.skills ?? [],
+        capturedAt: Date.now(),
+        session: {
+          totalCostUsd: derived.totalCostUsd,
+          apiDurationMs: derived.apiDurationMs,
+          wallDurationMs: derived.wallDurationMs,
+          linesAdded: derived.linesAdded,
+          linesRemoved: derived.linesRemoved,
+          byModel: derived.byModel,
+        },
+      };
+    }
+  }
   res.json({ ...base, planUtilization, liveUsage });
 });
 
