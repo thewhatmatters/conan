@@ -79,6 +79,18 @@ async function loadProcess(): Promise<typeof import("@tauri-apps/plugin-process"
 const DEMO_VERSION = "1.0.1";
 const DEMO_TOTAL_BYTES = 64 * 1024 * 1024; // 64MB simulated download size
 
+/** True when the updater error means "no release to update to" (a 404 on the
+ *  releases endpoint, or no valid release JSON) rather than a real failure.
+ *  Treated as "up to date" → silent. Tauri's updater throws
+ *  "Could not fetch a valid release JSON from the remote" for the 404 case;
+ *  offline/DNS/5xx throw distinct network messages that fall through to the
+ *  error toast. */
+function isNoReleaseAvailable(message: string): boolean {
+  return /valid release json|releases?\/latest|not found|\b404\b|no (?:published )?release/i.test(
+    message,
+  );
+}
+
 export default function UpdateBanner() {
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
 
@@ -100,10 +112,18 @@ export default function UpdateBanner() {
         notes: update.body ?? null,
       });
     } catch (e) {
-      setState({
-        kind: "error",
-        message: e instanceof Error ? e.message : String(e),
-      });
+      const message = e instanceof Error ? e.message : String(e);
+      // A 404 / "no valid release JSON" from the endpoint means there's simply
+      // no published release to update to (pre-launch, or the GitHub Release
+      // isn't cut yet) — that's "you're up to date," not a failure. Stay silent
+      // rather than nag with an error toast on every launch. Genuine network
+      // failures (offline, DNS, 5xx) still surface so the user knows the check
+      // couldn't run.
+      if (isNoReleaseAvailable(message)) {
+        setState({ kind: "idle" });
+        return;
+      }
+      setState({ kind: "error", message });
     }
   }, []);
 
@@ -351,13 +371,22 @@ export default function UpdateBanner() {
               </button>
           )}
           {state.kind === "error" && (
-            <button
-              type="button"
-              onClick={checkOnce}
-              className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              Retry
-            </button>
+            <div className="flex shrink-0 flex-col gap-1">
+              <button
+                type="button"
+                onClick={checkOnce}
+                className="rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => setState({ kind: "idle" })}
+                className="rounded-md px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
           )}
         </div>
 
