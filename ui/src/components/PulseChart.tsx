@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
+import conanIcon from "../assets/conan-icon.png";
 import type { PulseSeries, PulseCategory } from "../hooks/usePulse.ts";
 import { AreaChart } from "./charts/AreaChart.tsx";
 import type { AvailableChartColorsKeys } from "../lib/chartUtils.ts";
@@ -277,7 +278,18 @@ export default function PulseChart({
         {walled && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
             <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
-              <Lock className="size-5 text-muted-foreground" />
+              {/* Conan icon + lock badge — matches the Timeline upgrade
+                  overlay so the two walls read as one brand moment. */}
+              <div className="relative">
+                <img
+                  src={conanIcon}
+                  alt="Conan"
+                  className="size-10 rounded-md"
+                />
+                <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full border border-border bg-card shadow-sm">
+                  <Lock className="size-3 text-muted-foreground" />
+                </span>
+              </div>
               <div className="flex flex-col items-center gap-0.5">
                 <div className="text-[13px] font-semibold leading-tight text-foreground">
                   Unlock live Pulse
