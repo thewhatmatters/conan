@@ -3,7 +3,10 @@ import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { radioEmbedUrl } from "../lib/gateway.ts";
 import { useTier } from "../hooks/useTier.ts";
-import { startRickroll, stopRickroll } from "../lib/chiptune.ts";
+// `startRickroll` / `stopRickroll` from lib/chiptune.ts is the fallback if
+// the YT-MIDI swap ever stops embedding — re-add the import + the effect
+// from commit 74bb491 when that happens. Kept out of imports here so TS
+// doesn't flag it as unused while the YT path is the active one.
 
 /** Fallback when the gateway hasn't reported its current state yet (first
  *  paint, or the radio API is unavailable). Mirrors src/radio/index.ts's
@@ -12,19 +15,25 @@ const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
 
 /** US-102 easter egg: after N seconds of cumulative play on the Free tier,
- *  Claude Radio is hijacked — the embedded YouTube player pauses, a
- *  Web Audio API chiptune of "Never Gonna Give You Up" kicks on, and the
- *  marquee swaps to a Rick taunt. The override stays sticky for the
- *  session — pause/play can't dodge it — and releases the moment
- *  `useTier()` flips to premium (chiptune stops, YT resumes). Premium
- *  users never see this codepath, which is the whole point.
+ *  Claude Radio swaps to a MIDI rendition of "Never Gonna Give You Up"
+ *  (chosen specifically because YT's IFrame error 150 blocks every
+ *  Rick-Astley-channel upload — small-channel covers don't carry the
+ *  same owner-disabled-embed restriction). The override stays sticky for
+ *  the session — pause/play can't dodge it — and releases the moment
+ *  `useTier()` flips to premium. Premium users never see this codepath,
+ *  which is the whole point.
  *
- *  Why a chiptune instead of swapping the YT videoId: every Rick Astley
- *  upload returns YT IFrame error 150 (owner-disabled embedding) in our
- *  1×1 offscreen player. The chiptune in lib/chiptune.ts synthesizes the
- *  iconic chorus melody with square-wave oscillators — recognizable,
- *  ad-free, never fails to play. */
-const RICK_TITLE = "Never Gonna Give You Up · Premium for real channels";
+ *  Video: "Never Gonna Give You Up - MIDI" by The Music Decomposer
+ *  (https://www.youtube.com/watch?v=r2K1yPbLrWc). The MIDI/chiptune
+ *  aesthetic is also on-theme for an easter egg, so this lands even
+ *  better than the original would have.
+ *
+ *  Chiptune fallback: lib/chiptune.ts is left in place as a Web Audio
+ *  API synth of the chorus — kept around in case this video also gets
+ *  150'd at some point. Wire it up by restoring the rickRolled→chiptune
+ *  effect from commit 74bb491. */
+const RICK_VIDEO_ID = "r2K1yPbLrWc";
+const RICK_TITLE = "Never Gonna Give You Up · Please Upgrade Conan";
 /** Cumulative-play grace before the rickroll kicks in. 5s for testing,
  *  bump to 60_000 (60s) before shipping. */
 const FREE_RADIO_GRACE_MS = 5_000;
@@ -115,32 +124,13 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     }
   }, [isFree, rickRolled]);
 
-  // US-102 audio side: when rickRolled flips on, pause the YT player (so we
-  // don't have dual audio) and start the chiptune; on the flip back
-  // (upgrade), stop the chiptune and resume YT so audio continuity carries
-  // the user across the transition.  The cumulative-play timer only counts
-  // playing time, so whenever rickRolled flips true the user is currently
-  // playing — the resume on cleanup is therefore the right intent.
-  useEffect(() => {
-    if (!rickRolled) return;
-    iframeRef.current?.contentWindow?.postMessage(
-      { source: "conan-radio", action: "pause" },
-      EMBED_ORIGIN,
-    );
-    startRickroll();
-    return () => {
-      stopRickroll();
-      iframeRef.current?.contentWindow?.postMessage(
-        { source: "conan-radio", action: "play" },
-        EMBED_ORIGIN,
-      );
-    };
-  }, [rickRolled]);
+  // (Chiptune-trigger effect from commit 74bb491 lives in git history; the
+  // current YT-MIDI swap should carry the audio on its own. Bring it back
+  // here if r2K1yPbLrWc ever stops embedding.)
 
-  // videoId always rides the gateway value — we never ask YT to load Rick
-  // (it would just 150 anyway). Only the title swaps, and the chiptune
-  // effect below takes over the audio role when rickRolled flips.
-  const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
+  const videoId = rickRolled
+    ? RICK_VIDEO_ID
+    : (radio?.videoId ?? FALLBACK_VIDEO_ID);
   const title = rickRolled ? RICK_TITLE : (radio?.title ?? FALLBACK_TITLE);
 
   // The iframe src is set ONCE (from the first known id) — subsequent swaps go
