@@ -169,6 +169,15 @@ if (!existsSync(UPDATER_PRIVATE_KEY_PATH)) {
       `Then back it up to 1Password.`,
   );
 }
+// IMPORTANT: TAURI_SIGNING_PRIVATE_KEY must be the KEY CONTENTS (base64
+// string), NOT a file path. `tauri build` is lenient and will auto-detect
+// a path that happens to exist; `tauri signer sign` is strict and fails
+// with "Invalid symbol 46, offset 24" (the `.` in the path) when handed a
+// path. Read the file content here once and pass the contents.
+const UPDATER_PRIVATE_KEY_CONTENTS = readFileSync(
+  UPDATER_PRIVATE_KEY_PATH,
+  "utf8",
+);
 
 const signEnv = {
   ...process.env,
@@ -178,8 +187,8 @@ const signEnv = {
   // tauri.conf.json (the public key is bundled there). Tauri's build step
   // signs the auto-generated .app.tar.gz with this when
   // bundle.createUpdaterArtifacts is true; we also pass them through to
-  // the manual re-sign in step 5d after notarization+staple.
-  TAURI_SIGNING_PRIVATE_KEY: UPDATER_PRIVATE_KEY_PATH,
+  // the manual re-sign in step 5a-updater after notarization+staple.
+  TAURI_SIGNING_PRIVATE_KEY: UPDATER_PRIVATE_KEY_CONTENTS,
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: UPDATER_PRIVATE_KEY_PASSWORD,
   // Tauri's bundler reads CI=true for headless DMG (skips AppleScript window
   // styling that hangs without a GUI session).
