@@ -21,7 +21,16 @@ export interface AppMenuActions {
 
 /** Conan's own version, shown in the About box. */
 export const CONAN_VERSION = "0.1.0";
-const ABOUT = { name: "Conan", version: CONAN_VERSION };
+/** AboutMetadata payload for the macOS About dialog (Conan ▸ About Conan).
+ *  Tauri's PredefinedMenuItem.About accepts the full Apple-style AboutDialog
+ *  shape — name, version, copyright, website, authors, credits, license.
+ *  Add fields here to surface them; macOS renders them inline below the
+ *  app icon. */
+const ABOUT = {
+  name: "Conan",
+  version: CONAN_VERSION,
+  copyright: "Copyright © 2026 WhatMatters LLC. All rights reserved.",
+};
 
 /**
  * Build + install the native macOS menu bar (Conan / File / Edit / View / Help)
