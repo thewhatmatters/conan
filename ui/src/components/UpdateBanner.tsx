@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, RefreshCw, X, AlertTriangle } from "lucide-react";
+import { Download, RefreshCw, AlertTriangle } from "lucide-react";
 
 /**
  * Self-update toast — surfaces newer Conan releases via tauri-plugin-updater
@@ -315,14 +315,6 @@ export default function UpdateBanner() {
               </>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setState({ kind: "idle" })}
-            aria-label="Dismiss"
-            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
         </div>
 
         {/* Progress bar — only while downloading + only when content-length
@@ -341,7 +333,7 @@ export default function UpdateBanner() {
         {(state.kind === "available" ||
           state.kind === "ready" ||
           state.kind === "error") && (
-          <div className="flex items-center justify-start gap-1.5">
+          <div className="flex items-center justify-end gap-1.5">
             {state.kind === "available" && (
               <button
                 type="button"
