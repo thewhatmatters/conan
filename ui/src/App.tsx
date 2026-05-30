@@ -52,6 +52,13 @@ export default function App() {
   const hudBottomDock = windowWidth < HUD_BOTTOM_BREAKPOINT;
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // US-102: the Timeline's Upgrade button dispatches `conan:open-settings`
+  // with `{ detail: { tab: "license" } }` so the Free user lands directly on
+  // the paste-your-license surface. Plain ⌘, opens with `undefined` and falls
+  // through to the dialog's default tab (Status).
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    "status" | "config" | "appearance" | "license" | undefined
+  >(undefined);
   // US-023: the full theme set (built-ins + user themes from ~/.conan/themes.json)
   // and the active selection. useThemes registers the user themes into the shared
   // apply store, so selecting one — in the Appearance picker or the View ▸ Theme
@@ -192,8 +199,24 @@ export default function App() {
   // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
   // (same window-event bridge the File items use). Listening here keeps the menu
   // decoupled from React state and lets the browser dev build open it too.
+  // US-102: the event may carry a `{ tab }` detail so the Timeline's Upgrade
+  // button opens directly on the License tab.
   useEffect(() => {
-    const open = () => setSettingsOpen(true);
+    const open = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: string }>).detail;
+      const tab = detail?.tab;
+      if (
+        tab === "status" ||
+        tab === "config" ||
+        tab === "appearance" ||
+        tab === "license"
+      ) {
+        setSettingsInitialTab(tab);
+      } else {
+        setSettingsInitialTab(undefined);
+      }
+      setSettingsOpen(true);
+    };
     window.addEventListener("conan:open-settings", open);
     return () => window.removeEventListener("conan:open-settings", open);
   }, []);
@@ -261,6 +284,7 @@ export default function App() {
         activeThemeId={activeId}
         onSelectTheme={setActiveTheme}
         doctor={doctor}
+        initialTab={settingsInitialTab}
       />
     </div>
   );

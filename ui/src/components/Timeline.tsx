@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Lock } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import type {
   GatewayEvent,
@@ -15,6 +16,40 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip.tsx";
 import { fmtTokens } from "./Widgets.tsx";
+import { useTier } from "../hooks/useTier.ts";
+
+/* ───── US-102: Free-tier gating constants ─────────────────────────────────
+ * The Free tier sees:
+ *   - The latest 50 rows of basic hook event types only
+ *     (PROMPT, PRETOOL, POSTTOOL, STOP, NOTIF, SESSION; no token chips,
+ *      no click-to-expand POSTTOOL payloads, no Skills/Plan/Loop/Build rows).
+ *   - Rows beyond the 50th are blurred behind a sticky "Upgrade" overlay.
+ * Premium reveals SKILL/SKILL?/PLAN/LOOP/BUILD rows, unlimited rows, token
+ * chips on STOP, click-to-expand POSTTOOL payloads, and Plan/Loop/Build
+ * filter chips. See docs/v4.7-licensing-design.md §12 for the full matrix.
+ */
+const FREE_VISIBLE_LIMIT = 50;
+/** A free-tier placeholder slot for a Premium-only row, kept in its original
+ *  position so the chronology stays honest — every entry shows up, but the
+ *  Premium ones are masked as "[Premium]". */
+type FreeStubRow = {
+  kind: "free-stub";
+  ts: number;
+  /** Original row's pill label (e.g. "SKILL", "PLAN"), used in the masked
+   *  surface text — "[Premium] · SKILL". */
+  origPill: string;
+  /** Stable key derived from the masked row so React reuses the same DOM
+   *  node across re-renders. */
+  origKey: string;
+};
+
+/** Trigger the Settings dialog to open on the License tab. The App shell
+ *  listens for `conan:open-settings` and reads `detail.tab`. */
+function openLicenseSettings(): void {
+  window.dispatchEvent(
+    new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
+  );
+}
 
 // Per-terminal Timeline split (US-004 v4.5) — the live replacement for
 // TimelineMock.tsx. Mounts inside the active terminal pane, fetches the
@@ -380,6 +415,249 @@ function todoBadgeColor(status: PlanItem["status"]): string {
   return "text-muted-foreground/60";
 }
 
+/**
+ * Render one Timeline row. Pulled out of the inline `.map` (where it lived
+ * before US-102) so the same renderer powers both the unlocked top-of-list
+ * and the blurred Free-tier tail.
+ *
+ * `consideredByPrompt` is the grouped skills-considered map; passed in
+ * rather than recomputed per row.
+ *
+ * `isFree` gates the Premium-only bits inside an otherwise-visible row:
+ *   - STOP rows hide their +tokens chip
+ *   - PROMPT rows hide their nested "Skills considered" card
+ * The Premium-only row kinds (SKILL / SKILL? / PLAN / LOOP / BUILD) are
+ * already swapped for `free-stub` placeholders upstream, so they hit the
+ * `free-stub` branch here.
+ */
+function renderTimelineRow(
+  row: TimelineRow | FreeStubRow,
+  opts: {
+    consideredByPrompt: Map<
+      number,
+      { name: string; fired: boolean; reason: string }[]
+    >;
+    isFree: boolean;
+  },
+) {
+  // US-102 Free-tier placeholder: muted dot, muted "[Premium]" pill, blank
+  // detail row. No interactive affordance — the upgrade CTA lives in the
+  // sticky overlay at the bottom (and in Settings ▸ License).
+  if (row.kind === "free-stub") {
+    return (
+      <li
+        key={row.origKey}
+        className="group relative flex flex-col px-4 py-1.5"
+      >
+        <div className="flex items-center gap-3">
+          <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/60">
+            {formatTime(row.ts)}
+          </span>
+          <span className="relative flex w-3 shrink-0 justify-center">
+            <span className="size-2 shrink-0 translate-x-px rounded-full bg-muted-foreground/30 ring-2 ring-card" />
+          </span>
+          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+            <span className="inline-flex items-center rounded bg-muted px-1.5 py-px text-[9px] font-semibold tracking-wider text-muted-foreground/70">
+              {row.origPill}
+            </span>
+            <span className="inline-flex items-center gap-1 truncate text-[12px] text-muted-foreground/70">
+              <Lock className="size-3" />
+              Premium
+            </span>
+          </div>
+        </div>
+      </li>
+    );
+  }
+
+  const color = kindColor(row.kind);
+  const considered =
+    row.kind === "hook" && row.subtype === "PROMPT"
+      ? opts.consideredByPrompt.get(row.eventId)
+      : undefined;
+  const firedCount = considered?.filter((s) => s.fired).length ?? 0;
+  return (
+    <li
+      key={rowKey(row)}
+      className="group relative flex flex-col px-4 py-1.5 hover:bg-muted/40"
+    >
+      {/* Title sub-row — `items-center` does the alignment work the row
+          template used to fake with hand-tuned paddings. Time, dot, and
+          the pill+title flex are all vertically centered. Detail/reason/
+          plan sub-rows are siblings inside the flex-col li, indented
+          (`pl-[100px]`) to land under the content column. */}
+      <div className="flex items-center gap-3">
+        <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+          {formatTime(row.ts)}
+        </span>
+        <span className="relative flex w-3 shrink-0 justify-center">
+          <span
+            className={
+              "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
+              color.dot
+            }
+          />
+        </span>
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span
+            className={
+              "inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold tracking-wider " +
+              color.pillBg +
+              " " +
+              color.pillFg
+            }
+          >
+            {rowPillLabel(row)}
+          </span>
+          <span className="truncate text-[12px] text-foreground">
+            {row.kind === "skill-fired"
+              ? `${row.skill} fired`
+              : row.kind === "skill-considered"
+              ? `${row.skill} considered`
+              : row.kind === "plan"
+              ? planRowTitle(row)
+              : row.title}
+          </span>
+          {/* Per-turn token-burn badge (STOP rows only). Pinned to the
+              row's right edge so it reads like a column, tooltip explains
+              what the number sums. Hidden for Free (US-102) — the
+              token-cost story is Premium. */}
+          {!opts.isFree &&
+            row.kind === "hook" &&
+            row.subtype === "STOP" &&
+            row.tokens != null && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="ml-auto shrink-0 cursor-help tabular-nums text-[10px] text-muted-foreground">
+                    +{fmtTokens(row.tokens)}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="left">
+                  Turn total: input + cache + output
+                </TooltipContent>
+              </Tooltip>
+            )}
+        </div>
+      </div>
+      {(row.kind === "hook" ||
+        row.kind === "build" ||
+        row.kind === "loop") &&
+        row.detail && (
+          <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
+            {row.detail}
+          </div>
+        )}
+      {row.kind === "skill-considered" && (
+        <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
+          {row.reason}
+        </div>
+      )}
+      {row.kind === "plan" &&
+        row.subtype === "todo-write" &&
+        row.items &&
+        row.items.length > 0 && (
+          <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
+            <ul className="flex flex-col gap-0.5">
+              {row.items.map((it, i) => (
+                <li
+                  key={i}
+                  className="flex items-baseline gap-2 text-[11px]"
+                >
+                  <span
+                    className={
+                      "w-3 shrink-0 text-center font-bold " +
+                      todoBadgeColor(it.status)
+                    }
+                  >
+                    {todoBadge(it.status)}
+                  </span>
+                  <span
+                    className={
+                      "truncate " +
+                      (it.status === "completed"
+                        ? "text-muted-foreground line-through"
+                        : it.status === "in_progress"
+                        ? "font-medium text-foreground"
+                        : "text-foreground")
+                    }
+                  >
+                    {it.status === "in_progress" && it.activeForm
+                      ? it.activeForm
+                      : it.content}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      {row.kind === "plan" &&
+        row.subtype === "plan-mode" &&
+        row.plan && (
+          <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
+              {row.plan}
+            </pre>
+          </div>
+        )}
+      {/* Nested "Skills considered" card under PROMPT — Premium-only (the
+          BM25 heuristic is exactly the kind of insight Free doesn't see). */}
+      {!opts.isFree && considered && considered.length > 0 && (
+        <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span>
+              Skills considered ({considered.length}) ·{" "}
+              <span className="text-chart-1">fired {firedCount}</span>
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex cursor-help items-center rounded border border-border bg-muted px-1.5 py-px text-[9px] font-medium normal-case tracking-normal text-muted-foreground"
+                >
+                  Heuristic match
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-left text-[11px] normal-case tracking-normal">
+                These scores come from Conan's BM25 match against each
+                skill's description — they're a heuristic, not Claude's
+                actual internal skill scoring (which isn't exposed).
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <ul className="flex flex-col gap-0.5">
+            {considered.map((s) => (
+              <li
+                key={s.name}
+                className="flex items-baseline gap-2 text-[11px]"
+              >
+                <span
+                  className={
+                    "w-3 shrink-0 text-center font-bold " +
+                    (s.fired ? "text-chart-1" : "text-muted-foreground/60")
+                  }
+                >
+                  {s.fired ? "✓" : "○"}
+                </span>
+                <span
+                  className={
+                    "w-36 shrink-0 truncate font-mono text-[11px] " +
+                    (s.fired ? "text-foreground" : "text-muted-foreground")
+                  }
+                >
+                  {s.name}
+                </span>
+                <span className="truncate text-muted-foreground">
+                  {s.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function FilterChip({
   label,
   active,
@@ -419,6 +697,8 @@ export default function Timeline({
   lastPlan,
   tasks,
 }: TimelineProps) {
+  const tier = useTier();
+  const isFree = tier.tier === "free";
   const [rows, setRows] = useState<TimelineRow[]>([]);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [newCount, setNewCount] = useState(0);
@@ -623,6 +903,36 @@ export default function Timeline({
     });
   }, [freshRows, filters]);
 
+  /* US-102: For Free, swap Premium-only rows (SKILL fired, SKILL? considered,
+   * PLAN, LOOP, BUILD) with masked stubs in their original position. The
+   * chronology stays honest — every entry shows up — but the Premium ones
+   * read as "[Premium] · KIND" placeholders that nudge upgrade.  */
+  const renderRows = useMemo<(TimelineRow | FreeStubRow)[]>(() => {
+    if (!isFree) return visibleRows;
+    return visibleRows.map<TimelineRow | FreeStubRow>((r) => {
+      if (
+        r.kind === "skill-fired" ||
+        r.kind === "skill-considered" ||
+        r.kind === "plan" ||
+        r.kind === "loop" ||
+        r.kind === "build"
+      ) {
+        return {
+          kind: "free-stub",
+          ts: r.ts,
+          origPill: rowPillLabel(r),
+          origKey: rowKey(r),
+        };
+      }
+      return r;
+    });
+  }, [visibleRows, isFree]);
+  /* Split point — first 50 render normally, the rest go behind the blur. The
+   *  panel still scrolls so the user feels the depth; the blurred mass with
+   *  the lock overlay is the affordance. */
+  const freeUnlockedRows = isFree ? renderRows.slice(0, FREE_VISIBLE_LIMIT) : renderRows;
+  const freeBlurredRows = isFree ? renderRows.slice(FREE_VISIBLE_LIMIT) : [];
+
   const toggleFilter = useCallback((bucket: Filter) => {
     setFilters((prev) => {
       const next = new Set(prev);
@@ -698,28 +1008,31 @@ export default function Timeline({
               onClick={() => toggleFilter("hooks")}
             />
           )}
-          {bucketCounts.skills > 0 && (
+          {/* US-102: Skills / Plan / Loop / Build chips are Premium. Free sees
+              only the Hooks chip — the other event kinds are masked into
+              "[Premium]" stubs below, with no filter affordance. */}
+          {!isFree && bucketCounts.skills > 0 && (
             <FilterChip
               label="Skills"
               active={filters.has("skills")}
               onClick={() => toggleFilter("skills")}
             />
           )}
-          {bucketCounts.plan > 0 && (
+          {!isFree && bucketCounts.plan > 0 && (
             <FilterChip
               label="Plan"
               active={filters.has("plan")}
               onClick={() => toggleFilter("plan")}
             />
           )}
-          {bucketCounts.loop > 0 && (
+          {!isFree && bucketCounts.loop > 0 && (
             <FilterChip
               label="Loop"
               active={filters.has("loop")}
               onClick={() => toggleFilter("loop")}
             />
           )}
-          {bucketCounts.build > 0 && (
+          {!isFree && bucketCounts.build > 0 && (
             <FilterChip
               label="Build"
               active={filters.has("build")}
@@ -743,7 +1056,7 @@ export default function Timeline({
             This terminal has no Claude session yet — the timeline fills as soon
             as Claude Code reports a hook event.
           </div>
-        ) : visibleRows.length === 0 ? (
+        ) : renderRows.length === 0 ? (
           <div className="px-4 py-6 text-center text-[11px] text-muted-foreground">
             No activity yet for this terminal — the timeline fills as Claude Code
             emits hook events.
@@ -758,199 +1071,51 @@ export default function Timeline({
                 aria-hidden
                 className="absolute bottom-0 left-[98px] top-0 w-px bg-border"
               />
-              {visibleRows.map((row) => {
-                const color = kindColor(row.kind);
-                const considered =
-                  row.kind === "hook" && row.subtype === "PROMPT"
-                    ? consideredByPrompt.get(row.eventId)
-                    : undefined;
-                const firedCount = considered?.filter((s) => s.fired).length ?? 0;
-                return (
-                  <li
-                    key={rowKey(row)}
-                    className="group relative flex flex-col px-4 py-1.5 hover:bg-muted/40"
-                  >
-                    {/* Title sub-row — `items-center` does the alignment work
-                        the row template used to fake with hand-tuned paddings.
-                        Time, dot, and the pill+title flex are all vertically
-                        centered on the row's height. The detail/reason/plan
-                        sub-rows below are siblings inside the flex-col li,
-                        indented (`pl-[100px]`) to land under the content
-                        column — math: w-16 (64) + gap-3 (12) + w-3 (12) +
-                        gap-3 (12) = 100px from the li's content-area edge. */}
-                    <div className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
-                        {formatTime(row.ts)}
-                      </span>
-                      <span className="relative flex w-3 shrink-0 justify-center">
-                        <span
-                          className={
-                            "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
-                            color.dot
-                          }
-                        />
-                      </span>
-                      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                        <span
-                          className={
-                            "inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold tracking-wider " +
-                            color.pillBg +
-                            " " +
-                            color.pillFg
-                          }
-                        >
-                          {rowPillLabel(row)}
-                        </span>
-                        <span className="truncate text-[12px] text-foreground">
-                          {row.kind === "skill-fired"
-                            ? `${row.skill} fired`
-                            : row.kind === "skill-considered"
-                            ? `${row.skill} considered`
-                            : row.kind === "plan"
-                            ? planRowTitle(row)
-                            : row.title}
-                        </span>
-                        {/* Per-turn token-burn badge (STOP rows only). Pinned
-                            to the row's right edge so it reads like a column,
-                            tooltip explains what the number sums. */}
-                        {row.kind === "hook" &&
-                          row.subtype === "STOP" &&
-                          row.tokens != null && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="ml-auto shrink-0 cursor-help tabular-nums text-[10px] text-muted-foreground">
-                                  +{fmtTokens(row.tokens)}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                Turn total: input + cache + output
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                      </div>
-                    </div>
-                    {(row.kind === "hook" ||
-                      row.kind === "build" ||
-                      row.kind === "loop") &&
-                      row.detail && (
-                        <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
-                          {row.detail}
-                        </div>
-                      )}
-                    {row.kind === "skill-considered" && (
-                      <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
-                        {row.reason}
-                      </div>
-                    )}
-                    {row.kind === "plan" &&
-                      row.subtype === "todo-write" &&
-                      row.items &&
-                      row.items.length > 0 && (
-                        <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
-                            <ul className="flex flex-col gap-0.5">
-                              {row.items.map((it, i) => (
-                                <li
-                                  key={i}
-                                  className="flex items-baseline gap-2 text-[11px]"
-                                >
-                                  <span
-                                    className={
-                                      "w-3 shrink-0 text-center font-bold " +
-                                      todoBadgeColor(it.status)
-                                    }
-                                  >
-                                    {todoBadge(it.status)}
-                                  </span>
-                                  <span
-                                    className={
-                                      "truncate " +
-                                      (it.status === "completed"
-                                        ? "text-muted-foreground line-through"
-                                        : it.status === "in_progress"
-                                        ? "font-medium text-foreground"
-                                        : "text-foreground")
-                                    }
-                                  >
-                                    {it.status === "in_progress" && it.activeForm
-                                      ? it.activeForm
-                                      : it.content}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                    {row.kind === "plan" &&
-                      row.subtype === "plan-mode" &&
-                      row.plan && (
-                        <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
-                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground">
-                            {row.plan}
-                          </pre>
-                        </div>
-                      )}
-                    {considered && considered.length > 0 && (
-                      <div className="ml-[100px] mt-1.5 rounded-md border border-border bg-background/40 p-2">
-                          <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                            <span>
-                              Skills considered ({considered.length}) ·{" "}
-                              <span className="text-chart-1">fired {firedCount}</span>
-                            </span>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  tabIndex={0}
-                                  className="inline-flex cursor-help items-center rounded border border-border bg-muted px-1.5 py-px text-[9px] font-medium normal-case tracking-normal text-muted-foreground"
-                                >
-                                  Heuristic match
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-xs text-left text-[11px] normal-case tracking-normal">
-                                These scores come from Conan's BM25 match
-                                against each skill's description — they're a
-                                heuristic, not Claude's actual internal skill
-                                scoring (which isn't exposed).
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                          <ul className="flex flex-col gap-0.5">
-                            {considered.map((s) => (
-                              <li
-                                key={s.name}
-                                className="flex items-baseline gap-2 text-[11px]"
-                              >
-                                <span
-                                  className={
-                                    "w-3 shrink-0 text-center font-bold " +
-                                    (s.fired
-                                      ? "text-chart-1"
-                                      : "text-muted-foreground/60")
-                                  }
-                                >
-                                  {s.fired ? "✓" : "○"}
-                                </span>
-                                <span
-                                  className={
-                                    "w-36 shrink-0 truncate font-mono text-[11px] " +
-                                    (s.fired
-                                      ? "text-foreground"
-                                      : "text-muted-foreground")
-                                  }
-                                >
-                                  {s.name}
-                                </span>
-                                <span className="truncate text-muted-foreground">
-                                  {s.reason}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                  </li>
-                );
-              })}
+              {freeUnlockedRows.map((row) => renderTimelineRow(row, {
+                consideredByPrompt,
+                isFree,
+              }))}
             </ul>
+            {/* US-102: The blurred tail — kept inside the same scroller so the
+                user can feel "there's more". The sticky overlay rides along
+                while they scroll through it. */}
+            {isFree && freeBlurredRows.length > 0 && (
+              <div className="relative">
+                <ul
+                  aria-hidden
+                  className="pointer-events-none relative select-none opacity-80 [filter:blur(6px)]"
+                >
+                  <span
+                    aria-hidden
+                    className="absolute bottom-0 left-[98px] top-0 w-px bg-border"
+                  />
+                  {freeBlurredRows.map((row) =>
+                    renderTimelineRow(row, { consideredByPrompt, isFree }),
+                  )}
+                </ul>
+                {/* Sticky upgrade overlay — floats over the blurred mass as
+                    the user scrolls through it. `top-[35%]` keeps it visually
+                    centered without fighting tall blurred sections. */}
+                <div className="pointer-events-none sticky top-[35%] z-10 flex items-center justify-center px-4">
+                  <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-2 rounded-lg border border-border bg-card/95 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
+                    <Lock className="size-4 text-muted-foreground" />
+                    <div className="text-[12px] font-medium text-foreground">
+                      Unlock the full Timeline
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Conan Premium · $39 · lifetime
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openLicenseSettings}
+                      className="mt-1 rounded-md bg-primary px-3 py-1 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      Upgrade
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </TooltipProvider>
         )}
         {/* `↑ N new` pill — sticks to the top of the scroller, only when the

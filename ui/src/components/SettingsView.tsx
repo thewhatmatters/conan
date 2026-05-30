@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -70,6 +70,7 @@ export default function SettingsView({
   activeThemeId,
   onSelectTheme,
   doctor,
+  initialTab,
 }: {
   open: boolean;
   onClose: () => void;
@@ -89,11 +90,27 @@ export default function SettingsView({
     path: string | null;
     error: string | null;
   };
+  /** Optional tab to land on when the dialog opens — flips the controlled
+   *  `Tabs` value once on the open-transition. The Upgrade button in the
+   *  Timeline (US-102) passes `"license"` so the Free user lands directly on
+   *  the paste-your-license surface. */
+  initialTab?: "status" | "config" | "appearance" | "license";
 }) {
   // Per-key inline save error, shared by both tabs (cleared on the next
   // successful save of that key). Lifted here so the Status and Config tabs write
   // through one `save()` — a key edited from either tab routes to the same file.
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Controlled tab state so external triggers (Upgrade button → US-102) can
+  // jump straight to the License tab. Default lands on Status, mirroring the
+  // pre-US-102 `defaultValue="status"`. Reset to `initialTab` whenever the
+  // dialog transitions from closed → open with a non-undefined target.
+  const [activeTab, setActiveTab] = useState<
+    "status" | "config" | "appearance" | "license"
+  >(initialTab ?? "status");
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab);
+  }, [open, initialTab]);
 
   async function save(key: string, value: unknown) {
     if (!token) {
@@ -134,7 +151,13 @@ export default function SettingsView({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="status" className="flex min-w-0 flex-col gap-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) =>
+            setActiveTab(v as "status" | "config" | "appearance" | "license")
+          }
+          className="flex min-w-0 flex-col gap-0"
+        >
           <div className="flex items-center border-b border-border px-5">
             <TabsList className={TAB_LIST}>
               <TabsTrigger value="status" className={TAB_TRIGGER}>
@@ -1045,9 +1068,10 @@ function LicenseTab({ token }: { token: string | null }) {
               </span>
             </div>
             <div className="mt-1.5 text-xs text-muted-foreground">
-              Live observability stays unlocked. Premium lifts the history
-              caps: 90-day Timeline (vs 7), 24h Pulse range (vs 1h), full
-              Skills last-fired history, MCP auth watchdog.
+              Live observability stays unlocked. Premium reveals the insight
+              layer: full Timeline + skill / plan / tool-payload detail,
+              Pulse 6h + 24h ranges, Skills last-fired history, and MCP
+              auth-token watchdog.
             </div>
           </div>
         )}
