@@ -11,20 +11,18 @@ const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
 
 /** US-102 easter egg: after 60s of cumulative play on the Free tier, the
- *  current channel cuts to Rick Astley's "Never Gonna Give You Up" on repeat
- *  (the embed already auto-loops finite videos via its ENDED handler). The
- *  override stays sticky for the session — pause/play can't dodge it — and
- *  releases the moment `useTier()` flips to premium. Premium users never see
- *  this codepath, which is the whole point.
+ *  marquee taunts the user with a fake "Never Gonna Give You Up" title —
+ *  the audio stays on whatever station was playing. The implied threat
+ *  ("we *could've* rickrolled you, Premium first") reads cleaner than
+ *  actually swapping the audio would have, and dodges YouTube's 1×1
+ *  IFrame embed restrictions on the canonical music-video uploads (which
+ *  all `onError` → offline in our tiny offscreen player, either from
+ *  pre-roll ads or owner-disabled-third-party embedding).
  *
- *  ID is the **Official Animated Video** (LLFhKaqnWwk) from Rick Astley's
- *  own channel, NOT the canonical 2009 upload (dQw4w9WgXcQ). The 2009 one
- *  runs pre-roll ads that a 1×1 offscreen iframe can't render — YouTube
- *  fires onError repeatedly, retries hit the cap, and the embed flips
- *  `offline=true`. The animated version is owner-permitted to embed with
- *  no pre-roll, so it plays cleanly. (See commit history for the swap.) */
-const RICK_VIDEO_ID = "LLFhKaqnWwk";
-const RICK_TITLE = "Never Gonna Give You Up · Upgrade for real channels";
+ *  Title-only swap stays sticky for the session — pause/play can't dodge
+ *  it — and releases the moment `useTier()` flips to premium. Premium
+ *  users never see this codepath, which is the whole point. */
+const RICK_TITLE = "Never Gonna Give You Up · Premium for real channels";
 const FREE_RADIO_GRACE_MS = 60_000;
 
 /** Origin of the embed-host page — the target for command postMessages, and the
@@ -113,9 +111,10 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     }
   }, [isFree, rickRolled]);
 
-  const videoId = rickRolled
-    ? RICK_VIDEO_ID
-    : (radio?.videoId ?? FALLBACK_VIDEO_ID);
+  // videoId always rides the gateway's value — only the title swaps when
+  // rickRolled flips. (Audio swap broke on YT's 1×1 embed; see RICK_TITLE
+  // comment for the rationale.)
+  const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
   const title = rickRolled ? RICK_TITLE : (radio?.title ?? FALLBACK_TITLE);
 
   // The iframe src is set ONCE (from the first known id) — subsequent swaps go

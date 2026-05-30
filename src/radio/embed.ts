@@ -162,28 +162,15 @@ export function radioEmbedHtml(videoId: string): string {
   }
 
   window.onYouTubeIframeAPIReady = function () {
-    // host: youtube-nocookie.com — the privacy-enhanced embed domain. Lifts a
-    // number of cross-origin embed restrictions that the canonical youtube.com
-    // host enforces (some music-video uploads only embed cleanly here). Live
-    // streams + ordinary videos play identically through it, so this is a safe
-    // upgrade for the whole radio surface, not just the easter-egg path.
-    // origin: window.location.origin — required by YouTube for any embed that
-    // wants to drive postMessage commands back into a non-default origin. The
-    // embed page is hosted by our gateway at http://127.0.0.1:3747, so we pass
-    // that origin so YouTube accepts our load/play/pause commands.
+    // Tried: host:youtube-nocookie + playerVars.origin. The combo broke YT's
+    // internal postMessage handshake (target 'https://www.youtube.com' vs
+    // recipient 'http://127.0.0.1:3747'). Reverted to the plain youtube.com
+    // host that the Lo-fi default station already plays through cleanly.
     player = new window.YT.Player("player", {
       videoId: INITIAL_ID,
       width: 1,
       height: 1,
-      host: "https://www.youtube-nocookie.com",
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-        disablekb: 1,
-        fs: 0,
-        playsinline: 1,
-        origin: window.location.origin,
-      },
+      playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, playsinline: 1 },
       events: { onReady: onReady, onStateChange: onStateChange, onError: onError }
     });
   };
