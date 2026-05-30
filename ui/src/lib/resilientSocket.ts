@@ -52,18 +52,43 @@ export class ResilientSocket {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(data);
   }
 
-  /** Permanently close: stop heartbeating and reconnecting, drop the socket. */
+  /** Permanently close: stop heartbeating and reconnecting, drop the socket.
+   *
+   *  Calling `.close()` on a socket still in CONNECTING state fires the
+   *  browser's "WebSocket is closed before the connection is established"
+   *  warning — common during React StrictMode dev double-mounts and any
+   *  fast unmount before the upgrade completes. We avoid that by deferring
+   *  the close to the `open` event when the socket is still connecting. */
   close(): void {
     this.closed = true;
     this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    const ws = this.ws;
+    this.ws = null;
+    if (!ws) return;
+    if (ws.readyState === WebSocket.CONNECTING) {
+      ws.addEventListener(
+        "open",
+        () => {
+          try {
+            ws.close();
+          } catch {
+            /* already closing */
+          }
+        },
+        { once: true },
+      );
+      // If the connection never opens (server unreachable), onerror →
+      // onclose still fires and we never leak a socket because the
+      // browser GC eventually reclaims it.
+      return;
+    }
     try {
-      this.ws?.close();
+      ws.close();
     } catch {
       /* already closing */
     }
-    this.ws = null;
   }
 
   private setStatus(s: ConnStatus): void {

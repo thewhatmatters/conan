@@ -656,7 +656,13 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
         tremor-id="tremor-raw"
         {...other}
       >
-        <ResponsiveContainer>
+        {/* `debounce={50}` defers the initial ResizeObserver measurement by
+            ~50ms so Recharts isn't seeing the parent's 0×0 layout before
+            flex has settled it — without this, recharts logs
+            `width(-1) and height(-1) of chart should be greater than 0`
+            on every first paint of every chart. The 50ms is invisible to
+            the user; the chart still snaps in on first frame in practice. */}
+        <ResponsiveContainer debounce={50}>
           <RechartsAreaChart
             data={data}
             onClick={
