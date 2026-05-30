@@ -703,6 +703,12 @@ export default function Timeline({
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [newCount, setNewCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // US-102: ref on the blurred section + a visibility flag driven by an
+  // IntersectionObserver. When any blurred row enters the scroll viewport,
+  // we light up an absolute-positioned upgrade card outside the scroller so
+  // it sits at vertical center of the panel regardless of scroll depth.
+  const blurSectionRef = useRef<HTMLDivElement>(null);
+  const [blurInView, setBlurInView] = useState(false);
   // Fade-edge indicators — true when there's clipped content above/below the
   // visible viewport. Updated on scroll, content-change, and panel resize so a
   // freshly-shrunk panel surfaces the fades without needing a user scroll.
@@ -970,6 +976,32 @@ export default function Timeline({
     return () => ro.disconnect();
   }, [updateFades]);
 
+  // US-102: pin the upgrade card to the panel's vertical center whenever any
+  // blurred row is visible in the scroll viewport. We watch the blurred ul's
+  // intersection with the scroll container — when it pokes in (or fills it),
+  // `blurInView` flips true and the absolute overlay below the scroller
+  // renders. Sticky-inside-scroller didn't work because once the user scrolled
+  // past the END of the blurred mass the sticky element popped back to its
+  // natural bottom position; an outside-the-scroller overlay always centers.
+  useEffect(() => {
+    if (!isFree || freeBlurredRows.length === 0) {
+      setBlurInView(false);
+      return;
+    }
+    const target = blurSectionRef.current;
+    const root = scrollRef.current;
+    if (!target || !root) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setBlurInView(entry?.isIntersecting ?? false);
+      },
+      { root, threshold: 0 },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [isFree, freeBlurredRows.length]);
+
   const allActive = filters.size === 0;
   // Filter chips are dynamic: a chip only renders when this session has at
   // least one row of that kind in the *fresh* set. So Build vanishes when its
@@ -1077,13 +1109,15 @@ export default function Timeline({
               }))}
             </ul>
             {/* US-102: The blurred tail — kept inside the same scroller so the
-                user can feel "there's more". The sticky overlay rides along
-                while they scroll through it. */}
+                user can feel "there's more" while scrolling past the latest 50.
+                The upgrade gate itself lives OUTSIDE the scroller (rendered
+                below as an absolute overlay) so it stays vertically centered
+                in the panel regardless of scroll position. */}
             {isFree && freeBlurredRows.length > 0 && (
-              <div className="relative">
+              <div ref={blurSectionRef} className="relative">
                 <ul
                   aria-hidden
-                  className="pointer-events-none relative select-none opacity-80 [filter:blur(6px)]"
+                  className="pointer-events-none relative select-none opacity-70 [filter:blur(7px)]"
                 >
                   <span
                     aria-hidden
@@ -1093,27 +1127,6 @@ export default function Timeline({
                     renderTimelineRow(row, { consideredByPrompt, isFree }),
                   )}
                 </ul>
-                {/* Sticky upgrade overlay — floats over the blurred mass as
-                    the user scrolls through it. `top-[35%]` keeps it visually
-                    centered without fighting tall blurred sections. */}
-                <div className="pointer-events-none sticky top-[35%] z-10 flex items-center justify-center px-4">
-                  <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-2 rounded-lg border border-border bg-card/95 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
-                    <Lock className="size-4 text-muted-foreground" />
-                    <div className="text-[12px] font-medium text-foreground">
-                      Unlock the full Timeline
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Conan Premium · $39 · lifetime
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openLicenseSettings}
-                      className="mt-1 rounded-md bg-primary px-3 py-1 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      Upgrade
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
           </TooltipProvider>
@@ -1148,6 +1161,37 @@ export default function Timeline({
           (canScrollDown ? "opacity-100" : "opacity-0")
         }
       />
+      {/* US-102: Upgrade gate — absolute over the panel viewport, vertically
+          centered. Fades in when any blurred row enters the scroller's
+          intersection (driven by the IntersectionObserver above). Sits OUTSIDE
+          the scroller so the user's scroll position can't carry it off the
+          natural sticky bound. `pointer-events-none` on the wrapper so users
+          can keep scrolling the blurred mass behind it; `pointer-events-auto`
+          on the card itself keeps the Upgrade button clickable. */}
+      <div
+        aria-hidden={!blurInView}
+        className={
+          "pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4 transition-opacity duration-200 " +
+          (blurInView ? "opacity-100" : "opacity-0")
+        }
+      >
+        <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-2 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
+          <Lock className="size-5 text-muted-foreground" />
+          <div className="text-[13px] font-semibold text-foreground">
+            Unlock the full Timeline
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            Conan Premium · $39 · lifetime
+          </div>
+          <button
+            type="button"
+            onClick={openLicenseSettings}
+            className="mt-1 rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Upgrade
+          </button>
+        </div>
+      </div>
       </div>
     </div>
   );
