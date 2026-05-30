@@ -252,9 +252,12 @@ export default function UpdateBanner() {
         aria-live="polite"
         className="pointer-events-auto flex w-72 flex-col gap-2 rounded-xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur-md"
       >
-        {/* Header row: icon + label + dismiss */}
-        <div className="flex items-start gap-2">
-          <div className="mt-0.5 shrink-0">
+        {/* Single row: icon + (title + sub) + action button. items-center
+            centers the button vertically on the two-line text block; the
+            button sits inline with the bold title visually because the
+            title's the dominant line in the stack. */}
+        <div className="flex items-center gap-2">
+          <div className="shrink-0">
             {state.kind === "available" && (
               <Download className="size-4 text-primary" />
             )}
@@ -315,6 +318,33 @@ export default function UpdateBanner() {
               </>
             )}
           </div>
+          {state.kind === "available" && (
+            <button
+              type="button"
+              onClick={onUpdate}
+              className="shrink-0 rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Update
+            </button>
+          )}
+          {state.kind === "ready" && (
+            <button
+              type="button"
+              onClick={onRestart}
+              className="shrink-0 rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Restart
+              </button>
+          )}
+          {state.kind === "error" && (
+            <button
+              type="button"
+              onClick={checkOnce}
+              className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              Retry
+            </button>
+          )}
         </div>
 
         {/* Progress bar — only while downloading + only when content-length
@@ -326,41 +356,6 @@ export default function UpdateBanner() {
               className="h-full bg-primary transition-[width] duration-150 ease-out"
               style={{ width: `${progressPct}%` }}
             />
-          </div>
-        )}
-
-        {/* Action row — only when there's something for the user to do. */}
-        {(state.kind === "available" ||
-          state.kind === "ready" ||
-          state.kind === "error") && (
-          <div className="flex items-center justify-end gap-1.5">
-            {state.kind === "available" && (
-              <button
-                type="button"
-                onClick={onUpdate}
-                className="rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Update
-              </button>
-            )}
-            {state.kind === "ready" && (
-              <button
-                type="button"
-                onClick={onRestart}
-                className="rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Restart
-              </button>
-            )}
-            {state.kind === "error" && (
-              <button
-                type="button"
-                onClick={checkOnce}
-                className="rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
-              >
-                Retry
-              </button>
-            )}
           </div>
         )}
       </div>
