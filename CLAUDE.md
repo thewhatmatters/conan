@@ -240,15 +240,23 @@ the full free/premium matrix.
 4. **Generate the actual checkout link** (skipped tonight — there's no
    live checkout link yet for the in-app "Buy Premium" button).
    Save the URL for US-106.
-5. **US-102** — Timeline insight gating: 50-row cap on the active
-   session for Free; gate event-type rendering (PROMPT + tool calls +
-   STOP + SESSION + Hooks chip free; SKILL? + PLAN + LOOP + BUILD +
-   token chips + Plan/Loop/Build filter chips + click-to-expand
-   payloads Premium). End-of-list footer:
-   `Showing latest 50 rows · Premium reveals all activity + skill scoring,`
-   `plan rows, tool payloads. [ See what Premium adds — $39 ]`. The gate
-   reads `useTier()`. Filter chips for Premium-only kinds render with a
-   small `[ Premium ]` chip when Free.
+5. **US-102** — Timeline insight gating. Two reinforcing gates, both
+   reading `useTier()`:
+   (a) **Row-count cap with blur + sticky locked overlay.** Latest 50
+   rows fully visible. Rows 51+ render under
+   `filter: blur(6px) + pointer-events: none + user-select: none`
+   with a sticky-centered overlay carrying a lock icon + headline
+   "Unlock the full Timeline" + "Conan Premium · $39 · lifetime" +
+   `[ Upgrade ]` button → opens Settings ▸ License. Overlay anchors to
+   the viewport so the user can't scroll past it to peek at the
+   un-overlayed blur. Live new events at the top stay clear (never
+   gates the live promise).
+   (b) **Event-type gating in the visible 50 rows.** Free renders
+   PROMPT + PRETOOL (name + 1-line snippet) + POSTTOOL + STOP (no
+   token chip) + SESSION + Hooks filter chip. Premium-only event kinds
+   collapse into a single "Skills considered (N)" / "Plan rows (N)" /
+   etc. summary row with a small `[ Premium ]` chip → click opens
+   Settings ▸ License. POSTTOOL rows are not click-to-expand on Free.
 6. **US-103** — Pulse range cap: Free shows 15m + 1h tabs; 6h + 24h
    render disabled at 40% opacity with `[ Premium ]` chip. Click on a
    disabled range opens Settings ▸ License.
