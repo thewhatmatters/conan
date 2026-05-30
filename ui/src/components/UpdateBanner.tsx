@@ -38,13 +38,19 @@ type UpdateState =
 
 const POLL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-/** Lazy plugin loaders — `window.__TAURI__` is the cheapest probe for "am I
- *  inside the Tauri webview?" without importing anything heavy. Returns
- *  null in the browser dev build so the rest of the component degrades to
- *  a permanent idle state. */
+/** `window.__TAURI__` is the cheapest probe for "am I inside the Tauri
+ *  webview?" without importing anything heavy. Returns false in the
+ *  browser dev build so the demo path below can surface the toast for
+ *  visual testing. */
+function isInTauri(): boolean {
+  if (typeof window === "undefined") return false;
+  return !!(window as unknown as { __TAURI__?: unknown }).__TAURI__;
+}
+
+/** Lazy plugin loaders — only imported when actually inside Tauri so the
+ *  browser dev build doesn't try to resolve native bindings. */
 async function loadUpdater(): Promise<typeof import("@tauri-apps/plugin-updater") | null> {
-  if (typeof window === "undefined") return null;
-  if (!(window as unknown as { __TAURI__?: unknown }).__TAURI__) return null;
+  if (!isInTauri()) return null;
   try {
     return await import("@tauri-apps/plugin-updater");
   } catch {
@@ -52,14 +58,23 @@ async function loadUpdater(): Promise<typeof import("@tauri-apps/plugin-updater"
   }
 }
 async function loadProcess(): Promise<typeof import("@tauri-apps/plugin-process") | null> {
-  if (typeof window === "undefined") return null;
-  if (!(window as unknown as { __TAURI__?: unknown }).__TAURI__) return null;
+  if (!isInTauri()) return null;
   try {
     return await import("@tauri-apps/plugin-process");
   } catch {
     return null;
   }
 }
+
+/** Dev-only fake — surfaces the toast in `vite dev` (no Tauri) so the
+ *  component is visually testable. In a real build (Tauri), `isInTauri()`
+ *  short-circuits this whole branch and the real updater plugin drives the
+ *  state machine. Triggered by:
+ *    - Auto on mount in dev (immediate "available")
+ *    - `window.__conanUpdateDemo('<kind>')` from DevTools to flip state
+ *    - Clicking Update / Restart / Retry runs simulated transitions */
+const DEMO_VERSION = "1.0.1";
+const DEMO_TOTAL_BYTES = 64 * 1024 * 1024; // 64MB simulated download size
 
 export default function UpdateBanner() {
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
@@ -90,7 +105,48 @@ export default function UpdateBanner() {
   }, []);
 
   // Boot + interval check. Cleared on unmount so HMR doesn't leak timers.
+  //
+  // Dev branch: if we're not inside Tauri AND we're in Vite dev mode, auto-
+  // surface the "available" state immediately so the toast is visually
+  // testable without a build. Also expose `window.__conanUpdateDemo('<kind>')`
+  // for cycling through the other states from DevTools. Both branches are
+  // dead-code-eliminated by Vite in the production build because
+  // `import.meta.env.DEV` is statically false there.
   useEffect(() => {
+    if (!isInTauri() && import.meta.env.DEV) {
+      setState({ kind: "available", version: DEMO_VERSION, notes: null });
+      (
+        window as unknown as { __conanUpdateDemo?: (k: string) => void }
+      ).__conanUpdateDemo = (kind: string) => {
+        const map: Record<string, UpdateState> = {
+          idle: { kind: "idle" },
+          available: {
+            kind: "available",
+            version: DEMO_VERSION,
+            notes: null,
+          },
+          downloading: {
+            kind: "downloading",
+            version: DEMO_VERSION,
+            received: Math.round(DEMO_TOTAL_BYTES * 0.32),
+            total: DEMO_TOTAL_BYTES,
+          },
+          ready: { kind: "ready", version: DEMO_VERSION },
+          error: {
+            kind: "error",
+            message:
+              "Failed to fetch update manifest: network unreachable (demo)",
+          },
+        };
+        const next = map[kind];
+        if (next) setState(next);
+        else
+          console.log(
+            "usage: __conanUpdateDemo('available'|'downloading'|'ready'|'error'|'idle')",
+          );
+      };
+      return; // skip real polling
+    }
     void checkOnce();
     const t = window.setInterval(() => void checkOnce(), POLL_MS);
     return () => window.clearInterval(t);
@@ -98,6 +154,27 @@ export default function UpdateBanner() {
 
   const onUpdate = useCallback(async () => {
     if (state.kind !== "available") return;
+    // Dev branch — simulate a download: tick `received` upward every 80ms
+    // until we reach DEMO_TOTAL_BYTES, then flip to ready.
+    if (!isInTauri() && import.meta.env.DEV) {
+      let received = 0;
+      const total = DEMO_TOTAL_BYTES;
+      const tick = window.setInterval(() => {
+        received = Math.min(total, received + Math.round(total / 25));
+        if (received >= total) {
+          window.clearInterval(tick);
+          setState({ kind: "ready", version: DEMO_VERSION });
+          return;
+        }
+        setState({
+          kind: "downloading",
+          version: DEMO_VERSION,
+          received,
+          total,
+        });
+      }, 80);
+      return;
+    }
     const updater = await loadUpdater();
     if (!updater) return;
     try {
@@ -144,6 +221,12 @@ export default function UpdateBanner() {
   }, [state]);
 
   const onRestart = useCallback(async () => {
+    // Dev branch — log and reset to idle so the toast disappears.
+    if (!isInTauri() && import.meta.env.DEV) {
+      console.log("[update-demo] Restart pressed (would call relaunch())");
+      setState({ kind: "idle" });
+      return;
+    }
     const proc = await loadProcess();
     if (!proc) return;
     await proc.relaunch();
