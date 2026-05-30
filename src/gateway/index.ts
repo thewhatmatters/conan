@@ -682,13 +682,27 @@ app.post("/api/claude/context/autorefresh", (req, res) => {
 // which computes the fresh session block server-side. No modal, no ESC,
 // no interruption of the user's terminal.
 //
-// `injectUsageRefresh` is still exported for the rate-limit-windows path
-// (the 5h/7d "% used" that the probe handles separately); this route just
-// stops triggering it.
+// Derive-first, inject-fallback. The transcript-derived Session block is
+// preferred (always fresh, never touches the terminal), but a brand-new
+// session that hasn't been prompted yet has NO JSONL on disk, so derive
+// returns null and the HUD would sit on "Awaiting capture" forever. In that
+// case we fall back to typing /usage into the live pty (the old capture path)
+// so the user still gets a Session block AND sees the command run. The modal-
+// stays-open quirk (8ee2dfe) only resurfaces on these data-less sessions —
+// strictly better than the refresh silently doing nothing.
 app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
   if (!authed(req, res)) return;
-  broadcast({ type: "usage-captured", sessionId: req.params.id });
-  res.json({ ok: true });
+  const sessionId = req.params.id;
+  const row = getDb()
+    .prepare("SELECT cwd FROM session WHERE id = ?")
+    .get(sessionId) as { cwd?: string } | undefined;
+  const derived = deriveSessionUsage(sessionId, row?.cwd ?? null);
+  const injected = derived ? false : injectUsageRefresh(sessionId);
+  broadcast({ type: "usage-captured", sessionId });
+  res.json({
+    ok: true,
+    source: derived ? "derived" : injected ? "injected" : "none",
+  });
 });
 
 // Context-pressure compact (US-013): inject `/handoff` into the session's live
