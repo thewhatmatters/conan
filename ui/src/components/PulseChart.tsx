@@ -96,8 +96,20 @@ export default function PulseChart({
   compact = false,
 }: PulseChartProps) {
   const buckets = series?.buckets ?? [];
-  const totals = series?.totals ?? { events: 0, retries: 0, tokens: 0, cost: 0 };
+  const totals = series?.totals ?? {
+    events: 0,
+    retries: 0,
+    tokens: 0,
+    cacheReadTokens: 0,
+    cost: 0,
+  };
   const hasData = totals.events > 0 || totals.tokens > 0 || totals.cost > 0;
+  // Pulse footer (US-???): the displayed "tokens" sum is dominated by
+  // cache_read replays (typically 95–99% of the total) — showing the raw
+  // sum reads as alarming inflation even though new work is tiny. Split
+  // into `new` (cache_creation + input + output) and `cache` so both
+  // signals are visible. See commit 125bde8 + the v4.7 pulse change.
+  const newTokens = Math.max(0, totals.tokens - totals.cacheReadTokens);
 
   // Reshape the per-category bucket breakdown into flat rows keyed by the
   // display labels, with a date+time index label for the X axis. The format
@@ -200,8 +212,13 @@ export default function PulseChart({
             {typeTotals[c.key]} {c.label.toLowerCase()}
           </span>
         ))}
-        <span className="inline-flex items-center gap-1.5">
-          {fmtTokens(totals.tokens)} tokens
+        <span
+          className="inline-flex items-center gap-1.5"
+          title={`${totals.tokens.toLocaleString()} tokens total (matches /usage); ${newTokens.toLocaleString()} new, ${totals.cacheReadTokens.toLocaleString()} replayed from prompt cache`}
+        >
+          {fmtTokens(newTokens)} new
+          <span className="text-muted-foreground/60">·</span>
+          {fmtTokens(totals.cacheReadTokens)} cache
         </span>
         {totals.retries > 0 && (
           <span className="inline-flex items-center gap-1.5">

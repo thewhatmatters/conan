@@ -15,6 +15,9 @@ export interface PulseBucket {
   types: Record<PulseCategory, number>;
   retries: number;
   tokens: number;
+  /** cache_read_input_tokens slice of `tokens` — almost always 95–99% of
+   *  the total, surfaced separately so the footer can split `new` vs `cache`. */
+  cacheReadTokens: number;
   cost: number;
 }
 
@@ -23,7 +26,13 @@ export interface PulseSeries {
   bucketMs: number;
   now: number;
   buckets: PulseBucket[];
-  totals: { events: number; retries: number; tokens: number; cost: number };
+  totals: {
+    events: number;
+    retries: number;
+    tokens: number;
+    cacheReadTokens: number;
+    cost: number;
+  };
 }
 
 /**

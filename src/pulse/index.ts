@@ -57,6 +57,11 @@ export interface PulseBucket {
   /** Total tokens spent in assistant turns ending in this slice (sum of
    *  input + cache_read + cache_creation + output, from the transcript JSONL). */
   tokens: number;
+  /** The cache_read_input_tokens slice of `tokens` — the prior-context
+   *  replay that almost always dominates the total without representing
+   *  any new work. The UI subtracts this to show a "new tokens" footer
+   *  number alongside the cache reads. */
+  cacheReadTokens: number;
   /** Reserved for cost (USD) once a source lands; currently always 0. */
   cost: number;
 }
@@ -69,7 +74,13 @@ export interface PulseSeries {
   /** Server clock at query time, ms — the right edge of the window. */
   now: number;
   buckets: PulseBucket[];
-  totals: { events: number; retries: number; tokens: number; cost: number };
+  totals: {
+    events: number;
+    retries: number;
+    tokens: number;
+    cacheReadTokens: number;
+    cost: number;
+  };
 }
 
 interface EventRow {
@@ -124,6 +135,7 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
     types: zeroTypes(),
     retries: 0,
     tokens: 0,
+    cacheReadTokens: 0,
     cost: 0,
   }));
 
@@ -178,6 +190,7 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
       const b = i < 0 ? undefined : buckets[i];
       if (!b) continue;
       b.tokens += u.totalTokens;
+      b.cacheReadTokens += u.cacheReadTokens;
     }
   }
 
@@ -186,9 +199,10 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
       events: acc.events + b.events,
       retries: acc.retries + b.retries,
       tokens: acc.tokens + b.tokens,
+      cacheReadTokens: acc.cacheReadTokens + b.cacheReadTokens,
       cost: acc.cost + b.cost,
     }),
-    { events: 0, retries: 0, tokens: 0, cost: 0 },
+    { events: 0, retries: 0, tokens: 0, cacheReadTokens: 0, cost: 0 },
   );
 
   return { windowMs, bucketMs, now, buckets, totals };
@@ -202,13 +216,16 @@ export function pulseSeries(windowMs = 60 * 60 * 1000): PulseSeries {
  */
 const turnUsageCache = new Map<
   string,
-  { mtimeMs: number; usages: { ts: number; totalTokens: number }[] }
+  {
+    mtimeMs: number;
+    usages: { ts: number; totalTokens: number; cacheReadTokens: number }[];
+  }
 >();
 
 function readCachedTurnUsages(
   sessionId: string,
   cwd: string | null,
-): { ts: number; totalTokens: number }[] {
+): { ts: number; totalTokens: number; cacheReadTokens: number }[] {
   const file = transcriptPath(sessionId, cwd);
   if (!file) return [];
   let mtimeMs = 0;

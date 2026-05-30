@@ -257,8 +257,15 @@ function usageInt(v: unknown): number {
 export interface AssistantTurnUsage {
   /** Epoch ms of the assistant message's `timestamp`. */
   ts: number;
-  /** input + cache_read + cache_creation + output — the full per-turn spend. */
+  /** input + cache_read + cache_creation + output — the full per-turn spend.
+   *  Matches what `/usage` reports. */
   totalTokens: number;
+  /** Just the cache_read_input_tokens portion — the prior-context replay that
+   *  typically dominates `totalTokens` (often 95–99%) without representing
+   *  any new work. Pulse's footer splits this out from `new` (= totalTokens
+   *  minus cacheReadTokens) so the displayed sum doesn't read as alarming
+   *  cache-replay inflation. */
+  cacheReadTokens: number;
 }
 
 /**
@@ -297,13 +304,14 @@ export function readAssistantTurnUsages(
     const msg = (o.message ?? {}) as Record<string, unknown>;
     const usage = (msg.usage ?? null) as Record<string, unknown> | null;
     if (!usage) continue;
+    const cacheRead = usageInt(usage.cache_read_input_tokens);
     const total =
       usageInt(usage.input_tokens) +
-      usageInt(usage.cache_read_input_tokens) +
+      cacheRead +
       usageInt(usage.cache_creation_input_tokens) +
       usageInt(usage.output_tokens);
     if (total === 0) continue;
-    out.push({ ts, totalTokens: total });
+    out.push({ ts, totalTokens: total, cacheReadTokens: cacheRead });
   }
   out.sort((a, b) => a.ts - b.ts);
   return out;
