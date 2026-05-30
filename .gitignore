@@ -5,6 +5,8 @@ ui/node_modules/
 # build output
 dist/
 ui/dist/
+# typescript incremental build cache (machine-local; never version it)
+*.tsbuildinfo
 
 # local data (sqlite db, logs)
 .data/
