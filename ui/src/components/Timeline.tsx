@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Lock } from "lucide-react";
+import conanIcon from "../assets/conan-icon.png";
 import { apiBase } from "../lib/gateway.ts";
 import type {
   GatewayEvent,
@@ -1181,7 +1182,17 @@ export default function Timeline({
         }
       >
         <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
-          <Lock className="size-5 text-muted-foreground" />
+          {/* Conan icon + lock badge — the locked product, not a generic gate. */}
+          <div className="relative">
+            <img
+              src={conanIcon}
+              alt="Conan"
+              className="size-10 rounded-md"
+            />
+            <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full border border-border bg-card shadow-sm">
+              <Lock className="size-3 text-muted-foreground" />
+            </span>
+          </div>
           {/* Headline + sub paired tightly so they read as one block. */}
           <div className="flex flex-col items-center gap-0.5">
             <div className="text-[13px] font-semibold leading-tight text-foreground">
