@@ -12,6 +12,7 @@ import { useSkills } from "./hooks/useSkills.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
 import { useDoctor } from "./hooks/useDoctor.ts";
+import { useTier } from "./hooks/useTier.ts";
 import { useWindowWidth } from "./hooks/useWindowWidth.ts";
 import { useWindowHeight } from "./hooks/useWindowHeight.ts";
 
@@ -129,6 +130,9 @@ export default function App() {
   // Drives the install banner above the terminal + the Settings ▸ Status line.
   // Backend caches 10min so this is cheap.
   const doctor = useDoctor(config?.token ?? null);
+  // US-101: Premium tier hook — boots once when the token arrives, then every
+  // gated surface reads `useTier()` to flip Free ↔ Premium. Idempotent.
+  useTier(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
   // The correlated live-pty session is the one whose terminal is visible, so a
   // prompt for it while Conan is focused is suppressed (the user sees it live).

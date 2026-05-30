@@ -21,6 +21,14 @@ export const DATA_DIR =
 export const DB_PATH =
   process.env.CONAN_DB_PATH ?? path.join(DATA_DIR, "conan.db");
 
+/** Absolute path to the user's saved Premium license JWT (one line, plain
+ *  text). Same data dir as the SQLite DB so it survives reinstall and is
+ *  easy to copy to a second Mac. The Conan UI verifies the JWT offline
+ *  against the bundled Ed25519 public key in `ui/src/lib/license.ts` —
+ *  this file just stores it. Absence of the file = Free tier. */
+export const LICENSE_PATH =
+  process.env.CONAN_LICENSE_PATH ?? path.join(DATA_DIR, "license.jwt");
+
 /** Built UI assets served by the gateway in production. */
 export const UI_DIST = path.join(PACKAGE_ROOT, "ui", "dist");
 

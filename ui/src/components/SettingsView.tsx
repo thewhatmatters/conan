@@ -15,9 +15,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select.tsx";
-import { Check } from "lucide-react";
+import { Check, Eye, EyeOff } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
+import {
+  useTier,
+  saveLicense,
+  clearLicense,
+} from "../hooks/useTier.ts";
+import type { VerifyResult } from "../lib/license.ts";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
@@ -140,6 +146,9 @@ export default function SettingsView({
               <TabsTrigger value="appearance" className={TAB_TRIGGER}>
                 Appearance
               </TabsTrigger>
+              <TabsTrigger value="license" className={TAB_TRIGGER}>
+                License
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -160,6 +169,9 @@ export default function SettingsView({
               activeThemeId={activeThemeId}
               onSelectTheme={onSelectTheme}
             />
+          </TabsContent>
+          <TabsContent value="license" className="mt-0">
+            <LicenseTab token={token} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -916,4 +928,204 @@ function formatValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+/* ───── License tab (US-106) ──────────────────────────────────────────── */
+
+/**
+ * The Polar hosted-checkout URL the Buy button opens. Will be the real
+ * `https://buy.polar.sh/polar_cl_…` link once Polar approves the org
+ * (the Go Live + Stripe Connect KYC flow). Until then, points at the
+ * marketing site so the button is never broken — landing page can carry
+ * a "we'll be live soon" message + email capture.
+ */
+const BUY_PREMIUM_URL = "https://conan.sh";
+
+/**
+ * Open an external URL via Tauri's shell plugin when running in the
+ * native app, or `window.open` in the dev/browser context. Dynamic
+ * import so the build doesn't hard-fail in non-Tauri environments —
+ * matches the pattern used by `lib/nativeNotify.ts`.
+ */
+async function openExternal(url: string): Promise<void> {
+  try {
+    const { open } = await import("@tauri-apps/plugin-shell");
+    await open(url);
+  } catch {
+    // Browser dev / non-Tauri context: just punt to the standard tab opener.
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/**
+ * Settings ▸ License — the only UI a user touches to activate Conan Premium.
+ *
+ *   - Banner: Free / Premium ✓ <fingerprint>, with an "expires" line that
+ *     usually reads "lifetime 1.x" (the v1 `edition` claim is the gate, not
+ *     `exp` — see [docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md) §1).
+ *   - Paste field: 280-ish-char base64 JWT, masked by default with a show
+ *     toggle. Masking isn't security (it's the user's own token) — it's so
+ *     a 280-char noise blob doesn't look hostile in the form.
+ *   - Apply button: routes through `saveLicense()` which verifies offline
+ *     against the bundled Ed25519 public key BEFORE writing to disk. A
+ *     failed verify never touches storage; the field stays populated so
+ *     the user can edit/re-paste rather than re-locate the email.
+ *   - Inline error: rendered from `VerifyResult.message` so users see
+ *     "License expired 2031-01-01" or "Invalid license — signature does
+ *     not match", not a generic 4xx.
+ *   - Remove button: drops back to Free immediately, deletes the JWT file.
+ *   - Buy Premium: opens the Polar checkout URL in the user's default browser.
+ */
+function LicenseTab({ token }: { token: string | null }) {
+  const tier = useTier(token);
+  const [draft, setDraft] = useState("");
+  const [showJwt, setShowJwt] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  // Distinct from tier.lastVerify: the verify result from THIS Apply attempt,
+  // so the inline error is paired with the user's last action rather than
+  // the boot-time verify (which might surface "no license" misleadingly here).
+  const [applyResult, setApplyResult] = useState<VerifyResult | null>(null);
+
+  async function apply(): Promise<void> {
+    if (!draft.trim() || applying) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const r = await saveLicense(draft, token);
+      setApplyResult(r);
+      // Clear the draft only on success — keep it populated on failure so
+      // the user can correct without re-pasting.
+      if (r.ok) setDraft("");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function remove(): Promise<void> {
+    if (removing) return;
+    setRemoving(true);
+    try {
+      await clearLicense(token);
+      setApplyResult(null);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4 px-5 py-5">
+      {/* ── Tier banner ─────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3">
+        {tier.loading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : tier.tier === "premium" && tier.license ? (
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                Premium
+              </span>
+              <span className="font-mono text-xs text-muted-foreground">
+                …{tier.license.sub.slice(-8)}
+              </span>
+            </div>
+            <div className="mt-1.5 text-xs text-muted-foreground">
+              Lifetime of Conan 1.x — the upgrade gate is the{" "}
+              <span className="font-mono">edition</span> claim, not an expiry.
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Multi-machine welcome — copy the JWT to as many Macs as you use.
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+                Free
+              </span>
+            </div>
+            <div className="mt-1.5 text-xs text-muted-foreground">
+              Live observability stays unlocked. Premium lifts the history
+              caps: 90-day Timeline (vs 7), 24h Pulse range (vs 1h), full
+              Skills last-fired history, MCP auth watchdog.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Apply a license ─────────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <label
+          htmlFor="license-jwt"
+          className="block text-xs font-medium text-foreground"
+        >
+          {tier.tier === "premium"
+            ? "Replace your license"
+            : "Paste your license"}
+        </label>
+        <div className="flex items-stretch gap-2">
+          <input
+            id="license-jwt"
+            type={showJwt ? "text" : "password"}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="eyJhbGciOiJFZERTQSIs…"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setShowJwt((s) => !s)}
+            title={showJwt ? "Hide" : "Show"}
+            className="flex items-center justify-center rounded-md border border-border bg-background px-2 text-muted-foreground hover:bg-muted"
+          >
+            {showJwt ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={!draft.trim() || applying}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {applying ? "Applying…" : "Apply"}
+          </button>
+        </div>
+        {applyResult && !applyResult.ok && (
+          <div className="text-xs text-destructive">{applyResult.message}</div>
+        )}
+        {applyResult && applyResult.ok && (
+          <div className="text-xs text-primary">
+            License applied — Premium features unlocked.
+          </div>
+        )}
+      </div>
+
+      {/* ── Actions ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        {tier.tier === "free" && (
+          <button
+            type="button"
+            onClick={() => openExternal(BUY_PREMIUM_URL)}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Buy Premium · $39
+          </button>
+        )}
+        {tier.tier === "premium" && (
+          <button
+            type="button"
+            onClick={remove}
+            disabled={removing}
+            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {removing ? "Removing…" : "Remove license"}
+          </button>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          One license, unlimited Macs. Lifetime of Conan 1.x.
+        </span>
+      </div>
+    </div>
+  );
 }

@@ -45,6 +45,7 @@ import { installBundledPlugins } from "../plugins/install.js";
 import { getRadio, getStations, setRadio } from "../radio/index.js";
 import { detectClaude } from "../doctor/claude.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
+import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
@@ -600,6 +601,34 @@ app.post("/api/claude/config", (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const result = writeConfigKey(body.key, body.value);
   res.status(result.status).json(result);
+});
+
+// Premium license (US-101): pure persistence of the user's saved JWT to the
+// data dir's `license.jwt`. All verification happens in the UI against the
+// bundled Ed25519 public key (ui/src/lib/license.ts) — keeping the gateway
+// agnostic of license claims means a future key rotation only touches the
+// UI build. Token-gated. Absence of the file = Free tier.
+app.get("/api/license", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(readLicense());
+});
+app.put("/api/license", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const jwt = typeof body.jwt === "string" ? body.jwt : null;
+  if (!jwt) {
+    res.status(400).json({ error: "missing jwt in body" });
+    return;
+  }
+  try {
+    res.json(writeLicense(jwt));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+});
+app.delete("/api/license", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(deleteLicense());
 });
 
 // User themes (US-022): the validated palettes from ~/.conan/themes.json (or
