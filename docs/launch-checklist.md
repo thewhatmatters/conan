@@ -87,8 +87,10 @@ between here and the public `v1.0.0` release.
 | ⬜ | Full smoke test: Free → paste JWT → Premium (all gates lift); Remove license → Free (all gates re-engage) | Verifies useTier → gate-react chain end-to-end |
 | ⬜ | Bump version `0.1.0` → `1.0.0` | `package.json` + `src-tauri/tauri.conf.json` |
 | ⬜ | `git tag v1.0.0` | |
+| ⬜ | Branded DMG (background image + `/Applications` drop target) | Switch `release.mjs` from raw `hdiutil create` to Tauri's native DMG bundler (`bundle.macOS.dmg` config in `tauri.conf.json`) or `create-dmg`. Artwork ~660×400, Conan logo + "Drag to Applications →" cue. Currently bare. |
 | ⬜ | `npm run release` → signed + notarized DMG | `Conan_1.0.0_aarch64.dmg` |
 | ⬜ | GitHub Release attached to `v1.0.0` tag with the DMG + release notes | |
+| ⬜ | Make `thewhatmatters/conan` repo public | Required for the auto-updater URL (`releases/latest/download/latest.json`) to resolve for end users. Until then, public CDN 404s on private-repo assets. |
 
 ---
 
