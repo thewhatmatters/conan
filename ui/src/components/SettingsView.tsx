@@ -1104,7 +1104,13 @@ function LicenseTab({ token }: { token: string | null }) {
               <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 Premium
               </span>
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="text-xs text-foreground">
+                {tier.license.email}
+              </span>
+              <span
+                className="font-mono text-[10px] text-muted-foreground"
+                title={`License ID: ${tier.license.sub}`}
+              >
                 …{tier.license.sub.slice(-8)}
               </span>
             </div>
