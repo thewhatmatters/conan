@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { radioEmbedUrl } from "../lib/gateway.ts";
@@ -14,26 +14,20 @@ import { useTier } from "../hooks/useTier.ts";
 const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
 
-/** US-102 easter egg: after N seconds of cumulative play on the Free tier,
- *  Claude Radio swaps to a MIDI rendition of "Never Gonna Give You Up"
- *  (chosen specifically because YT's IFrame error 150 blocks every
- *  Rick-Astley-channel upload — small-channel covers don't carry the
- *  same owner-disabled-embed restriction). The override stays sticky for
- *  the session — pause/play can't dodge it — and releases the moment
- *  `useTier()` flips to premium. Premium users never see this codepath,
- *  which is the whole point.
+/** US-102 easter egg: after N seconds of cumulative Free-tier play, Claude
+ *  Radio is silenced (YT iframe paused, Play button disabled) and the
+ *  marquee swaps to a continuously-scrolling "Please [Upgrade] Conan"
+ *  ticker — where "Upgrade" is a clickable link that opens Settings ▸
+ *  License. The override stays sticky for the session — pause/play can't
+ *  dodge it — and releases the moment `useTier()` flips to premium.
+ *  Premium users never see this codepath, which is the whole point.
  *
- *  Video: "Never Gonna Give You Up - MIDI" by The Music Decomposer
- *  (https://www.youtube.com/watch?v=r2K1yPbLrWc). The MIDI/chiptune
- *  aesthetic is also on-theme for an easter egg, so this lands even
- *  better than the original would have.
- *
- *  Chiptune fallback: lib/chiptune.ts is left in place as a Web Audio
- *  API synth of the chorus — kept around in case this video also gets
- *  150'd at some point. Wire it up by restoring the rickRolled→chiptune
- *  effect from commit 74bb491. */
-const RICK_VIDEO_ID = "r2K1yPbLrWc";
-const RICK_TITLE = "Never Gonna Give You Up · Please Upgrade Conan";
+ *  Audio side history: we tried swapping the YT videoId to Rick Astley
+ *  (canonical, animated, MIDI cover) — every one returned IFrame error
+ *  150 (owner-disabled-third-party-embed) in our 1×1 offscreen player.
+ *  A chiptune fallback (lib/chiptune.ts) was built and shelved. Pausing
+ *  is the cleanest UX — it makes the ticker the focal point. */
+const RICK_TICKER_LABEL = "Please Upgrade Conan";
 /** Cumulative-play grace before the rickroll kicks in. 5s for testing,
  *  bump to 60_000 (60s) before shipping. */
 const FREE_RADIO_GRACE_MS = 5_000;
@@ -124,14 +118,30 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     }
   }, [isFree, rickRolled]);
 
-  // (Chiptune-trigger effect from commit 74bb491 lives in git history; the
-  // current YT-MIDI swap should carry the audio on its own. Bring it back
-  // here if r2K1yPbLrWc ever stops embedding.)
+  // US-102: when rickRolled flips on, pause the radio so the ticker is the
+  // only thing happening — silence makes the "you've been blocked" UX read
+  // immediately. On the flip back to false (user upgraded), resume so audio
+  // continuity carries them across the transition.
+  useEffect(() => {
+    if (!rickRolled) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { source: "conan-radio", action: "pause" },
+      EMBED_ORIGIN,
+    );
+    return () => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { source: "conan-radio", action: "play" },
+        EMBED_ORIGIN,
+      );
+    };
+  }, [rickRolled]);
 
-  const videoId = rickRolled
-    ? RICK_VIDEO_ID
-    : (radio?.videoId ?? FALLBACK_VIDEO_ID);
-  const title = rickRolled ? RICK_TITLE : (radio?.title ?? FALLBACK_TITLE);
+  // videoId always rides the gateway value — we never ask YT to play Rick
+  // (error 150 for every uploader-channel option). The rickrolled UI is
+  // handled separately below: ticker swap + Play button disabled + iframe
+  // paused via the effect below.
+  const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
+  const title = radio?.title ?? FALLBACK_TITLE;
 
   // The iframe src is set ONCE (from the first known id) — subsequent swaps go
   // over the `load` postMessage so the iframe + YouTube API aren't torn down and
@@ -174,7 +184,10 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     setOffline(false);
   }, [videoId, ready, embedSrc]);
 
-  const disabled = !ready || offline;
+  // Play button is locked when rickRolled — the user must Upgrade to
+  // resume audio. Hitting Play in this state would otherwise restart YT
+  // and bypass the pause effect above.
+  const disabled = !ready || offline || rickRolled;
 
   const toggle = () => {
     if (disabled) return;
@@ -209,10 +222,14 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
         )}
       </button>
       {playing ? <Equalizer /> : <Radio className="size-3.5 shrink-0" />}
-      <MarqueeTitle
-        text={displayTitle}
-        className={offline ? "text-muted-foreground" : "text-foreground"}
-      />
+      {rickRolled ? (
+        <RickrolledTicker label={RICK_TICKER_LABEL} />
+      ) : (
+        <MarqueeTitle
+          text={displayTitle}
+          className={offline ? "text-muted-foreground" : "text-foreground"}
+        />
+      )}
       {/* Offscreen 1×1 iframe hosting the actual YouTube player at the gateway's
           http origin (v4.6 WKWebView fix). Visually hidden but not display:none
           (display:none can stop audio). */}
@@ -349,6 +366,63 @@ function MarqueeTitle({
           />
         </>
       )}
+    </span>
+  );
+}
+
+/**
+ * RickrolledTicker — the US-102 "you've been silenced, please upgrade" UI
+ * the radio bar wears when rickRolled is true. The text scrolls continuously
+ * left (a classic news ticker, not the bounce-marquee the normal title uses)
+ * with "Upgrade" rendered as an inline clickable link. Click anywhere on the
+ * Upgrade word and we dispatch `conan:open-settings { tab: "license" }`,
+ * landing the user straight on the JWT paste field.
+ *
+ * Implementation note: two copies of the content sit in a flex-row that
+ * scrolls -50% — when the first copy reaches the left edge, the second is
+ * already in view, giving a seamless infinite loop. The keyframe lives in
+ * index.css as `rickrolled-marquee`.
+ */
+function RickrolledTicker({ label }: { label: string }) {
+  const openLicense = () =>
+    window.dispatchEvent(
+      new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
+    );
+  // Split the label at "Upgrade" so we can render the surrounding text as
+  // plain spans and only the word itself as a button. Falls back to one
+  // chunk if the keyword isn't present (defensive — current label has it).
+  const [head, tail] = useMemo(() => {
+    const idx = label.indexOf("Upgrade");
+    return idx === -1
+      ? [label, ""]
+      : [label.slice(0, idx), label.slice(idx + "Upgrade".length)];
+  }, [label]);
+  const segment = (
+    <span className="inline-flex items-center whitespace-pre pr-12">
+      {head}
+      <button
+        type="button"
+        onClick={openLicense}
+        className="text-primary underline-offset-2 transition-colors hover:underline focus:underline focus:outline-none"
+      >
+        Upgrade
+      </button>
+      {tail}
+    </span>
+  );
+  return (
+    <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-foreground">
+      <span
+        className="inline-flex will-change-transform"
+        style={{ animation: "rickrolled-marquee 12s linear infinite" }}
+      >
+        {segment}
+        {/* Aria-hidden duplicate — the visual seam-filler that lets the
+            -50% translate animation loop cleanly. The two buttons are
+            independently clickable so the upgrade affordance is hot no
+            matter where the scroll position is. */}
+        <span aria-hidden>{segment}</span>
+      </span>
     </span>
   );
 }

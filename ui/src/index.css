@@ -248,3 +248,17 @@ aside .overflow-auto::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* US-102 RickrolledTicker — the continuous-scroll variant used when the
+   Free-tier rickroll fires. The component renders two copies of the
+   "Please Upgrade Conan" segment in a single flex row; translating -50%
+   moves the first copy fully off-screen exactly when the second copy
+   reaches the original starting position, so the loop is seamless. */
+@keyframes rickrolled-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
