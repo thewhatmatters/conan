@@ -1180,18 +1180,21 @@ export default function Timeline({
           (blurInView ? "opacity-100" : "opacity-0")
         }
       >
-        <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-2 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
+        <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
           <Lock className="size-5 text-muted-foreground" />
-          <div className="text-[13px] font-semibold text-foreground">
-            Unlock the full Timeline
-          </div>
-          <div className="text-[11px] text-muted-foreground">
-            Conan Premium · $39 · lifetime
+          {/* Headline + sub paired tightly so they read as one block. */}
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="text-[13px] font-semibold leading-tight text-foreground">
+              Unlock the full Timeline
+            </div>
+            <div className="text-[11px] leading-tight text-muted-foreground">
+              Conan Premium · $39 · lifetime
+            </div>
           </div>
           <button
             type="button"
             onClick={openLicenseSettings}
-            className="mt-1 rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Upgrade
           </button>
