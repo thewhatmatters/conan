@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, RefreshCw, AlertTriangle } from "lucide-react";
+import { isTauri } from "../lib/gateway.ts";
 
 /**
  * Self-update toast — surfaces newer Conan releases via tauri-plugin-updater
@@ -38,13 +39,15 @@ type UpdateState =
 
 const POLL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-/** `window.__TAURI__` is the cheapest probe for "am I inside the Tauri
- *  webview?" without importing anything heavy. Returns false in the
- *  browser dev build so the demo path below can surface the toast for
- *  visual testing. */
+/** "Am I inside the Tauri webview?" — Tauri v2 sets `__TAURI_INTERNALS__`
+ *  (renamed from v1's `__TAURI__`). Delegate to the shared probe in
+ *  gateway.ts so this stays in sync if the global is ever renamed again.
+ *
+ *  Returns true in BOTH the bundled `.app` AND `npm run tauri:dev`. Returns
+ *  false only when the UI is loaded in a plain browser (vite dev w/o the
+ *  Tauri shell), which is the surface the demo path below targets. */
 function isInTauri(): boolean {
-  if (typeof window === "undefined") return false;
-  return !!(window as unknown as { __TAURI__?: unknown }).__TAURI__;
+  return isTauri();
 }
 
 /** Lazy plugin loaders — only imported when actually inside Tauri so the
@@ -113,7 +116,14 @@ export default function UpdateBanner() {
   // dead-code-eliminated by Vite in the production build because
   // `import.meta.env.DEV` is statically false there.
   useEffect(() => {
-    if (!isInTauri() && import.meta.env.DEV) {
+    // Dev mode (both vite-only AND tauri:dev): auto-surface the demo banner
+    // so the toast is visible without waiting for a real update. The real
+    // updater is skipped in dev because the GitHub endpoint would 404 on a
+    // private repo + we want predictable visuals during iteration. In dev's
+    // tauri:dev path, Restart still calls the REAL relaunch() — onRestart
+    // probes loadProcess() at click time, so the demo banner can drive a
+    // real restart of the dev shell.
+    if (import.meta.env.DEV) {
       setState({ kind: "available", version: DEMO_VERSION, notes: null });
       (
         window as unknown as { __conanUpdateDemo?: (k: string) => void }
@@ -155,8 +165,10 @@ export default function UpdateBanner() {
   const onUpdate = useCallback(async () => {
     if (state.kind !== "available") return;
     // Dev branch — simulate a download: tick `received` upward every 80ms
-    // until we reach DEMO_TOTAL_BYTES, then flip to ready.
-    if (!isInTauri() && import.meta.env.DEV) {
+    // until we reach DEMO_TOTAL_BYTES, then flip to ready. Fires in BOTH
+    // vite-only AND tauri:dev because we want predictable demo timing for
+    // visual iteration, not whatever a real download would do.
+    if (import.meta.env.DEV) {
       let received = 0;
       const total = DEMO_TOTAL_BYTES;
       const tick = window.setInterval(() => {
@@ -221,15 +233,17 @@ export default function UpdateBanner() {
   }, [state]);
 
   const onRestart = useCallback(async () => {
-    // Dev branch — log and reset to idle so the toast disappears.
-    if (!isInTauri() && import.meta.env.DEV) {
-      console.log("[update-demo] Restart pressed (would call relaunch())");
-      setState({ kind: "idle" });
+    // Always try the real plugin first — in tauri:dev OR the bundled .app
+    // it's available and ACTUALLY relaunches. Falling back to a no-op only
+    // when there's no Tauri shell (pure browser vite) so the demo path on a
+    // designer's laptop still has a sane "click does something" behavior.
+    const proc = await loadProcess();
+    if (proc) {
+      await proc.relaunch();
       return;
     }
-    const proc = await loadProcess();
-    if (!proc) return;
-    await proc.relaunch();
+    console.log("[update] Restart: no Tauri shell — dismissing toast");
+    setState({ kind: "idle" });
   }, []);
 
   if (state.kind === "idle") return null;
