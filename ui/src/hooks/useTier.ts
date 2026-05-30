@@ -174,13 +174,26 @@ async function loadRevocationListFromCdn(): Promise<void> {
   }
 }
 
-/** Idempotent boot — safe to call repeatedly; only the first call runs work. */
+/** Idempotent boot — safe to call repeatedly; only the first call with a real
+ *  token runs work. Calls with `token === null` are no-ops that DON'T burn the
+ *  idempotence flag — App.tsx renders useTier(config?.token ?? null) before
+ *  config arrives, so the first effect always sees null. If we started the
+ *  boot on that null call, the gateway fetch would early-exit and license
+ *  would never rehydrate across restarts (regression seen in 0.1.1).
+ *
+ *  Revocation list refresh is decoupled — it doesn't need a token, so we run
+ *  it on the first call regardless. */
 let bootStarted = false;
+let revocationStarted = false;
 export function bootTierStore(token: string | null): void {
+  if (!revocationStarted) {
+    revocationStarted = true;
+    void loadRevocationListFromCdn();
+  }
   if (bootStarted) return;
+  if (!token) return; // wait for the real token; useEffect will re-fire
   bootStarted = true;
   void loadTierFromGateway(token);
-  void loadRevocationListFromCdn();
 }
 
 /* ───── Public mutators ─────────────────────────────────────────────────── */

@@ -1,6 +1,11 @@
 import { isTauri } from "./gateway.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
 import type { Theme } from "./themes.ts";
+// Source of truth for the app version — the single place version flows from.
+// Bumping in package.json automatically flows into the About box, About
+// dialog copyright, and any other surface that imports CONAN_VERSION. Vite
+// resolves the JSON import statically (no runtime fetch).
+import pkg from "../../../package.json" with { type: "json" };
 
 export interface AppMenuActions {
   /** All selectable themes (built-ins + user themes) for the Theme submenu. */
@@ -18,8 +23,9 @@ export interface AppMenuActions {
   onToggleTimeline: () => void;
 }
 
-/** Conan's own version, shown in the About box. */
-export const CONAN_VERSION = "0.1.0";
+/** Conan's own version, shown in the About box. Sourced from package.json so
+ *  it always matches what `npm run release` ships — never hand-edit. */
+export const CONAN_VERSION = pkg.version;
 /** AboutMetadata payload for the macOS About dialog (Conan ▸ About Conan).
  *  Tauri's PredefinedMenuItem.About accepts the full Apple-style AboutDialog
  *  shape — name, version, copyright, website, authors, credits, license.
