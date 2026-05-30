@@ -2,12 +2,23 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { radioEmbedUrl } from "../lib/gateway.ts";
+import { useTier } from "../hooks/useTier.ts";
 
 /** Fallback when the gateway hasn't reported its current state yet (first
  *  paint, or the radio API is unavailable). Mirrors src/radio/index.ts's
  *  `DEFAULT_RADIO_VIDEO_ID`. */
 const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
+
+/** US-102 easter egg: after 60s of cumulative play on the Free tier, the
+ *  current channel cuts to Rick Astley's "Never Gonna Give You Up" on repeat
+ *  (the embed already auto-loops finite videos via its ENDED handler). The
+ *  override stays sticky for the session — pause/play can't dodge it — and
+ *  releases the moment `useTier()` flips to premium. Premium users never see
+ *  this codepath, which is the whole point. */
+const RICK_VIDEO_ID = "dQw4w9WgXcQ";
+const RICK_TITLE = "Never Gonna Give You Up · Upgrade for real channels";
+const FREE_RADIO_GRACE_MS = 60_000;
 
 /** Origin of the embed-host page — the target for command postMessages, and the
  *  origin we accept state messages from. Derived from the embed URL so it stays
@@ -45,6 +56,8 @@ interface EmbedState {
  * the embed page (src/radio/embed.ts).
  */
 export default function RadioBar({ radio }: { radio: RadioState | null }) {
+  const tier = useTier();
+  const isFree = tier.tier === "free";
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -52,9 +65,51 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
   // The videoId the embed player is actually pointed at, so a re-render with the
   // same id doesn't re-send a needless `load` (which would restart playback).
   const loadedIdRef = useRef<string>("");
+  // US-102 easter egg: cumulative play-time counter (ms) toward the 60s grace.
+  // playStartRef holds the timestamp the current play-burst began; on pause we
+  // fold the burst's duration into elapsedRef and clear the start. Once
+  // elapsedRef crosses FREE_RADIO_GRACE_MS, `rickRolled` flips and the videoId
+  // override below points the embed at Rick. Cumulative (not "60s continuous")
+  // so a pause/play loop can't cheese it.
+  const [rickRolled, setRickRolled] = useState(false);
+  const playStartRef = useRef<number | null>(null);
+  const elapsedRef = useRef(0);
 
-  const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
-  const title = radio?.title ?? FALLBACK_TITLE;
+  // Drive the cumulative timer. On a play→pause transition we settle the
+  // current burst; on play we arm a setTimeout for the remainder. Releasing
+  // the effect (pause, tier flip, rick fired) clears the pending timer and
+  // folds elapsed time so the next play resumes the count.
+  useEffect(() => {
+    if (!isFree || rickRolled) return;
+    if (!playing) return;
+    playStartRef.current = Date.now();
+    const remaining = Math.max(0, FREE_RADIO_GRACE_MS - elapsedRef.current);
+    const t = window.setTimeout(() => {
+      elapsedRef.current = FREE_RADIO_GRACE_MS;
+      setRickRolled(true);
+    }, remaining);
+    return () => {
+      window.clearTimeout(t);
+      if (playStartRef.current !== null) {
+        elapsedRef.current += Date.now() - playStartRef.current;
+        playStartRef.current = null;
+      }
+    };
+  }, [isFree, playing, rickRolled]);
+
+  // Snap back to the real station if the user upgrades mid-roll. Also clears
+  // the elapsed counter so a downgrade restarts the 60s clock from zero.
+  useEffect(() => {
+    if (!isFree) {
+      elapsedRef.current = 0;
+      if (rickRolled) setRickRolled(false);
+    }
+  }, [isFree, rickRolled]);
+
+  const videoId = rickRolled
+    ? RICK_VIDEO_ID
+    : (radio?.videoId ?? FALLBACK_VIDEO_ID);
+  const title = rickRolled ? RICK_TITLE : (radio?.title ?? FALLBACK_TITLE);
 
   // The iframe src is set ONCE (from the first known id) — subsequent swaps go
   // over the `load` postMessage so the iframe + YouTube API aren't torn down and
