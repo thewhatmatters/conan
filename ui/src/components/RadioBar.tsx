@@ -372,24 +372,18 @@ function MarqueeTitle({
 
 /**
  * RickrolledTicker — the US-102 "you've been silenced, please upgrade" UI
- * the radio bar wears when rickRolled is true. The text scrolls continuously
- * left (a classic news ticker, not the bounce-marquee the normal title uses)
- * with "Upgrade" rendered as an inline clickable link. Click anywhere on the
- * Upgrade word and we dispatch `conan:open-settings { tab: "license" }`,
- * landing the user straight on the JWT paste field.
- *
- * Implementation note: two copies of the content sit in a flex-row that
- * scrolls -50% — when the first copy reaches the left edge, the second is
- * already in view, giving a seamless infinite loop. The keyframe lives in
- * index.css as `rickrolled-marquee`.
+ * the radio bar wears when rickRolled is true. Static text in the marquee
+ * slot, with "Upgrade" rendered as an inline clickable link that dispatches
+ * `conan:open-settings { tab: "license" }` so the user lands straight on
+ * the JWT paste field.
  */
 function RickrolledTicker({ label }: { label: string }) {
   const openLicense = () =>
     window.dispatchEvent(
       new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
     );
-  // Split the label at "Upgrade" so we can render the surrounding text as
-  // plain spans and only the word itself as a button. Falls back to one
+  // Split the label at "Upgrade" so the surrounding text renders as plain
+  // spans and only the word itself becomes a button. Falls back to one
   // chunk if the keyword isn't present (defensive — current label has it).
   const [head, tail] = useMemo(() => {
     const idx = label.indexOf("Upgrade");
@@ -397,8 +391,8 @@ function RickrolledTicker({ label }: { label: string }) {
       ? [label, ""]
       : [label.slice(0, idx), label.slice(idx + "Upgrade".length)];
   }, [label]);
-  const segment = (
-    <span className="inline-flex items-center whitespace-pre pr-12">
+  return (
+    <span className="min-w-0 flex-1 truncate text-foreground">
       {head}
       <button
         type="button"
@@ -408,21 +402,6 @@ function RickrolledTicker({ label }: { label: string }) {
         Upgrade
       </button>
       {tail}
-    </span>
-  );
-  return (
-    <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-foreground">
-      <span
-        className="inline-flex will-change-transform"
-        style={{ animation: "rickrolled-marquee 12s linear infinite" }}
-      >
-        {segment}
-        {/* Aria-hidden duplicate — the visual seam-filler that lets the
-            -50% translate animation loop cleanly. The two buttons are
-            independently clickable so the upgrade affordance is hot no
-            matter where the scroll position is. */}
-        <span aria-hidden>{segment}</span>
-      </span>
     </span>
   );
 }
