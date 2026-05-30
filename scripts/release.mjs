@@ -35,14 +35,37 @@
 // missing-signature OR missing-notarization. Don't skip step 6.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOTARYTOOL_PROFILE = "conan-notarize";
 const TEAM_ID = "4P6GX328VY";
+/** Tauri updater minisign-format private key. Generated one-time via
+ *  `npx @tauri-apps/cli signer generate -w ~/.conan/conan-updater.key`,
+ *  stored at 600 perms, backed up to 1Password. The public counterpart is
+ *  bundled into the .app via `tauri.conf.json` plugins.updater.pubkey. */
+const UPDATER_PRIVATE_KEY_PATH = path.join(
+  homedir(),
+  ".conan",
+  "conan-updater.key",
+);
+/** Empty because the keypair was generated with --no-password. Switch to
+ *  process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD if/when we rotate to a
+ *  passphrase-protected key. */
+const UPDATER_PRIVATE_KEY_PASSWORD = "";
+/** GitHub repo coordinates that `gh release create` targets. The updater's
+ *  endpoint URL in tauri.conf.json points at `releases/latest/download/...`
+ *  on this same repo, so the two must match. */
+const GH_REPO = "thewhatmatters/conan";
 
 function die(msg) {
   console.error(`\n[release] FATAL: ${msg}\n`);
@@ -138,10 +161,26 @@ step(2, "rebuilding sidecar (Developer ID + hardened runtime)");
 const entitlements = path.join(ROOT, "src-tauri", "Conan.entitlements");
 if (!existsSync(entitlements)) die(`entitlements missing: ${entitlements}`);
 
+if (!existsSync(UPDATER_PRIVATE_KEY_PATH)) {
+  die(
+    `Tauri updater private key missing: ${UPDATER_PRIVATE_KEY_PATH}\n` +
+      `Generate one-time:\n` +
+      `  CI=true npx @tauri-apps/cli signer generate -p "" -w ${UPDATER_PRIVATE_KEY_PATH}\n` +
+      `Then back it up to 1Password.`,
+  );
+}
+
 const signEnv = {
   ...process.env,
   APPLE_SIGNING_IDENTITY: ident,
   APPLE_ENTITLEMENTS: entitlements,
+  // tauri-plugin-updater minisign keys — passed via env, NOT in the
+  // tauri.conf.json (the public key is bundled there). Tauri's build step
+  // signs the auto-generated .app.tar.gz with this when
+  // bundle.createUpdaterArtifacts is true; we also pass them through to
+  // the manual re-sign in step 5d after notarization+staple.
+  TAURI_SIGNING_PRIVATE_KEY: UPDATER_PRIVATE_KEY_PATH,
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: UPDATER_PRIVATE_KEY_PASSWORD,
   // Tauri's bundler reads CI=true for headless DMG (skips AppleScript window
   // styling that hangs without a GUI session).
   CI: "true",
@@ -227,6 +266,41 @@ run("xcrun", [
 step("5a", "stapling .app");
 run("xcrun", ["stapler", "staple", appPath]);
 
+// ---- 5a-updater. Re-create + re-sign the .app.tar.gz from STAPLED .app ---
+//
+// `tauri build` already produced a .app.tar.gz at step 3, but from the
+// pre-staple .app. The updater downloads this archive and replaces the
+// running app — if the payload's .app isn't stapled, Gatekeeper has to
+// fetch notarization status online on first launch (works, but breaks
+// offline launches). Cheaper to regenerate the archive + signature now
+// that the .app is stapled.
+
+step("5a-updater", "regenerating updater archive from STAPLED .app");
+const updaterArchive = path.join(
+  bundleDir,
+  "macos",
+  `Conan_${version}_aarch64.app.tar.gz`,
+);
+const updaterSig = `${updaterArchive}.sig`;
+rmSync(updaterArchive, { force: true });
+rmSync(updaterSig, { force: true });
+run("tar", [
+  "czf",
+  updaterArchive,
+  "-C",
+  path.dirname(appPath),
+  path.basename(appPath),
+]);
+// `tauri signer sign` reads TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] from env
+// (set in signEnv above) and writes `<file>.sig` next to the input.
+run("npx", ["--yes", "@tauri-apps/cli", "signer", "sign", updaterArchive], {
+  env: signEnv,
+  cwd: ROOT,
+});
+for (const p of [updaterArchive, updaterSig]) {
+  if (!existsSync(p)) die(`updater artifact missing: ${p}`);
+}
+
 // ---- 5b. Rebuild + sign + notarize + staple the .dmg ---------------------
 //
 // Why: the .dmg Tauri built in step 3 contains the UN-stapled .app and its
@@ -299,12 +373,38 @@ for (const target of [appPath, dmgPath]) {
   }
 }
 
+// ---- 7. Emit latest.json (the updater manifest) --------------------------
+//
+// tauri-plugin-updater polls a URL like
+// `https://github.com/<repo>/releases/latest/download/latest.json`. The JSON
+// shape is fixed by Tauri's v2 spec; the `signature` field is the literal
+// contents of the .sig file (a single line of base64). We write it next to
+// the .dmg/.tar.gz so the `gh release create` invocation below picks it up.
+
+step(7, "emitting latest.json (updater manifest)");
+const latestJsonPath = path.join(path.dirname(updaterArchive), "latest.json");
+const signature = readFileSync(updaterSig, "utf8").trim();
+const releaseUrl = `https://github.com/${GH_REPO}/releases/download/v${version}/${path.basename(updaterArchive)}`;
+const manifest = {
+  version,
+  pub_date: new Date().toISOString(),
+  notes: `Conan ${version}. See https://github.com/${GH_REPO}/releases/tag/v${version} for the changelog.`,
+  platforms: {
+    "darwin-aarch64": { signature, url: releaseUrl },
+  },
+};
+writeFileSync(latestJsonPath, JSON.stringify(manifest, null, 2) + "\n");
+console.log(`[release] wrote ${latestJsonPath}`);
+
 // Clean up the temp zip.
 rmSync(tmpDir, { recursive: true, force: true });
 
 console.log(`\n[release] done. ✅ Signed, notarized, stapled, Gatekeeper-accepted.
-  .app: ${appPath}
-  .dmg: ${dmgPath}
+  .app:           ${appPath}
+  .dmg:           ${dmgPath}
+  updater .tar.gz:${updaterArchive}
+  updater .sig:   ${updaterSig}
+  manifest:       ${latestJsonPath}
 `);
 
 // Show what shipped (informational).
@@ -314,3 +414,26 @@ try {
 } catch {
   /* informational only */
 }
+
+// ---- 8. Print the gh release create command ------------------------------
+//
+// Intentionally NOT auto-running gh — destructive operations stay manual so
+// a stray re-run doesn't clobber a published release. Copy-paste this:
+console.log(`
+[release] next step — publish the release:
+
+  git tag v${version} && git push origin v${version}
+  gh release create v${version} \\
+    --repo ${GH_REPO} \\
+    --title "Conan ${version}" \\
+    --notes "See CHANGELOG.md for details." \\
+    "${dmgPath}" \\
+    "${updaterArchive}" \\
+    "${updaterSig}" \\
+    "${latestJsonPath}"
+
+The updater client polls
+  https://github.com/${GH_REPO}/releases/latest/download/latest.json
+which 302-redirects to whichever release is marked "latest", so all currently
+installed clients will auto-update once you publish.
+`);

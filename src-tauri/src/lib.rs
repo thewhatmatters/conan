@@ -25,6 +25,13 @@ pub fn run() {
     // back to acknowledge them. The UI fires these over the app WS via
     // @tauri-apps/plugin-notification; permission is requested on first use.
     .plugin(tauri_plugin_notification::init())
+    // Self-update: the JS-side @tauri-apps/plugin-updater check()s the
+    // manifest URL in tauri.conf.json `plugins.updater.endpoints` against
+    // the bundled minisign pubkey, downloads the signed .app.tar.gz when
+    // a newer version exists, and the UI's <UpdateBanner> calls
+    // plugin-process.relaunch() to apply it.
+    .plugin(tauri_plugin_updater::Builder::new().build())
+    .plugin(tauri_plugin_process::init())
     .manage(GatewayChild(Mutex::new(None)))
     .setup(|app| {
       if cfg!(debug_assertions) {

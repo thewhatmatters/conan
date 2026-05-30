@@ -25,6 +25,7 @@ const HUD_BOTTOM_BREAKPOINT = 900;
 import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
+import UpdateBanner from "./components/UpdateBanner.tsx";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
 import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
@@ -234,12 +235,17 @@ export default function App() {
     // (inside Hud.tsx), not the app shell.
     // US-025: flex-row when wide (HUD right dock), flex-col when narrow (HUD
     // bottom dock) so the terminal keeps the full width and the HUD stacks below.
-    <div
-      className={
-        "flex h-full bg-background text-foreground " +
-        (hudBottomDock ? "flex-col" : "flex-row")
-      }
-    >
+    // <UpdateBanner /> sits ABOVE the row/col layout so it shifts content
+    // down rather than overlaying the terminal. It renders to null when
+    // there's no pending update, so the shell pays nothing in the steady state.
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <UpdateBanner />
+      <div
+        className={
+          "flex min-h-0 flex-1 " +
+          (hudBottomDock ? "flex-col" : "flex-row")
+        }
+      >
       <Toaster tasks={tasks} lastEvent={lastEvent} />
       <TerminalPane
         token={config?.token ?? null}
@@ -286,6 +292,7 @@ export default function App() {
         doctor={doctor}
         initialTab={settingsInitialTab}
       />
+      </div>
     </div>
   );
 }

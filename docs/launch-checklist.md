@@ -107,27 +107,20 @@ between here and the public `v1.0.0` release.
 
 ## 7. App updates infrastructure
 
-**Current state: nothing wired.** Conan today has no in-app update notification
-and no auto-updater. Users would have to manually re-download from conan.sh.
-
-See [§8 below](#8-how-app-updates-actually-work) for the decision matrix and
-recommendation for v1.0.
+**Auto-update via tauri-plugin-updater is wired.** Backend = GitHub Releases
+(no Cloudflare / R2 needed); manifest URL =
+`https://github.com/thewhatmatters/conan/releases/latest/download/latest.json`.
 
 | | Item | Notes |
 |---|---|---|
-| ⬜ | Decide on update mechanism for v1.0 | Recommended: lightweight in-app banner now, full auto-updater post-1.0 |
-| ⬜ | If banner-only: `/version.json` published at `conan.sh`, app polls weekly, banner CTA opens download URL | ~2 hours of work |
-| ⬜ | If full auto-updater: implement `docs/v4.7-update-design.md` (tauri-plugin-updater + minisign + R2/GitHub releases hosting) | ~1 day of work, more moving parts to break |
-
----
-
-## 8. How app updates actually work
-
-See the standalone explainer below the checklist. TL;DR:
-
-- **For v1.0**, ship with no in-app update mechanism + a "Download the latest version" CTA on conan.sh. Track manually for the first 50 customers.
-- **For v1.1**, add a polling-banner that reads a static `conan.sh/version.json` and surfaces a "New version available" pill.
-- **For v1.2+** (only if customer feedback demands it), implement the full tauri-plugin-updater path from `docs/v4.7-update-design.md`.
+| ✅ | Minisign-format keypair generated | `~/.conan/conan-updater.key` (600 perms, **back up to 1Password before shipping**) + `~/.conan/conan-updater.key.pub` |
+| ✅ | Public key bundled into the app | `src-tauri/tauri.conf.json` → `plugins.updater.pubkey` |
+| ✅ | `tauri-plugin-updater` + `tauri-plugin-process` in Cargo + registered in `lib.rs` | |
+| ✅ | `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` in UI deps | |
+| ✅ | `<UpdateBanner>` in app shell | Polls on boot + every 4h; surfaces "available → Update", "downloading → x%", "ready → Restart". Dismissible per-session. |
+| ✅ | `scripts/release.mjs` produces signed updater artifacts | Re-creates `.app.tar.gz` + `.sig` from the STAPLED .app (so the payload carries the notary ticket), emits `latest.json`, prints the `gh release create` command at the end |
+| ⬜ | **Back up the private key to 1Password** | Lose this and you can never push another auto-update to existing installs |
+| ⬜ | (Optional) Run a dry release v0.1.0 → v0.1.1 to prove the full loop in practice before tagging v1.0.0 | Catches any glitch in the release pipeline while the customer count is zero |
 
 ---
 

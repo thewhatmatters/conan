@@ -25,3 +25,8 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
+# Self-update: the UI calls check()/downloadAndInstall() via the JS plugin,
+# which round-trips through this Rust plugin. tauri-plugin-process supplies
+# the relaunch() the UI calls after applying an update.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
