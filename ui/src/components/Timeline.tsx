@@ -933,11 +933,16 @@ export default function Timeline({
       return r;
     });
   }, [visibleRows, isFree]);
-  /* Split point — first 50 render normally, the rest go behind the blur. The
-   *  panel still scrolls so the user feels the depth; the blurred mass with
-   *  the lock overlay is the affordance. */
-  const freeUnlockedRows = isFree ? renderRows.slice(0, FREE_VISIBLE_LIMIT) : renderRows;
-  const freeBlurredRows = isFree ? renderRows.slice(FREE_VISIBLE_LIMIT) : [];
+  /* Hard-wall gate: once the Free user crosses FREE_VISIBLE_LIMIT total rows,
+   * the ENTIRE timeline blurs and the upgrade card centers over it. Below the
+   * threshold, everything renders crisp (no partial peek). This is a stronger
+   * conversion signal than the earlier "latest 50 crisp + tail blurred" split:
+   * the user watches their session fill up and the moment row 51 lands, the
+   * panel locks. Live observability lives in Context/Usage/Radio (never
+   * gated); Timeline is the depth-of-insight pitch. */
+  const overFreeLimit = isFree && renderRows.length > FREE_VISIBLE_LIMIT;
+  const freeUnlockedRows = overFreeLimit ? [] : renderRows;
+  const freeBlurredRows = overFreeLimit ? renderRows : [];
 
   const toggleFilter = useCallback((bucket: Filter) => {
     setFilters((prev) => {
