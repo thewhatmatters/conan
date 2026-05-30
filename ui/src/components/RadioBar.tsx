@@ -28,9 +28,8 @@ const FALLBACK_TITLE = "Claude Radio";
  *  A chiptune fallback (lib/chiptune.ts) was built and shelved. Pausing
  *  is the cleanest UX — it makes the ticker the focal point. */
 const RICK_TICKER_LABEL = "Please Upgrade Conan";
-/** Cumulative-play grace before the rickroll kicks in. 5s for testing,
- *  bump to 60_000 (60s) before shipping. */
-const FREE_RADIO_GRACE_MS = 5_000;
+/** Cumulative-play grace before the rickroll kicks in. */
+const FREE_RADIO_GRACE_MS = 60_000;
 
 /** Origin of the embed-host page — the target for command postMessages, and the
  *  origin we accept state messages from. Derived from the embed URL so it stays
