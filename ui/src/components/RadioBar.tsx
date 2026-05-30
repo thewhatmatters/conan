@@ -15,8 +15,15 @@ const FALLBACK_TITLE = "Claude Radio";
  *  (the embed already auto-loops finite videos via its ENDED handler). The
  *  override stays sticky for the session — pause/play can't dodge it — and
  *  releases the moment `useTier()` flips to premium. Premium users never see
- *  this codepath, which is the whole point. */
-const RICK_VIDEO_ID = "dQw4w9WgXcQ";
+ *  this codepath, which is the whole point.
+ *
+ *  ID is the **Official Animated Video** (LLFhKaqnWwk) from Rick Astley's
+ *  own channel, NOT the canonical 2009 upload (dQw4w9WgXcQ). The 2009 one
+ *  runs pre-roll ads that a 1×1 offscreen iframe can't render — YouTube
+ *  fires onError repeatedly, retries hit the cap, and the embed flips
+ *  `offline=true`. The animated version is owner-permitted to embed with
+ *  no pre-roll, so it plays cleanly. (See commit history for the swap.) */
+const RICK_VIDEO_ID = "LLFhKaqnWwk";
 const RICK_TITLE = "Never Gonna Give You Up · Upgrade for real channels";
 const FREE_RADIO_GRACE_MS = 60_000;
 
