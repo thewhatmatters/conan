@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select.tsx";
-import { Check, Eye, EyeOff } from "lucide-react";
+import { Check, Eye, EyeOff, Lock } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
 import {
@@ -27,7 +27,19 @@ import type { VerifyResult } from "../lib/license.ts";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
-import { resolveTokens, type Theme } from "../lib/themes.ts";
+import {
+  DEFAULT_DARK_ID,
+  DEFAULT_LIGHT_ID,
+  resolveTokens,
+  type Theme,
+} from "../lib/themes.ts";
+/** Theme gating for Free users — only Light, Dark, and Auto are unlocked.
+ *  Solarized, Dracula, and any user themes from themes.json render with a
+ *  lock icon + muted style; clicking them opens Settings ▸ License instead
+ *  of switching. */
+function isPremiumThemeId(id: string): boolean {
+  return id !== DEFAULT_LIGHT_ID && id !== DEFAULT_DARK_ID && id !== AUTO_ID;
+}
 import type {
   ClaudeConfig,
   ConfigEntry,
@@ -191,6 +203,7 @@ export default function SettingsView({
               themes={themes}
               activeThemeId={activeThemeId}
               onSelectTheme={onSelectTheme}
+              onShowLicense={() => setActiveTab("license")}
             />
           </TabsContent>
           <TabsContent value="license" className="mt-0">
@@ -476,10 +489,16 @@ function AppearanceTab({
   themes,
   activeThemeId,
   onSelectTheme,
+  onShowLicense,
 }: {
   themes: Theme[];
   activeThemeId: string;
   onSelectTheme: (id: string) => void;
+  /** Jump to the License tab inside this same Settings dialog. Called when
+   *  a Free user clicks a Premium-locked theme row. Direct callback (not
+   *  the global `conan:open-settings` event) because that event's effect
+   *  doesn't re-fire when the dialog's already open. */
+  onShowLicense: () => void;
 }) {
   const { appearance, set } = useAppearance();
 
@@ -511,6 +530,7 @@ function AppearanceTab({
           themes={themes}
           activeThemeId={activeThemeId}
           onSelectTheme={onSelectTheme}
+          onShowLicense={onShowLicense}
         />
 
         <section>
@@ -600,11 +620,15 @@ function ThemeSection({
   themes,
   activeThemeId,
   onSelectTheme,
+  onShowLicense,
 }: {
   themes: Theme[];
   activeThemeId: string;
   onSelectTheme: (id: string) => void;
+  onShowLicense: () => void;
 }) {
+  const tier = useTier();
+  const isFree = tier.tier === "free";
   const light = themes.filter((t) => t.type === "light");
   const dark = themes.filter((t) => t.type === "dark");
 
@@ -620,6 +644,8 @@ function ThemeSection({
             description="Follow the OS light/dark setting"
             selected={activeThemeId === AUTO_ID}
             onSelect={() => onSelectTheme(AUTO_ID)}
+            locked={false}
+            onShowLicense={onShowLicense}
           />
         </ul>
       </section>
@@ -630,6 +656,8 @@ function ThemeSection({
           themes={light}
           activeThemeId={activeThemeId}
           onSelectTheme={onSelectTheme}
+          isFree={isFree}
+          onShowLicense={onShowLicense}
         />
       )}
       {dark.length > 0 && (
@@ -638,6 +666,8 @@ function ThemeSection({
           themes={dark}
           activeThemeId={activeThemeId}
           onSelectTheme={onSelectTheme}
+          isFree={isFree}
+          onShowLicense={onShowLicense}
         />
       )}
     </>
@@ -650,11 +680,15 @@ function ThemeGroup({
   themes,
   activeThemeId,
   onSelectTheme,
+  isFree,
+  onShowLicense,
 }: {
   label: string;
   themes: Theme[];
   activeThemeId: string;
   onSelectTheme: (id: string) => void;
+  isFree: boolean;
+  onShowLicense: () => void;
 }) {
   return (
     <section>
@@ -662,48 +696,65 @@ function ThemeGroup({
         {label}
       </h3>
       <ul>
-        {themes.map((t) => (
-          <ThemeRow
-            key={t.id}
-            name={t.name}
-            swatches={<ThemeSwatches theme={t} />}
-            selected={activeThemeId === t.id}
-            onSelect={() => onSelectTheme(t.id)}
-          />
-        ))}
+        {themes.map((t) => {
+          const locked = isFree && isPremiumThemeId(t.id);
+          return (
+            <ThemeRow
+              key={t.id}
+              name={t.name}
+              swatches={<ThemeSwatches theme={t} />}
+              selected={activeThemeId === t.id}
+              onSelect={() => onSelectTheme(t.id)}
+              locked={locked}
+              onShowLicense={onShowLicense}
+            />
+          );
+        })}
       </ul>
     </section>
   );
 }
 
-/** A selectable theme row: optional swatches + name on the left, check on right. */
+/** A selectable theme row: optional swatches + name on the left, check on
+ *  right. When `locked` is true (Free user + a Premium theme), the row
+ *  renders muted, the right-side glyph becomes a Lock, and clicking jumps
+ *  to the License tab instead of switching the theme. */
 function ThemeRow({
   name,
   description,
   swatches,
   selected,
   onSelect,
+  locked,
+  onShowLicense,
 }: {
   name: string;
   description?: string;
   swatches?: ReactNode;
   selected: boolean;
   onSelect: () => void;
+  locked: boolean;
+  onShowLicense: () => void;
 }) {
   return (
     <li>
       <button
         type="button"
-        onClick={onSelect}
+        onClick={locked ? onShowLicense : onSelect}
         aria-pressed={selected}
+        title={locked ? "Conan Premium · $39 unlocks this theme" : undefined}
         className={`flex w-full items-center justify-between gap-4 border-b border-border px-5 py-2.5 text-left last:border-b-0 hover:bg-muted/50 ${
           selected ? "bg-muted/40" : ""
         }`}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={`flex min-w-0 items-center gap-3 ${locked ? "opacity-60" : ""}`}
+        >
           {swatches}
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-medium text-foreground">
+            <div
+              className={`truncate text-[13px] font-medium ${locked ? "text-muted-foreground" : "text-foreground"}`}
+            >
               {name}
             </div>
             {description && (
@@ -713,9 +764,14 @@ function ThemeRow({
             )}
           </div>
         </div>
-        {selected && (
+        {locked ? (
+          <Lock
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-label="Premium"
+          />
+        ) : selected ? (
           <Check className="size-4 shrink-0 text-primary" aria-label="active" />
-        )}
+        ) : null}
       </button>
     </li>
   );
