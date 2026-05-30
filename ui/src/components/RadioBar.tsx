@@ -10,20 +10,24 @@ import { useTier } from "../hooks/useTier.ts";
 const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
 const FALLBACK_TITLE = "Claude Radio";
 
-/** US-102 easter egg: after 60s of cumulative play on the Free tier, the
- *  marquee taunts the user with a fake "Never Gonna Give You Up" title —
- *  the audio stays on whatever station was playing. The implied threat
- *  ("we *could've* rickrolled you, Premium first") reads cleaner than
- *  actually swapping the audio would have, and dodges YouTube's 1×1
- *  IFrame embed restrictions on the canonical music-video uploads (which
- *  all `onError` → offline in our tiny offscreen player, either from
- *  pre-roll ads or owner-disabled-third-party embedding).
+/** US-102 easter egg: after N seconds of cumulative play on the Free tier,
+ *  the player cuts to Rick Astley's "Never Gonna Give You Up" on repeat
+ *  (the embed auto-loops finite videos via its ENDED handler) AND the
+ *  title swaps to a taunt. The override stays sticky for the session
+ *  — pause/play can't dodge it — and releases the moment `useTier()`
+ *  flips to premium. Premium users never see this codepath, which is
+ *  the whole point.
  *
- *  Title-only swap stays sticky for the session — pause/play can't dodge
- *  it — and releases the moment `useTier()` flips to premium. Premium
- *  users never see this codepath, which is the whole point. */
+ *  Video ID: canonical 2009 upload (dQw4w9WgXcQ). The 4K Remaster on the
+ *  Rick Astley channel — most uploaders have moved their embed
+ *  permissions to "allowed" for this one. The embed page now also calls
+ *  player.playVideo() right after loadVideoById, which fixes the
+ *  cue-without-play behavior YT exhibits on some cross-origin swaps. */
+const RICK_VIDEO_ID = "dQw4w9WgXcQ";
 const RICK_TITLE = "Never Gonna Give You Up · Premium for real channels";
-const FREE_RADIO_GRACE_MS = 60_000;
+/** Cumulative-play grace before the rickroll kicks in. 5s for testing,
+ *  bump to 60_000 (60s) before shipping. */
+const FREE_RADIO_GRACE_MS = 5_000;
 
 /** Origin of the embed-host page — the target for command postMessages, and the
  *  origin we accept state messages from. Derived from the embed URL so it stays
@@ -111,10 +115,9 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     }
   }, [isFree, rickRolled]);
 
-  // videoId always rides the gateway's value — only the title swaps when
-  // rickRolled flips. (Audio swap broke on YT's 1×1 embed; see RICK_TITLE
-  // comment for the rationale.)
-  const videoId = radio?.videoId ?? FALLBACK_VIDEO_ID;
+  const videoId = rickRolled
+    ? RICK_VIDEO_ID
+    : (radio?.videoId ?? FALLBACK_VIDEO_ID);
   const title = rickRolled ? RICK_TITLE : (radio?.title ?? FALLBACK_TITLE);
 
   // The iframe src is set ONCE (from the first known id) — subsequent swaps go

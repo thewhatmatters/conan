@@ -108,9 +108,18 @@ export function radioEmbedHtml(videoId: string): string {
       currentId = d.videoId;
       offline = false; retries = 0; clearRecover();
       if (player && ready) {
-        // loadVideoById preserves play/pause intent (continues if playing,
-        // else stays cued); matches the old in-app swap behaviour.
+        // loadVideoById is documented to auto-play, but on cross-origin
+        // swaps the IFrame API frequently just CUES the new video and
+        // waits — symptom: the title flips but audio keeps the previous
+        // station (US-102 easter-egg reports). Forcing a playVideo()
+        // after a short delay defeats that. The 250ms gives YT time to
+        // mount the new video element; playVideo() before that throws.
         try { player.loadVideoById(currentId); } catch (e3) {}
+        try {
+          window.setTimeout(function () {
+            try { if (player) player.playVideo(); } catch (e4) {}
+          }, 250);
+        } catch (e5) {}
       }
       postState();
     }

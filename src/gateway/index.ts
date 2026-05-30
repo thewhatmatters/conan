@@ -800,6 +800,11 @@ app.get("/api/claude/radio", (req, res) => {
 app.get("/radio/embed", (req, res) => {
   const videoId = sanitizeEmbedVideoId(req.query.v);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  // Embed page changes routinely (player tweaks for YT IFrame quirks),
+  // and the iframe lives across gateway restarts when the UI doesn't
+  // reload. `no-store` guarantees the iframe always fetches the current
+  // server-side HTML on its next mount, so debug iterations land.
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   res.setHeader(
     "Content-Security-Policy",
     [
