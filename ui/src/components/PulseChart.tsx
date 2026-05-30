@@ -1,7 +1,41 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Lock } from "lucide-react";
 import type { PulseSeries, PulseCategory } from "../hooks/usePulse.ts";
 import { AreaChart } from "./charts/AreaChart.tsx";
 import type { AvailableChartColorsKeys } from "../lib/chartUtils.ts";
+import { useTier } from "../hooks/useTier.ts";
+
+/* ───── US-103: Free-tier Pulse live-data cap ──────────────────────────────
+ * After FREE_PULSE_GRACE_MS of cumulative session time with live data
+ * visible, the chart blurs and a sticky-centered upgrade overlay drops.
+ * Sticky for the session — switching HUD tabs (which unmounts/remounts
+ * PulseChart) preserves the clock + walled state via module-level vars,
+ * so a user can't escape by toggling tabs. Premium upgrade resets both.
+ * This is the most aggressive gate in the suite — it walls live data,
+ * a deliberate departure from "never gate live" — see CLAUDE.md §259-279. */
+const FREE_PULSE_GRACE_MS = 60_000;
+
+/** Module-level session state — survives PulseChart's tab-switch unmounts.
+ *  `startedAt`: epoch ms when the Free-tier grace clock began (set on the
+ *  first mount that sees live data). `walled`: latch flipped when the clock
+ *  fires; once true, every subsequent mount renders the overlay
+ *  immediately. Both are reset by `resetPulseSession()` when `useTier()`
+ *  flips to premium. */
+let pulseSessionStartedAt: number | null = null;
+let pulseSessionWalled = false;
+function resetPulseSession(): void {
+  pulseSessionStartedAt = null;
+  pulseSessionWalled = false;
+}
+
+/** Dispatch the same `conan:open-settings` event the Timeline upgrade
+ *  overlay + RickrolledTicker use, so the Upgrade button here lands the
+ *  user directly on the JWT paste field. */
+function openLicenseSettings(): void {
+  window.dispatchEvent(
+    new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
+  );
+}
 
 type Range = { label: string; minutes: number };
 const RANGES: Range[] = [
@@ -151,6 +185,38 @@ export default function PulseChart({
   const categories = activeCategories.map((c) => c.label);
   const colors = activeCategories.map((c) => c.color);
 
+  /* ───── US-103 wall logic ───── */
+  const tier = useTier();
+  const isFree = tier.tier === "free";
+  // Initial state reads the module so re-mounting (HUD tab switch) restores
+  // the latched walled state immediately — no flicker of unblurred chart
+  // before the local useState catches up.
+  const [walled, setWalledLocal] = useState(() => pulseSessionWalled);
+
+  // Grace clock: starts the first time we see live data on a Free render,
+  // resumes elapsed-aware on re-mounts. The timeout fires once across the
+  // session because the module latches `pulseSessionWalled = true`.
+  useEffect(() => {
+    if (!isFree || walled || !hasData) return;
+    if (pulseSessionStartedAt === null) pulseSessionStartedAt = Date.now();
+    const elapsed = Date.now() - pulseSessionStartedAt;
+    const remaining = Math.max(0, FREE_PULSE_GRACE_MS - elapsed);
+    const t = window.setTimeout(() => {
+      pulseSessionWalled = true;
+      setWalledLocal(true);
+    }, remaining);
+    return () => window.clearTimeout(t);
+  }, [isFree, walled, hasData]);
+
+  // Premium-snap: clear the wall + reset the clock as soon as the tier
+  // flips, so a paste-then-Apply in Settings ▸ License gives instant access.
+  useEffect(() => {
+    if (!isFree) {
+      resetPulseSession();
+      if (walled) setWalledLocal(false);
+    }
+  }, [isFree, walled]);
+
   return (
     <section
       className={
@@ -175,10 +241,15 @@ export default function PulseChart({
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {hasData && categories.length > 0 ? (
           <AreaChart
-            className="h-full min-h-48 w-full"
+            className={
+              "h-full min-h-48 w-full " +
+              (walled
+                ? "pointer-events-none select-none [filter:blur(6px)]"
+                : "")
+            }
             data={data}
             index="t"
             categories={categories}
@@ -197,6 +268,32 @@ export default function PulseChart({
         ) : (
           <div className="flex h-full min-h-48 items-center justify-center text-xs text-muted-foreground">
             No activity in this window yet.
+          </div>
+        )}
+        {/* US-103 wall: absolute over the chart container, vertically
+            centered so it can't be scrolled past to peek at the blur.
+            Same JSX shape as the Timeline upgrade overlay (US-102) so the
+            two surfaces read as one upgrade story. */}
+        {walled && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
+            <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
+              <Lock className="size-5 text-muted-foreground" />
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="text-[13px] font-semibold leading-tight text-foreground">
+                  Unlock live Pulse
+                </div>
+                <div className="text-[11px] leading-tight text-muted-foreground">
+                  Conan Premium · $39 · lifetime
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={openLicenseSettings}
+                className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Upgrade
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -257,14 +257,36 @@ the full free/premium matrix.
    collapse into a single "Skills considered (N)" / "Plan rows (N)" /
    etc. summary row with a small `[ Premium ]` chip → click opens
    Settings ▸ License. POSTTOOL rows are not click-to-expand on Free.
-6. **US-103** — Pulse range cap: Free shows 15m + 1h tabs; 6h + 24h
-   render disabled at 40% opacity with `[ Premium ]` chip. Click on a
-   disabled range opens Settings ▸ License.
-7. **US-104** — Skills tab insight gating: Free shows installed skills +
-   descriptions + source badge; Premium adds `last fired` timestamps and
-   transcript-derived firing history.
-8. **US-105** — MCP auth watchdog: Premium-only background OAuth-token
-   watchdog + native banner when token expires + one-click reconnect.
+6. **US-103** — Pulse live-data cap (60s grace, then blur + upgrade
+   wall). Reading `useTier()`, mirrors the Radio grace-clock and the
+   US-102 Timeline overlay. **Decided 2026-05-30: a duration cap, NOT
+   the insight-overlay alternative** — the live chart itself is the
+   gated surface (a deliberate departure from "never gate live data";
+   chosen over forecast/anomaly/attribution overlays).
+   (a) **Grace clock.** A `FREE_PULSE_GRACE_MS = 60_000` constant
+   (paralleling `FREE_RADIO_GRACE_MS`). The clock starts when the Pulse
+   tab first renders a live datapoint for the session; after 60s the
+   wall drops. Once walled it stays walled for that session.
+   (b) **Wall.** The chart renders under
+   `filter: blur(6px) + pointer-events: none + user-select: none` with a
+   sticky-centered overlay: lock icon + headline "Unlock live Pulse" +
+   "Conan Premium · $39 · lifetime" + `[ Upgrade ]` button → opens
+   Settings ▸ License. Overlay anchors to the chart container so it can't
+   be scrolled past to peek at the blurred chart.
+   (c) **Premium** never gates — full live Pulse across all ranges, no
+   clock. ⚠ Known tradeoff: free users cannot watch live spend past 60s;
+   this is the most aggressive gate in the suite — keep it under review
+   against churn/review sentiment.
+7. ❌ **US-104** — Skills tab `last fired` gating. **Cut from v1.0
+   (2026-05-30)** — not worth gating. The four shipped surfaces
+   (Timeline, Pulse, Radio, License paste) already carry the
+   depth-of-insight pitch; adding Skills `last fired` would not move
+   conversion enough to justify the surface friction.
+8. ❌ **US-105** — MCP auth watchdog. **Cut from v1.0 (2026-05-30)** —
+   same rationale; "background OAuth-token watchdog + banner" is a
+   silent-prevention feature that's hard to discover, and Conan's MCP
+   surface today is read-only enough that the watchdog wouldn't be a
+   visible Premium win.
 9. **Tag `v1.0.0`**, run `npm run release`, attach `Conan_1.0.0_aarch64.dmg`
    to a GitHub Release, point conan.sh's Buy button at the Polar link.
 
