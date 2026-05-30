@@ -341,7 +341,7 @@ export default function UpdateBanner() {
         {(state.kind === "available" ||
           state.kind === "ready" ||
           state.kind === "error") && (
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex items-center justify-start gap-1.5">
             {state.kind === "available" && (
               <button
                 type="button"
