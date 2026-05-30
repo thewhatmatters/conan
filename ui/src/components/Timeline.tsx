@@ -18,6 +18,7 @@ import {
 } from "./ui/tooltip.tsx";
 import { fmtTokens } from "./Widgets.tsx";
 import { useTier } from "../hooks/useTier.ts";
+import { SkillFiredLottie } from "./SkillFiredLottie.tsx";
 
 /* ───── US-102: Free-tier gating constants ─────────────────────────────────
  * The Free tier sees:
@@ -439,6 +440,10 @@ function renderTimelineRow(
       { name: string; fired: boolean; reason: string }[]
     >;
     isFree: boolean;
+    /** Row keys that came from the initial backfill — these are historical,
+     *  so the skill-fired lottie skips its play and renders the static glyph.
+     *  Anything not in here is treated as a live arrival → animates once. */
+    historicalKeys: Set<string>;
   },
 ) {
   // US-102 Free-tier placeholder: muted dot, muted "[Premium]" pill, blank
@@ -491,14 +496,20 @@ function renderTimelineRow(
         <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
           {formatTime(row.ts)}
         </span>
-        <span className="relative flex w-3 shrink-0 justify-center">
-          <span
-            className={
-              "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
-              color.dot
-            }
+        {row.kind === "skill-fired" ? (
+          <SkillFiredLottie
+            animate={!opts.historicalKeys.has(rowKey(row))}
           />
-        </span>
+        ) : (
+          <span className="relative flex w-3 shrink-0 justify-center">
+            <span
+              className={
+                "size-2 shrink-0 translate-x-px rounded-full ring-2 ring-card " +
+                color.dot
+              }
+            />
+          </span>
+        )}
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <span
             className={
@@ -701,6 +712,11 @@ export default function Timeline({
   const tier = useTier();
   const isFree = tier.tier === "free";
   const [rows, setRows] = useState<TimelineRow[]>([]);
+  // Row keys that came from the initial backfill — used to tell SkillFiredLottie
+  // not to animate historical rows on the first render. Populated atomically
+  // with each setRows from the backfill effect; appendOrNotify deliberately
+  // does NOT add to this set, so live arrivals always animate once.
+  const historicalKeysRef = useRef<Set<string>>(new Set());
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [newCount, setNewCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -745,6 +761,7 @@ export default function Timeline({
   // session yields [] (route already returns []), which the empty state covers.
   useEffect(() => {
     if (!token || !sessionId) {
+      historicalKeysRef.current = new Set();
       setRows([]);
       setNewCount(0);
       return;
@@ -757,11 +774,17 @@ export default function Timeline({
       .then((r) => (r.ok ? r.json() : []))
       .then((arr: unknown) => {
         if (cancelled) return;
-        setRows(Array.isArray(arr) ? (arr as TimelineRow[]) : []);
+        const backfilled = Array.isArray(arr) ? (arr as TimelineRow[]) : [];
+        // Snapshot every backfilled key into the historical set BEFORE we
+        // setRows — render runs with the correct set on the first pass, so
+        // no historical skill-fired row plays its lottie on initial mount.
+        historicalKeysRef.current = new Set(backfilled.map(rowKey));
+        setRows(backfilled);
         setNewCount(0);
       })
       .catch(() => {
         if (!cancelled) {
+          historicalKeysRef.current = new Set();
           setRows([]);
           setNewCount(0);
         }
@@ -1112,6 +1135,7 @@ export default function Timeline({
               {freeUnlockedRows.map((row) => renderTimelineRow(row, {
                 consideredByPrompt,
                 isFree,
+                historicalKeys: historicalKeysRef.current,
               }))}
             </ul>
             {/* US-102: The blurred tail — kept inside the same scroller so the
@@ -1130,7 +1154,7 @@ export default function Timeline({
                     className="absolute bottom-0 left-[98px] top-0 w-px bg-border"
                   />
                   {freeBlurredRows.map((row) =>
-                    renderTimelineRow(row, { consideredByPrompt, isFree }),
+                    renderTimelineRow(row, { consideredByPrompt, isFree, historicalKeys: historicalKeysRef.current }),
                   )}
                 </ul>
               </div>

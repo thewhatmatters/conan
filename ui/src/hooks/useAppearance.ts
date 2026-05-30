@@ -21,12 +21,20 @@ export interface Appearance {
   terminalFontFamily: string | null;
   /** Terminal font size in px. */
   terminalFontSize: number;
+  /** Whether decorative animations play (Timeline skill-fired lightning burst,
+   *  License-tab Premium-unlock burst). `prefers-reduced-motion` always wins —
+   *  this toggle only matters when the OS isn't already asking for reduced
+   *  motion. Default on; user disables in Settings ▸ Appearance if it bothers
+   *  them. Surfaced via `useMotion()` so consumers don't reimplement the
+   *  combined check. */
+  animationsEnabled: boolean;
 }
 
 /** The defaults applied when nothing is stored (or a stored value is invalid). */
 export const DEFAULT_APPEARANCE: Appearance = {
   terminalFontFamily: null,
   terminalFontSize: 13,
+  animationsEnabled: true,
 };
 
 const STORAGE_KEY = "conan-appearance";
@@ -46,6 +54,10 @@ function readInitial(): Appearance {
         Number.isFinite(parsed.terminalFontSize)
           ? parsed.terminalFontSize
           : DEFAULT_APPEARANCE.terminalFontSize,
+      animationsEnabled:
+        typeof parsed.animationsEnabled === "boolean"
+          ? parsed.animationsEnabled
+          : DEFAULT_APPEARANCE.animationsEnabled,
     };
   } catch {
     return { ...DEFAULT_APPEARANCE };

@@ -22,6 +22,7 @@
  * success state and nothing else.
  */
 import { useEffect, useState, type ComponentType } from "react";
+import { useMotion } from "../hooks/useMotion.ts";
 
 interface PremiumUnlockBurstProps {
   /** Toggle to fire the animation. Flip true → the burst plays once,
@@ -71,20 +72,14 @@ async function loadAssets(): Promise<LoadedAssets> {
   return inflight;
 }
 
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
-  );
-}
-
 export function PremiumUnlockBurst({ play, onDone }: PremiumUnlockBurstProps) {
   const [assets, setAssets] = useState<LoadedAssets | null>(cached);
   const [active, setActive] = useState(false);
+  const motionOn = useMotion();
 
   useEffect(() => {
     if (!play) return;
-    if (prefersReducedMotion()) {
+    if (!motionOn) {
       onDone?.();
       return;
     }
@@ -106,7 +101,7 @@ export function PremiumUnlockBurst({ play, onDone }: PremiumUnlockBurstProps) {
     return () => {
       cancelled = true;
     };
-  }, [play, assets, onDone]);
+  }, [play, assets, onDone, motionOn]);
 
   if (!active || !assets) return null;
 
