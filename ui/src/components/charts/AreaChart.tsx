@@ -830,9 +830,14 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               const categoryId = `${areaId}-${category.replace(/[^a-zA-Z0-9]/g, "")}`;
               return (
                 <React.Fragment key={category}>
-                  <defs key={category}>
+                  {/* Tremor upstream put `key={category}` on <defs>,
+                      <linearGradient>, AND <Area> — every one of those is
+                      already a sibling inside the keyed Fragment, so the
+                      duplicate-key triggered the spammy React warnings
+                      ("Encountered two children with the same key, `Tools`").
+                      The Fragment's key is the only one needed here. */}
+                  <defs>
                     <linearGradient
-                      key={category}
                       className={cn(
                         getColorClassName(
                           categoryColors.get(
@@ -950,7 +955,6 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
                       }
                       return <React.Fragment key={index}></React.Fragment>;
                     }}
-                    key={category}
                     name={category}
                     type="linear"
                     dataKey={category}
