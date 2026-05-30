@@ -173,7 +173,7 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 - **`docs/global-hooks.md`** — global `~/.claude` hook setup so any
   `claude` run anywhere self-reports.
 
-## v0.1 → v1.0 launch progress (as of 2026-05-29 night)
+## v0.1 → v1.0 launch progress (as of 2026-05-30)
 
 **Decided + locked.** Production domain `conan.sh`; first public release
 is `1.0.0` (skipping the v0.x semver); JWT `edition = "v1"`;
@@ -182,6 +182,18 @@ no trial, no subscription, no per-device limit, day-one paid. Polar.sh
 is the Merchant of Record. Org slug `whatmatters`, product name
 `Conan Premium`. See [docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md)
 §1 + §5 + §11 for the full table.
+
+**Gating model: depth of insight, not depth of history** (decided
+2026-05-30 — replaces the original 7d/90d Timeline + 1h/24h Pulse
+history caps, which fail the WTP test for a live tool). Free gives a
+useful Claude observer (live terminal, Context, Usage, basic Timeline:
+PROMPT + tool calls + STOP + SESSION). Premium adds the insight layer:
+SKILL? scoring rows, PLAN rows, LOOP rows, BUILD rows, token chips,
+click-to-expand POSTTOOL payloads, Pulse 6h/24h, Skills `last fired`,
+MCP auth watchdog. Timeline cap is **50 rows in current session**, with
+an end-of-list "[ See what Premium adds — $39 ]" footer. See
+[docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md) §12 for
+the full free/premium matrix.
 
 **Built + working.**
 - ✅ Developer ID signing + notarization end-to-end via `npm run release`
@@ -203,6 +215,16 @@ is the Merchant of Record. Org slug `whatmatters`, product name
   one-time) exists; webhook → `license.conan.sh/api/polar-webhook` with
   `order.created` + `order.refunded`; Organization Access Token created
   in **Settings → Preferences → Developers** section (scroll to bottom).
+- ✅ **US-101** — `useTier()` hook + license loader/saver
+  ([ui/src/hooks/useTier.ts](ui/src/hooks/useTier.ts), gateway routes
+  `GET/PUT/DELETE /api/license`, storage at `$CONAN_DATA_DIR/license.jwt`,
+  best-effort revocation list refresh from `license.conan.sh/revoked.json`).
+- ✅ **US-106** — Settings ▸ License tab (banner, masked paste field with
+  show/hide toggle, Apply button, inline error from `VerifyResult`, Remove
+  button when Premium, Buy Premium button → `openExternal(BUY_PREMIUM_URL)`
+  via Tauri shell plugin). `BUY_PREMIUM_URL` is stubbed at `https://conan.sh`
+  in [SettingsView.tsx](ui/src/components/SettingsView.tsx); **swap to the
+  real Polar checkout URL post-Go-Live approval.**
 
 **Resume here (in order):**
 1. **Polar Go Live + Stripe Connect onboarding** (~15–30 min KYC).
@@ -218,13 +240,24 @@ is the Merchant of Record. Org slug `whatmatters`, product name
 4. **Generate the actual checkout link** (skipped tonight — there's no
    live checkout link yet for the in-app "Buy Premium" button).
    Save the URL for US-106.
-5. **US-101** — `useTier()` hook + license loader/saver
-   (`~/Library/Application Support/so.whatmatters.conan/license.jwt`).
-6. **US-106** — Settings ▸ License paste tab + Buy button → `open()`
-   the Polar checkout URL.
-7. **US-102/103/104/105** — per-surface gating (Timeline 7d cap,
-   Pulse range cap, Skills last-fired cap, MCP watchdog).
-8. **Tag `v1.0.0`**, run `npm run release`, attach `Conan_1.0.0_aarch64.dmg`
+5. **US-102** — Timeline insight gating: 50-row cap on the active
+   session for Free; gate event-type rendering (PROMPT + tool calls +
+   STOP + SESSION + Hooks chip free; SKILL? + PLAN + LOOP + BUILD +
+   token chips + Plan/Loop/Build filter chips + click-to-expand
+   payloads Premium). End-of-list footer:
+   `Showing latest 50 rows · Premium reveals all activity + skill scoring,`
+   `plan rows, tool payloads. [ See what Premium adds — $39 ]`. The gate
+   reads `useTier()`. Filter chips for Premium-only kinds render with a
+   small `[ Premium ]` chip when Free.
+6. **US-103** — Pulse range cap: Free shows 15m + 1h tabs; 6h + 24h
+   render disabled at 40% opacity with `[ Premium ]` chip. Click on a
+   disabled range opens Settings ▸ License.
+7. **US-104** — Skills tab insight gating: Free shows installed skills +
+   descriptions + source badge; Premium adds `last fired` timestamps and
+   transcript-derived firing history.
+8. **US-105** — MCP auth watchdog: Premium-only background OAuth-token
+   watchdog + native banner when token expires + one-click reconnect.
+9. **Tag `v1.0.0`**, run `npm run release`, attach `Conan_1.0.0_aarch64.dmg`
    to a GitHub Release, point conan.sh's Buy button at the Polar link.
 
 **Don't lose:** the webhook signing secret was pasted in the
