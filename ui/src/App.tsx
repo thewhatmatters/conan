@@ -26,6 +26,7 @@ import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
 import UpdateBanner from "./components/UpdateBanner.tsx";
+import Onboarding from "./components/Onboarding.tsx";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
 import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
@@ -291,6 +292,7 @@ export default function App() {
         initialTab={settingsInitialTab}
       />
       <UpdateBanner />
+      <Onboarding doctor={doctor} />
     </div>
   );
 }
