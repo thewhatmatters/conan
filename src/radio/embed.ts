@@ -142,7 +142,14 @@ export function radioEmbedHtml(videoId: string): string {
     }
   }
 
-  function onError() {
+  function onError(e) {
+    // YT error codes: 2 (invalid param) | 5 (HTML5) | 100 (gone) |
+    // 101 / 150 (owner-disabled embedding). Log so the user can read the
+    // actual code in DevTools if a station refuses to play — the Lo-fi live
+    // stream tends to embed clean, but music-video uploads (eg. the Rick Roll
+    // easter egg) have hit 101/150 in past tests. The log is harmless when
+    // everything works.
+    try { console.warn("[conan-radio-embed] YT error code", e && e.data, "for", currentId); } catch (_) {}
     playing = false;
     if (retries < MAX_QUICK_RETRIES) {
       retries += 1;
@@ -155,11 +162,28 @@ export function radioEmbedHtml(videoId: string): string {
   }
 
   window.onYouTubeIframeAPIReady = function () {
+    // host: youtube-nocookie.com — the privacy-enhanced embed domain. Lifts a
+    // number of cross-origin embed restrictions that the canonical youtube.com
+    // host enforces (some music-video uploads only embed cleanly here). Live
+    // streams + ordinary videos play identically through it, so this is a safe
+    // upgrade for the whole radio surface, not just the easter-egg path.
+    // origin: window.location.origin — required by YouTube for any embed that
+    // wants to drive postMessage commands back into a non-default origin. The
+    // embed page is hosted by our gateway at http://127.0.0.1:3747, so we pass
+    // that origin so YouTube accepts our load/play/pause commands.
     player = new window.YT.Player("player", {
       videoId: INITIAL_ID,
       width: 1,
       height: 1,
-      playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, playsinline: 1 },
+      host: "https://www.youtube-nocookie.com",
+      playerVars: {
+        autoplay: 0,
+        controls: 0,
+        disablekb: 1,
+        fs: 0,
+        playsinline: 1,
+        origin: window.location.origin,
+      },
       events: { onReady: onReady, onStateChange: onStateChange, onError: onError }
     });
   };
