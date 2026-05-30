@@ -184,13 +184,20 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
     setOffline(false);
   }, [videoId, ready, embedSrc]);
 
-  // Play button is locked when rickRolled — the user must Upgrade to
-  // resume audio. Hitting Play in this state would otherwise restart YT
-  // and bypass the pause effect above.
-  const disabled = !ready || offline || rickRolled;
+  const disabled = !ready || offline;
 
+  // Click-to-dismiss the rickroll: pressing Play while rickRolled resets
+  // the cumulative timer + clears rickRolled, and the rickRolled effect's
+  // cleanup sends `play` to YT so audio resumes. Another full grace
+  // window of continuous playback then re-triggers the rickroll — Free
+  // users can dismiss it but can't avoid it on the next pass.
   const toggle = () => {
     if (disabled) return;
+    if (rickRolled) {
+      elapsedRef.current = 0;
+      setRickRolled(false);
+      return;
+    }
     sendCommand({ action: playing ? "pause" : "play" });
   };
 
@@ -205,13 +212,21 @@ export default function RadioBar({ radio }: { radio: RadioState | null }) {
         type="button"
         onClick={toggle}
         disabled={disabled}
-        aria-label={playing ? `Pause ${title}` : `Play ${title}`}
-        title={
-          offline
-            ? `${title} is offline`
+        aria-label={
+          rickRolled
+            ? `Resume ${title}`
             : playing
               ? `Pause ${title}`
               : `Play ${title}`
+        }
+        title={
+          offline
+            ? `${title} is offline`
+            : rickRolled
+              ? `Resume ${title}`
+              : playing
+                ? `Pause ${title}`
+                : `Play ${title}`
         }
         className="inline-flex items-center justify-center rounded text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent"
       >
