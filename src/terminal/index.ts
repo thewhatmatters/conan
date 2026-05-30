@@ -121,17 +121,6 @@ interface TermSession {
   ctxScan: string;
   /** Rolling tail of recent output scanned for a `/usage` frame (US-010). */
   usageScan: string;
-  /** True when WE injected `/context` via injectContextRefresh and want to
-   *  ESC out of the modal once the frame parses cleanly — so the HUD's
-   *  refresh button doesn't leave the user stranded on the /context screen.
-   *  User-typed /context doesn't set this flag; we leave them on the screen
-   *  they asked for. Cleared after ESC fires (or after the safety timeout). */
-  autoDismissCtx: boolean;
-  autoDismissCtxTimer: ReturnType<typeof setTimeout> | null;
-  /** Same idea for /usage — set by injectUsageRefresh, honored once
-   *  maybeCaptureUsage lands a complete frame. */
-  autoDismissUsage: boolean;
-  autoDismissUsageTimer: ReturnType<typeof setTimeout> | null;
   exited: boolean;
   onData: pty.IDisposable;
   onExit: pty.IDisposable;
@@ -207,10 +196,6 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     killTimer: null,
     ctxScan: "",
     usageScan: "",
-    autoDismissCtx: false,
-    autoDismissCtxTimer: null,
-    autoDismissUsage: false,
-    autoDismissUsageTimer: null,
     exited: false,
     onData: { dispose() {} },
     onExit: { dispose() {} },
@@ -274,24 +259,6 @@ function maybeCaptureContext(s: TermSession, chunk: string): void {
   // Reset the scan window so the same lingering frame isn't re-parsed every
   // chunk; a fresh /context run re-accumulates and re-captures.
   s.ctxScan = "";
-  // If we (not the user) opened /context, dismiss the modal so the user
-  // isn't stranded on the /context screen after the HUD refresh button
-  // captured what it needed. Small delay so the TUI is fully painted before
-  // ESC lands — sending mid-render occasionally drops the key.
-  if (s.autoDismissCtx) {
-    s.autoDismissCtx = false;
-    if (s.autoDismissCtxTimer) {
-      clearTimeout(s.autoDismissCtxTimer);
-      s.autoDismissCtxTimer = null;
-    }
-    setTimeout(() => {
-      try {
-        s.term.write("\x1b");
-      } catch {
-        /* pty exited between schedule + send */
-      }
-    }, 120);
-  }
 }
 
 /**
@@ -305,23 +272,6 @@ export function injectContextRefresh(sessionId: string): boolean {
   if (!s || s.exited) return false;
   try {
     s.term.write("/context\r");
-    // Arm auto-dismiss: maybeCaptureContext will send ESC once the frame
-    // parses cleanly. Safety timer ensures we never leave the flag set
-    // forever — if the frame never appears (slow render, model in the
-    // middle of streaming, whatever) we still ESC after 4s rather than
-    // attaching the dismiss to whatever /context the user types next.
-    s.autoDismissCtx = true;
-    if (s.autoDismissCtxTimer) clearTimeout(s.autoDismissCtxTimer);
-    s.autoDismissCtxTimer = setTimeout(() => {
-      s.autoDismissCtxTimer = null;
-      if (!s.autoDismissCtx) return;
-      s.autoDismissCtx = false;
-      try {
-        s.term.write("\x1b");
-      } catch {
-        /* exited */
-      }
-    }, 4000);
     return true;
   } catch {
     return false;
@@ -448,26 +398,7 @@ function maybeCaptureUsage(s: TermSession, chunk: string): void {
   }
   // Clear only once the frame is fully rendered (the detail section, which comes
   // after every window, has appeared) so we don't drop the later windows.
-  if (s.usageScan.includes("contributing")) {
-    s.usageScan = "";
-    // If we (not the user) opened /usage, dismiss the modal so the user
-    // isn't stranded on the /usage screen after the HUD refresh button
-    // captured what it needed. Mirrors the /context auto-dismiss above.
-    if (s.autoDismissUsage) {
-      s.autoDismissUsage = false;
-      if (s.autoDismissUsageTimer) {
-        clearTimeout(s.autoDismissUsageTimer);
-        s.autoDismissUsageTimer = null;
-      }
-      setTimeout(() => {
-        try {
-          s.term.write("\x1b");
-        } catch {
-          /* pty exited between schedule + send */
-        }
-      }, 120);
-    }
-  }
+  if (s.usageScan.includes("contributing")) s.usageScan = "";
 }
 
 /** Notified each time `maybeCaptureUsage` lands a fresh /usage frame for a
@@ -497,21 +428,6 @@ export function injectUsageRefresh(sessionId: string): boolean {
   if (!s || s.exited) return false;
   try {
     s.term.write("/usage\r");
-    // Arm auto-dismiss; mirrors the /context refresh path. 4s safety so a
-    // missed-frame parse can't leave the next user-typed /usage marked for
-    // auto-dismiss.
-    s.autoDismissUsage = true;
-    if (s.autoDismissUsageTimer) clearTimeout(s.autoDismissUsageTimer);
-    s.autoDismissUsageTimer = setTimeout(() => {
-      s.autoDismissUsageTimer = null;
-      if (!s.autoDismissUsage) return;
-      s.autoDismissUsage = false;
-      try {
-        s.term.write("\x1b");
-      } catch {
-        /* exited */
-      }
-    }, 4000);
     return true;
   } catch {
     return false;
