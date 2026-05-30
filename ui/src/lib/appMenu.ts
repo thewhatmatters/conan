@@ -1,7 +1,6 @@
 import { isTauri } from "./gateway.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
 import type { Theme } from "./themes.ts";
-import { sendNativeNotification } from "./nativeNotify.ts";
 
 export interface AppMenuActions {
   /** All selectable themes (built-ins + user themes) for the Theme submenu. */
@@ -169,23 +168,7 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
 
   const helpMenu = await Submenu.new({
     text: "Help",
-    items: [
-      // Self-test for the macOS notification pipeline. Click it once after a
-      // fresh launch — if a banner appears, permission is granted and the
-      // Notification → native flow works. If nothing happens, check
-      // System Settings → Notifications → Conan; Tauri's plugin caches a
-      // denial per launch, so re-launch after granting.
-      await MenuItem.new({
-        text: "Test Notification",
-        action: () =>
-          void sendNativeNotification(
-            "Conan",
-            "If you see this, native notifications are working.",
-          ),
-      }),
-      await sep(),
-      await about(),
-    ],
+    items: [await about()],
   });
 
   const menu = await Menu.new({
