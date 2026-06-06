@@ -3,8 +3,9 @@ import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
-import { getActiveCwd } from "../cwd/index.js";
+import { getActiveCwd, setActiveCwd } from "../cwd/index.js";
 import { correlateClaudeSession, shortSessionId } from "./correlate.js";
+import { shellIntegrationEnv, parseOsc7Cwd } from "./shell-integration.js";
 import {
   parseContextFrame,
   cacheCapturedContext,
@@ -60,6 +61,13 @@ const CTX_SCAN_MAX = 64 * 1024;
 const USAGE_SCAN_MAX = 96 * 1024;
 
 /**
+ * Bound on the rolling buffer scanned for an OSC 7 cwd report (US-002). The
+ * sequence is short (`ESC]7;file://host/path` + terminator), so a small tail is
+ * plenty to reassemble one split across pty chunks.
+ */
+const OSC7_SCAN_MAX = 4 * 1024;
+
+/**
  * Resolve what the pty runs. `mode=claude` (default) launches Claude Code so the
  * terminal *is* a Claude session; `mode=shell` drops to a plain shell.
  *
@@ -88,11 +96,14 @@ function ptyEnv(): Record<string, string> {
   }
   env.TERM = "xterm-256color";
   env.COLORTERM = "truecolor";
+  // Wire OSC 7 cwd reporting into the shell so the gateway can follow the active
+  // terminal's directory (US-002). Best-effort; merged over the inherited env.
+  Object.assign(env, shellIntegrationEnv(env));
   return env;
 }
 
 interface ClientMessage {
-  type: "input" | "resize" | "close";
+  type: "input" | "resize" | "close" | "focus";
   data?: string;
   cols?: number;
   rows?: number;
@@ -121,6 +132,8 @@ interface TermSession {
   ctxScan: string;
   /** Rolling tail of recent output scanned for a `/usage` frame (US-010). */
   usageScan: string;
+  /** Rolling tail of recent output scanned for an OSC 7 cwd report (US-002). */
+  osc7Scan: string;
   exited: boolean;
   onData: pty.IDisposable;
   onExit: pty.IDisposable;
@@ -128,6 +141,17 @@ interface TermSession {
 
 /** Live terminal sessions keyed by their id (the client-supplied `tid`, or a UUID). */
 const sessions = new Map<string, TermSession>();
+
+/**
+ * The terminal the user is currently looking at / driving (US-002). Only this
+ * terminal's OSC 7 cwd reports are adopted as the app-wide active cwd — a `cd`
+ * in a background tab must not move where the StatusBar points or where new tabs
+ * spawn. Set when a socket attaches (the just-opened/reconnected tab), when the
+ * client types into a tab, and on an explicit `{type:'focus'}` from the UI
+ * (the tab-switch signal, US-004). A stale id (its session gone) simply matches
+ * nothing until the next focus/input.
+ */
+let focusedTermId: string | null = null;
 
 /**
  * Attach a node-pty session to an (already authenticated) WebSocket (US-015).
@@ -196,6 +220,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     killTimer: null,
     ctxScan: "",
     usageScan: "",
+    osc7Scan: "",
     exited: false,
     onData: { dispose() {} },
     onExit: { dispose() {} },
@@ -208,6 +233,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     pushBuffer(session, d);
     maybeCaptureContext(session, d);
     maybeCaptureUsage(session, d);
+    maybeAdoptCwd(session, d);
     if (session.ws && session.ws.readyState === session.ws.OPEN) session.ws.send(d);
   });
   session.onExit = term.onExit(({ exitCode }) => {
@@ -230,6 +256,34 @@ function pushBuffer(s: TermSession, chunk: string): void {
     const evicted = s.buffer.shift()!;
     s.bufferBytes -= Buffer.byteLength(evicted);
   }
+}
+
+/**
+ * Adopt the active terminal's working directory from its OSC 7 reports (US-002).
+ * Our shell integration (see shell-integration.ts) makes the shell emit
+ * `ESC]7;file://host/path` before each prompt; we parse it out of the output
+ * tail and, ONLY when this terminal is the focused one, push the new cwd through
+ * setActiveCwd (which validates + persists + notifies listeners). A `cd` in a
+ * background tab is ignored so it can't move the app-wide cwd.
+ *
+ * The OSC 7 bytes themselves are left in the stream sent to the client: xterm.js
+ * parses OSC sequences and silently drops unhandled ones (OSC 7 has no default
+ * handler), so they never render as visible text — harmless, with no risk of a
+ * chunk-split strip mangling adjacent output.
+ */
+function maybeAdoptCwd(s: TermSession, chunk: string): void {
+  // Cheap pre-gate: OSC 7 always carries the "7;" introducer after ESC]; skip
+  // the regex unless a "7;" is even present in the freshly arrived chunk.
+  if (!chunk.includes("7;")) return;
+  s.osc7Scan = (s.osc7Scan + chunk).slice(-OSC7_SCAN_MAX);
+  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
+  const cwd = parseOsc7Cwd(s.osc7Scan);
+  if (!cwd) return;
+  // Reset the scan so the same lingering report isn't re-applied every chunk; a
+  // fresh prompt re-emits OSC 7 and we re-adopt then.
+  s.osc7Scan = "";
+  if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
+  setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
 }
 
 /**
@@ -462,6 +516,9 @@ function attach(session: TermSession, ws: WebSocket): void {
     ws.send(session.buffer.join(""));
   }
   session.ws = ws;
+  // The just-attached (opened or reconnected) tab is what the user is looking
+  // at, so it owns cwd adoption until another tab is focused/typed into (US-002).
+  focusedTermId = session.id;
 
   const db = getDb();
   ws.on("message", (raw) => {
@@ -472,7 +529,14 @@ function attach(session: TermSession, ws: WebSocket): void {
       return;
     }
     if (msg.type === "input" && typeof msg.data === "string") {
+      // Typing into a tab focuses it for cwd adoption (US-002): the `cd` that
+      // triggers an OSC 7 report happens in the terminal the user is driving.
+      focusedTermId = session.id;
       session.term.write(msg.data);
+    } else if (msg.type === "focus") {
+      // Explicit tab-switch signal from the UI (US-004) — make this the terminal
+      // whose OSC 7 cwd reports are adopted, even before the user types.
+      focusedTermId = session.id;
     } else if (msg.type === "resize" && msg.cols && msg.rows) {
       session.term.resize(msg.cols, msg.rows);
       db.prepare(`UPDATE terminal_session SET cols = ?, rows = ? WHERE id = ?`).run(

@@ -32,7 +32,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Backend/gateway. setActiveCwd already exists in src/cwd/index.ts and persists; this story is purely the call site. Determine the active terminal (the one whose ws is focused) before adopting its cwd. Do NOT edit src/gateway/* casually while dogfooding — sidecar restart kills ptys; build:sidecar + restart needed to test in the dev app."
     },
     {
