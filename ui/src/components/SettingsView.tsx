@@ -616,9 +616,8 @@ function AppearanceTab({
                 Animations
               </div>
               <div className="truncate text-[11px] text-muted-foreground">
-                Lightning bolt on the Timeline when a skill fires, and on the License
-                tab when Premium unlocks. The OS &ldquo;Reduce motion&rdquo; setting
-                always wins.
+                Lightning bolt on the Timeline when a skill fires. The OS
+                &ldquo;Reduce motion&rdquo; setting always wins.
               </div>
             </div>
             <div className="flex shrink-0 items-center">

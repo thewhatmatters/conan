@@ -1,0 +1,130 @@
+{
+  "project": "Conan",
+  "branchName": "loop/app-updates",
+  "description": "Batch of Conan app updates: smart startup cwd that tracks the active terminal, persistent usage rate-limit bars, a free Conan-branded theme, and a runtime-configurable Buy Premium URL.",
+  "generatedAt": "2026-06-06",
+  "sourcePrd": "PRD.md",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Smart startup working directory (~/.claude else $HOME)",
+      "description": "As a Conan user, when I open the app with no remembered directory, I want it to start in ~/.claude (or my home directory) so that I'm never dumped into the app's install folder.",
+      "acceptanceCriteria": [
+        "In src/cwd/index.ts, loadPersisted() uses the persisted DATA_DIR/active-cwd file when present and usable",
+        "When there is no usable persisted cwd, the default is ~/.claude if it exists and is a usable dir (isUsableDir), else HOME",
+        "The PACKAGE_ROOT (install-location) fallback is removed from the startup default path",
+        "A persisted-but-now-invalid dir falls back to the smart default gracefully (no throw, no install dir)",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Backend only. HOME and PACKAGE_ROOT already imported from ../paths.js. Add a smartDefault() helper used by loadPersisted()."
+    },
+    {
+      "id": "US-002",
+      "title": "Track active terminal cwd via OSC 7",
+      "description": "As a user, when I cd in the active terminal, I want Conan to adopt that directory as the app active cwd so that new terminals and the Tasks/Timeline scope follow where I'm working.",
+      "acceptanceCriteria": [
+        "The shell emits OSC 7 (\\e]7;file://host/path\\e\\\\) on directory change (precmd/PROMPT hook wired for zsh/bash in the pty launch env)",
+        "The pty onData reader in src/terminal/index.ts parses OSC 7 sequences and extracts the absolute path",
+        "On an OSC 7 from the FOCUSED/active terminal only, setActiveCwd(path) is called (which validates, persists to DATA_DIR/active-cwd, and notifies onCwdChange listeners)",
+        "OSC 7 bytes are not leaked to the xterm output the user sees (stripped or harmless)",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Backend/gateway. setActiveCwd already exists in src/cwd/index.ts and persists; this story is purely the call site. Determine the active terminal (the one whose ws is focused) before adopting its cwd. Do NOT edit src/gateway/* casually while dogfooding — sidecar restart kills ptys; build:sidecar + restart needed to test in the dev app."
+    },
+    {
+      "id": "US-003",
+      "title": "Process-cwd polling fallback when OSC 7 is absent",
+      "description": "As a user on a shell that doesn't emit OSC 7, I still want Conan to follow my terminal's working directory so the feature degrades gracefully.",
+      "acceptanceCriteria": [
+        "When no OSC 7 has been seen for a terminal, Conan derives the pty child's real cwd from its pid (pid -> OS cwd lookup, same approach correlateClaudeSession uses for markers)",
+        "The poll runs on output-idle (not on every byte) and only for the active terminal",
+        "A detected cwd change calls setActiveCwd; an unchanged cwd is a no-op",
+        "OSC 7 (US-002), when present, takes precedence over the poll",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Backend/gateway. Reuse the pid->cwd technique from src/terminal/correlate.ts. Keep the poll cheap and idle-gated."
+    },
+    {
+      "id": "US-004",
+      "title": "StatusBar reflects live active cwd; new terminals spawn there",
+      "description": "As a user, I want the StatusBar to show my current working directory and new terminals to open in it, so the cwd the app tracks is visible and acted upon.",
+      "acceptanceCriteria": [
+        "The StatusBar cwd updates live when the active terminal's cwd changes (via /api/config or the app WS, whichever already feeds it)",
+        "Opening a new terminal tab spawns the pty in the current active cwd",
+        "After cd-ing and restarting the app, it reopens in that last directory (persist+restore end to end)",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "UI + wiring. Depends on US-002/US-003. Suggested skills: automate-browser. StatusBar.tsx renders the cwd/branch footer."
+    },
+    {
+      "id": "US-005",
+      "title": "Usage rate-limit bars always persist (empty skeleton when no data)",
+      "description": "As a user, I want the Usage tab's three rate-limit bars to always be visible (as empty placeholders when there's no data) so the layout is consistent.",
+      "acceptanceCriteria": [
+        "In ui/src/components/Widgets.tsx, PlanWindowRow falls back to the existing EmptyPlanWindowRow skeleton when its window data is null instead of returning null",
+        "In LiveUsageView with null windows (Session block present, no recent /usage probe), all three window rows render as empty skeletons above the SESSION block",
+        "When a /usage probe later captures windows, the rows fill with real values (real bar + X% used + Resets...)",
+        "Behavior is consistent across all three faces (Live / Plan / Empty) — the window rows never disappear",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Single small UI change. EmptyPlanWindowRow already exists (Widgets.tsx ~line 664); PlanWindowRow returns null at ~line 841. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-006",
+      "title": "New built-in \"Conan\" theme (FREE), from the marketing palette",
+      "description": "As a user, I want a Conan theme matching conan.sh's warm ink-and-fire look, free for everyone, so the app can wear the brand identity.",
+      "acceptanceCriteria": [
+        "Add a built-in { id: \"conan\", name: \"Conan\", type: \"dark\" } entry to BUILTIN_THEMES in ui/src/lib/themes.ts with the full canonical token set mapped from the conan.sh dark palette (background #0c0a09, foreground #f0e8d6, primary/ring #d97706 ember, card #1a1512, muted #231c18, border/input #2c2521, term-bg #0c0a09, term-fg #f0e8d6, charts #e0a42b/#d97706/#f0c674/#b45309/#a3341f, heat ramp #231c18->#5a3a14->#92591a->#c8962b->#d97706)",
+        "Make it FREE: isPremiumThemeId in SettingsView.tsx (line ~41) is updated (or a FREE_THEME_IDS allow-list added) so \"conan\" is not locked",
+        "\"Conan\" appears in the Appearance picker under Dark with no lock icon for Free users; selecting it reskins the whole app + terminal warm and persists across restart",
+        "Pulse charts render straw->ember->oxblood; the terminal goes #0c0a09 / #f0e8d6",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Colors only — no film-grain texture or fonts. Suggested skills: automate-browser. Theme model: applyTheme() sets the ~30 canonical tokens on <html> + toggles .dark; terminals re-read via getTerminalTheme() on THEME_APPLIED_EVENT."
+    },
+    {
+      "id": "US-007",
+      "title": "Runtime-configurable Buy Premium checkout URL",
+      "description": "As the operator, I want the Buy Premium URL configurable at runtime (not a hard-coded constant) so I can point it at the real Polar checkout without rebuilding and reinstalling the app.",
+      "acceptanceCriteria": [
+        "BUY_PREMIUM_URL is sourced from gateway config / env (e.g. CONAN_BUY_URL) and exposed to the UI (e.g. via /api/config or /api/claude/config), defaulting to https://conan.sh when unset",
+        "The Settings ▸ License \"Buy Premium · $39\" button opens the resolved URL via openExternal()",
+        "With no override set, behavior is unchanged (opens https://conan.sh)",
+        "Setting the override changes the checkout target without a rebuild",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Optional-but-recommended enhancement from PRD Story 3. The real Polar URL swap is a BLOCKED follow-up (Polar Go-Live approval pending) — out of scope here; this story only makes the URL configurable. Button already exists in SettingsView.tsx (~line 1238). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-008",
+      "title": "Animations description copy fix (Settings)",
+      "description": "As a user, I want the Settings Animations description to accurately describe current behavior so it isn't misleading.",
+      "acceptanceCriteria": [
+        "The Animations description in SettingsView.tsx no longer mentions \"and on the License tab when Premium unlocks\"",
+        "It reads: \"Lightning bolt on the Timeline when a skill fires. The OS “Reduce motion” setting always wins.\"",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Already implemented this session (uncommitted in SettingsView.tsx, hot-reloaded in dev). Marked passes:true so the loop skips it; included for record completeness."
+    }
+  ]
+}
