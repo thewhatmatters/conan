@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { PACKAGE_ROOT, DATA_DIR, HOME } from "../paths.js";
+import { DATA_DIR, HOME } from "../paths.js";
 
 /**
  * The app-wide active working directory (US-019). The toolbar directory picker
@@ -16,14 +16,26 @@ const CWD_FILE = path.join(DATA_DIR, "active-cwd");
 let active = loadPersisted();
 const listeners = new Set<(cwd: string) => void>();
 
+/**
+ * The startup default when there's no usable persisted choice. We prefer
+ * ~/.claude (where the user's Claude Code config + projects live) so the app
+ * opens somewhere meaningful, falling back to HOME — never the app's own
+ * install location.
+ */
+function smartDefault(): string {
+  const claudeDir = path.join(HOME, ".claude");
+  if (isUsableDir(claudeDir)) return claudeDir;
+  return HOME;
+}
+
 function loadPersisted(): string {
   try {
     const raw = fs.readFileSync(CWD_FILE, "utf8").trim();
     if (raw && isUsableDir(raw)) return raw;
   } catch {
-    /* no persisted cwd — fall through to the default */
+    /* no persisted cwd — fall through to the smart default */
   }
-  return PACKAGE_ROOT;
+  return smartDefault();
 }
 
 /** Expand a leading ~ to the user's home directory. */

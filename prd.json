@@ -17,7 +17,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Backend only. HOME and PACKAGE_ROOT already imported from ../paths.js. Add a smartDefault() helper used by loadPersisted()."
     },
     {
