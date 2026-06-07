@@ -153,3 +153,40 @@ export function correlateClaudeSession(
 export function shortSessionId(sessionId: string): string {
   return sessionId.slice(0, 8);
 }
+
+/**
+ * The current working directory of a live process, looked up from the OS by pid
+ * (US-003) — the polling fallback for shells that don't emit OSC 7. Same family
+ * of OS process inspection {@link correlateClaudeSession} uses (`ps` for the
+ * pid tree): here we read the pty child's cwd directly. On Linux we read the
+ * `/proc/<pid>/cwd` symlink; elsewhere (macOS/BSD) we ask `lsof` for the
+ * process's cwd file descriptor in machine-readable form (`-Fn` → an `n<path>`
+ * line). Returns null when the lookup fails or yields no absolute path, in which
+ * case the caller simply leaves the active cwd as-is.
+ */
+export function processCwd(pid: number): string | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (process.platform === "linux") {
+    try {
+      const p = fs.readlinkSync(`/proc/${pid}/cwd`);
+      return p.startsWith("/") ? p : null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const out = execFileSync(
+      "lsof",
+      ["-a", "-d", "cwd", "-p", String(pid), "-Fn"],
+      { encoding: "utf8", maxBuffer: 1024 * 1024 },
+    );
+    for (const line of out.split("\n")) {
+      if (!line.startsWith("n")) continue;
+      const p = line.slice(1).trim();
+      if (p.startsWith("/")) return p;
+    }
+  } catch {
+    /* lsof unavailable, or the pid is gone — degrade to no-op */
+  }
+  return null;
+}

@@ -47,7 +47,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Backend/gateway. Reuse the pid->cwd technique from src/terminal/correlate.ts. Keep the poll cheap and idle-gated."
     },
     {

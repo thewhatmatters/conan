@@ -4,7 +4,7 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
 import { getActiveCwd, setActiveCwd } from "../cwd/index.js";
-import { correlateClaudeSession, shortSessionId } from "./correlate.js";
+import { correlateClaudeSession, shortSessionId, processCwd } from "./correlate.js";
 import { shellIntegrationEnv, parseOsc7Cwd } from "./shell-integration.js";
 import {
   parseContextFrame,
@@ -66,6 +66,21 @@ const USAGE_SCAN_MAX = 96 * 1024;
  * plenty to reassemble one split across pty chunks.
  */
 const OSC7_SCAN_MAX = 4 * 1024;
+
+/**
+ * Process-cwd polling fallback timing (US-003). The poll runs only on
+ * output-idle: each pty chunk (re)arms a debounce, so a poll fires once the
+ * terminal goes quiet — never per byte. {@link CWD_POLL_MIN_SPACING_MS} floors
+ * the gap between two lsof lookups for the same terminal so a chatty program
+ * that idles just past the debounce can't spawn `lsof` on a tight loop.
+ */
+const CWD_POLL_IDLE_MS = clampEnvInt("CONAN_CWD_POLL_IDLE_MS", 750, 50, 60_000);
+const CWD_POLL_MIN_SPACING_MS = clampEnvInt(
+  "CONAN_CWD_POLL_SPACING_MS",
+  2_000,
+  0,
+  600_000,
+);
 
 /**
  * Resolve what the pty runs. `mode=claude` (default) launches Claude Code so the
@@ -134,6 +149,16 @@ interface TermSession {
   usageScan: string;
   /** Rolling tail of recent output scanned for an OSC 7 cwd report (US-002). */
   osc7Scan: string;
+  /**
+   * True once an OSC 7 cwd report has been parsed from this pty (US-002). When
+   * set, the process-cwd polling fallback (US-003) stands down for this
+   * terminal — OSC 7 is the authoritative cwd source.
+   */
+  osc7Seen: boolean;
+  /** Output-idle debounce timer for the process-cwd poll (US-003). */
+  cwdPollTimer: ReturnType<typeof setTimeout> | null;
+  /** Last time the process-cwd poll actually ran an lsof lookup (US-003). */
+  lastCwdPollAt: number;
   exited: boolean;
   onData: pty.IDisposable;
   onExit: pty.IDisposable;
@@ -221,6 +246,9 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     ctxScan: "",
     usageScan: "",
     osc7Scan: "",
+    osc7Seen: false,
+    cwdPollTimer: null,
+    lastCwdPollAt: 0,
     exited: false,
     onData: { dispose() {} },
     onExit: { dispose() {} },
@@ -234,6 +262,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     maybeCaptureContext(session, d);
     maybeCaptureUsage(session, d);
     maybeAdoptCwd(session, d);
+    scheduleCwdPoll(session);
     if (session.ws && session.ws.readyState === session.ws.OPEN) session.ws.send(d);
   });
   session.onExit = term.onExit(({ exitCode }) => {
@@ -276,13 +305,50 @@ function maybeAdoptCwd(s: TermSession, chunk: string): void {
   // the regex unless a "7;" is even present in the freshly arrived chunk.
   if (!chunk.includes("7;")) return;
   s.osc7Scan = (s.osc7Scan + chunk).slice(-OSC7_SCAN_MAX);
-  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
   const cwd = parseOsc7Cwd(s.osc7Scan);
   if (!cwd) return;
+  // This shell has working OSC 7 integration, so the polling fallback (US-003)
+  // stands down for this terminal — recorded even for a background tab, since
+  // OSC 7 availability is a property of the shell, not of who's focused.
+  s.osc7Seen = true;
+  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
   // Reset the scan so the same lingering report isn't re-applied every chunk; a
   // fresh prompt re-emits OSC 7 and we re-adopt then.
   s.osc7Scan = "";
   if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
+  setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
+}
+
+/**
+ * Schedule the process-cwd polling fallback (US-003) for shells that don't emit
+ * OSC 7. Called on every pty output chunk, it (re)arms a single debounce timer
+ * so the actual lookup fires only once output goes idle — never per byte. The
+ * poll stands down entirely once any OSC 7 report has been seen for this
+ * terminal (US-002 takes precedence).
+ */
+function scheduleCwdPoll(s: TermSession): void {
+  if (s.osc7Seen) return; // OSC 7 owns cwd adoption for this terminal
+  if (s.cwdPollTimer) clearTimeout(s.cwdPollTimer);
+  s.cwdPollTimer = setTimeout(() => {
+    s.cwdPollTimer = null;
+    pollProcessCwd(s);
+  }, CWD_POLL_IDLE_MS);
+}
+
+/**
+ * The output-idle process-cwd poll (US-003). Re-checks the focus + OSC 7 gates
+ * at fire time (both can change between scheduling and firing), floors the gap
+ * between lsof lookups, then adopts the pty child's real cwd if it has moved.
+ * An unchanged cwd — or any failed lookup — is a no-op.
+ */
+function pollProcessCwd(s: TermSession): void {
+  if (s.exited || s.osc7Seen) return;
+  if (s.id !== focusedTermId) return; // only the active terminal moves the cwd
+  const now = Date.now();
+  if (now - s.lastCwdPollAt < CWD_POLL_MIN_SPACING_MS) return;
+  s.lastCwdPollAt = now;
+  const cwd = processCwd(s.term.pid);
+  if (!cwd || cwd === getActiveCwd()) return; // no path, or unchanged — no-op
   setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
 }
 
@@ -573,6 +639,10 @@ function destroySession(session: TermSession): void {
   if (session.killTimer) {
     clearTimeout(session.killTimer);
     session.killTimer = null;
+  }
+  if (session.cwdPollTimer) {
+    clearTimeout(session.cwdPollTimer);
+    session.cwdPollTimer = null;
   }
   session.onData.dispose();
   session.onExit.dispose();
