@@ -78,7 +78,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Single small UI change. EmptyPlanWindowRow already exists (Widgets.tsx ~line 664); PlanWindowRow returns null at ~line 841. Suggested skills: automate-browser."
     },
     {

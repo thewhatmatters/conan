@@ -826,8 +826,9 @@ const WINDOW_LABELS: Record<WindowKind, string> = {
  * One rate-limit window — mirrors the layout the `/usage` TUI uses: the
  * sentence-cased label on top, the bar with "X% used" on the right, and a
  * muted "Resets …" line below carrying the absolute reset time + timezone.
- * Hidden entirely when the upstream window is null (e.g. /usage didn't
- * render a Sonnet-only line for this account).
+ * Falls back to the EmptyPlanWindowRow skeleton when the upstream window is
+ * null (e.g. no recent /usage probe), so the three rate-limit rows never
+ * disappear and the layout stays consistent across all faces (US-005).
  */
 function PlanWindowRow({
   kind,
@@ -838,7 +839,7 @@ function PlanWindowRow({
   win: UsageWindow | null;
   tick: number;
 }) {
-  if (!win) return null;
+  if (!win) return <EmptyPlanWindowRow kind={kind} />;
   const pct = Math.max(0, Math.min(100, win.utilizationPct));
   const barColor =
     win.utilizationPct >= 100
