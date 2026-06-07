@@ -677,24 +677,23 @@ app.post("/api/claude/context/autorefresh", (req, res) => {
   res.json({ ok: true, enabled: getContextAutoRefresh() });
 });
 
-// On-demand /usage refresh: prior versions injected `/usage` into the live
-// pty so its modal would be captured passively. Problem: the modal stays
-// open until the user presses ESC, and programmatic ESC doesn't reach the
-// TUI's input handler (see 8ee2dfe). The Session block is fully derivable
-// from the JSONL transcript anyway — see deriveSessionUsage in
-// src/transcript/index.ts — so the refresh now just broadcasts a
-// `usage-captured` event and lets the HUD re-fetch /api/claude/usage,
-// which computes the fresh session block server-side. No modal, no ESC,
-// no interruption of the user's terminal.
+// On-demand /usage refresh: derive-AND-inject (user-requested, restores the
+// pre-b382946 in-chat echo). Two independent jobs happen on every click:
 //
-// Derive-first, inject-fallback. The transcript-derived Session block is
-// preferred (always fresh, never touches the terminal), but a brand-new
-// session that hasn't been prompted yet has NO JSONL on disk, so derive
-// returns null and the HUD would sit on "Awaiting capture" forever. In that
-// case we fall back to typing /usage into the live pty (the old capture path)
-// so the user still gets a Session block AND sees the command run. The modal-
-// stays-open quirk (8ee2dfe) only resurfaces on these data-less sessions —
-// strictly better than the refresh silently doing nothing.
+//  1. Panel data — the Session block is derived from the JSONL transcript
+//     (deriveSessionUsage in src/transcript/index.ts). Always fresh (the
+//     transcript writes after every assistant turn), never depends on the
+//     terminal, and is what GET /api/claude/usage prefers. This is what
+//     actually populates the HUD.
+//  2. In-chat echo — we ALSO type `/usage` into the live pty so the command
+//     visibly runs in the user's terminal, the way it did before b382946.
+//
+// ⚠ Caveat (8ee2dfe): the injected `/usage` modal stays open until the user
+// presses ESC — programmatic ESC doesn't reach the TUI's input handler. So
+// the user has to dismiss the modal themselves. The panel does NOT need the
+// modal (it reads the transcript), so the data lands regardless; the modal is
+// purely the visible echo. injectUsageRefresh no-ops (returns false) when no
+// live pty is correlated, so derive-only sessions still populate the panel.
 app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
   if (!authed(req, res)) return;
   const sessionId = req.params.id;
@@ -702,10 +701,11 @@ app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
     .prepare("SELECT cwd FROM session WHERE id = ?")
     .get(sessionId) as { cwd?: string } | undefined;
   const derived = deriveSessionUsage(sessionId, row?.cwd ?? null);
-  const injected = derived ? false : injectUsageRefresh(sessionId);
+  const injected = injectUsageRefresh(sessionId);
   broadcast({ type: "usage-captured", sessionId });
   res.json({
     ok: true,
+    injected,
     source: derived ? "derived" : injected ? "injected" : "none",
   });
 });
