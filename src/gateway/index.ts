@@ -48,6 +48,11 @@ import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
+// US-007: the Buy Premium checkout URL the Settings ▸ License button opens, made
+// runtime-configurable so the real Polar link can be swapped in (post Go-Live)
+// without rebuilding the app. Defaults to the marketing site so the button is
+// never broken when no override is set.
+const BUY_URL = process.env.CONAN_BUY_URL || "https://conan.sh";
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
 // over 127.0.0.1 and is never exposed to the network. The browser/web-served +
 // TLS/remote-access path was removed — the WS auth token + Origin validation in
@@ -139,7 +144,7 @@ app.get("/api/health", (_req, res) => {
 // cwd is the app-wide active working directory (US-019); it survives a restart
 // so reloads see the chosen directory.
 app.get("/api/config", (_req, res) => {
-  res.json({ token: AUTH_TOKEN, port: PORT, cwd: getActiveCwd() });
+  res.json({ token: AUTH_TOKEN, port: PORT, cwd: getActiveCwd(), buyUrl: BUY_URL });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.

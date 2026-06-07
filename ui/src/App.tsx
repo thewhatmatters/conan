@@ -35,6 +35,8 @@ interface Config {
   token: string;
   port: number;
   cwd: string;
+  /** US-007: runtime-configurable Buy Premium checkout URL (CONAN_BUY_URL). */
+  buyUrl?: string;
 }
 
 export default function App() {
@@ -291,6 +293,7 @@ export default function App() {
         onSelectTheme={setActiveTheme}
         doctor={doctor}
         initialTab={settingsInitialTab}
+        buyUrl={config?.buyUrl ?? null}
       />
       <UpdateBanner />
       <Onboarding doctor={doctor} />

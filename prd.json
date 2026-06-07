@@ -110,7 +110,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Optional-but-recommended enhancement from PRD Story 3. The real Polar URL swap is a BLOCKED follow-up (Polar Go-Live approval pending) — out of scope here; this story only makes the URL configurable. Button already exists in SettingsView.tsx (~line 1238). Suggested skills: automate-browser."
     },
     {

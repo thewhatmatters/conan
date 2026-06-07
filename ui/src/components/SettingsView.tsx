@@ -91,6 +91,7 @@ export default function SettingsView({
   onSelectTheme,
   doctor,
   initialTab,
+  buyUrl,
 }: {
   open: boolean;
   onClose: () => void;
@@ -115,6 +116,10 @@ export default function SettingsView({
    *  Timeline (US-102) passes `"license"` so the Free user lands directly on
    *  the paste-your-license surface. */
   initialTab?: "status" | "config" | "appearance" | "license";
+  /** US-007: runtime-configurable Buy Premium checkout URL from /api/config.
+   *  Falls back to the BUY_PREMIUM_URL default when unset, so the button is
+   *  never broken. */
+  buyUrl?: string | null;
 }) {
   // Per-key inline save error, shared by both tabs (cleared on the next
   // successful save of that key). Lifted here so the Status and Config tabs write
@@ -215,7 +220,7 @@ export default function SettingsView({
             />
           </TabsContent>
           <TabsContent value="license" className="mt-0">
-            <LicenseTab token={token} />
+            <LicenseTab token={token} buyUrl={buyUrl} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -1045,11 +1050,12 @@ function formatValue(value: unknown): string {
 /* ───── License tab (US-106) ──────────────────────────────────────────── */
 
 /**
- * The Polar hosted-checkout URL the Buy button opens. Will be the real
- * `https://buy.polar.sh/polar_cl_…` link once Polar approves the org
- * (the Go Live + Stripe Connect KYC flow). Until then, points at the
- * marketing site so the button is never broken — landing page can carry
- * a "we'll be live soon" message + email capture.
+ * Default Polar hosted-checkout URL the Buy button opens when the gateway
+ * supplies no override. US-007 makes the live value runtime-configurable via
+ * `CONAN_BUY_URL` (surfaced on /api/config as `buyUrl`); this constant is the
+ * fallback so the button is never broken. Will be swapped for the real
+ * `https://buy.polar.sh/polar_cl_…` link once Polar approves the org (the Go
+ * Live + Stripe Connect KYC flow) — set CONAN_BUY_URL and no rebuild is needed.
  */
 const BUY_PREMIUM_URL = "https://conan.sh";
 
@@ -1088,7 +1094,15 @@ async function openExternal(url: string): Promise<void> {
  *   - Remove button: drops back to Free immediately, deletes the JWT file.
  *   - Buy Premium: opens the Polar checkout URL in the user's default browser.
  */
-function LicenseTab({ token }: { token: string | null }) {
+function LicenseTab({
+  token,
+  buyUrl,
+}: {
+  token: string | null;
+  /** US-007: resolved Buy Premium URL from /api/config; falls back to the
+   *  BUY_PREMIUM_URL default when null/unset. */
+  buyUrl?: string | null;
+}) {
   const tier = useTier(token);
   const [draft, setDraft] = useState("");
   const [showJwt, setShowJwt] = useState(false);
@@ -1244,7 +1258,7 @@ function LicenseTab({ token }: { token: string | null }) {
         {tier.tier === "free" && (
           <button
             type="button"
-            onClick={() => openExternal(BUY_PREMIUM_URL)}
+            onClick={() => openExternal(buyUrl || BUY_PREMIUM_URL)}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Buy Premium · $39
