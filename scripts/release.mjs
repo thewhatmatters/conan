@@ -36,6 +36,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -382,6 +383,22 @@ for (const target of [appPath, dmgPath]) {
   }
 }
 
+// ---- 6b. Stable-named DMG copy (the marketing site's Download link) -------
+//
+// conan.sh's Download button points at a version-LESS URL so it never needs
+// updating per release:
+//   https://github.com/<repo>/releases/latest/download/Conan_aarch64.dmg
+// GitHub's `latest/download/<name>` resolves to whichever release is "latest"
+// but requires the exact asset NAME to exist there — and Tauri bakes the
+// version into the real DMG (Conan_<version>_aarch64.dmg), which would 404 the
+// link on the next release. So we ship a byte-identical copy under the stable
+// name alongside the versioned one. The copy preserves the embedded codesign
+// signature AND the stapled notarization ticket (both live inside the .dmg
+// file), so the stable asset is just as Gatekeeper-valid as the original.
+const stableDmg = path.join(path.dirname(dmgPath), "Conan_aarch64.dmg");
+copyFileSync(dmgPath, stableDmg);
+console.log(`[release] wrote stable-named copy ${stableDmg}`);
+
 // ---- 7. Emit latest.json (the updater manifest) --------------------------
 //
 // tauri-plugin-updater polls a URL like
@@ -411,6 +428,7 @@ rmSync(tmpDir, { recursive: true, force: true });
 console.log(`\n[release] done. ✅ Signed, notarized, stapled, Gatekeeper-accepted.
   .app:           ${appPath}
   .dmg:           ${dmgPath}
+  .dmg (stable):  ${stableDmg}
   updater .tar.gz:${updaterArchive}
   updater .sig:   ${updaterSig}
   manifest:       ${latestJsonPath}
@@ -437,6 +455,7 @@ console.log(`
     --title "Conan ${version}" \\
     --notes "See CHANGELOG.md for details." \\
     "${dmgPath}" \\
+    "${stableDmg}" \\
     "${updaterArchive}" \\
     "${updaterSig}" \\
     "${latestJsonPath}"
@@ -445,4 +464,7 @@ The updater client polls
   https://github.com/${GH_REPO}/releases/latest/download/latest.json
 which 302-redirects to whichever release is marked "latest", so all currently
 installed clients will auto-update once you publish.
+
+The conan.sh Download button points at the stable-named copy:
+  https://github.com/${GH_REPO}/releases/latest/download/Conan_aarch64.dmg
 `);
