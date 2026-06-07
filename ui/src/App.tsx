@@ -77,6 +77,7 @@ export default function App() {
     lastPlan,
     lastRadio,
     lastUsageCapture,
+    lastCwd,
     reconnectSeq,
   } = useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
@@ -249,7 +250,7 @@ export default function App() {
       <TerminalPane
         token={config?.token ?? null}
         theme={theme}
-        cwd={activeSession?.cwd ?? config?.cwd ?? null}
+        cwd={lastCwd?.cwd ?? activeSession?.cwd ?? config?.cwd ?? null}
         git={widgetData?.git ?? null}
         onActiveTidChange={setActiveTid}
         tasks={tasks}

@@ -151,6 +151,10 @@ export interface GatewayState {
    *  wsTrigger so useUsage re-pulls and the HUD's Usage tab populates without an
    *  explicit ↻ click. */
   lastUsageCapture: { sessionId: string; seq: number } | null;
+  /** Latest `{type:'cwd'}` broadcast (US-004) — the app-wide active working
+   *  directory as the focused terminal `cd`s. Feeds the StatusBar so the footer
+   *  tracks where the user is working live, without re-polling /api/config. */
+  lastCwd: { cwd: string; seq: number } | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -183,6 +187,7 @@ export function useGateway(
   const [lastRadio, setLastRadio] = useState<GatewayState["lastRadio"]>(null);
   const [lastUsageCapture, setLastUsageCapture] =
     useState<GatewayState["lastUsageCapture"]>(null);
+  const [lastCwd, setLastCwd] = useState<GatewayState["lastCwd"]>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -257,6 +262,8 @@ export function useGateway(
               sessionId: String(msg.sessionId ?? ""),
               seq: ++seq,
             });
+          else if (msg.type === "cwd")
+            setLastCwd({ cwd: String(msg.payload ?? ""), seq: ++seq });
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -275,6 +282,7 @@ export function useGateway(
     lastPlan,
     lastRadio,
     lastUsageCapture,
+    lastCwd,
     status,
     reconnectSeq,
   };

@@ -62,7 +62,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "UI + wiring. Depends on US-002/US-003. Suggested skills: automate-browser. StatusBar.tsx renders the cwd/branch footer."
     },
     {

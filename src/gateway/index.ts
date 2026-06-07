@@ -20,7 +20,7 @@ import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage/probe.js";
-import { getActiveCwd } from "../cwd/index.js";
+import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -977,6 +977,14 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 setUsageCapturedListener((sessionId) =>
   broadcast({ type: "usage-captured", sessionId }),
 );
+
+// Wire the live active-cwd broadcast (US-004): when the focused terminal's OSC 7
+// (US-002) or process-cwd poll (US-003) adopts a new directory, setActiveCwd
+// fires onCwdChange — push `{type:'cwd', payload}` over /ws so the StatusBar's
+// directory updates live without re-polling /api/config (which is fetched once
+// at boot). New terminals already spawn in getActiveCwd(), so this just keeps
+// the visible footer in sync with where the user is working.
+onCwdChange((cwd) => broadcast({ type: "cwd", payload: cwd }));
 
 // Bundled plugins: symlink CONAN_PLUGIN_DIR/<name>/ into ~/.claude/plugins/<name>/
 // on boot so Claude Code discovers them with the same plugin source path it
