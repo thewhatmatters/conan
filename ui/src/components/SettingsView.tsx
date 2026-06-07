@@ -23,7 +23,7 @@ import {
   saveLicense,
   clearLicense,
 } from "../hooks/useTier.ts";
-import type { VerifyResult } from "../lib/license.ts";
+import { PREMIUM_PRICE, type VerifyResult } from "../lib/license.ts";
 import { PremiumUnlockBurst } from "./PremiumUnlockBurst.tsx";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
@@ -780,7 +780,7 @@ function ThemeRow({
         type="button"
         onClick={locked ? onShowLicense : onSelect}
         aria-pressed={selected}
-        title={locked ? "Conan Premium · $39 unlocks this theme" : undefined}
+        title={locked ? `Conan Premium · ${PREMIUM_PRICE} unlocks this theme` : undefined}
         className={`flex w-full items-center justify-between gap-4 border-b border-border px-5 py-2.5 text-left last:border-b-0 hover:bg-muted/50 ${
           selected ? "bg-muted/40" : ""
         }`}
@@ -1261,7 +1261,7 @@ function LicenseTab({
             onClick={() => openExternal(buyUrl || BUY_PREMIUM_URL)}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Buy Premium · $39
+            Buy Premium · {PREMIUM_PRICE}
           </button>
         )}
         {tier.tier === "premium" && (

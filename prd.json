@@ -103,7 +103,7 @@
       "description": "As the operator, I want the Buy Premium URL configurable at runtime (not a hard-coded constant) so I can point it at the real Polar checkout without rebuilding and reinstalling the app.",
       "acceptanceCriteria": [
         "BUY_PREMIUM_URL is sourced from gateway config / env (e.g. CONAN_BUY_URL) and exposed to the UI (e.g. via /api/config or /api/claude/config), defaulting to https://conan.sh when unset",
-        "The Settings ▸ License \"Buy Premium · $39\" button opens the resolved URL via openExternal()",
+        "The Settings ▸ License \"Buy Premium · $29\" button opens the resolved URL via openExternal()",
         "With no override set, behavior is unchanged (opens https://conan.sh)",
         "Setting the override changes the checkout target without a rebuild",
         "Typecheck passes",

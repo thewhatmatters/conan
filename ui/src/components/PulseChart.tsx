@@ -5,6 +5,7 @@ import type { PulseSeries, PulseCategory } from "../hooks/usePulse.ts";
 import { AreaChart } from "./charts/AreaChart.tsx";
 import type { AvailableChartColorsKeys } from "../lib/chartUtils.ts";
 import { useTier } from "../hooks/useTier.ts";
+import { PREMIUM_PRICE } from "../lib/license.ts";
 
 /* ───── US-103: Free-tier Pulse live-data cap ──────────────────────────────
  * After FREE_PULSE_GRACE_MS of cumulative session time with live data
@@ -295,7 +296,7 @@ export default function PulseChart({
                   Unlock live Pulse
                 </div>
                 <div className="text-[11px] leading-tight text-muted-foreground">
-                  Conan Premium · $39 · lifetime
+                  Conan Premium · {PREMIUM_PRICE} · lifetime
                 </div>
               </div>
               <button

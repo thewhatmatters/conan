@@ -101,7 +101,7 @@ gets the persistent layout. Single small change.
 **so that** upgrading is one click away.
 
 ### Verified current behavior (source) — mostly already built
-- Settings ▸ License **already renders a primary-styled `Buy Premium · $39`
+- Settings ▸ License **already renders a primary-styled `Buy Premium · $29`
   button for Free users** (`SettingsView.tsx` ~1238): `bg-primary
   text-primary-foreground`, `onClick → openExternal(BUY_PREMIUM_URL)`.
 - It opens `BUY_PREMIUM_URL` — **currently the placeholder `https://conan.sh`**
@@ -126,7 +126,7 @@ gets the persistent layout. Single small change.
   rebuild + reinstall**. (Given how heavy our release loop is, this is worth it.)
 
 ### Acceptance criteria
-- Free user sees a prominent primary `Buy Premium · $39` button in Settings ▸
+- Free user sees a prominent primary `Buy Premium · $29` button in Settings ▸
   License that opens `BUY_PREMIUM_URL` in the default browser. *(already true —
   regression-guard it.)*
 - If the optional enhancement is taken: the checkout URL can be set without

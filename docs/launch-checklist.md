@@ -38,7 +38,7 @@ between here and the public `v1.0.0` release.
 | | Item | Notes |
 |---|---|---|
 | ✅ | Polar org `WhatMatters` created | |
-| ✅ | Product `Conan Premium` ($39 one-time) configured | |
+| ⬜ | Product `Conan Premium` ($29 one-time) configured | ⚠ Polar product price still set to $39 — update in Polar dashboard to $29 |
 | ✅ | Webhook → `license.conan.sh/api/polar-webhook` (`order.created` + `order.refunded`) | |
 | ✅ | Organization Access Token created | Settings → Preferences → Developers (scroll to bottom) |
 | ✅ | Synthetic-webhook end-to-end test passes | `scripts/test-webhook.mjs` in `conan-license/` repo |
@@ -100,7 +100,7 @@ between here and the public `v1.0.0` release.
 |---|---|---|
 | ✅ | Domain `conan.sh` registered | |
 | ✅ | Vercel project deployed (placeholder "coming soon") | |
-| ⬜ | Real landing page | Hero, free/premium comparison, $39 lifetime pricing, screenshots / screencap |
+| ⬜ | Real landing page | Hero, free/premium comparison, $29 lifetime pricing, screenshots / screencap |
 | ⬜ | Download button → GitHub Release DMG | |
 | ⬜ | Buy button → live Polar checkout URL | gated on Polar Go Live |
 | ⬜ | (Optional) Privacy / Terms pages or link to Polar's | Polar handles transactional T&Cs as MoR |
@@ -149,7 +149,7 @@ between here and the public `v1.0.0` release.
 | Apple Developer ID identity | `Developer ID Application: Randy WhatMatters (4P6GX328VY)` |
 | Notarytool keychain profile | `conan-notarize` |
 | Polar org slug | `whatmatters` |
-| Polar product | `Conan Premium` ($39 one-time) |
+| Polar product | `Conan Premium` ($29 one-time) |
 | Polar webhook target | `https://license.conan.sh/api/polar-webhook` |
 | Webhook events | `order.created`, `order.refunded` |
 | Public key bundled in app | `ui/src/lib/license.ts` |

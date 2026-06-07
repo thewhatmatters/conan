@@ -18,6 +18,7 @@ import {
 } from "./ui/tooltip.tsx";
 import { fmtTokens } from "./Widgets.tsx";
 import { useTier } from "../hooks/useTier.ts";
+import { PREMIUM_PRICE } from "../lib/license.ts";
 import { SkillFiredLottie } from "./SkillFiredLottie.tsx";
 
 /* ───── US-102: Free-tier gating constants ─────────────────────────────────
@@ -1223,7 +1224,7 @@ export default function Timeline({
               Unlock the full Timeline
             </div>
             <div className="text-[11px] leading-tight text-muted-foreground">
-              Conan Premium · $39 · lifetime
+              Conan Premium · {PREMIUM_PRICE} · lifetime
             </div>
           </div>
           <button

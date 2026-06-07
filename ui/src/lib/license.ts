@@ -31,6 +31,14 @@ import * as ed from "@noble/ed25519";
 export const LICENSE_PUBLIC_KEY_BASE64 =
   "Dda3imbTa4xCOZTa96_Drrl53k89PZwp4Bd34_pCrY4";
 
+/**
+ * Premium price, as shown in every upgrade surface (Settings ▸ License,
+ * Pulse wall, Timeline overlay, locked-theme tooltip). Single source of
+ * truth so the price never drifts between surfaces. One-time, lifetime 1.x.
+ * Keep in sync with the Polar `Conan Premium` product price.
+ */
+export const PREMIUM_PRICE = "$29";
+
 /** Expected JWT issuer. Locked. */
 const ISSUER = "conan.sh";
 /** This build's accepted editions. v1.x builds accept v1 licenses; future

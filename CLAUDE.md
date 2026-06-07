@@ -177,7 +177,7 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 
 **Decided + locked.** Production domain `conan.sh`; first public release
 is `1.0.0` (skipping the v0.x semver); JWT `edition = "v1"`;
-`ACCEPTED_EDITIONS = {"v1"}`. License is **$39 one-time, lifetime 1.x,**
+`ACCEPTED_EDITIONS = {"v1"}`. License is **$29 one-time, lifetime 1.x,**
 no trial, no subscription, no per-device limit, day-one paid. Polar.sh
 is the Merchant of Record. Org slug `whatmatters`, product name
 `Conan Premium`. See [docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md)
@@ -191,7 +191,7 @@ PROMPT + tool calls + STOP + SESSION). Premium adds the insight layer:
 SKILL? scoring rows, PLAN rows, LOOP rows, BUILD rows, token chips,
 click-to-expand POSTTOOL payloads, Pulse 6h/24h, Skills `last fired`,
 MCP auth watchdog. Timeline cap is **50 rows in current session**, with
-an end-of-list "[ See what Premium adds — $39 ]" footer. See
+an end-of-list "[ See what Premium adds — $29 ]" footer. See
 [docs/v4.7-licensing-design.md](docs/v4.7-licensing-design.md) §12 for
 the full free/premium matrix.
 
@@ -211,8 +211,9 @@ the full free/premium matrix.
   `verifyLicense()` returns `{ok: true}` with all 7 claims round-tripping.
   Synthetic webhook test (`scripts/test-webhook.mjs` in conan-license)
   proves Polar HMAC verify + JWT mint + KV write all work in production.
-- ✅ Polar org `WhatMatters` configured; product `Conan Premium` ($39
-  one-time) exists; webhook → `license.conan.sh/api/polar-webhook` with
+- ✅ Polar org `WhatMatters` configured; product `Conan Premium` ($29
+  one-time, ⚠ Polar product price still $39 — update in dashboard) exists;
+  webhook → `license.conan.sh/api/polar-webhook` with
   `order.created` + `order.refunded`; Organization Access Token created
   in **Settings → Preferences → Developers** section (scroll to bottom).
 - ✅ **US-101** — `useTier()` hook + license loader/saver
@@ -246,7 +247,7 @@ the full free/premium matrix.
    rows fully visible. Rows 51+ render under
    `filter: blur(6px) + pointer-events: none + user-select: none`
    with a sticky-centered overlay carrying a lock icon + headline
-   "Unlock the full Timeline" + "Conan Premium · $39 · lifetime" +
+   "Unlock the full Timeline" + "Conan Premium · $29 · lifetime" +
    `[ Upgrade ]` button → opens Settings ▸ License. Overlay anchors to
    the viewport so the user can't scroll past it to peek at the
    un-overlayed blur. Live new events at the top stay clear (never
@@ -270,7 +271,7 @@ the full free/premium matrix.
    (b) **Wall.** The chart renders under
    `filter: blur(6px) + pointer-events: none + user-select: none` with a
    sticky-centered overlay: lock icon + headline "Unlock live Pulse" +
-   "Conan Premium · $39 · lifetime" + `[ Upgrade ]` button → opens
+   "Conan Premium · $29 · lifetime" + `[ Upgrade ]` button → opens
    Settings ▸ License. Overlay anchors to the chart container so it can't
    be scrolled past to peek at the blurred chart.
    (c) **Premium** never gates — full live Pulse across all ranges, no
