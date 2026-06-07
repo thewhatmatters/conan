@@ -209,14 +209,56 @@ const DRACULA_TOKENS: FullTokens = {
   "heat-4": "#50fa7b",
 };
 
+// The Conan brand palette (US-006) — conan.sh's warm ink-and-fire dark look.
+// Ember (#d97706) is the primary/ring; warm bone (#f0e8d6) on near-black ink
+// (#0c0a09). Charts ramp straw → ember → oxblood; the heat ramp climbs from the
+// muted ink toward ember. FREE for everyone (allow-listed in SettingsView).
+const CONAN_TOKENS: FullTokens = {
+  background: "#0c0a09",
+  foreground: "#f0e8d6",
+  card: "#1a1512",
+  "card-foreground": "#f0e8d6",
+  border: "#2c2521",
+  muted: "#231c18",
+  "muted-foreground": "#a89a86",
+  primary: "#d97706",
+  "primary-foreground": "#0c0a09",
+  secondary: "#231c18",
+  "secondary-foreground": "#f0e8d6",
+  accent: "#231c18",
+  "accent-foreground": "#f0e8d6",
+  popover: "#1a1512",
+  "popover-foreground": "#f0e8d6",
+  destructive: "#a3341f",
+  "destructive-foreground": "#f0e8d6",
+  input: "#2c2521",
+  ring: "#d97706",
+  "term-bg": "#0c0a09",
+  "term-fg": "#f0e8d6",
+  "chart-1": "#e0a42b",
+  "chart-2": "#d97706",
+  "chart-3": "#f0c674",
+  "chart-4": "#b45309",
+  "chart-5": "#a3341f",
+  "heat-0": "#231c18",
+  "heat-1": "#5a3a14",
+  "heat-2": "#92591a",
+  "heat-3": "#c8962b",
+  "heat-4": "#d97706",
+};
+
 /** IDs of the default light/dark themes — the `auto` pair maps to these (US-021). */
 export const DEFAULT_LIGHT_ID = "light";
 export const DEFAULT_DARK_ID = "dark";
+
+/** The free Conan-brand theme id — allow-listed in SettingsView's gate (US-006). */
+export const CONAN_THEME_ID = "conan";
 
 /** The themes shipped with the app, in picker order. */
 export const BUILTIN_THEMES: Theme[] = [
   { id: DEFAULT_LIGHT_ID, name: "Light", type: "light", tokens: LIGHT_TOKENS },
   { id: DEFAULT_DARK_ID, name: "Dark", type: "dark", tokens: DARK_TOKENS },
+  { id: CONAN_THEME_ID, name: "Conan", type: "dark", tokens: CONAN_TOKENS },
   {
     id: "solarized-light",
     name: "Solarized Light",

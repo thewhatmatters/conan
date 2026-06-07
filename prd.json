@@ -94,7 +94,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Colors only — no film-grain texture or fonts. Suggested skills: automate-browser. Theme model: applyTheme() sets the ~30 canonical tokens on <html> + toggles .dark; terminals re-read via getTerminalTheme() on THEME_APPLIED_EVENT."
     },
     {
