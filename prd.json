@@ -83,7 +83,7 @@
         "Verify in browser using automate-browser skill (synthesize an idle Notification event via POST /api/claude/events: no NOTIF row appears; a permission-message event still renders one)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "HANDOFF.md Issue 3. Evidence: event DB groups to 326 idle vs 273 permission messages. Touches gateway (timeline backfill) -> requires npm run build:sidecar. Gateway TS and UI TS don't share a module — keep the regex identical in both with a cross-reference comment."
     },
     {

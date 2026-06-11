@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { GatewayEvent, TasksState } from "../hooks/useTasks.ts";
 import { isTauri } from "../lib/gateway.ts";
+import { isIdleNotification } from "../lib/idleNotification.ts";
 
 type Kind = "success" | "error" | "info";
 interface Toast {
@@ -95,6 +96,8 @@ export default function Toaster({
       } catch {
         /* keep undefined */
       }
+      // Idle "waiting for your input" nudges never toast (US-005).
+      if (isIdleNotification(message)) return;
       push({ kind: "info", title: "Claude needs attention", detail: message });
       return;
     }

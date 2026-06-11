@@ -131,6 +131,22 @@ export const TIMELINE_LIMIT_MAX = 500;
 /** Default when the caller omits limit. */
 export const TIMELINE_LIMIT_DEFAULT = 200;
 
+/**
+ * Claude Code's Notification hook fires for genuine permission prompts
+ * ("Claude needs your permission to use Bash") AND for an idle "Claude is
+ * waiting for your input" nudge after every completed turn. The idle one is
+ * noise — nothing needs a response — so it's filtered from every notification
+ * surface. Matches by message wording and FAILS OPEN: an unknown or missing
+ * message passes through, so a Claude Code wording change re-enables noise
+ * rather than silently swallowing permission prompts. Gateway TS and UI TS
+ * don't share modules — keep this regex identical to
+ * ui/src/lib/idleNotification.ts.
+ */
+const IDLE_NOTIFICATION_RE = /waiting for your input/i;
+export function isIdleNotification(message: unknown): boolean {
+  return typeof message === "string" && IDLE_NOTIFICATION_RE.test(message);
+}
+
 /** Parse a payload-stringified column into an object, tolerating malformed JSON. */
 function parsePayload(s: string | null | undefined): Record<string, unknown> | null {
   if (!s) return null;
@@ -224,8 +240,10 @@ export function mapHookEventToRow(row: EventRow): TimelineRow | null {
       break;
     }
     case "Notification": {
-      subtype = "NOTIF";
       const msg = typeof payload?.message === "string" ? payload.message : "";
+      // Idle "waiting for your input" nudges get no NOTIF row (US-005).
+      if (isIdleNotification(msg)) return null;
+      subtype = "NOTIF";
       title = msg ? truncate(msg, 160) : "notification";
       break;
     }
