@@ -5,6 +5,7 @@
 // block or break the agent.
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -25,6 +26,35 @@ function token() {
   }
 }
 
+// Nearest ancestor process named "claude" (US-001). The hook runs under a
+// shell layer spawned by claude, so walk the ppid chain by process NAME —
+// never assume a fixed depth. Claude Code 2.1.173 stopped writing
+// ~/.claude/sessions/<pid>.json markers; this pid is the gateway's
+// marker-independent correlation signal.
+function findClaudePid() {
+  try {
+    const out = execFileSync("ps", ["-axo", "pid=,ppid=,comm="], {
+      encoding: "utf8",
+      timeout: 1500,
+    });
+    const table = new Map();
+    for (const line of out.split("\n")) {
+      const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
+      if (m) table.set(Number(m[1]), { ppid: Number(m[2]), comm: m[3].trim() });
+    }
+    let pid = process.ppid;
+    for (let hops = 0; hops < 32 && pid > 1; hops++) {
+      const row = table.get(pid);
+      if (!row) break;
+      if (path.basename(row.comm) === "claude") return pid;
+      pid = row.ppid;
+    }
+  } catch {
+    /* ps unavailable / timed out — omit claudePid */
+  }
+  return undefined;
+}
+
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => (raw += d));
@@ -37,12 +67,14 @@ process.stdin.on("end", async () => {
   }
   if (!data.session_id) process.exit(0);
 
+  const claudePid = findClaudePid();
   const body = {
     session_id: data.session_id,
     cwd: data.cwd,
     hook_event_name: data.hook_event_name,
     tool_name: data.tool_name,
     parent_tool_use_id: data.parent_tool_use_id,
+    ...(claudePid !== undefined ? { claudePid } : {}),
     payload: data,
   };
 

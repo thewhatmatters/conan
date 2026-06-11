@@ -14,7 +14,9 @@ import {
   getContextAutoRefresh,
   setContextAutoRefresh,
   setUsageCapturedListener,
+  sampleCorrelationHealth,
 } from "../terminal/index.js";
+import { isCorrelationDegraded } from "../terminal/health.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
@@ -24,6 +26,7 @@ import {
   maybeProbe,
   getCapturedUsage,
   getGlobalUsageWindows,
+  getLastProbeError,
 } from "../usage/probe.js";
 import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
@@ -160,8 +163,14 @@ app.get("/api/tasks", (_req, res) => {
 // Live terminals + the Claude session running inside each (US-036). The Term ▾
 // dropdown polls this to label tabs by session name + short id ("Conan:ca7cb3a8")
 // instead of "Term N". Read-only, loopback-only like the other GET routes.
+// correlationDegraded (1.0.2 US-004) flags when a terminal hosting a live
+// claude has had no session correlation for >60s while sessions are running —
+// the regression shape the 2.1.173 marker break took. False when healthy.
 app.get("/api/terminals", (_req, res) => {
-  res.json({ terminals: listTerminalSessions() });
+  res.json({
+    terminals: listTerminalSessions(),
+    correlationDegraded: isCorrelationDegraded(),
+  });
 });
 
 // Shared bearer check for the control-plane routes: the same auth token the WS
@@ -226,20 +235,30 @@ app.post("/api/claude/events", (req, res) => {
   const claudeVersion =
     payload && typeof payload.version === "string" ? payload.version : null;
 
+  // The hook reports the pid of the claude process that fired it (US-002
+  // v1.0.2) for marker-independent pty↔session correlation. COALESCE keeps the
+  // last known pid when an event omits it.
+  const claudePid =
+    typeof b.claudePid === "number" && Number.isInteger(b.claudePid) && b.claudePid > 0
+      ? b.claudePid
+      : null;
+
   db.prepare(
-    `INSERT INTO session (id, cwd, model, claude_version, status, created_at, last_activity)
-       VALUES (@id, @cwd, @model, @claudeVersion, @status, @now, @now)
+    `INSERT INTO session (id, cwd, model, claude_version, claude_pid, status, created_at, last_activity)
+       VALUES (@id, @cwd, @model, @claudeVersion, @claudePid, @status, @now, @now)
      ON CONFLICT(id) DO UPDATE SET
        last_activity = @now,
        status = @status,
        cwd = COALESCE(excluded.cwd, session.cwd),
        model = COALESCE(excluded.model, session.model),
-       claude_version = COALESCE(excluded.claude_version, session.claude_version)`,
+       claude_version = COALESCE(excluded.claude_version, session.claude_version),
+       claude_pid = COALESCE(excluded.claude_pid, session.claude_pid)`,
   ).run({
     id: sessionId,
     cwd: typeof b.cwd === "string" ? b.cwd : null,
     model,
     claudeVersion,
+    claudePid,
     status,
     now,
   });
@@ -798,7 +817,10 @@ app.get("/api/claude/usage", async (req, res) => {
       };
     }
   }
-  res.json({ ...base, planUtilization, liveUsage, usageWindows });
+  // US-005 (1.0.2): when the most recent probe attempt failed (and nothing
+  // fresher has landed since), say WHY instead of a silent planUtilization:
+  // null. The last good cache above is never clobbered by a failed probe.
+  res.json({ ...base, planUtilization, liveUsage, usageWindows, probeError: getLastProbeError() });
 });
 
 // Per-session Timeline feed (US-001 v4.5): the chronological log the Timeline
@@ -1026,7 +1048,9 @@ void detectClaude();
 // only sessions that are actually alive — not killed headless runs frozen at
 // status='running'. The session grid (GET /api/claude/sessions) reads the table,
 // so its reconciled status flows to the UI on the next refetch.
-const stopReaper = startReaper();
+// The correlation-health guard (1.0.2 US-004) samples on the reaper tick —
+// piggybacking the existing 30s cadence instead of adding another timer.
+const stopReaper = startReaper({ onTick: sampleCorrelationHealth });
 
 server.on("upgrade", (req, socket, head) => {
   const { pathname } = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);

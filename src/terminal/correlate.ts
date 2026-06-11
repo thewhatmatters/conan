@@ -14,6 +14,14 @@ import { isPidAlive } from "../session/reaper.js";
  * to its session by finding which live marker's pid sits under the pty pid, so
  * the Term ▾ dropdown can label tabs by their session ("Conan:ca7cb3a8") instead
  * of the positional "Term N".
+ *
+ * Claude Code 2.1.173 stopped writing those markers for interactive sessions
+ * (gated off behind a statsig flag), so markers alone went dark (1.0.2 US-003).
+ * The marker path stays primary, but when it yields nothing we fall back to the
+ * hook-reported pid: every hook event carries the live `claude` pid (US-001),
+ * the gateway persists it on `session.claude_pid` (US-002), and here we match
+ * the pty's descendant pids against those known session pids. cwd+recency stays
+ * the LAST resort — it mis-binds two tabs running in the same directory.
  */
 
 /** Default directory holding Claude Code's per-process session markers. */
@@ -33,6 +41,34 @@ export interface ClaudeSessionInfo {
   sessionId: string;
   /** The /renamed session name, or null when never renamed. */
   name: string | null;
+}
+
+/**
+ * A recent session row from the gateway DB, fed to the marker-independent
+ * fallback (1.0.2 US-003). `claudePid` is the hook-reported live claude process
+ * pid (US-001/US-002); rows where it's null can't pid-match or prove liveness,
+ * so the lookup may simply omit them.
+ */
+export interface SessionPidCandidate {
+  sessionId: string;
+  claudePid: number | null;
+  cwd: string | null;
+  lastActivity: number;
+}
+
+/** Supplies recent DB sessions to {@link correlateClaudeSession}. */
+export type SessionCandidateLookup = () => SessionPidCandidate[];
+
+/**
+ * The wired DB lookup. Kept injected (rather than importing the DB here) so
+ * correlation stays unit-testable with a synthetic candidate list; the terminal
+ * module wires the real query at import time. Until wired: no candidates.
+ */
+let sessionCandidateLookup: SessionCandidateLookup = () => [];
+
+/** Wire (or override, in tests) the DB-backed session candidate lookup. */
+export function setSessionCandidateLookup(fn: SessionCandidateLookup): void {
+  sessionCandidateLookup = fn;
 }
 
 /**
@@ -94,6 +130,57 @@ function processChildren(): Map<number, number[]> {
   return children;
 }
 
+/**
+ * A pid tree WITH executable names, from one `ps -axo pid=,ppid=,comm=` call —
+ * the inputs the correlation-health guard (1.0.2 US-004) needs to tell a
+ * terminal that legitimately has no session (plain shell, claude exited) from
+ * one whose hosted claude we are failing to correlate. Empty maps when `ps` is
+ * unavailable (the guard then treats every terminal as claude-free — no alarm).
+ */
+export interface ProcessTable {
+  children: Map<number, number[]>;
+  comm: Map<number, string>;
+}
+
+/** Read the live process table (pid, ppid, executable) in one `ps` call. */
+export function readProcessTable(): ProcessTable {
+  const children = new Map<number, number[]>();
+  const comm = new Map<number, string>();
+  let out: string;
+  try {
+    out = execFileSync("ps", ["-axo", "pid=,ppid=,comm="], {
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  } catch {
+    return { children, comm };
+  }
+  for (const line of out.split("\n")) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    const ppid = Number(m[2]);
+    comm.set(pid, (m[3] ?? "").trim());
+    const kids = children.get(ppid);
+    if (kids) kids.push(pid);
+    else children.set(ppid, [pid]);
+  }
+  return { children, comm };
+}
+
+/**
+ * Does any transitive descendant of `root` run an executable named `claude`?
+ * Matches by basename — the same name-based rule the hook's ppid walk uses
+ * (1.0.2 US-001) — so launcher-path differences don't matter.
+ */
+export function hasClaudeDescendant(root: number, table: ProcessTable): boolean {
+  for (const pid of descendantsOf(root, table.children)) {
+    const c = table.comm.get(pid);
+    if (c && path.basename(c) === "claude") return true;
+  }
+  return false;
+}
+
 /** All transitive descendant pids of `root` (excluding `root` itself). */
 function descendantsOf(root: number, children: Map<number, number[]>): Set<number> {
   const seen = new Set<number>();
@@ -117,34 +204,66 @@ function toInfo(m: SessionMarker): ClaudeSessionInfo | null {
 /**
  * Correlate one pty (its child pid + spawned cwd) to a live Claude session.
  *
- * Primary: the live marker whose pid is a descendant of the pty pid — an exact
- * structural match. Fallback (no descendant matched, e.g. `ps` unavailable):
- * the most-recently-started *live* marker whose cwd equals the pty's cwd.
+ * Order of evidence, strongest first:
+ * 1. A live marker whose pid is a descendant of the pty — exact structural match.
+ * 2. A recent DB session whose hook-reported `claude_pid` is alive AND a
+ *    descendant of the pty (1.0.2 US-003) — equally structural, marker-free.
+ *    Freshest session first: a /clear reuses the same claude process for a new
+ *    session id, and the live one keeps bumping `last_activity`.
+ * 3. cwd + recency, markers then DB candidates — LAST because it mis-binds two
+ *    tabs running in the same directory; it only fires with no pid evidence at
+ *    all (e.g. `ps` unavailable, or hooks not yet reporting).
  * Returns null when nothing live correlates.
  */
 export function correlateClaudeSession(
   ptyPid: number,
   cwd: string,
   dir: string = SESSIONS_DIR,
+  lookup: SessionCandidateLookup = sessionCandidateLookup,
 ): ClaudeSessionInfo | null {
   const markers = readMarkers(dir).filter((m) => isPidAlive(m.pid!));
-  if (markers.length === 0) return null;
+  // Both expensive inputs are lazy: the ps tree walk runs at most once per call,
+  // and the DB lookup + per-candidate liveness probes only when markers miss.
+  let descendants: Set<number> | null = null;
+  const ptyDescendants = () =>
+    (descendants ??= descendantsOf(ptyPid, processChildren()));
+  let candidates: SessionPidCandidate[] | null = null;
+  const liveCandidates = () =>
+    (candidates ??= lookup()
+      .filter(
+        (c) =>
+          typeof c.claudePid === "number" &&
+          Number.isInteger(c.claudePid) &&
+          c.claudePid > 0 &&
+          isPidAlive(c.claudePid),
+      )
+      .sort((a, b) => b.lastActivity - a.lastActivity));
 
-  const descendants = descendantsOf(ptyPid, processChildren());
+  // 1. Primary: the live marker whose pid is a descendant of the pty.
   for (const m of markers) {
-    if (descendants.has(m.pid!)) {
+    if (ptyDescendants().has(m.pid!)) {
       const info = toInfo(m);
       if (info) return info;
     }
   }
 
-  // Fallback: same-cwd, most recently started live session.
+  // 2. Marker-independent: hook-reported claude pids of recent sessions.
+  for (const c of liveCandidates()) {
+    if (ptyDescendants().has(c.claudePid!)) {
+      return { sessionId: c.sessionId, name: null };
+    }
+  }
+
+  // 3. Last resort: same-cwd, most recent first — markers, then DB candidates.
   const sameCwd = markers
     .filter((m) => m.cwd === cwd)
     .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   for (const m of sameCwd) {
     const info = toInfo(m);
     if (info) return info;
+  }
+  for (const c of liveCandidates()) {
+    if (c.cwd === cwd) return { sessionId: c.sessionId, name: null };
   }
   return null;
 }

@@ -56,6 +56,7 @@ function migrate(handle: Database.Database): void {
     ["structured_result", "TEXT"],
     ["schema_valid", "INTEGER"],
     ["claude_version", "TEXT"],
+    ["claude_pid", "INTEGER"],
   ];
   for (const [name, type] of added) {
     if (!sessionCols.has(name)) {

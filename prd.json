@@ -1,122 +1,112 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-1-0-1-fixes",
-  "description": "Conan 1.0.1 observability fixes: per-tab cwd footer, Build chip active-window, idle-notification filter (3 surfaces), cwd-based tab names, account-global /usage windows",
-  "generatedAt": "2026-06-10",
-  "sourcePrd": "prd-conan-1-0-1-fixes.md",
+  "branchName": "loop/conan-1-0-2-correlation",
+  "description": "Conan 1.0.2 — marker-independent pty↔session correlation (Claude Code 2.1.173 stopped writing ~/.claude/sessions markers, killing the Timeline, both ↻ refresh CTAs, the Compact bar, and passive /usage capture) plus /usage probe hardening and Sonnet-window capture.",
+  "generatedAt": "2026-06-11",
+  "sourcePrd": "prd-conan-1-0-2-correlation.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Track per-tab cwd in the gateway and expose it on /api/terminals",
-      "description": "As a multi-tab user, I need the gateway to remember each terminal's current directory (not just the focused one's) so downstream surfaces can show per-tab reality.",
+      "title": "Hook reports the live claude pid on every event",
+      "description": "As the gateway, I need each hook event to carry the pid of the claude process that fired it, so sessions can be correlated to ptys without Claude Code's marker files.",
       "acceptanceCriteria": [
-        "TermSession gains lastKnownCwd: string | null (src/terminal/index.ts)",
-        "maybeAdoptCwd (~line 303) stores the parsed OSC 7 cwd into lastKnownCwd BEFORE the focusedTermId gate; background tabs also reset osc7Scan after a successful parse so a lingering report isn't re-applied",
-        "pollProcessCwd (~line 345) splits 'track per-tab' from 'move global': it updates lastKnownCwd for any tab (still honoring CWD_POLL_MIN_SPACING_MS per tab) but only calls setActiveCwd for the focused tab",
-        "Background tabs never call setActiveCwd directly (US-002 invariant from the app-updates loop preserved)",
-        "listTerminalSessions (~line 679) and TerminalSummary include cwd: lastKnownCwd ?? spawn cwd; GET /api/terminals returns it",
+        "scripts/hooks/send-event.mjs determines the nearest ancestor process named 'claude' (walk the ppid chain via ps; do NOT assume a fixed depth) and includes it as claudePid in the event payload",
+        "When no claude ancestor is found, claudePid is omitted (payload shape otherwise unchanged — existing consumers unaffected)",
+        "Manual check: run the hook script as a child of a live claude session (or a mock ancestor named claude) and confirm the POSTed JSON contains the right claudePid",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Root-cause investigation in HANDOFF.md Issue 1 (line numbers verified 2026-06-10 on main@4448927). Gateway change: requires npm run build:sidecar before any tauri build/test."
+      "notes": "The hook runs under a shell layer spawned by claude — the ppid walk must search upward by process name, not depth. Keep the script dependency-free (plain node, ps -axo pid=,ppid=,comm=)."
     },
     {
       "id": "US-002",
-      "title": "Footer cwd + branch follow the active tab instantly",
-      "description": "As a user switching tabs, I want the status-bar footer's cwd path and git branch to flip immediately to the tab I'm looking at.",
+      "title": "Gateway persists claude_pid per session",
+      "description": "As the gateway, I want to store the hook-reported claude pid on the session row, so correlation can match pty descendants against known live session pids.",
       "acceptanceCriteria": [
-        "When focusedTermId changes (WS attach, {type:'input'}, {type:'focus'} handlers ~lines 586-605 of src/terminal/index.ts), the newly focused terminal's lastKnownCwd ?? spawn cwd is pushed through setActiveCwd()",
-        "setActiveCwd safeguards stay intact (unchanged path no-ops, invalid path rejected)",
-        "Footer git branch recomputes from the same cwd-change notification (verify the git prop source in src/cwd/ listeners; fix if it doesn't follow)",
-        "Manual test: two tabs cd'd to different directories; switching tabs flips the footer path and branch with no typing required",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill (Vite dev UI against the gateway; check StatusBar text swaps on tab switch)"
+        "session table gains a nullable claude_pid INTEGER column via idempotent ALTER on boot (existing DBs upgrade cleanly; fresh DBs include it in CREATE)",
+        "POST /api/claude/events accepts an optional claudePid field and updates session.claude_pid for that session_id",
+        "Events without claudePid leave the existing claude_pid value untouched",
+        "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Suggested skills: automate-browser. Depends on US-001. Known watch-item: App.tsx:255 fallback chain (lastCwd ?? activeSession?.cwd ?? config?.cwd) can briefly disagree — eyeball during verify."
+      "notes": "DB init lives in src/db/. Follow the existing idempotent-init pattern (the 1.0.1 loop's session columns are precedent)."
     },
     {
       "id": "US-003",
-      "title": "Tab names default to the cwd folder basename",
-      "description": "As a multi-tab user, I want un-renamed tabs labeled by their working directory folder (e.g. 'conan', 'Design') instead of 'Term N', so I can tell tabs apart at a glance.",
+      "title": "Marker-independent correlation fallback in correlate.ts",
+      "description": "As a Conan user, I want my terminal correlated to its Claude session even though Claude Code 2.1.173 no longer writes ~/.claude/sessions/<pid>.json, so the Timeline and live-pty features work again.",
       "acceptanceCriteria": [
-        "TerminalInfo (ui/src/hooks/useTerminals.ts:5) gains cwd from the US-001 /api/terminals field",
-        "terminalLabel (useTerminals.ts:65-71) new fallback chain: /renamed session name:shortId (unchanged, always wins) -> cwd basename -> 'Term N'",
-        "Duplicate basenames across tabs are disambiguated (e.g. 'conan', 'conan 2') so the strip never shows two identical labels",
-        "Label live-updates when the user cds (next /api/terminals poll picks up the new cwd)",
+        "correlateClaudeSession keeps the marker path as primary, then falls back to matching the pty's descendant pids (existing ps walk) against session.claude_pid values of recent sessions from the DB, then the existing cwd+recency heuristic stays as last resort",
+        "With ~/.claude/sessions empty and a live hooked claude running in a Conan terminal, GET /api/terminals returns a non-null sessionId for that terminal",
+        "GET /api/claude/sessions/:id/widgets returns hasLivePty: true for that session",
+        "Two terminals in the same cwd with two live sessions correlate to their own sessions (pid match wins over cwd heuristic)",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (two tabs in different dirs show folder names; /rename still overrides)"
+        "Verify in browser using automate-browser skill: Timeline panel shows hook events for the live terminal, and the ↻ /context and ↻ /usage buttons are visible"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Suggested skills: automate-browser. Depends on US-001. UI-only change."
+      "notes": "Suggested skills: automate-browser. ⚠ Dogfooding footgun: this story edits src/terminal/* — the loop must run OUTSIDE the Conan dock (npm start, never tsx watch from an in-dock session). DB access from correlate.ts should go through a thin injected lookup to keep the function testable."
     },
     {
       "id": "US-004",
-      "title": "Build chip stays visible for the duration of a running build loop",
-      "description": "As a user running run-tasks.sh, I want the Timeline's Build chip and rows present throughout the run, not just for 60 seconds after each progress.txt write.",
+      "title": "Regression guard: surface uncorrelated-session health signal",
+      "description": "As a Conan developer, I want a visible signal when a running session has no correlated pty, so the next silent Claude Code behavior change is caught in QA instead of by users.",
       "acceptanceCriteria": [
-        "BUILD_ACTIVE_WINDOW_MS (src/timeline/index.ts:11) raised from 60_000 to 1_800_000 (30 min — covers a typical story iteration)",
-        "Client mirror in ui/src/components/Timeline.tsx (~line 757, the buildCutoff aging filter) uses the same value — update both constants in lockstep with a cross-reference comment naming the other file",
-        "Server gate (src/timeline/index.ts:611-615) verified against a simulated progress.txt write (touch/append the file, confirm Build rows appear via GET /api/claude/timeline and persist past 60s)",
-        "Stale-trail suppression still works: a progress.txt last written before the window yields no Build rows",
+        "Gateway tracks when a session with status 'running' and a live Conan terminal has had no pty correlation for more than 60 seconds",
+        "The condition is exposed as a field on an existing API payload (e.g. correlationDegraded on GET /api/terminals or /api/health) and logged once per occurrence (no log spam)",
+        "Field is false/absent in the healthy case",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "HANDOFF.md Issue 2. A pgrep 'runner alive' check was considered and deferred — the wider mtime window is the deliberate v1.0.1 choice (record that in a code comment). The cwd half of the bug is fixed by US-001/US-002 (progress.txt resolves under getActiveCwd, src/tasks/index.ts:8-9). Gateway change: requires npm run build:sidecar."
+      "notes": "Keep it cheap — piggyback on the existing reaper/poll cadence rather than a new timer."
     },
     {
       "id": "US-005",
-      "title": "Filter the idle 'waiting for your input' notification on all surfaces",
-      "description": "As a user who steps away after a response, I don't want a 'waiting for input' banner or Timeline row when nothing needs my response — only genuine permission prompts should alert.",
+      "title": "Harden the throwaway /usage probe",
+      "description": "As a Conan user, I want the account-global usage windows to refresh reliably, because on Claude Code 2.1.173 the probe intermittently returns nothing and the HUD goes stale.",
       "acceptanceCriteria": [
-        "An isIdleNotification(msg) helper matches /waiting for your input/i; permission messages ('Claude needs your permission...') and unknown/missing messages pass through (fail open)",
-        "Native banner: ui/src/hooks/useNativeNotifications.ts (~line 118) drops idle notifications before the throttle/send",
-        "Timeline backfill: the Notification->NOTIF map in src/timeline/index.ts (lines 221-226) emits no row for idle notifications",
-        "Timeline live path: the duplicate map in ui/src/components/Timeline.tsx (lines 221-226) skips them identically",
-        "Toaster fallback: check Toaster.tsx for the same Notification relay; if present, filter there too (if absent, note that in progress.txt)",
-        "Permission notifications still produce banner + NOTIF row + toast",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill (synthesize an idle Notification event via POST /api/claude/events: no NOTIF row appears; a permission-message event still renders one)"
+        "On a parse miss the probe logs the raw (ANSI-stripped, truncated) scrape so the failure mode is diagnosable from logs",
+        "Probe retries exactly once on an empty parse (hard cap — each probe spawns a real claude)",
+        "A failed probe surfaces probeError (string) in the GET /api/claude/usage payload instead of silently returning planUtilization: null, and still never clobbers the last good cache",
+        "GET /api/claude/usage?probe=1 returns populated planUtilization on a healthy run (live verification)",
+        "Typecheck passes"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "HANDOFF.md Issue 3. Evidence: event DB groups to 326 idle vs 273 permission messages. Touches gateway (timeline backfill) -> requires npm run build:sidecar. Gateway TS and UI TS don't share a module — keep the regex identical in both with a cross-reference comment."
+      "notes": "Observed 2026-06-11: probe succeeded at ~10:10 and failed at ~10:24 on the same machine/version — suspect the capture window vs the TUI render timing. src/usage/probe.ts."
     },
     {
       "id": "US-006",
-      "title": "Promote /usage rate-limit windows to one account-global cache",
-      "description": "As a user with several tabs, I need the account-global /usage windows (Current session %, Current week) captured once and served to every session, since they describe the account, not the session.",
+      "title": "Capture the Sonnet-only week window (incl. 0%)",
+      "description": "As a Conan user, I want the third /usage window (Current week, Sonnet only) to appear in the HUD like it does in the terminal, instead of permanently 'Awaiting capture'.",
       "acceptanceCriteria": [
-        "Every successful capture path (passive live-pty parse, refresh-injected capture, and the ?probe=1 throwaway probe) writes the windows portion of the frame to a single account-global slot { windows, capturedAt, fromSessionId } in src/usage/probe.ts",
-        "The per-session liveCache (~line 522) keeps the SESSION block (cost/wall/per-model tokens) keyed by session id, unchanged",
-        "The usage read path serves: the global windows slot (regardless of requesting session) + the requesting session's own SESSION block",
-        "Reuse or merge with the existing getCachedPlanUtilization/maybeProbe account-global cache rather than adding a third cache (single source of truth for windows)",
-        "API response includes capturedAt (epoch ms) for the windows so the UI can render freshness",
+        "The probe/live scrape captures the full three-window /usage frame (the Sonnet window renders last — ensure the capture bound doesn't cut it off)",
+        "Add a parser fixture test from a real Claude Code 2.1.173 /usage frame that includes 'Current week (Sonnet only) 0% used', asserting sevenDaySonnet = {utilizationPct: 0}",
+        "Tests pass",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": true,
-      "notes": "HANDOFF.md Issue 5 root cause: liveCache holds the WHOLE parsed frame per session, trapping account-global data in whichever session captured it. Gateway change: requires npm run build:sidecar."
+      "notes": "matchWindow (src/usage/probe.ts:415) already parses '0%used' — the bug is upstream in what the scrape feeds it. Capture the fixture from a real frame, not a hand-typed one."
     },
     {
       "id": "US-007",
-      "title": "Usage panel renders global windows on every tab with a freshness hint",
-      "description": "As a user on any tab, I want to see the latest account rate-limit status (e.g. 'Current session 104% used') with how fresh it is, while the SESSION cost block still reflects the active tab.",
+      "title": "End-to-end QA: all correlation-dependent surfaces restored",
+      "description": "As a Conan user, I want everything the marker break killed verified working again in the running app, so 1.0.2 can ship with confidence.",
       "acceptanceCriteria": [
-        "The Usage widget (ui/src/components/Widgets.tsx + its hook) renders the US-006 global windows on every tab, independent of which session captured them",
-        "A freshness hint renders near the LIVE - FROM /USAGE header (e.g. 'captured 12m ago'); omitted when fresher than ~1 min",
-        "'Awaiting capture' appears only when NO capture exists anywhere (then the existing probe/disk-estimate fallbacks apply)",
-        "SESSION block continues to show the active tab's own session data and changes on tab switch",
+        "With ~/.claude/sessions empty and a live hooked claude session: Timeline renders hook rows live (no 'no Claude session yet'), ↻ /context and ↻ /usage buttons visible and functional, and running /usage in the terminal updates the HUD windows with a fresh 'captured 0m ago' hint (passive capture works)",
+        "Build chip 30-min window (1.0.1 US-004) is now eye-testable and behaves per its original criteria",
+        "Compact/handoff action bar arms when context pressure is simulated or hasLivePty is true under pressure",
+        "cd ui && npm run build passes clean",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill (capture /usage in one session; confirm a second session's Usage tab shows the same windows + freshness hint)"
+        "Verify in browser using automate-browser skill: screenshot the Timeline with live rows and the Usage tab with all three windows populated"
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Suggested skills: automate-browser. Depends on US-006. Semantic theme tokens only (text-muted-foreground etc.) per CLAUDE.md conventions. Builds on the app-updates loop's US-005 (persistent skeleton rows) — don't regress it."
+      "notes": "Suggested skills: automate-browser. Integration story — no new code expected; fix regressions found here in place. Remember the stale-sidecar gotcha: gateway/terminal changes need npm run build:sidecar before any tauri:build verification."
     }
   ]
 }
