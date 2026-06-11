@@ -27,6 +27,22 @@ export interface PlanUtilization {
   probedAt: number;
 }
 
+/**
+ * The account-global /usage windows slot (US-006/US-007): the latest rate-limit
+ * windows captured by ANY session's live pty or the throwaway probe — the
+ * windows describe the account, not the session that rendered them, so every
+ * tab's Usage panel serves this one slot. `capturedAt` drives the "captured Xm
+ * ago" freshness hint; `fromSessionId` is null for probe captures.
+ */
+export interface UsageWindows {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  sevenDaySonnet: UsageWindow | null;
+  status: "ok" | "warning" | "limit";
+  capturedAt: number;
+  fromSessionId: string | null;
+}
+
 /** Per-model token usage from the /usage Session block (US-010). */
 export interface ModelUsage {
   model: string | null;
@@ -92,6 +108,8 @@ export interface UsageState {
   planUtilization: PlanUtilization | null;
   /** Live /usage capture for the active session (US-010); null → use the probe. */
   liveUsage: LiveUsage | null;
+  /** Account-global windows slot (US-006/US-007); null before ANY capture. */
+  usageWindows: UsageWindows | null;
 }
 
 const EMPTY: UsageState = {
@@ -104,6 +122,7 @@ const EMPTY: UsageState = {
   hasData: false,
   planUtilization: null,
   liveUsage: null,
+  usageWindows: null,
 };
 
 /** Normalize one raw /usage window into a typed UsageWindow (or null). */
@@ -129,6 +148,23 @@ function parsePlanUtilization(p: unknown): PlanUtilization | null {
     sevenDaySonnet: parseWindow(o.sevenDaySonnet),
     status,
     probedAt: typeof o.probedAt === "number" ? o.probedAt : 0,
+  };
+}
+
+/** Normalize the raw account-global usageWindows slot (US-006/US-007). */
+function parseUsageWindows(p: unknown): UsageWindows | null {
+  if (!p || typeof p !== "object") return null;
+  const o = p as Record<string, unknown>;
+  const status =
+    o.status === "warning" || o.status === "limit" ? o.status : "ok";
+  return {
+    fiveHour: parseWindow(o.fiveHour),
+    sevenDay: parseWindow(o.sevenDay),
+    sevenDaySonnet: parseWindow(o.sevenDaySonnet),
+    status,
+    capturedAt: typeof o.capturedAt === "number" ? o.capturedAt : 0,
+    fromSessionId:
+      typeof o.fromSessionId === "string" ? o.fromSessionId : null,
   };
 }
 
@@ -222,6 +258,7 @@ function normalize(u: Record<string, unknown>): UsageState {
     hasData: u.hasData === true,
     planUtilization: parsePlanUtilization(u.planUtilization),
     liveUsage: parseLiveUsage(u.liveUsage),
+    usageWindows: parseUsageWindows(u.usageWindows),
   };
 }
 

@@ -5,6 +5,7 @@ import type {
   ModelUsage,
   UsageState,
   UsageWindow,
+  UsageWindows,
 } from "../hooks/useUsage.ts";
 import type {
   ContextCategory,
@@ -569,16 +570,23 @@ export function UsageWidget({
     return () => clearInterval(t);
   }, []);
 
+  // US-007: the account-global windows slot (US-006) — the latest rate-limit
+  // windows from ANY session's capture (or the probe) serve every tab, with
+  // `capturedAt` driving the "captured Xm ago" freshness hint in both faces.
+  const windows = usage.usageWindows;
+
   // --- live face: the EXACT /usage capture (US-010) -------------------------
   if (usage.liveUsage) {
-    return <LiveUsageView live={usage.liveUsage} tick={tick} />;
+    return <LiveUsageView live={usage.liveUsage} windows={windows} tick={tick} />;
   }
 
   // Prefer the real scrape (US-005) when it carries at least one parsed window.
   const plan = usage.planUtilization;
   const hasPlan = !!plan && (!!plan.fiveHour || !!plan.sevenDay);
   if (hasPlan && plan) {
-    return <PlanUsage plan={plan} tick={tick} hasLivePty={hasLivePty} />;
+    return (
+      <PlanUsage plan={plan} windows={windows} tick={tick} hasLivePty={hasLivePty} />
+    );
   }
 
   // --- baseline: no /usage scrape yet ---------------------------------------
@@ -601,10 +609,13 @@ export function UsageWidget({
  */
 function PlanUsage({
   plan,
+  windows,
   tick,
   hasLivePty,
 }: {
   plan: NonNullable<UsageState["planUtilization"]>;
+  /** Account-global windows slot (US-006/US-007) — preferred windows source. */
+  windows: UsageWindows | null;
   tick: number;
   /** Drives the empty-Session hint copy — clickable vs "no live session". */
   hasLivePty: boolean;
@@ -613,12 +624,27 @@ function PlanUsage({
   // lists each window with its bar, "X% used", and reset line. We mirror that
   // here for cohesion with the source the user might be checking against.
   // Limit/Warning state is read from the bar color + the "% used" value.
+  // US-007: windows come from the account-global slot (any session's capture
+  // serves every tab); `plan` is the same slot's legacy view, kept as fallback.
+  const hint = fmtCapturedAgo(windows?.capturedAt ?? plan.probedAt, tick);
   return (
-    <StatCard sub="plan · live">
+    <StatCard sub={"plan · live" + (hint ? ` · ${hint}` : "")}>
       <div className="space-y-3">
-        <PlanWindowRow kind="session" win={plan.fiveHour} tick={tick} />
-        <PlanWindowRow kind="week-all" win={plan.sevenDay} tick={tick} />
-        <PlanWindowRow kind="week-sonnet" win={plan.sevenDaySonnet} tick={tick} />
+        <PlanWindowRow
+          kind="session"
+          win={windows?.fiveHour ?? plan.fiveHour}
+          tick={tick}
+        />
+        <PlanWindowRow
+          kind="week-all"
+          win={windows?.sevenDay ?? plan.sevenDay}
+          tick={tick}
+        />
+        <PlanWindowRow
+          kind="week-sonnet"
+          win={windows?.sevenDaySonnet ?? plan.sevenDaySonnet}
+          tick={tick}
+        />
       </div>
       {/* The Session block scaffold renders empty here so users see the data
           shape that's waiting — clicking ↻ /usage above captures the real
@@ -720,21 +746,43 @@ function EmptySessionBlock({ hasLivePty }: { hasLivePty: boolean }) {
  */
 function LiveUsageView({
   live,
+  windows,
   tick,
 }: {
   live: LiveUsage;
+  /** Account-global windows slot (US-006/US-007) — preferred windows source. */
+  windows: UsageWindows | null;
   tick: number;
 }) {
   const s = live.session;
+  // US-007: the freshness hint reads the GLOBAL slot's capturedAt — the
+  // windows' real capture time — not live.capturedAt, which the gateway
+  // re-stamps on every transcript-derived response. Hidden when fresher
+  // than ~1 min (fmtCapturedAgo returns "").
+  const hint = fmtCapturedAgo(windows?.capturedAt, tick);
   return (
-    <StatCard sub="live · from /usage">
-      {/* account-global rate-limit windows — same layout as PlanUsage, mirrors
-          Claude's /usage TUI (no top-level worst-% headline; status conveyed
-          per-window through bar color + the "X% used" value). */}
+    <StatCard sub={"live · from /usage" + (hint ? ` · ${hint}` : "")}>
+      {/* account-global rate-limit windows (US-006) — served from the global
+          slot regardless of which session captured them; the frame's own
+          windows are the fallback. Same layout as PlanUsage, mirrors Claude's
+          /usage TUI (no top-level worst-% headline; status conveyed per-window
+          through bar color + the "X% used" value). */}
       <div className="space-y-3">
-        <PlanWindowRow kind="session" win={live.fiveHour} tick={tick} />
-        <PlanWindowRow kind="week-all" win={live.sevenDay} tick={tick} />
-        <PlanWindowRow kind="week-sonnet" win={live.sevenDaySonnet} tick={tick} />
+        <PlanWindowRow
+          kind="session"
+          win={windows?.fiveHour ?? live.fiveHour}
+          tick={tick}
+        />
+        <PlanWindowRow
+          kind="week-all"
+          win={windows?.sevenDay ?? live.sevenDay}
+          tick={tick}
+        />
+        <PlanWindowRow
+          kind="week-sonnet"
+          win={windows?.sevenDaySonnet ?? live.sevenDaySonnet}
+          tick={tick}
+        />
       </div>
 
       {/* session-specific Session block */}
@@ -910,6 +958,24 @@ function fmtResetAbsolute(resetAt: number | null, now: number): string {
 }
 
 /* ---- shared bits --------------------------------------------------------- */
+
+/**
+ * Freshness hint for the account-global windows capture (US-007): "captured
+ * 12m ago" / "captured 2h ago". Returns "" when the capture is fresher than
+ * ~1 minute (fresh enough to need no caveat) or when no capture time exists —
+ * callers render nothing in both cases.
+ */
+function fmtCapturedAgo(
+  capturedAt: number | null | undefined,
+  now: number,
+): string {
+  if (!capturedAt) return "";
+  const mins = Math.floor((now - capturedAt) / 60_000);
+  if (mins < 1) return "";
+  if (mins < 60) return `captured ${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  return h < 24 ? `captured ${h}h ago` : `captured ${Math.floor(h / 24)}d ago`;
+}
 
 /** Compact "1h 02m" / "12m 30s" / "45s" duration for the reset countdown. */
 function fmtDuration(ms: number): string {

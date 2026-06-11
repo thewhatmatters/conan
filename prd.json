@@ -115,7 +115,7 @@
         "Verify in browser using automate-browser skill (capture /usage in one session; confirm a second session's Usage tab shows the same windows + freshness hint)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser. Depends on US-006. Semantic theme tokens only (text-muted-foreground etc.) per CLAUDE.md conventions. Builds on the app-updates loop's US-005 (persistent skeleton rows) — don't regress it."
     }
   ]
