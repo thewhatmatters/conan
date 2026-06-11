@@ -26,6 +26,7 @@ import {
   maybeProbe,
   getCapturedUsage,
   getGlobalUsageWindows,
+  getLastProbeError,
 } from "../usage/probe.js";
 import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
@@ -816,7 +817,10 @@ app.get("/api/claude/usage", async (req, res) => {
       };
     }
   }
-  res.json({ ...base, planUtilization, liveUsage, usageWindows });
+  // US-005 (1.0.2): when the most recent probe attempt failed (and nothing
+  // fresher has landed since), say WHY instead of a silent planUtilization:
+  // null. The last good cache above is never clobbered by a failed probe.
+  res.json({ ...base, planUtilization, liveUsage, usageWindows, probeError: getLastProbeError() });
 });
 
 // Per-session Timeline feed (US-001 v4.5): the chronological log the Timeline

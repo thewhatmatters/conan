@@ -528,6 +528,16 @@ export interface GlobalUsageWindows {
 let globalWindows: GlobalUsageWindows | null = null;
 let inFlight: Promise<PlanUtilization | null> | null = null;
 
+// US-005 (1.0.2): why the most recent probe attempt failed, or null. Cleared
+// when fresh windows land from ANY capture path (a fresh frame makes the
+// failure moot) so the usage route never reports an error alongside fresh data.
+let lastProbeError: string | null = null;
+
+/** Why the most recent probe attempt failed, or null when healthy/stale-but-ok. */
+export function getLastProbeError(): string | null {
+  return lastProbeError;
+}
+
 /** The latest account-global windows from ANY capture path, or null if none. */
 export function getGlobalUsageWindows(): GlobalUsageWindows | null {
   return globalWindows;
@@ -547,6 +557,7 @@ function setGlobalWindows(
     capturedAt: Date.now(),
     fromSessionId,
   };
+  lastProbeError = null;
 }
 
 /**
@@ -614,7 +625,7 @@ export async function maybeProbe(opts: { force?: boolean } = {}): Promise<PlanUt
   if (fresh && !opts.force) return getCachedPlanUtilization();
   if (inFlight) return inFlight;
 
-  inFlight = probeUsage()
+  inFlight = probeUsageWithRetry()
     .then((result) => {
       if (result) setGlobalWindows(result, null);
       return getCachedPlanUtilization();
@@ -627,10 +638,24 @@ export async function maybeProbe(opts: { force?: boolean } = {}): Promise<PlanUt
 }
 
 /**
+ * US-005 (1.0.2): one probe + exactly one retry on an empty parse. Hard cap —
+ * each probe spawns a real claude and makes a billed request, so never loop.
+ * Observed on Claude Code 2.1.173: the same machine succeeded at 10:10 and
+ * failed at 10:24, so a single retry covers the flaky capture-vs-render timing.
+ */
+async function probeUsageWithRetry(): Promise<PlanUtilization | null> {
+  const first = await probeUsage();
+  if (first) return first;
+  console.warn("[usage] probe returned no parseable frame — retrying once");
+  return probeUsage();
+}
+
+/**
  * Spawn a controlled, short-lived `claude` pty, send `/usage`, capture the
  * rendered frame and parse it. Bounded by PROBE_TIMEOUT_MS and killed as soon as
  * a parseable frame appears (or the deadline hits) — no stray ptys. Resolves to
- * the parsed PlanUtilization or null; never rejects.
+ * the parsed PlanUtilization or null; never rejects. A parse miss records
+ * lastProbeError and logs the ANSI-stripped, truncated scrape (US-005, 1.0.2).
  */
 export function probeUsage(): Promise<PlanUtilization | null> {
   return new Promise((resolve) => {
@@ -641,7 +666,7 @@ export function probeUsage(): Promise<PlanUtilization | null> {
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let sendTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const cleanup = (result: PlanUtilization | null) => {
+    const cleanup = (result: PlanUtilization | null, failReason?: string) => {
       if (settled) return;
       settled = true;
       if (pollTimer) clearInterval(pollTimer);
@@ -652,13 +677,22 @@ export function probeUsage(): Promise<PlanUtilization | null> {
       } catch {
         /* already gone */
       }
+      if (result) {
+        lastProbeError = null;
+      } else {
+        lastProbeError = `usage probe failed (${failReason ?? "unknown"}): no parseable /usage frame in ${buf.length} bytes captured`;
+        // Log the ANSI-stripped, truncated scrape so the failure mode is
+        // diagnosable from logs instead of a silent planUtilization: null.
+        const raw = stripAnsi(buf).replace(/\s+/g, " ").trim().slice(0, 1500);
+        console.warn(`[usage] ${lastProbeError}; scrape: ${raw || "<empty>"}`);
+      }
       resolve(result);
     };
 
     const deadline = setTimeout(() => {
       // Final attempt to salvage whatever rendered before giving up.
       const parsed = parseUsageFrame(buf);
-      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null);
+      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null, "timeout");
     }, PROBE_TIMEOUT_MS);
 
     try {
@@ -670,7 +704,7 @@ export function probeUsage(): Promise<PlanUtilization | null> {
         env: ptyEnv(),
       });
     } catch {
-      cleanup(null);
+      cleanup(null, "pty spawn failed");
       return;
     }
 
@@ -679,7 +713,7 @@ export function probeUsage(): Promise<PlanUtilization | null> {
     });
     term.onExit(() => {
       const parsed = parseUsageFrame(buf);
-      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null);
+      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null, "claude exited before /usage rendered");
     });
 
     // Let claude boot, send /usage, then poll the buffer until both windows

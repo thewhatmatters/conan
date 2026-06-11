@@ -75,7 +75,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Observed 2026-06-11: probe succeeded at ~10:10 and failed at ~10:24 on the same machine/version — suspect the capture window vs the TUI render timing. src/usage/probe.ts."
     },
     {
