@@ -294,13 +294,24 @@ const updaterArchive = path.join(
 const updaterSig = `${updaterArchive}.sig`;
 rmSync(updaterArchive, { force: true });
 rmSync(updaterSig, { force: true });
-run("tar", [
-  "czf",
-  updaterArchive,
-  "-C",
-  path.dirname(appPath),
-  path.basename(appPath),
-]);
+// COPYFILE_DISABLE + --no-mac-metadata: macOS bsdtar otherwise stores the
+// xattrs that signing/stapling leave on bundle files as AppleDouble `._*`
+// entries, which tauri-plugin-updater's unpacker rejects ("failed to unpack
+// `._Conan.app`") — bricking the update for every installed client. Bit us
+// on 1.0.1; `tar -t` HIDES these entries (bsdtar recombines them on read),
+// so verify with Python's tarfile if you ever need to check an archive.
+run(
+  "tar",
+  [
+    "czf",
+    updaterArchive,
+    "--no-mac-metadata",
+    "-C",
+    path.dirname(appPath),
+    path.basename(appPath),
+  ],
+  { env: { ...process.env, COPYFILE_DISABLE: "1" } },
+);
 // `tauri signer sign` reads TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] from env
 // (set in signEnv above) and writes `<file>.sig` next to the input.
 run("npx", ["--yes", "@tauri-apps/cli", "signer", "sign", updaterArchive], {
