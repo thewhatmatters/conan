@@ -124,9 +124,13 @@ export default function App() {
   const pulse = usePulse(wsTrigger, pulseMinutes);
   // US-004: the Context widget's live breakdown for the active session. Always
   // fetched (the Context HUD tab is permanent now) when a session is correlated.
+  // `lastCwd.seq` is folded in so each `{type:'cwd'}` broadcast (focus switch
+  // or a `cd` in the focused tab, 1.0.1 US-002) re-pulls the widgets — the git
+  // branch is computed from the live tab cwd, so the footer branch recomputes
+  // from the same notification that flips the footer path.
   const { data: widgetData, refetch: refetchWidgets } = useWidgets(
     activeSession?.id ?? null,
-    wsTrigger,
+    wsTrigger + (lastCwd?.seq ?? 0),
     true,
   );
   // US-006: installed skills (name + description + source) for the Skills tab.

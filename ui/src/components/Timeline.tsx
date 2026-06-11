@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import conanIcon from "../assets/conan-icon.png";
 import { apiBase } from "../lib/gateway.ts";
+import { isIdleNotification } from "../lib/idleNotification.ts";
 import type {
   GatewayEvent,
   PlanEvent,
@@ -219,8 +220,11 @@ function mapHookEventToRow(ev: GatewayEvent): TimelineRow | null {
       title = "turn ended";
       break;
     case "Notification": {
-      subtype = "NOTIF";
       const msg = typeof payload?.message === "string" ? payload.message : "";
+      // Idle "waiting for your input" nudges get no NOTIF row (US-005) —
+      // mirrors the same filter in the server backfill (src/timeline/index.ts).
+      if (isIdleNotification(msg)) return null;
+      subtype = "NOTIF";
       title = msg ? truncate(msg, 160) : "notification";
       break;
     }
@@ -750,11 +754,13 @@ export default function Timeline({
     return () => clearInterval(id);
   }, []);
   // Build rows are "actively running"-only: a row is dropped once its parsed
-  // ts is older than 60s (mirrors readTimeline's BUILD_ACTIVE_WINDOW_MS). A
-  // stale trail from a past run ages out of the open panel; the server-side
-  // gate already keeps it out of the initial fetch too.
+  // ts is older than 30 min (mirrors BUILD_ACTIVE_WINDOW_MS in
+  // src/timeline/index.ts — update both in lockstep). A stale trail from a
+  // past run ages out of the open panel; the server-side gate already keeps
+  // it out of the initial fetch too. 30 min covers a typical run-tasks.sh
+  // story iteration (progress.txt is written once per iteration).
   const freshRows = useMemo(() => {
-    const buildCutoff = now - 60_000;
+    const buildCutoff = now - 1_800_000;
     return rows.filter((r) => r.kind !== "build" || r.ts > buildCutoff);
   }, [rows, now]);
 

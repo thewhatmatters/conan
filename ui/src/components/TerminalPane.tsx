@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClockFading, Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
-import { useTerminals, terminalLabel } from "../hooks/useTerminals.ts";
+import {
+  useTerminals,
+  terminalLabel,
+  terminalLabels,
+} from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import Timeline from "./Timeline.tsx";
 import ContextHeader from "./ContextHeader.tsx";
@@ -240,6 +244,14 @@ export default function TerminalPane({
   const byTid = useTerminals();
   const byTidRef = useRef(byTid);
   byTidRef.current = byTid;
+  // Tab-strip labels (1.0.1 US-003): cwd folder basenames with duplicate
+  // disambiguation, computed once per render for the whole strip.
+  const tabLabels = useMemo(
+    () => terminalLabels(terms, byTid),
+    [terms, byTid],
+  );
+  const labelFor = (tid: string, i: number) =>
+    tabLabels.get(tid) ?? terminalLabel(byTid.get(tid), i);
   // Per-tab "destroy on unmount" flags. Set just before removing a tab so the
   // Terminal's cleanup sends the backend close frame (US-026 criterion 3).
   const closeFlags = useRef(new Map<string, { current: boolean }>());
@@ -400,12 +412,10 @@ export default function TerminalPane({
               <TabsTrigger
                 key={t.tid}
                 value={t.tid}
-                title={terminalLabel(byTid.get(t.tid), i)}
+                title={labelFor(t.tid, i)}
                 className={TAB_TRIGGER}
               >
-                <span className="truncate">
-                  {terminalLabel(byTid.get(t.tid), i)}
-                </span>
+                <span className="truncate">{labelFor(t.tid, i)}</span>
                 <span
                   role="button"
                   tabIndex={-1}
@@ -491,6 +501,7 @@ export default function TerminalPane({
                       theme={theme}
                       tid={t.tid}
                       closeOnUnmount={flagFor(t.tid)}
+                      active={on}
                     />
                   </div>
                 </div>
@@ -505,7 +516,7 @@ export default function TerminalPane({
                       <Timeline
                         token={token}
                         sessionId={byTid.get(t.tid)?.sessionId ?? null}
-                        terminalLabel={terminalLabel(byTid.get(t.tid), i)}
+                        terminalLabel={labelFor(t.tid, i)}
                         lastEvent={lastEvent ?? null}
                         lastSkillFired={lastSkillFired ?? null}
                         lastSkillConsidered={lastSkillConsidered ?? null}
@@ -529,7 +540,7 @@ export default function TerminalPane({
                         <Timeline
                           token={token}
                           sessionId={byTid.get(t.tid)?.sessionId ?? null}
-                          terminalLabel={terminalLabel(byTid.get(t.tid), i)}
+                          terminalLabel={labelFor(t.tid, i)}
                           lastEvent={lastEvent ?? null}
                           lastSkillFired={lastSkillFired ?? null}
                           lastSkillConsidered={lastSkillConsidered ?? null}

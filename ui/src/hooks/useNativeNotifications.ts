@@ -3,6 +3,7 @@ import type { GatewayEvent, TasksState } from "./useTasks.ts";
 import type { Session } from "./useSessions.ts";
 import { isTauri } from "../lib/gateway.ts";
 import { sendNativeNotification, onNotificationClick } from "../lib/nativeNotify.ts";
+import { isIdleNotification } from "../lib/idleNotification.ts";
 
 /** De-dupe/throttle window: a repeat Notification for the same session inside
  *  this many ms is suppressed so a re-prompting agent never spams banners. */
@@ -124,6 +125,9 @@ export function useNativeNotifications({
       } catch {
         /* non-JSON payload — keep the default */
       }
+      // Idle "waiting for your input" nudges never banner (US-005); only
+      // genuine attention requests (permission prompts etc.) pass through.
+      if (isIdleNotification(message)) return;
       title = sessionTitle(
         sessions.find((s) => s.id === sid),
         sid,

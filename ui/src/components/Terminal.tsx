@@ -39,6 +39,12 @@ interface TerminalProps {
    * the pty survives and re-attaches.
    */
   closeOnUnmount?: MutableRefObject<boolean>;
+  /**
+   * True while this tab is the one the user is looking at (1.0.1 US-002). On
+   * becoming active the terminal sends `{type:'focus'}` so the gateway flips
+   * cwd adoption — and the StatusBar footer — to this tab without any typing.
+   */
+  active?: boolean;
 }
 
 /**
@@ -46,10 +52,21 @@ interface TerminalProps {
  * rendered via WebGL when available, themed from the app's CSS tokens, and
  * bridged to the node-pty service over the authenticated /ws/terminal socket.
  */
-export default function Terminal({ token, theme, tid, closeOnUnmount }: TerminalProps) {
+export default function Terminal({
+  token,
+  theme,
+  tid,
+  closeOnUnmount,
+  active,
+}: TerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Xterm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // The live socket + current `active`, readable from the mount effect's onOpen
+  // (which closes over the first render) without re-creating the socket.
+  const sockRef = useRef<ResilientSocket | null>(null);
+  const activeRef = useRef(active ?? false);
+  activeRef.current = active ?? false;
   // Re-fit + tell the pty the new cols/rows. Set during mount so the appearance
   // effect (which lives outside that effect's scope) can drive a reflow.
   const sendResizeRef = useRef<(() => void) | null>(null);
@@ -119,8 +136,13 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
         firstOpen = false;
         fit.fit();
         sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        // Reassert focus after a (re)connect (1.0.1 US-002): the gateway treats
+        // every attach as a focus, so when ALL tabs reconnect (gateway restart)
+        // the last to land would otherwise steal cwd adoption from the visible one.
+        if (activeRef.current) sock.send(JSON.stringify({ type: "focus" }));
       },
     });
+    sockRef.current = sock;
 
     const onData = term.onData((data) =>
       sock.send(JSON.stringify({ type: "input", data })),
@@ -157,12 +179,21 @@ export default function Terminal({ token, theme, tid, closeOnUnmount }: Terminal
         sock.send(JSON.stringify({ type: "close" }));
       }
       sock.close();
+      sockRef.current = null;
       term.dispose();
       xtermRef.current = null;
       fitRef.current = null;
       sendResizeRef.current = null;
     };
   }, [token, tid]);
+
+  // Tab switch → tell the gateway this terminal is now the focused one
+  // (1.0.1 US-002), so the app-wide cwd (StatusBar footer, new-tab spawn dir)
+  // flips to this tab's directory without waiting for a keystroke. A send while
+  // the socket is down is a no-op — the onOpen reassert above covers reconnects.
+  useEffect(() => {
+    if (active) sockRef.current?.send(JSON.stringify({ type: "focus" }));
+  }, [active]);
 
   // Apply the appearance pref live (US-019). Setting term.options.fontFamily/
   // fontSize then re-fitting recomputes glyph cell widths so the layout stays

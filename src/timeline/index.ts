@@ -5,10 +5,15 @@ import { readTasks, progressMtimeMs } from "../tasks/index.js";
 /**
  * Build rows are "actively running"-only: progress.txt activity is included
  * only when the file was written to within this window (no chip on stale
- * trails from past runs). Mirrored client-side in Timeline.tsx so rows age
- * out of the open panel after the runner stops.
+ * trails from past runs). Mirrored client-side in Timeline.tsx (buildCutoff
+ * in freshRows) — update both constants in lockstep.
+ *
+ * 30 min covers a typical run-tasks.sh story iteration, which writes
+ * progress.txt only once per iteration — a 60s window made the chip blink
+ * out mid-run. A pgrep "runner alive" check was considered and deliberately
+ * deferred for v1.0.1; the wider mtime window is the simpler fix.
  */
-export const BUILD_ACTIVE_WINDOW_MS = 60_000;
+export const BUILD_ACTIVE_WINDOW_MS = 1_800_000;
 import { getActiveCwd } from "../cwd/index.js";
 import {
   readSessionSkillFirings,
@@ -126,6 +131,22 @@ export const TIMELINE_LIMIT_MAX = 500;
 /** Default when the caller omits limit. */
 export const TIMELINE_LIMIT_DEFAULT = 200;
 
+/**
+ * Claude Code's Notification hook fires for genuine permission prompts
+ * ("Claude needs your permission to use Bash") AND for an idle "Claude is
+ * waiting for your input" nudge after every completed turn. The idle one is
+ * noise — nothing needs a response — so it's filtered from every notification
+ * surface. Matches by message wording and FAILS OPEN: an unknown or missing
+ * message passes through, so a Claude Code wording change re-enables noise
+ * rather than silently swallowing permission prompts. Gateway TS and UI TS
+ * don't share modules — keep this regex identical to
+ * ui/src/lib/idleNotification.ts.
+ */
+const IDLE_NOTIFICATION_RE = /waiting for your input/i;
+export function isIdleNotification(message: unknown): boolean {
+  return typeof message === "string" && IDLE_NOTIFICATION_RE.test(message);
+}
+
 /** Parse a payload-stringified column into an object, tolerating malformed JSON. */
 function parsePayload(s: string | null | undefined): Record<string, unknown> | null {
   if (!s) return null;
@@ -219,8 +240,10 @@ export function mapHookEventToRow(row: EventRow): TimelineRow | null {
       break;
     }
     case "Notification": {
-      subtype = "NOTIF";
       const msg = typeof payload?.message === "string" ? payload.message : "";
+      // Idle "waiting for your input" nudges get no NOTIF row (US-005).
+      if (isIdleNotification(msg)) return null;
+      subtype = "NOTIF";
       title = msg ? truncate(msg, 160) : "notification";
       break;
     }
