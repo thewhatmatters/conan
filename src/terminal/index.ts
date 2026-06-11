@@ -150,6 +150,14 @@ interface TermSession {
   /** Rolling tail of recent output scanned for an OSC 7 cwd report (US-002). */
   osc7Scan: string;
   /**
+   * The most recently observed cwd for THIS terminal (1.0.1 US-001), from OSC 7
+   * or the process-cwd poll — tracked for every tab, focused or not, so per-tab
+   * surfaces (tab labels, footer-on-focus) can show each tab's reality. Null
+   * until the first report; the spawn `cwd` is the fallback. Distinct from the
+   * app-wide active cwd, which only the FOCUSED tab may move.
+   */
+  lastKnownCwd: string | null;
+  /**
    * True once an OSC 7 cwd report has been parsed from this pty (US-002). When
    * set, the process-cwd polling fallback (US-003) stands down for this
    * terminal — OSC 7 is the authoritative cwd source.
@@ -246,6 +254,7 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     ctxScan: "",
     usageScan: "",
     osc7Scan: "",
+    lastKnownCwd: null,
     osc7Seen: false,
     cwdPollTimer: null,
     lastCwdPollAt: 0,
@@ -311,10 +320,13 @@ function maybeAdoptCwd(s: TermSession, chunk: string): void {
   // stands down for this terminal — recorded even for a background tab, since
   // OSC 7 availability is a property of the shell, not of who's focused.
   s.osc7Seen = true;
-  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
-  // Reset the scan so the same lingering report isn't re-applied every chunk; a
-  // fresh prompt re-emits OSC 7 and we re-adopt then.
+  // Track THIS tab's cwd regardless of focus (1.0.1 US-001) so per-tab surfaces
+  // see background `cd`s too. Reset the scan for every successful parse — a
+  // lingering report must not be re-applied chunk after chunk; a fresh prompt
+  // re-emits OSC 7 and we re-track then.
+  s.lastKnownCwd = cwd;
   s.osc7Scan = "";
+  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
   if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
   setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
 }
@@ -336,19 +348,23 @@ function scheduleCwdPoll(s: TermSession): void {
 }
 
 /**
- * The output-idle process-cwd poll (US-003). Re-checks the focus + OSC 7 gates
- * at fire time (both can change between scheduling and firing), floors the gap
- * between lsof lookups, then adopts the pty child's real cwd if it has moved.
- * An unchanged cwd — or any failed lookup — is a no-op.
+ * The output-idle process-cwd poll (US-003). Re-checks the OSC 7 gate at fire
+ * time (it can flip between scheduling and firing), floors the gap between lsof
+ * lookups per terminal, then records the pty child's real cwd on THIS tab
+ * (1.0.1 US-001 — tracked for background tabs too, so per-tab surfaces stay
+ * honest). Only the FOCUSED tab additionally moves the app-wide active cwd; a
+ * failed lookup is a no-op.
  */
 function pollProcessCwd(s: TermSession): void {
   if (s.exited || s.osc7Seen) return;
-  if (s.id !== focusedTermId) return; // only the active terminal moves the cwd
   const now = Date.now();
   if (now - s.lastCwdPollAt < CWD_POLL_MIN_SPACING_MS) return;
   s.lastCwdPollAt = now;
   const cwd = processCwd(s.term.pid);
-  if (!cwd || cwd === getActiveCwd()) return; // no path, or unchanged — no-op
+  if (!cwd) return; // failed lookup — no-op
+  s.lastKnownCwd = cwd;
+  if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
+  if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
   setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
 }
 
@@ -668,6 +684,12 @@ export interface TerminalSummary {
   sessionId: string | null;
   /** First 8 chars of `sessionId`, for the compact dropdown label. */
   shortId: string | null;
+  /**
+   * This terminal's current working directory (1.0.1 US-001): the last cwd
+   * observed via OSC 7 / the process-cwd poll, falling back to the spawn cwd.
+   * Per-tab truth — independent of which tab is focused.
+   */
+  cwd: string;
 }
 
 /**
@@ -686,6 +708,7 @@ export function listTerminalSessions(): TerminalSummary[] {
       name: info?.name ?? null,
       sessionId: info?.sessionId ?? null,
       shortId: info ? shortSessionId(info.sessionId) : null,
+      cwd: s.lastKnownCwd ?? s.cwd,
     });
   }
   return out;
