@@ -4,7 +4,13 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { getDb } from "../db/index.js";
 import { getActiveCwd, setActiveCwd } from "../cwd/index.js";
-import { correlateClaudeSession, shortSessionId, processCwd } from "./correlate.js";
+import {
+  correlateClaudeSession,
+  shortSessionId,
+  processCwd,
+  setSessionCandidateLookup,
+  type SessionPidCandidate,
+} from "./correlate.js";
 import { shellIntegrationEnv, parseOsc7Cwd } from "./shell-integration.js";
 import {
   parseContextFrame,
@@ -27,6 +33,33 @@ import {
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
+
+/**
+ * How far back the marker-independent correlation fallback (1.0.2 US-003) looks
+ * for hook-reported sessions. Liveness of the recorded claude_pid is the real
+ * gate (checked in correlate.ts); this window just bounds the scan and shrinks
+ * the odds of a recycled OS pid colliding with a long-dead session row.
+ */
+const SESSION_CANDIDATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Feed correlate.ts the recent hook-reported sessions (1.0.2 US-003). Kept as
+// an injected lookup so correlate stays DB-free and unit-testable; getDb() is
+// called lazily inside so importing this module never opens the DB early.
+setSessionCandidateLookup((): SessionPidCandidate[] => {
+  try {
+    return getDb()
+      .prepare(
+        `SELECT id AS sessionId, claude_pid AS claudePid, cwd, last_activity AS lastActivity
+           FROM session
+          WHERE claude_pid IS NOT NULL AND last_activity > ?
+          ORDER BY last_activity DESC
+          LIMIT 64`,
+      )
+      .all(Date.now() - SESSION_CANDIDATE_WINDOW_MS) as SessionPidCandidate[];
+  } catch {
+    return []; // DB unavailable — correlation degrades to markers + cwd
+  }
+});
 
 /** The `claude` binary to auto-launch; override with CONAN_CLAUDE_BIN. */
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";

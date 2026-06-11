@@ -46,7 +46,7 @@
         "Verify in browser using automate-browser skill: Timeline panel shows hook events for the live terminal, and the ↻ /context and ↻ /usage buttons are visible"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser. ⚠ Dogfooding footgun: this story edits src/terminal/* — the loop must run OUTSIDE the Conan dock (npm start, never tsx watch from an in-dock session). DB access from correlate.ts should go through a thin injected lookup to keep the function testable."
     },
     {
