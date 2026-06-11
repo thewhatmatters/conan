@@ -99,7 +99,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "HANDOFF.md Issue 5 root cause: liveCache holds the WHOLE parsed frame per session, trapping account-global data in whichever session captured it. Gateway change: requires npm run build:sidecar."
     },
     {

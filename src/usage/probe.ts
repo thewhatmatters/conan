@@ -502,14 +502,67 @@ function deriveStatus(
   return "ok";
 }
 
-// --- live probe + cache -----------------------------------------------------
+// --- account-global windows slot (US-006) ------------------------------------
+//
+// The rate-limit windows (Current session %, Current week …) describe the
+// ACCOUNT, not the session that happened to render them. Every successful
+// capture path — the passive live-pty parse, the refresh-injected capture
+// (both arrive via cacheCapturedUsage) and the throwaway ?probe=1 probe —
+// promotes its windows here, so any session's Usage tab can serve the latest
+// capture. This slot is the single source of truth for windows; the old
+// probe-only cache was merged into it (getCachedPlanUtilization is now a
+// derived view, not a second cache).
 
-let cached: PlanUtilization | null = null;
+/** The latest account-global /usage windows, from whichever path captured them. */
+export interface GlobalUsageWindows {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  sevenDaySonnet: UsageWindow | null;
+  status: "ok" | "warning" | "limit";
+  /** When the frame carrying these windows was captured (epoch ms). */
+  capturedAt: number;
+  /** Session whose pty rendered the frame, or null for the throwaway probe. */
+  fromSessionId: string | null;
+}
+
+let globalWindows: GlobalUsageWindows | null = null;
 let inFlight: Promise<PlanUtilization | null> | null = null;
 
-/** The last successful probe, or null if none yet. Never spawns anything. */
+/** The latest account-global windows from ANY capture path, or null if none. */
+export function getGlobalUsageWindows(): GlobalUsageWindows | null {
+  return globalWindows;
+}
+
+/** Promote a capture's windows to the global slot (no-op for window-less frames). */
+function setGlobalWindows(
+  parsed: Pick<LiveUsage, "fiveHour" | "sevenDay" | "sevenDaySonnet" | "status">,
+  fromSessionId: string | null,
+): void {
+  if (!parsed.fiveHour && !parsed.sevenDay && !parsed.sevenDaySonnet) return;
+  globalWindows = {
+    fiveHour: parsed.fiveHour,
+    sevenDay: parsed.sevenDay,
+    sevenDaySonnet: parsed.sevenDaySonnet,
+    status: parsed.status,
+    capturedAt: Date.now(),
+    fromSessionId,
+  };
+}
+
+/**
+ * The latest windows in the legacy PlanUtilization shape (probedAt = when the
+ * frame was captured, by whichever path). Derived from the global slot — kept
+ * so the existing route/UI contract doesn't change. Never spawns anything.
+ */
 export function getCachedPlanUtilization(): PlanUtilization | null {
-  return cached;
+  if (!globalWindows) return null;
+  return {
+    fiveHour: globalWindows.fiveHour,
+    sevenDay: globalWindows.sevenDay,
+    sevenDaySonnet: globalWindows.sevenDaySonnet,
+    status: globalWindows.status,
+    probedAt: globalWindows.capturedAt,
+  };
 }
 
 // --- live /usage capture (per session, from the correlated pty) -------------
@@ -532,9 +585,16 @@ export function cacheCapturedUsage(
   parsed: Omit<LiveUsage, "capturedAt">,
 ): void {
   liveCache.set(sessionId, { ...parsed, capturedAt: Date.now() });
+  // US-006: the windows describe the account, not this session — promote them
+  // to the global slot so every session's Usage tab sees the latest capture.
+  setGlobalWindows(parsed, sessionId);
 }
 
-/** Drop a session's cached live /usage frame (e.g. when its pty exits). */
+/**
+ * Drop a session's cached live /usage frame (e.g. when its pty exits). The
+ * global windows slot deliberately survives — the account's rate-limit state
+ * doesn't stop being true because the session that rendered it went away.
+ */
 export function clearCapturedUsage(sessionId: string): void {
   liveCache.delete(sessionId);
 }
@@ -547,17 +607,19 @@ export function clearCapturedUsage(sessionId: string): void {
  * CONAN_DISABLE_USAGE_PROBE (used by tests/CI so no real claude is launched).
  */
 export async function maybeProbe(opts: { force?: boolean } = {}): Promise<PlanUtilization | null> {
-  if (process.env.CONAN_DISABLE_USAGE_PROBE === "1") return cached;
-  const fresh = cached && Date.now() - cached.probedAt < PROBE_TTL_MS;
-  if (fresh && !opts.force) return cached;
+  if (process.env.CONAN_DISABLE_USAGE_PROBE === "1") return getCachedPlanUtilization();
+  // Freshness is judged against the global slot, so a recent live-pty capture
+  // (free, more accurate) suppresses a redundant billed probe (US-006).
+  const fresh = globalWindows && Date.now() - globalWindows.capturedAt < PROBE_TTL_MS;
+  if (fresh && !opts.force) return getCachedPlanUtilization();
   if (inFlight) return inFlight;
 
   inFlight = probeUsage()
     .then((result) => {
-      if (result) cached = result;
-      return cached;
+      if (result) setGlobalWindows(result, null);
+      return getCachedPlanUtilization();
     })
-    .catch(() => cached)
+    .catch(() => getCachedPlanUtilization())
     .finally(() => {
       inFlight = null;
     });

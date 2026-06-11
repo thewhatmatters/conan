@@ -19,7 +19,12 @@ import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
 import { readWidgets } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
-import { getCachedPlanUtilization, maybeProbe, getCapturedUsage } from "../usage/probe.js";
+import {
+  getCachedPlanUtilization,
+  maybeProbe,
+  getCapturedUsage,
+  getGlobalUsageWindows,
+} from "../usage/probe.js";
 import { getActiveCwd, onCwdChange } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
@@ -746,12 +751,26 @@ app.get("/api/claude/usage", async (req, res) => {
   }
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
   const captured = sessionId ? getCapturedUsage(sessionId) : null;
+  // US-006: the rate-limit windows are account-global — serve the single
+  // global slot (latest capture from ANY session's pty or the probe) to every
+  // requesting session; only the Session block below stays per-session. The
+  // slot carries capturedAt + fromSessionId so the UI can render freshness.
+  const usageWindows = getGlobalUsageWindows();
   // Prefer derived-from-transcript Session block when available — it's
   // always fresh (the transcript writes after every assistant turn), so
   // the HUD refresh no longer needs to pop the /usage modal in the live
   // pty just to capture data we already have on disk. Fall back to the
   // captured frame for sessions whose transcript isn't readable (rare).
   let liveUsage = captured;
+  if (liveUsage && usageWindows) {
+    liveUsage = {
+      ...liveUsage,
+      fiveHour: usageWindows.fiveHour,
+      sevenDay: usageWindows.sevenDay,
+      sevenDaySonnet: usageWindows.sevenDaySonnet,
+      status: usageWindows.status,
+    };
+  }
   if (sessionId) {
     const row = getDb()
       .prepare("SELECT cwd FROM session WHERE id = ?")
@@ -759,12 +778,12 @@ app.get("/api/claude/usage", async (req, res) => {
     const derived = deriveSessionUsage(sessionId, row?.cwd ?? null);
     if (derived) {
       liveUsage = {
-        // Empty-window stand-ins so the existing UI shape is preserved;
-        // the rate-limit windows still come from planUtilization above.
-        fiveHour: captured?.fiveHour ?? null,
-        sevenDay: captured?.sevenDay ?? null,
-        sevenDaySonnet: captured?.sevenDaySonnet ?? null,
-        status: captured?.status ?? "ok",
+        // Windows from the account-global slot (US-006) — any session's
+        // capture serves every tab; null stand-ins only before first capture.
+        fiveHour: usageWindows?.fiveHour ?? null,
+        sevenDay: usageWindows?.sevenDay ?? null,
+        sevenDaySonnet: usageWindows?.sevenDaySonnet ?? null,
+        status: usageWindows?.status ?? "ok",
         insights: captured?.insights ?? [],
         skills: captured?.skills ?? [],
         capturedAt: Date.now(),
@@ -779,7 +798,7 @@ app.get("/api/claude/usage", async (req, res) => {
       };
     }
   }
-  res.json({ ...base, planUtilization, liveUsage });
+  res.json({ ...base, planUtilization, liveUsage, usageWindows });
 });
 
 // Per-session Timeline feed (US-001 v4.5): the chronological log the Timeline
