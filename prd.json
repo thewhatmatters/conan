@@ -50,7 +50,7 @@
         "Verify in browser using automate-browser skill (two tabs in different dirs show folder names; /rename still overrides)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser. Depends on US-001. UI-only change."
     },
     {
