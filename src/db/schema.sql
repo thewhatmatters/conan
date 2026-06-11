@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS session (
   -- result, and whether it validated against the schema; null for normal runs.
   json_schema                 TEXT,            -- JSON schema the result is checked against
   structured_result           TEXT,            -- JSON of the captured final result
-  schema_valid                INTEGER          -- 1 valid, 0 invalid, null = not applicable
+  schema_valid                INTEGER,         -- 1 valid, 0 invalid, null = not applicable
+  -- Live claude process pid reported by the hooks (US-002 v1.0.2). Used for
+  -- marker-independent pty↔session correlation; null until a hook reports it.
+  claude_pid                  INTEGER
 );
 
 -- Lifecycle + stream events for a session (from hooks and the stream-json parser).

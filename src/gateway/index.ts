@@ -226,20 +226,30 @@ app.post("/api/claude/events", (req, res) => {
   const claudeVersion =
     payload && typeof payload.version === "string" ? payload.version : null;
 
+  // The hook reports the pid of the claude process that fired it (US-002
+  // v1.0.2) for marker-independent pty↔session correlation. COALESCE keeps the
+  // last known pid when an event omits it.
+  const claudePid =
+    typeof b.claudePid === "number" && Number.isInteger(b.claudePid) && b.claudePid > 0
+      ? b.claudePid
+      : null;
+
   db.prepare(
-    `INSERT INTO session (id, cwd, model, claude_version, status, created_at, last_activity)
-       VALUES (@id, @cwd, @model, @claudeVersion, @status, @now, @now)
+    `INSERT INTO session (id, cwd, model, claude_version, claude_pid, status, created_at, last_activity)
+       VALUES (@id, @cwd, @model, @claudeVersion, @claudePid, @status, @now, @now)
      ON CONFLICT(id) DO UPDATE SET
        last_activity = @now,
        status = @status,
        cwd = COALESCE(excluded.cwd, session.cwd),
        model = COALESCE(excluded.model, session.model),
-       claude_version = COALESCE(excluded.claude_version, session.claude_version)`,
+       claude_version = COALESCE(excluded.claude_version, session.claude_version),
+       claude_pid = COALESCE(excluded.claude_pid, session.claude_pid)`,
   ).run({
     id: sessionId,
     cwd: typeof b.cwd === "string" ? b.cwd : null,
     model,
     claudeVersion,
+    claudePid,
     status,
     now,
   });

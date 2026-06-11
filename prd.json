@@ -30,7 +30,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DB init lives in src/db/. Follow the existing idempotent-init pattern (the 1.0.1 loop's session columns are precedent)."
     },
     {
