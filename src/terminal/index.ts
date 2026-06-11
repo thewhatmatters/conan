@@ -34,6 +34,7 @@ import {
   parseUsageSkills,
   cacheCapturedUsage,
 } from "../usage/probe.js";
+import { reconstructScreenText } from "../usage/screen.js";
 
 const DEFAULT_SHELL =
   process.env.SHELL ?? (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
@@ -184,6 +185,10 @@ interface TermSession {
   ctxScan: string;
   /** Rolling tail of recent output scanned for a `/usage` frame (US-010). */
   usageScan: string;
+  /** Serializes the async screen-reconstruction parse of usageScan (US-006). */
+  usageParseBusy: boolean;
+  /** Signature of the last cached /usage parse — skips identical re-caches (US-006). */
+  usageSig: string;
   /** Rolling tail of recent output scanned for an OSC 7 cwd report (US-002). */
   osc7Scan: string;
   /**
@@ -321,6 +326,8 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
     killTimer: null,
     ctxScan: "",
     usageScan: "",
+    usageParseBusy: false,
+    usageSig: "",
     osc7Scan: "",
     lastKnownCwd: null,
     osc7Seen: false,
@@ -562,47 +569,73 @@ export function autoRefreshContextOnStop(sessionId: string): boolean {
  * WITHOUT injecting anything. The user ran /usage themselves; we just read it.
  * The Session block is session-specific, so it can only come from this live pty.
  *
- * The frame renders the Session block + windows BEFORE the long "What's
- * contributing" detail; we re-capture as each window arrives and only clear the
- * scan once the detail section ("contributing") appears, so the final cached
- * frame carries all three windows rather than a half-rendered one.
+ * US-006 (1.0.2): the scan is replayed through a headless terminal before
+ * parsing — the TUI repaints the late-arriving "Current week (Sonnet only)"
+ * window as a DELTA (already-correct screen cells are skipped), so that window
+ * only exists as reconstructed screen state, never as contiguous stream bytes.
+ * Same reason the old "clear on 'contributing'" rule lost it: the detail
+ * section renders BEFORE the Sonnet window, so the scan was dropped right
+ * before the window arrived. The scan now clears only once all three windows
+ * have parsed; a signature check keeps the identical frame from re-caching on
+ * every later chunk while the scan lingers (plans with no Sonnet window age it
+ * out via the USAGE_SCAN_MAX tail cap instead).
  */
 function maybeCaptureUsage(s: TermSession, chunk: string): void {
   s.usageScan = (s.usageScan + chunk).slice(-USAGE_SCAN_MAX);
   // Cheap pre-gate: "Resets" labels each window's reset line — rare in normal
-  // output and present once a window has rendered. Only then pay for the parse.
+  // output and present once a window has rendered (the first paint writes it
+  // contiguously). Only then pay for the reconstruction + parse.
   if (!s.usageScan.includes("Resets")) return;
-  const windows = parseUsageFrame(s.usageScan);
-  if (!windows || !windows.fiveHour) return; // not a complete /usage frame yet
-  const info = correlateClaudeSession(s.term.pid, s.cwd);
-  if (!info?.sessionId) return; // keep scanning; retry on a later chunk
-  cacheCapturedUsage(info.sessionId, {
-    session: parseUsageSession(s.usageScan),
-    fiveHour: windows.fiveHour,
-    sevenDay: windows.sevenDay,
-    sevenDaySonnet: windows.sevenDaySonnet,
-    status: windows.status,
-    // The insights + skills sections render after the windows; parse from the
-    // same accumulated frame (empty arrays until/if they appear — no crash).
-    insights: parseUsageInsights(s.usageScan),
-    skills: parseUsageSkills(s.usageScan),
-  });
-  // Notify the gateway so it can broadcast a `{type:'usage-captured'}` event
-  // over /ws — the HUD's useUsage hook listens and re-pulls so a user-typed
-  // `/usage` populates the Session block without an extra ↻ click. Slash
-  // commands don't fire hook events on their own, so without this broadcast
-  // the freshly-cached frame would sit unused until something else moved
-  // `eventSeq` forward.
-  if (usageCapturedListener) {
-    try {
-      usageCapturedListener(info.sessionId);
-    } catch {
-      /* listener throwing must not break the scan loop */
-    }
-  }
-  // Clear only once the frame is fully rendered (the detail section, which comes
-  // after every window, has appeared) so we don't drop the later windows.
-  if (s.usageScan.includes("contributing")) s.usageScan = "";
+  if (s.usageParseBusy) return; // a parse is in flight; the next chunk retries
+  s.usageParseBusy = true;
+  const scan = s.usageScan;
+  void reconstructScreenText(scan, s.term.cols, s.term.rows)
+    .then((screen) => {
+      const windows = parseUsageFrame(screen);
+      if (!windows || !windows.fiveHour) return; // not a complete /usage frame yet
+      const info = correlateClaudeSession(s.term.pid, s.cwd);
+      if (!info?.sessionId) return; // keep scanning; retry on a later chunk
+      const parsed = {
+        session: parseUsageSession(screen),
+        fiveHour: windows.fiveHour,
+        sevenDay: windows.sevenDay,
+        sevenDaySonnet: windows.sevenDaySonnet,
+        status: windows.status,
+        // The insights + skills sections render after the windows; parse from
+        // the same screen (empty arrays until/if they appear — no crash).
+        insights: parseUsageInsights(screen),
+        skills: parseUsageSkills(screen),
+      };
+      // Re-cache only when the parse actually changed, so a lingering scan
+      // doesn't refresh capturedAt ("captured 0m ago") on unrelated output.
+      const sig = JSON.stringify([info.sessionId, parsed]);
+      if (sig !== s.usageSig) {
+        s.usageSig = sig;
+        cacheCapturedUsage(info.sessionId, parsed);
+        // Notify the gateway so it can broadcast a `{type:'usage-captured'}`
+        // event over /ws — the HUD's useUsage hook listens and re-pulls so a
+        // user-typed `/usage` populates the Session block without an extra ↻
+        // click. Slash commands don't fire hook events on their own, so
+        // without this broadcast the freshly-cached frame would sit unused
+        // until something else moved `eventSeq` forward.
+        if (usageCapturedListener) {
+          try {
+            usageCapturedListener(info.sessionId);
+          } catch {
+            /* listener throwing must not break the scan loop */
+          }
+        }
+      }
+      // Clear only once the frame is complete INCLUDING the slow Sonnet window
+      // (and only if no new output landed while this parse ran).
+      if (windows.sevenDaySonnet && s.usageScan === scan) s.usageScan = "";
+    })
+    .catch(() => {
+      /* reconstruction failure — keep scanning; retry on a later chunk */
+    })
+    .finally(() => {
+      s.usageParseBusy = false;
+    });
 }
 
 /** Notified each time `maybeCaptureUsage` lands a fresh /usage frame for a

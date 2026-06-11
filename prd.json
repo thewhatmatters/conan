@@ -89,7 +89,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "matchWindow (src/usage/probe.ts:415) already parses '0%used' — the bug is upstream in what the scrape feeds it. Capture the fixture from a real frame, not a hand-typed one."
     },
     {

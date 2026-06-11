@@ -17,6 +17,7 @@
 // no fresh scrape. Nothing here throws — failures resolve to null.
 
 import * as pty from "node-pty";
+import { reconstructScreenText } from "./screen.js";
 
 /** One usage window (5-hour block or 7-day): % used + when it resets. */
 export interface UsageWindow {
@@ -122,6 +123,15 @@ const PROBE_TIMEOUT_MS = clampEnvInt("CONAN_USAGE_PROBE_TIMEOUT_MS", 30_000, 3_0
 
 /** Don't re-probe more often than this — /usage makes a billed request. */
 const PROBE_TTL_MS = clampEnvInt("CONAN_USAGE_PROBE_TTL_MS", 5 * 60_000, 10_000, 60 * 60_000);
+
+/**
+ * US-006 (1.0.2): after the 5-hour + week windows have parsed, how long to keep
+ * the probe alive waiting for the slow third window (Current week, Sonnet only —
+ * it renders only after the local-session scan completes). Plans that never show
+ * it pay at most this much extra; plans that do typically finish sooner because
+ * the probe exits the moment all three windows parse.
+ */
+const SONNET_WINDOW_GRACE_MS = clampEnvInt("CONAN_USAGE_SONNET_GRACE_MS", 12_000, 0, 60_000);
 
 /** Strip ANSI escape sequences (CSI, OSC, charset, etc.) from terminal output. */
 export function stripAnsi(s: string): string {
@@ -652,10 +662,14 @@ async function probeUsageWithRetry(): Promise<PlanUtilization | null> {
 
 /**
  * Spawn a controlled, short-lived `claude` pty, send `/usage`, capture the
- * rendered frame and parse it. Bounded by PROBE_TIMEOUT_MS and killed as soon as
- * a parseable frame appears (or the deadline hits) — no stray ptys. Resolves to
- * the parsed PlanUtilization or null; never rejects. A parse miss records
- * lastProbeError and logs the ANSI-stripped, truncated scrape (US-005, 1.0.2).
+ * rendered frame and parse it. The raw stream is replayed through a headless
+ * terminal before parsing (US-006): the TUI's late repaints are deltas, so the
+ * Sonnet-only window only exists as reconstructed screen state, never as
+ * contiguous stream bytes. Bounded by PROBE_TIMEOUT_MS and killed as soon as
+ * all three windows parse — or, once the two fast windows have parsed,
+ * SONNET_WINDOW_GRACE_MS later (plans without a Sonnet window). No stray ptys.
+ * Resolves to the parsed PlanUtilization or null; never rejects. A parse miss
+ * records lastProbeError and logs the ANSI-stripped, truncated scrape (US-005).
  */
 export function probeUsage(): Promise<PlanUtilization | null> {
   return new Promise((resolve) => {
@@ -663,6 +677,8 @@ export function probeUsage(): Promise<PlanUtilization | null> {
     let term: pty.IPty;
     let buf = "";
     let settled = false;
+    let parsing = false;
+    let twoWindowsSince: number | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let sendTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -689,11 +705,17 @@ export function probeUsage(): Promise<PlanUtilization | null> {
       resolve(result);
     };
 
-    const deadline = setTimeout(() => {
-      // Final attempt to salvage whatever rendered before giving up.
-      const parsed = parseUsageFrame(buf);
-      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null, "timeout");
-    }, PROBE_TIMEOUT_MS);
+    /** Reconstruct the screen and parse it; null until a frame has rendered. */
+    const parseScreen = async () => parseUsageFrame(await reconstructScreenText(buf));
+
+    /** Last-chance parse + cleanup for the deadline/exit paths. */
+    const salvage = (failReason: string) => {
+      void parseScreen()
+        .then((parsed) => cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null, failReason))
+        .catch(() => cleanup(null, failReason));
+    };
+
+    const deadline = setTimeout(() => salvage("timeout"), PROBE_TIMEOUT_MS);
 
     try {
       term = pty.spawn(shell, ["-l", "-c", CLAUDE_BIN], {
@@ -711,13 +733,12 @@ export function probeUsage(): Promise<PlanUtilization | null> {
     term.onData((d) => {
       buf += d;
     });
-    term.onExit(() => {
-      const parsed = parseUsageFrame(buf);
-      cleanup(parsed ? { ...parsed, probedAt: Date.now() } : null, "claude exited before /usage rendered");
-    });
+    term.onExit(() => salvage("claude exited before /usage rendered"));
 
-    // Let claude boot, send /usage, then poll the buffer until both windows
-    // render (or the deadline fires).
+    // Let claude boot, send /usage, then poll the reconstructed screen. Finish
+    // the moment all three windows parse; the Sonnet window lags behind the
+    // local-session scan, so two windows alone start a bounded grace clock
+    // instead of killing the pty (the pre-1.0.2 bug that lost the window).
     sendTimer = setTimeout(() => {
       try {
         term.write("/usage\r");
@@ -725,10 +746,26 @@ export function probeUsage(): Promise<PlanUtilization | null> {
         /* fall through to deadline */
       }
       pollTimer = setInterval(() => {
-        const parsed = parseUsageFrame(buf);
-        if (parsed && parsed.fiveHour && parsed.sevenDay) {
-          cleanup({ ...parsed, probedAt: Date.now() });
-        }
+        if (parsing || settled) return;
+        parsing = true;
+        void parseScreen()
+          .then((parsed) => {
+            if (settled || !parsed || !parsed.fiveHour || !parsed.sevenDay) return;
+            if (parsed.sevenDaySonnet) {
+              cleanup({ ...parsed, probedAt: Date.now() });
+              return;
+            }
+            twoWindowsSince ??= Date.now();
+            if (Date.now() - twoWindowsSince >= SONNET_WINDOW_GRACE_MS) {
+              cleanup({ ...parsed, probedAt: Date.now() });
+            }
+          })
+          .catch(() => {
+            /* keep polling until the deadline */
+          })
+          .finally(() => {
+            parsing = false;
+          });
       }, 500);
     }, 5_000);
   });
