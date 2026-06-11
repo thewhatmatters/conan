@@ -65,7 +65,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "HANDOFF.md Issue 2. A pgrep 'runner alive' check was considered and deferred — the wider mtime window is the deliberate v1.0.1 choice (record that in a code comment). The cwd half of the bug is fixed by US-001/US-002 (progress.txt resolves under getActiveCwd, src/tasks/index.ts:8-9). Gateway change: requires npm run build:sidecar."
     },
     {

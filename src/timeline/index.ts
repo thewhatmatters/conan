@@ -5,10 +5,15 @@ import { readTasks, progressMtimeMs } from "../tasks/index.js";
 /**
  * Build rows are "actively running"-only: progress.txt activity is included
  * only when the file was written to within this window (no chip on stale
- * trails from past runs). Mirrored client-side in Timeline.tsx so rows age
- * out of the open panel after the runner stops.
+ * trails from past runs). Mirrored client-side in Timeline.tsx (buildCutoff
+ * in freshRows) — update both constants in lockstep.
+ *
+ * 30 min covers a typical run-tasks.sh story iteration, which writes
+ * progress.txt only once per iteration — a 60s window made the chip blink
+ * out mid-run. A pgrep "runner alive" check was considered and deliberately
+ * deferred for v1.0.1; the wider mtime window is the simpler fix.
  */
-export const BUILD_ACTIVE_WINDOW_MS = 60_000;
+export const BUILD_ACTIVE_WINDOW_MS = 1_800_000;
 import { getActiveCwd } from "../cwd/index.js";
 import {
   readSessionSkillFirings,
