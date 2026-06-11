@@ -24,7 +24,7 @@ import {
   type ContextUsage,
 } from "../transcript/index.js";
 import { getCapturedContext, type ContextCapture } from "../context/index.js";
-import { liveTerminalSessionIds } from "../terminal/index.js";
+import { liveCwdForSession, liveTerminalSessionIds } from "../terminal/index.js";
 
 /** An MCP server entry as surfaced from system/init. */
 export interface McpServer {
@@ -289,7 +289,10 @@ export async function readWidgets(sessionId: string): Promise<WidgetData> {
   }
   return {
     mcp: parseMcp(init),
-    git: await gitStatus(cwd),
+    // Branch/dirty from where the tab actually IS (its live pty cwd, 1.0.1
+    // US-002), not where the session started — so the StatusBar branch follows
+    // a `cd` and a tab switch. Sessions with no live pty keep the recorded cwd.
+    git: await gitStatus(liveCwdForSession(sessionId) ?? cwd),
     context,
     contextBreakdown: readContextBreakdown(sessionId, cwd),
     liveContext: getCapturedContext(sessionId),

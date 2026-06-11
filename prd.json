@@ -34,7 +34,7 @@
         "Verify in browser using automate-browser skill (Vite dev UI against the gateway; check StatusBar text swaps on tab switch)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser. Depends on US-001. Known watch-item: App.tsx:255 fallback chain (lastCwd ?? activeSession?.cwd ?? config?.cwd) can briefly disagree — eyeball during verify."
     },
     {

@@ -187,6 +187,37 @@ const sessions = new Map<string, TermSession>();
 let focusedTermId: string | null = null;
 
 /**
+ * Terminal-generated reply sequences that ride the `input` path but are NOT the
+ * user typing: focus in/out reports (CSI I / CSI O, sent by xterm.js when the
+ * TUI enables mode 1004 and the DOM focus moves), device-attributes responses
+ * (CSI ? … c), and cursor/status reports (CSI … R, CSI 0 n). These must not
+ * claim cwd-adoption focus (1.0.1 US-002): on a tab switch the OLD tab's xterm
+ * fires a focus-out report that races the NEW tab's {type:'focus'} frame —
+ * losing the race would flap the app-wide cwd straight back. They are still
+ * written to the pty (the TUI is waiting for them); only the focus claim is
+ * skipped. Anything not matching is treated as real typing.
+ */
+const TERMINAL_AUTO_REPLY = /^(?:\x1b\[(?:I|O|\?[\d;]*c|[\d;]*R|0n))+$/;
+
+/**
+ * Make a terminal the focused one (1.0.1 US-002). Beyond recording it as the
+ * owner of cwd adoption, an actual focus MOVE immediately pushes the newly
+ * focused terminal's last known cwd (falling back to its spawn cwd) through
+ * setActiveCwd, so the StatusBar footer + new-tab spawn dir flip to the tab the
+ * user is now looking at without waiting for its next OSC 7 prompt. Repeat
+ * calls for the already-focused terminal (every keystroke lands here) change
+ * nothing, and the unchanged-path guard keeps listener churn at zero.
+ */
+function focusTerminal(s: TermSession): void {
+  const moved = focusedTermId !== s.id;
+  focusedTermId = s.id;
+  if (!moved) return;
+  const cwd = s.lastKnownCwd ?? s.cwd;
+  if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
+  setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
+}
+
+/**
  * Attach a node-pty session to an (already authenticated) WebSocket (US-015).
  * If the client passes a `tid` matching a still-live session, the buffered
  * backlog is replayed before live streaming resumes (US-017); otherwise a fresh
@@ -600,7 +631,7 @@ function attach(session: TermSession, ws: WebSocket): void {
   session.ws = ws;
   // The just-attached (opened or reconnected) tab is what the user is looking
   // at, so it owns cwd adoption until another tab is focused/typed into (US-002).
-  focusedTermId = session.id;
+  focusTerminal(session);
 
   const db = getDb();
   ws.on("message", (raw) => {
@@ -613,12 +644,13 @@ function attach(session: TermSession, ws: WebSocket): void {
     if (msg.type === "input" && typeof msg.data === "string") {
       // Typing into a tab focuses it for cwd adoption (US-002): the `cd` that
       // triggers an OSC 7 report happens in the terminal the user is driving.
-      focusedTermId = session.id;
+      // Auto-reply sequences are exempt — see TERMINAL_AUTO_REPLY.
+      if (!TERMINAL_AUTO_REPLY.test(msg.data)) focusTerminal(session);
       session.term.write(msg.data);
     } else if (msg.type === "focus") {
       // Explicit tab-switch signal from the UI (US-004) — make this the terminal
       // whose OSC 7 cwd reports are adopted, even before the user types.
-      focusedTermId = session.id;
+      focusTerminal(session);
     } else if (msg.type === "resize" && msg.cols && msg.rows) {
       session.term.resize(msg.cols, msg.rows);
       db.prepare(`UPDATE terminal_session SET cols = ?, rows = ? WHERE id = ?`).run(
@@ -712,6 +744,18 @@ export function listTerminalSessions(): TerminalSummary[] {
     });
   }
   return out;
+}
+
+/**
+ * The live working directory of the pty running a given Claude session
+ * (1.0.1 US-002), or null when no live pty is correlated. Lets session-scoped
+ * surfaces — the widgets git status feeding the StatusBar branch — reflect
+ * where the tab actually IS now, not the cwd the session was started in.
+ */
+export function liveCwdForSession(sessionId: string): string | null {
+  const s = findTermForSession(sessionId);
+  if (!s || s.exited) return null;
+  return s.lastKnownCwd ?? s.cwd;
 }
 
 /** The live pty running a given Claude session (US-009), or null when none. */

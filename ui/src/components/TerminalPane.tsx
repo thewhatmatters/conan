@@ -491,6 +491,7 @@ export default function TerminalPane({
                       theme={theme}
                       tid={t.tid}
                       closeOnUnmount={flagFor(t.tid)}
+                      active={on}
                     />
                   </div>
                 </div>
