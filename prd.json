@@ -60,7 +60,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Keep it cheap — piggyback on the existing reaper/poll cadence rather than a new timer."
     },
     {

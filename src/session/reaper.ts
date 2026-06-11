@@ -182,10 +182,13 @@ export function reconcileSessions(opts: ReaperOptions = {}): ReapResult {
 /**
  * Start the always-on reaper: reconcile once immediately (so a stale table is
  * fixed at boot) then on an interval. Returns a stop function. The interval is
- * unref'd so it never keeps the process alive on its own.
+ * unref'd so it never keeps the process alive on its own. `onTick` lets other
+ * periodic reconciliation (the correlation-health guard, 1.0.2 US-004) ride
+ * this cadence instead of owning a timer; it runs after each reconcile and its
+ * errors are contained the same way.
  */
 export function startReaper(
-  options: { windowMs?: number; intervalMs?: number } = {},
+  options: { windowMs?: number; intervalMs?: number; onTick?: () => void } = {},
 ): () => void {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const run = () => {
@@ -193,6 +196,11 @@ export function startReaper(
       reconcileSessions({ windowMs: options.windowMs });
     } catch (err) {
       console.warn(`[conan] reaper error: ${(err as Error).message}`);
+    }
+    try {
+      options.onTick?.();
+    } catch (err) {
+      console.warn(`[conan] reaper onTick error: ${(err as Error).message}`);
     }
   };
   run();

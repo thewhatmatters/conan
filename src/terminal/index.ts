@@ -9,8 +9,12 @@ import {
   shortSessionId,
   processCwd,
   setSessionCandidateLookup,
+  readProcessTable,
+  hasClaudeDescendant,
   type SessionPidCandidate,
+  type ProcessTable,
 } from "./correlate.js";
+import { trackCorrelationHealth } from "./health.js";
 import { shellIntegrationEnv, parseOsc7Cwd } from "./shell-integration.js";
 import {
   parseContextFrame,
@@ -789,6 +793,41 @@ export function liveCwdForSession(sessionId: string): string | null {
   const s = findTermForSession(sessionId);
   if (!s || s.exited) return null;
   return s.lastKnownCwd ?? s.cwd;
+}
+
+/**
+ * Sample correlation health (1.0.2 US-004) — called from the reaper tick, so
+ * the guard rides the existing 30s cadence instead of its own timer. An
+ * "orphan" terminal is a live pty that demonstrably hosts a `claude` process
+ * yet correlates to no session — the exact shape of the 2.1.173 marker break.
+ * Terminals without a claude descendant (plain shell tab, claude exited) are
+ * legitimately uncorrelated and never counted. The DB running-count is only
+ * queried once an orphan exists (the condition can't trip without one), and a
+ * DB failure reads as healthy — this is a QA tripwire, not a critical path.
+ */
+export function sampleCorrelationHealth(now: number = Date.now()): boolean {
+  let orphanTerminals = 0;
+  let table: ProcessTable | null = null; // lazy — one ps read, only if terminals exist
+  for (const s of sessions.values()) {
+    if (s.exited) continue;
+    table ??= readProcessTable();
+    if (!hasClaudeDescendant(s.term.pid, table)) continue;
+    if (correlateClaudeSession(s.term.pid, s.cwd)) continue;
+    orphanTerminals++;
+  }
+  let runningSessions = 0;
+  if (orphanTerminals > 0) {
+    try {
+      runningSessions = (
+        getDb()
+          .prepare(`SELECT COUNT(*) AS n FROM session WHERE status = 'running'`)
+          .get() as { n: number }
+      ).n;
+    } catch {
+      /* DB unavailable — treat as healthy rather than false-alarm */
+    }
+  }
+  return trackCorrelationHealth({ orphanTerminals, runningSessions }, now);
 }
 
 /** The live pty running a given Claude session (US-009), or null when none. */

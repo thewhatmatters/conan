@@ -130,6 +130,57 @@ function processChildren(): Map<number, number[]> {
   return children;
 }
 
+/**
+ * A pid tree WITH executable names, from one `ps -axo pid=,ppid=,comm=` call —
+ * the inputs the correlation-health guard (1.0.2 US-004) needs to tell a
+ * terminal that legitimately has no session (plain shell, claude exited) from
+ * one whose hosted claude we are failing to correlate. Empty maps when `ps` is
+ * unavailable (the guard then treats every terminal as claude-free — no alarm).
+ */
+export interface ProcessTable {
+  children: Map<number, number[]>;
+  comm: Map<number, string>;
+}
+
+/** Read the live process table (pid, ppid, executable) in one `ps` call. */
+export function readProcessTable(): ProcessTable {
+  const children = new Map<number, number[]>();
+  const comm = new Map<number, string>();
+  let out: string;
+  try {
+    out = execFileSync("ps", ["-axo", "pid=,ppid=,comm="], {
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  } catch {
+    return { children, comm };
+  }
+  for (const line of out.split("\n")) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    const ppid = Number(m[2]);
+    comm.set(pid, (m[3] ?? "").trim());
+    const kids = children.get(ppid);
+    if (kids) kids.push(pid);
+    else children.set(ppid, [pid]);
+  }
+  return { children, comm };
+}
+
+/**
+ * Does any transitive descendant of `root` run an executable named `claude`?
+ * Matches by basename — the same name-based rule the hook's ppid walk uses
+ * (1.0.2 US-001) — so launcher-path differences don't matter.
+ */
+export function hasClaudeDescendant(root: number, table: ProcessTable): boolean {
+  for (const pid of descendantsOf(root, table.children)) {
+    const c = table.comm.get(pid);
+    if (c && path.basename(c) === "claude") return true;
+  }
+  return false;
+}
+
 /** All transitive descendant pids of `root` (excluding `root` itself). */
 function descendantsOf(root: number, children: Map<number, number[]>): Set<number> {
   const seen = new Set<number>();
