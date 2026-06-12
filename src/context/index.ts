@@ -86,7 +86,7 @@ function parseTokenCount(raw: string): number {
  */
 function modelDisplayFor(slug: string | null, windowTokens: number | null): string | null {
   if (!slug) return null;
-  const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/i.exec(slug);
+  const m = /claude-([a-z]+)-(\d+)(?:-(\d+))?/i.exec(slug);
   if (!m) return null;
   const fam = (m[1] ?? "").toLowerCase();
   const family = fam.charAt(0).toUpperCase() + fam.slice(1);
@@ -120,8 +120,10 @@ export function parseContextFrame(
 
   // Model slug: the "claude-…" run in the header. /context renders no bracket
   // suffix on the slug (the "1M context" marker shows only as display text), so
-  // the slug ends at the first non-slug char.
-  const modelMatch = /claude-(?:opus|sonnet|haiku)-[\d-]+/i.exec(compact);
+  // the slug ends at the first non-slug char. Family is any word ("fable",
+  // "opus", …) so new model lines parse without a code change; the required
+  // leading digit keeps non-model runs like "claude-in-chrome" out.
+  const modelMatch = /claude-[a-z]+-\d[\d-]*/i.exec(compact);
   const model = modelMatch ? modelMatch[0].replace(/-+$/, "") : null;
 
   const categories: ContextCaptureCategory[] = [];

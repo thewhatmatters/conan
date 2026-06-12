@@ -396,7 +396,7 @@ function parseDurationMs(raw: string): number {
 
 /** Friendly display name from a model slug (best-effort; null when unknown). */
 function modelDisplayFor(slug: string): string | null {
-  const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/i.exec(slug);
+  const m = /claude-([a-z]+)-(\d+)(?:-(\d+))?/i.exec(slug);
   if (!m) return null;
   const fam = (m[1] ?? "").toLowerCase();
   const family = fam.charAt(0).toUpperCase() + fam.slice(1);
