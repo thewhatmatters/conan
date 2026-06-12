@@ -1053,11 +1053,12 @@ function formatValue(value: unknown): string {
  * Default Polar hosted-checkout URL the Buy button opens when the gateway
  * supplies no override. US-007 makes the live value runtime-configurable via
  * `CONAN_BUY_URL` (surfaced on /api/config as `buyUrl`); this constant is the
- * fallback so the button is never broken. Will be swapped for the real
- * `https://buy.polar.sh/polar_cl_…` link once Polar approves the org (the Go
- * Live + Stripe Connect KYC flow) — set CONAN_BUY_URL and no rebuild is needed.
+ * fallback so the button is never broken. This is the live "Buy Premium —
+ * in-app" checkout link from the Polar dashboard (org `whatmatters`,
+ * product `Conan Premium`).
  */
-const BUY_PREMIUM_URL = "https://conan.sh";
+const BUY_PREMIUM_URL =
+  "https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd";
 
 /**
  * Open an external URL via Tauri's shell plugin when running in the

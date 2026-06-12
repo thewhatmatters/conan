@@ -223,73 +223,58 @@ the full free/premium matrix.
 - ✅ **US-106** — Settings ▸ License tab (banner, masked paste field with
   show/hide toggle, Apply button, inline error from `VerifyResult`, Remove
   button when Premium, Buy Premium button → `openExternal(BUY_PREMIUM_URL)`
-  via Tauri shell plugin). `BUY_PREMIUM_URL` is stubbed at `https://conan.sh`
-  in [SettingsView.tsx](ui/src/components/SettingsView.tsx); **swap to the
-  real Polar checkout URL post-Go-Live approval.**
+  via Tauri shell plugin). `BUY_PREMIUM_URL` in
+  [SettingsView.tsx](ui/src/components/SettingsView.tsx) carries the live
+  Polar checkout link (`https://buy.polar.sh/polar_cl_yCw19…`, wired
+  2026-06-12); runtime-overridable via `CONAN_BUY_URL`.
 
-**Resume here (in order):**
-1. **Polar Go Live + Stripe Connect onboarding** (~15–30 min KYC).
-   Polar refuses test payments until this is done — that's what blocked
-   the first real sandbox sale. Click "Go Live" banner in the Polar
-   dashboard, walk through Stripe Identity verification, bank info,
-   tax info. Required for **any** transaction (test or real).
-2. **Real test sale via the checkout link** — `4242 4242 4242 4242`,
-   any future expiry. Confirm: Vercel logs show
-   `issued license lic_… for order …`; receipt email arrives.
-3. **Customize Polar receipt email template** to embed
+**Also built + working (formerly the "Resume here" backlog):**
+- ✅ **US-102** — Timeline insight gating, shipped on main
+  ([Timeline.tsx](ui/src/components/Timeline.tsx)): hard-wall blur at
+  `FREE_VISIBLE_LIMIT = 50` rows with the centered Conan-icon+lock
+  upgrade card → Settings ▸ License; Premium-only row kinds
+  (SKILL/SKILL?/PLAN/LOOP/BUILD) masked as `[Premium]` stubs in place;
+  STOP token chips + nested skills-considered cards + Premium filter
+  chips all hidden on Free.
+- ✅ **US-103** — Pulse live-data cap, shipped on main
+  ([PulseChart.tsx](ui/src/components/PulseChart.tsx)): 60s grace
+  clock (`FREE_PULSE_GRACE_MS`), then blur + upgrade wall; Premium
+  never gates. Plus US-103.5 theme gate (Light/Dark/Auto free).
+- ✅ **$29 price in code** — centralized as `PREMIUM_PRICE` in
+  [ui/src/lib/license.ts](ui/src/lib/license.ts) (commit `08cafba`).
+- ✅ `v1.0.0`–`v1.0.2` tagged, released, auto-update verified.
+- ❌ **US-104** (Skills `last fired` gating) + **US-105** (MCP auth
+  watchdog) — **cut from v1.0 (2026-05-30)**; the shipped surfaces
+  (Timeline, Pulse, Radio, License paste) carry the pitch.
+- ✅ **Polar application approved (2026-06-12)** — Go Live unblocked.
+
+**Resume here (in order — ALL Polar-dashboard-side; the code is
+launch-ready). The agent cannot do these: autonomous login to Polar is
+blocked by policy, and the `POLAR_API_TOKEN` lives only in Vercel prod
+env (pulling it locally is also blocked). User actions:**
+1. **Finish Stripe Connect KYC** if the Go Live flow asks (identity,
+   bank, tax) — the Polar application itself is now approved.
+2. **Fix product price $39 → $29** on `Conan Premium` in the dashboard
+   (code already says $29 everywhere).
+3. ✅ **Live checkout link generated + wired (2026-06-12)** —
+   `BUY_PREMIUM_URL` in
+   [SettingsView.tsx](ui/src/components/SettingsView.tsx) now points at
+   `https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd`.
+   Needs a 1.0.3 release to reach users (runtime-overridable via
+   `CONAN_BUY_URL` meanwhile).
+4. **Customize the Polar receipt email template** to embed
    `{{order.metadata.license}}` so the JWT lands in the customer's inbox.
-4. **Generate the actual checkout link** (skipped tonight — there's no
-   live checkout link yet for the in-app "Buy Premium" button).
-   Save the URL for US-106.
-5. **US-102** — Timeline insight gating. Two reinforcing gates, both
-   reading `useTier()`:
-   (a) **Row-count cap with blur + sticky locked overlay.** Latest 50
-   rows fully visible. Rows 51+ render under
-   `filter: blur(6px) + pointer-events: none + user-select: none`
-   with a sticky-centered overlay carrying a lock icon + headline
-   "Unlock the full Timeline" + "Conan Premium · $29 · lifetime" +
-   `[ Upgrade ]` button → opens Settings ▸ License. Overlay anchors to
-   the viewport so the user can't scroll past it to peek at the
-   un-overlayed blur. Live new events at the top stay clear (never
-   gates the live promise).
-   (b) **Event-type gating in the visible 50 rows.** Free renders
-   PROMPT + PRETOOL (name + 1-line snippet) + POSTTOOL + STOP (no
-   token chip) + SESSION + Hooks filter chip. Premium-only event kinds
-   collapse into a single "Skills considered (N)" / "Plan rows (N)" /
-   etc. summary row with a small `[ Premium ]` chip → click opens
-   Settings ▸ License. POSTTOOL rows are not click-to-expand on Free.
-6. **US-103** — Pulse live-data cap (60s grace, then blur + upgrade
-   wall). Reading `useTier()`, mirrors the Radio grace-clock and the
-   US-102 Timeline overlay. **Decided 2026-05-30: a duration cap, NOT
-   the insight-overlay alternative** — the live chart itself is the
-   gated surface (a deliberate departure from "never gate live data";
-   chosen over forecast/anomaly/attribution overlays).
-   (a) **Grace clock.** A `FREE_PULSE_GRACE_MS = 60_000` constant
-   (paralleling `FREE_RADIO_GRACE_MS`). The clock starts when the Pulse
-   tab first renders a live datapoint for the session; after 60s the
-   wall drops. Once walled it stays walled for that session.
-   (b) **Wall.** The chart renders under
-   `filter: blur(6px) + pointer-events: none + user-select: none` with a
-   sticky-centered overlay: lock icon + headline "Unlock live Pulse" +
-   "Conan Premium · $29 · lifetime" + `[ Upgrade ]` button → opens
-   Settings ▸ License. Overlay anchors to the chart container so it can't
-   be scrolled past to peek at the blurred chart.
-   (c) **Premium** never gates — full live Pulse across all ranges, no
-   clock. ⚠ Known tradeoff: free users cannot watch live spend past 60s;
-   this is the most aggressive gate in the suite — keep it under review
-   against churn/review sentiment.
-7. ❌ **US-104** — Skills tab `last fired` gating. **Cut from v1.0
-   (2026-05-30)** — not worth gating. The four shipped surfaces
-   (Timeline, Pulse, Radio, License paste) already carry the
-   depth-of-insight pitch; adding Skills `last fired` would not move
-   conversion enough to justify the surface friction.
-8. ❌ **US-105** — MCP auth watchdog. **Cut from v1.0 (2026-05-30)** —
-   same rationale; "background OAuth-token watchdog + banner" is a
-   silent-prevention feature that's hard to discover, and Conan's MCP
-   surface today is read-only enough that the watchdog wouldn't be a
-   visible Premium win.
-9. **Tag `v1.0.0`**, run `npm run release`, attach `Conan_1.0.0_aarch64.dmg`
-   to a GitHub Release, point conan.sh's Buy button at the Polar link.
+5. **Verification sale.** ⚠ `4242 4242 4242 4242` only works against
+   the **sandbox** (sandbox.polar.sh) — live mode rejects Stripe test
+   cards. Either run a sandbox-org test purchase, or make one real $29
+   purchase and refund it. Confirm: Vercel logs show
+   `issued license lic_… for order …`; receipt email arrives with the
+   JWT; pasting it into Settings ▸ License flips the app to Premium.
+6. **Rotate the webhook secret + license private key** (see "Don't
+   lose" below) — before the first real sale.
+7. **Point conan.sh's Buy button at the Polar link; PH launch**
+   (target Sun 2026-06-14). If a 1.0.3 ships first, fold in the
+   `parseContextFrame` model-name nit (`src/usage/probe.ts`).
 
 **Don't lose:** the webhook signing secret was pasted in the
 2026-05-29 chat transcript. Rotate it in Polar → Settings → Webhooks
