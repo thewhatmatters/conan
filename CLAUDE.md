@@ -242,7 +242,11 @@ the full free/premium matrix.
   never gates. Plus US-103.5 theme gate (Light/Dark/Auto free).
 - ✅ **$29 price in code** — centralized as `PREMIUM_PRICE` in
   [ui/src/lib/license.ts](ui/src/lib/license.ts) (commit `08cafba`).
-- ✅ `v1.0.0`–`v1.0.2` tagged, released, auto-update verified.
+- ✅ `v1.0.0`–`v1.0.3` tagged, released, auto-update verified. 1.0.3
+  (2026-06-12) ships the live checkout link to users plus the
+  model-family parse fix (`claude-fable-5` in `/context`//`/usage`
+  frames — `src/context/index.ts` + `src/usage/probe.ts`, regression
+  tests in `src/context/index.test.ts`, now part of `npm test`).
 - ❌ **US-104** (Skills `last fired` gating) + **US-105** (MCP auth
   watchdog) — **cut from v1.0 (2026-05-30)**; the shipped surfaces
   (Timeline, Pulse, Radio, License paste) carry the pitch.
@@ -256,12 +260,12 @@ env (pulling it locally is also blocked). User actions:**
    bank, tax) — the Polar application itself is now approved.
 2. **Fix product price $39 → $29** on `Conan Premium` in the dashboard
    (code already says $29 everywhere).
-3. ✅ **Live checkout link generated + wired (2026-06-12)** —
+3. ✅ **Live checkout link generated + wired + SHIPPED (2026-06-12)** —
    `BUY_PREMIUM_URL` in
-   [SettingsView.tsx](ui/src/components/SettingsView.tsx) now points at
-   `https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd`.
-   Needs a 1.0.3 release to reach users (runtime-overridable via
-   `CONAN_BUY_URL` meanwhile).
+   [SettingsView.tsx](ui/src/components/SettingsView.tsx) points at
+   `https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd`
+   and reached users in the `v1.0.3` release (runtime-overridable via
+   `CONAN_BUY_URL`).
 4. **Customize the Polar receipt email template** to embed
    `{{order.metadata.license}}` so the JWT lands in the customer's inbox.
 5. **Verification sale.** ⚠ `4242 4242 4242 4242` only works against
@@ -273,8 +277,8 @@ env (pulling it locally is also blocked). User actions:**
 6. **Rotate the webhook secret + license private key** (see "Don't
    lose" below) — before the first real sale.
 7. **Point conan.sh's Buy button at the Polar link; PH launch**
-   (target Sun 2026-06-14). If a 1.0.3 ships first, fold in the
-   `parseContextFrame` model-name nit (`src/usage/probe.ts`).
+   (target Sun 2026-06-14). (The `parseContextFrame` model-name nit
+   shipped in 1.0.3 — no code work remains for launch.)
 
 **Don't lose:** the webhook signing secret was pasted in the
 2026-05-29 chat transcript. Rotate it in Polar → Settings → Webhooks
