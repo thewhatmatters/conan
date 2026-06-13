@@ -35,8 +35,9 @@ interface Config {
   token: string;
   port: number;
   cwd: string;
-  /** US-007: runtime-configurable Buy Premium checkout URL (CONAN_BUY_URL). */
-  buyUrl?: string;
+  /** US-007: runtime-configurable Buy Premium checkout URL (CONAN_BUY_URL).
+   *  Null when no override is set — the UI then uses its bundled checkout link. */
+  buyUrl?: string | null;
 }
 
 export default function App() {

@@ -56,11 +56,12 @@ import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
-// US-007: the Buy Premium checkout URL the Settings ▸ License button opens, made
-// runtime-configurable so the real Polar link can be swapped in (post Go-Live)
-// without rebuilding the app. Defaults to the marketing site so the button is
-// never broken when no override is set.
-const BUY_URL = process.env.CONAN_BUY_URL || "https://conan.sh";
+// US-007: optional runtime override for the Buy Premium checkout URL the
+// Settings ▸ License button opens. When unset, `buyUrl` is null and the UI
+// falls back to its bundled Polar checkout link (BUY_PREMIUM_URL in
+// SettingsView.tsx) — a non-null default here would shadow that link for
+// every user, which is exactly the bug that shipped in 1.0.3.
+const BUY_URL = process.env.CONAN_BUY_URL || null;
 // Loopback-only (v4.2 Tauri-only): the gateway serves the desktop app's sidecar
 // over 127.0.0.1 and is never exposed to the network. The browser/web-served +
 // TLS/remote-access path was removed — the WS auth token + Origin validation in
