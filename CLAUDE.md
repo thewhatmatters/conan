@@ -266,19 +266,43 @@ env (pulling it locally is also blocked). User actions:**
    `https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd`
    and reached users in the `v1.0.3` release (runtime-overridable via
    `CONAN_BUY_URL`).
-4. **Customize the Polar receipt email template** to embed
-   `{{order.metadata.license}}` so the JWT lands in the customer's inbox.
-5. **Verification sale.** ⚠ `4242 4242 4242 4242` only works against
-   the **sandbox** (sandbox.polar.sh) — live mode rejects Stripe test
-   cards. Either run a sandbox-org test purchase, or make one real $29
-   purchase and refund it. Confirm: Vercel logs show
-   `issued license lic_… for order …`; receipt email arrives with the
-   JWT; pasting it into Settings ▸ License flips the app to Premium.
-6. **Rotate the webhook secret + license private key** (see "Don't
-   lose" below) — before the first real sale.
-7. **Point conan.sh's Buy button at the Polar link; PH launch**
-   (target Sun 2026-06-14). (The `parseContextFrame` model-name nit
-   shipped in 1.0.3 — no code work remains for launch.)
+4. ~~Customize the Polar receipt email template~~ — **IMPOSSIBLE +
+   REPLACED (2026-06-12)**: Polar has no merchant-editable receipt
+   template (`{{order.metadata.license}}` never existed). Shipped
+   instead in conan-license `32cd5b5` (live on license.conan.sh):
+   **`/claim` page** (checkout Success URL → JWT from KV, copy button,
+   retry/race handling) + **Resend license email** (`lib/email.ts`,
+   best-effort; inert until `RESEND_API_KEY` exists). See design doc
+   §2–3 (revised). Remaining user steps: (a) Resend account + verify
+   domain `conan.sh` (DKIM/SPF) + `RESEND_API_KEY` → Vercel env;
+   (b) Polar checkout link Success URL →
+   `https://license.conan.sh/claim?checkout_id={CHECKOUT_ID}`;
+   (c) static Custom Benefit note on Conan Premium pointing at /claim.
+5. ✅ **Verification sale COMPLETE (2026-06-12)** — real $29 purchase +
+   refund, full lifecycle green: order.created → 200 `issued license
+   lic_YYEDJC2AW02SNS9DFKZNTPX7GC`; `/claim?checkout_id=<real uuid>`
+   renders the JWT; license email delivered; order.refunded → 200
+   revoke; `revoked.json` carries the lic. **It caught a launch-killer:**
+   the webhook verifier + synthetic test both spoke a Stripe-style
+   `t=,v1=<hex>` signature dialect Polar never sends — real deliveries
+   401'd while the self-consistent test passed. Polar follows the
+   **Standard Webhooks spec** (`webhook-id`/`-timestamp`/`-signature`,
+   HMAC over `{id}.{ts}.{body}`, base64 `v1,<sig>`, key = UTF-8 of the
+   full `polar_whs_…` secret). Fixed in conan-license `3adce62`,
+   cross-validated against the real standardwebhooks lib. Recovery
+   pattern: resend failed deliveries from Polar ▸ Settings ▸ Webhooks.
+6. ~~Rotate the webhook secret + license private key~~ — **DECLINED by
+   user (2026-06-12)**; transcript-leak risk accepted (local-filesystem
+   threat model only).
+7. ✅ **conan.sh buy wiring LIVE (2026-06-12, conan-marketing
+   `1b6df96`)** — deliberately NOT a second button: the gold price
+   mentions ("$29 once" Hero caption, "Premium $29, once" CTA band) link
+   to the Polar checkout, `conan_buy_click` GA4 event mirrors
+   `conan_download`. Checkout page dressed (product image = OG card,
+   description, Custom Benefit). Plus `conan.sh/claim` →
+   `license.conan.sh/claim` redirect (query-preserving, `53da149`).
+8. **PH launch** (target Sun 2026-06-14) — the only remaining item.
+   Playbook: conan-marketing/docs/launch-playbook.md.
 
 **Don't lose:** the webhook signing secret was pasted in the
 2026-05-29 chat transcript. Rotate it in Polar → Settings → Webhooks
