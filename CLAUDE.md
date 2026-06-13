@@ -242,11 +242,17 @@ the full free/premium matrix.
   never gates. Plus US-103.5 theme gate (Light/Dark/Auto free).
 - ✅ **$29 price in code** — centralized as `PREMIUM_PRICE` in
   [ui/src/lib/license.ts](ui/src/lib/license.ts) (commit `08cafba`).
-- ✅ `v1.0.0`–`v1.0.3` tagged, released, auto-update verified. 1.0.3
-  (2026-06-12) ships the live checkout link to users plus the
+- ✅ `v1.0.0`–`v1.0.4` tagged, released, auto-update verified. 1.0.3
+  (2026-06-12) shipped the checkout-link constant plus the
   model-family parse fix (`claude-fable-5` in `/context`//`/usage`
   frames — `src/context/index.ts` + `src/usage/probe.ts`, regression
   tests in `src/context/index.test.ts`, now part of `npm test`).
+  **1.0.4 (2026-06-12, `4be9cc0`) fixes the launch-critical Buy Premium
+  bug 1.0.3 left behind:** the gateway defaulted `/api/config` `buyUrl`
+  to `https://conan.sh`, and the UI's `buyUrl || BUY_PREMIUM_URL`
+  fallback meant that always-truthy default shadowed the bundled Polar
+  checkout link — the button opened the homepage, never checkout.
+  `buyUrl` is now null unless `CONAN_BUY_URL` is set.
 - ❌ **US-104** (Skills `last fired` gating) + **US-105** (MCP auth
   watchdog) — **cut from v1.0 (2026-05-30)**; the shipped surfaces
   (Timeline, Pulse, Radio, License paste) carry the pitch.
@@ -264,8 +270,9 @@ env (pulling it locally is also blocked). User actions:**
    `BUY_PREMIUM_URL` in
    [SettingsView.tsx](ui/src/components/SettingsView.tsx) points at
    `https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd`
-   and reached users in the `v1.0.3` release (runtime-overridable via
-   `CONAN_BUY_URL`).
+   (runtime-overridable via `CONAN_BUY_URL`). ⚠ In `v1.0.3` the link
+   was unreachable — the gateway's `buyUrl` default shadowed it and the
+   button opened conan.sh; **actually reaching users since `v1.0.4`**.
 4. ~~Customize the Polar receipt email template~~ — **IMPOSSIBLE +
    REPLACED (2026-06-12)**: Polar has no merchant-editable receipt
    template (`{{order.metadata.license}}` never existed). Shipped
