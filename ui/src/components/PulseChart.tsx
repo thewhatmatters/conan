@@ -6,6 +6,7 @@ import { AreaChart } from "./charts/AreaChart.tsx";
 import type { AvailableChartColorsKeys } from "../lib/chartUtils.ts";
 import { useTier } from "../hooks/useTier.ts";
 import { PREMIUM_PRICE } from "../lib/license.ts";
+import { openCheckout } from "../lib/buy.ts";
 
 /* ───── US-103: Free-tier Pulse live-data cap ──────────────────────────────
  * After FREE_PULSE_GRACE_MS of cumulative session time with live data
@@ -30,14 +31,9 @@ function resetPulseSession(): void {
   pulseSessionWalled = false;
 }
 
-/** Dispatch the same `conan:open-settings` event the Timeline upgrade
- *  overlay + RickrolledTicker use, so the Upgrade button here lands the
- *  user directly on the JWT paste field. */
-function openLicenseSettings(): void {
-  window.dispatchEvent(
-    new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
-  );
-}
+/* The Pulse paywall "Upgrade" button opens the Polar checkout directly (see
+ * `openCheckout` in lib/buy.ts), matching the Timeline overlay — a one-click
+ * pay path instead of bouncing through Settings ▸ License first. */
 
 type Range = { label: string; minutes: number };
 const RANGES: Range[] = [
@@ -301,7 +297,7 @@ export default function PulseChart({
               </div>
               <button
                 type="button"
-                onClick={openLicenseSettings}
+                onClick={() => void openCheckout()}
                 className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Upgrade

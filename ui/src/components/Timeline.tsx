@@ -20,6 +20,7 @@ import {
 import { fmtTokens } from "./Widgets.tsx";
 import { useTier } from "../hooks/useTier.ts";
 import { PREMIUM_PRICE } from "../lib/license.ts";
+import { openCheckout } from "../lib/buy.ts";
 import { SkillFiredLottie } from "./SkillFiredLottie.tsx";
 
 /* ───── US-102: Free-tier gating constants ─────────────────────────────────
@@ -47,13 +48,10 @@ type FreeStubRow = {
   origKey: string;
 };
 
-/** Trigger the Settings dialog to open on the License tab. The App shell
- *  listens for `conan:open-settings` and reads `detail.tab`. */
-function openLicenseSettings(): void {
-  window.dispatchEvent(
-    new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
-  );
-}
+/* The paywall "Upgrade" button opens the Polar checkout directly (see
+ * `openCheckout` in lib/buy.ts) — a user who hits the wall has already decided
+ * to pay, so the old bounce-to-Settings hop was pure funnel friction. The
+ * License tab remains the post-purchase JWT paste/redemption surface. */
 
 // Per-terminal Timeline split (US-004 v4.5) — the live replacement for
 // TimelineMock.tsx. Mounts inside the active terminal pane, fetches the
@@ -1235,7 +1233,7 @@ export default function Timeline({
           </div>
           <button
             type="button"
-            onClick={openLicenseSettings}
+            onClick={() => void openCheckout()}
             className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Upgrade

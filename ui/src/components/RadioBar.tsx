@@ -3,6 +3,7 @@ import { Radio, SquarePause, SquarePlay } from "lucide-react";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { radioEmbedUrl } from "../lib/gateway.ts";
 import { useTier } from "../hooks/useTier.ts";
+import { openCheckout } from "../lib/buy.ts";
 // `startRickroll` / `stopRickroll` from lib/chiptune.ts is the fallback if
 // the YT-MIDI swap ever stops embedding — re-add the import + the effect
 // from commit 74bb491 when that happens. Kept out of imports here so TS
@@ -387,15 +388,12 @@ function MarqueeTitle({
 /**
  * RickrolledTicker — the US-102 "you've been silenced, please upgrade" UI
  * the radio bar wears when rickRolled is true. Static text in the marquee
- * slot, with "Upgrade" rendered as an inline clickable link that dispatches
- * `conan:open-settings { tab: "license" }` so the user lands straight on
- * the JWT paste field.
+ * slot, with "Upgrade" rendered as an inline clickable link that opens the
+ * Polar checkout directly (matching the Timeline/Pulse paywalls — one-click
+ * pay, no bounce through Settings ▸ License first).
  */
 function RickrolledTicker({ label }: { label: string }) {
-  const openLicense = () =>
-    window.dispatchEvent(
-      new CustomEvent("conan:open-settings", { detail: { tab: "license" } }),
-    );
+  const openLicense = () => void openCheckout();
   // Split the label at "Upgrade" so the surrounding text renders as plain
   // spans and only the word itself becomes a button. Falls back to one
   // chunk if the keyword isn't present (defensive — current label has it).

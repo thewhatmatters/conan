@@ -24,6 +24,7 @@ import {
   clearLicense,
 } from "../hooks/useTier.ts";
 import { PREMIUM_PRICE, type VerifyResult } from "../lib/license.ts";
+import { BUY_PREMIUM_URL, openExternal } from "../lib/buy.ts";
 import { PremiumUnlockBurst } from "./PremiumUnlockBurst.tsx";
 import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
@@ -1048,33 +1049,6 @@ function formatValue(value: unknown): string {
 }
 
 /* ───── License tab (US-106) ──────────────────────────────────────────── */
-
-/**
- * Default Polar hosted-checkout URL the Buy button opens when the gateway
- * supplies no override. US-007 makes the live value runtime-configurable via
- * `CONAN_BUY_URL` (surfaced on /api/config as `buyUrl`); this constant is the
- * fallback so the button is never broken. This is the live "Buy Premium —
- * in-app" checkout link from the Polar dashboard (org `whatmatters`,
- * product `Conan Premium`).
- */
-const BUY_PREMIUM_URL =
-  "https://buy.polar.sh/polar_cl_yCw19D7U1STmkUlsNrQkGRwYkeRyr196LeoYJ46vMvd";
-
-/**
- * Open an external URL via Tauri's shell plugin when running in the
- * native app, or `window.open` in the dev/browser context. Dynamic
- * import so the build doesn't hard-fail in non-Tauri environments —
- * matches the pattern used by `lib/nativeNotify.ts`.
- */
-async function openExternal(url: string): Promise<void> {
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
-  } catch {
-    // Browser dev / non-Tauri context: just punt to the standard tab opener.
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-}
 
 /**
  * Settings ▸ License — the only UI a user touches to activate Conan Premium.
