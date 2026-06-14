@@ -253,6 +253,15 @@ the full free/premium matrix.
   fallback meant that always-truthy default shadowed the bundled Polar
   checkout link — the button opened the homepage, never checkout.
   `buyUrl` is now null unless `CONAN_BUY_URL` is set.
+  **1.0.5 (2026-06-14, `1ac6bd1`) cuts paywall funnel friction:** the
+  Timeline, Pulse, and radio-rickroll "Upgrade" CTAs used to dispatch
+  `conan:open-settings` to bounce the user to Settings ▸ License to hunt
+  for a second Buy button. They now open the Polar checkout directly
+  (one click to pay). `BUY_PREMIUM_URL` + `openExternal` lifted out of
+  [SettingsView.tsx](ui/src/components/SettingsView.tsx) into the shared
+  [ui/src/lib/buy.ts](ui/src/lib/buy.ts), which adds `openCheckout()`
+  (resolves `buyUrl` from `/api/config` with the bundled link as
+  fallback). The License tab stays the post-purchase JWT paste surface.
 - ❌ **US-104** (Skills `last fired` gating) + **US-105** (MCP auth
   watchdog) — **cut from v1.0 (2026-05-30)**; the shipped surfaces
   (Timeline, Pulse, Radio, License paste) carry the pitch.
