@@ -12,7 +12,7 @@ import { openCheckout } from "../lib/buy.ts";
 /** Fallback when the gateway hasn't reported its current state yet (first
  *  paint, or the radio API is unavailable). Mirrors src/radio/index.ts's
  *  `DEFAULT_RADIO_VIDEO_ID`. */
-const FALLBACK_VIDEO_ID = "YmQ7jRgf4f0";
+const FALLBACK_VIDEO_ID = "tRsQsTMvPNg";
 const FALLBACK_TITLE = "Claude Radio";
 
 /** US-102 easter egg: after N seconds of cumulative Free-tier play, Claude

@@ -36,8 +36,17 @@ export interface RadioStation {
  */
 export const STATIONS: RadioStation[] = [
   {
+    // The official "Claude FM" stream on Anthropic's @claude channel. It is a
+    // 24/7 LIVE stream, and YouTube gives a live stream a brand-new video ID
+    // every broadcast — so any pinned ID eventually 403s when that broadcast
+    // ends (the embed then exhausts its retries and the bar reads "Offline" on
+    // a fresh launch, even though the user's connection is fine — the original
+    // default YmQ7jRgf4f0 died exactly this way). `refreshClaudeFmDefault()`
+    // resolves the channel's *current* live broadcast at gateway boot; the ID
+    // pinned here is only the fallback when that resolution fails. Verify a
+    // replacement fallback still resolves (oEmbed 200) before swapping it in.
     name: "Claude FM",
-    id: "YmQ7jRgf4f0",
+    id: "tRsQsTMvPNg",
     tags: ["focus", "ambient", "default", "chill", "build"],
   },
   {
@@ -95,6 +104,52 @@ export async function setRadio(input: string): Promise<RadioState> {
 /** Reset to the default stream — used by tests + a "/conan-reset-radio" future skill. */
 export function resetRadio(): RadioState {
   state = { videoId: DEFAULT_RADIO_VIDEO_ID, title: null };
+  return { ...state };
+}
+
+/** Anthropic's @claude channel "live" URL — redirects to whatever broadcast is
+ *  currently live. We scrape the canonical video id from it rather than hardcode
+ *  a per-broadcast id that rots (see the STATIONS[0] note). */
+const CLAUDE_LIVE_URL = "https://www.youtube.com/@claude/live";
+
+/**
+ * Resolve the video id of Claude FM's *current* live broadcast by reading the
+ * canonical link tag on the channel's `/live` page. Returns null on any failure
+ * (offline, non-200, markup change, or the channel simply not live right now —
+ * in which case the canonical points at the channel page, has no `?v=`, and the
+ * regex misses). Best-effort by design: the caller keeps the pinned fallback.
+ */
+export async function resolveClaudeFmLiveId(): Promise<string | null> {
+  try {
+    const r = await fetch(CLAUDE_LIVE_URL, {
+      headers: { "user-agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return null;
+    const html = await r.text();
+    const m = html.match(
+      /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/,
+    );
+    return m ? m[1]! : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Point the radio at Claude FM's current live broadcast. Called once at gateway
+ * boot (fire-and-forget). On success it updates the in-memory state AND the
+ * curated STATIONS[0] id so the `/conan-change-radio` "default" pick also targets
+ * the live broadcast. Returns the new state when the id actually changed (so the
+ * caller can broadcast it), else null. Any failure leaves the pinned fallback in
+ * place — the radio still plays, just on the last-known-good id.
+ */
+export async function refreshClaudeFmDefault(): Promise<RadioState | null> {
+  const liveId = await resolveClaudeFmLiveId();
+  if (!liveId || liveId === state.videoId) return null;
+  const title = await fetchTitle(liveId).catch(() => null);
+  state = { videoId: liveId, title };
+  STATIONS[0]!.id = liveId;
   return { ...state };
 }
 

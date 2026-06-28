@@ -50,7 +50,12 @@ import { recordContextGrowth } from "../context/autorefresh.js";
 import { readTimeline } from "../timeline/index.js";
 import { readAssistantTurnUsages, deriveSessionUsage } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
-import { getRadio, getStations, setRadio } from "../radio/index.js";
+import {
+  getRadio,
+  getStations,
+  refreshClaudeFmDefault,
+  setRadio,
+} from "../radio/index.js";
 import { detectClaude } from "../doctor/claude.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
@@ -1078,6 +1083,18 @@ server.on("upgrade", (req, socket, head) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[conan] gateway listening on http://${HOST}:${PORT}`);
+  // Claude FM is a live stream whose video id changes per broadcast; resolve the
+  // current broadcast so the radio plays a live id instead of the pinned (and
+  // eventually-dead) fallback. Fire-and-forget + best-effort: a connected HUD
+  // picks up the swap via the WS broadcast; failure silently keeps the fallback.
+  void refreshClaudeFmDefault()
+    .then((next) => {
+      if (next) {
+        broadcast({ type: "radio", payload: next });
+        console.log(`[conan] Claude FM resolved to live broadcast ${next.videoId}`);
+      }
+    })
+    .catch(() => {});
 });
 
 function shutdown(): void {
