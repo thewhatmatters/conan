@@ -18,6 +18,13 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: Record<string, WhatsNewEntry> = {
+  "1.1.0": {
+    version: "1.1.0",
+    highlights: [
+      "New Files panel beside the Timeline — browse the active terminal’s working directory, following along as you cd.",
+      "It flags the files Claude has edited or read this session, so you can watch the agent work the filesystem.",
+    ],
+  },
   "1.0.6": {
     version: "1.0.6",
     highlights: [
