@@ -178,6 +178,39 @@ function firstStringArg(toolInput: unknown): string {
   return "";
 }
 
+/** Files Claude touched in a session, split by signal (edited outranks read). */
+export interface TouchedFiles {
+  edited: string[];
+  read: string[];
+}
+
+/**
+ * Reduce a session's persisted Edit/Write/Read hook events to the set of file
+ * paths Claude touched, by signal: Edit/Write → edited, Read → read. A path
+ * that was both read and edited counts as edited (the stronger signal). Pure
+ * (no DB) for unit-testability — the gateway's /api/fs/touched route runs the
+ * query and hands the rows here. Powers the File Explorer's per-entry badges.
+ */
+export function parseTouchedFiles(
+  rows: { tool_name: string | null; payload: string | null }[],
+): TouchedFiles {
+  const edited = new Set<string>();
+  const read = new Set<string>();
+  for (const row of rows) {
+    const payload = parsePayload(row.payload);
+    const ti = payload?.tool_input;
+    const fp =
+      ti && typeof ti === "object"
+        ? (ti as { file_path?: unknown }).file_path
+        : undefined;
+    if (typeof fp !== "string" || !fp) continue;
+    if (row.tool_name === "Read") read.add(fp);
+    else edited.add(fp); // Edit | Write
+  }
+  for (const f of edited) read.delete(f); // edited is the stronger signal
+  return { edited: [...edited], read: [...read] };
+}
+
 /**
  * Map one persisted hook EventRow onto a TimelineRow envelope. Pure (no DB)
  * for unit-testability. Returns null for non-hook events (those have no

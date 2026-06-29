@@ -1,4 +1,6 @@
 import http from "node:http";
+import fs from "node:fs";
+import { execFile } from "node:child_process";
 import express from "express";
 import { WebSocketServer } from "ws";
 import { getDb, closeDb } from "../db/index.js";
@@ -14,6 +16,7 @@ import {
   getContextAutoRefresh,
   setContextAutoRefresh,
   setUsageCapturedListener,
+  setTerminalCwdListener,
   sampleCorrelationHealth,
 } from "../terminal/index.js";
 import { isCorrelationDegraded } from "../terminal/health.js";
@@ -28,7 +31,7 @@ import {
   getGlobalUsageWindows,
   getLastProbeError,
 } from "../usage/probe.js";
-import { getActiveCwd, onCwdChange } from "../cwd/index.js";
+import { getActiveCwd, onCwdChange, listEntries } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -47,7 +50,7 @@ import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.
 import { readUserThemes } from "../themes/index.js";
 import { startReaper } from "../session/reaper.js";
 import { recordContextGrowth } from "../context/autorefresh.js";
-import { readTimeline } from "../timeline/index.js";
+import { readTimeline, parseTouchedFiles } from "../timeline/index.js";
 import { readAssistantTurnUsages, deriveSessionUsage } from "../transcript/index.js";
 import { installBundledPlugins } from "../plugins/install.js";
 import {
@@ -188,6 +191,61 @@ function authed(req: express.Request, res: express.Response): boolean {
   }
   return true;
 }
+
+// ── File Explorer (per-tab) ────────────────────────────────────────────────
+// Read-only filesystem surface for the File Explorer panel. Token-gated; the
+// CORS reflector + loopback bind apply globally. These let the panel browse the
+// active terminal tab's cwd and highlight what Claude touched this session.
+
+// Immediate contents (files + dirs) of a directory; unreadable paths degrade to
+// an empty listing with an `error` (listEntries never throws).
+app.get("/api/fs/list", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  res.json(listEntries(p));
+});
+
+// The files Claude Edited/Wrote/Read in a session, parsed from the persisted
+// hook events' tool_input.file_path — powers the per-entry "Claude touched
+// this" badges. A path that was both read and edited counts as edited.
+app.get("/api/fs/touched", (req, res) => {
+  if (!authed(req, res)) return;
+  const session = req.query.session;
+  if (typeof session !== "string" || !session) {
+    res.status(400).json({ error: "session required" });
+    return;
+  }
+  const rows = db
+    .prepare(
+      `SELECT tool_name, payload FROM event
+         WHERE session_id = ? AND tool_name IN ('Edit', 'Write', 'Read')`,
+    )
+    .all(session) as { tool_name: string | null; payload: string | null }[];
+  res.json(parseTouchedFiles(rows));
+});
+
+// Reveal a path in Finder (macOS `open -R`). Existence-checked; args passed as
+// an array via execFile (no shell) so there's no injection surface.
+app.post("/api/fs/reveal", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = (req.body as { path?: unknown })?.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  if (!fs.existsSync(p)) {
+    res.status(404).json({ error: `no such path: ${p}` });
+    return;
+  }
+  execFile("open", ["-R", p], (err) => {
+    if (err) console.warn(`[fs] reveal failed for ${p}: ${err.message}`);
+  });
+  res.json({ ok: true });
+});
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */
 function valueBytes(v: unknown): number {
@@ -1037,6 +1095,15 @@ setUsageCapturedListener((sessionId) =>
 // at boot). New terminals already spawn in getActiveCwd(), so this just keeps
 // the visible footer in sync with where the user is working.
 onCwdChange((cwd) => broadcast({ type: "cwd", payload: cwd }));
+
+// Wire the per-terminal cwd broadcast (File Explorer): every tab tracks its own
+// cwd via OSC 7 / the process-cwd poll, focused or not. Push
+// `{type:'terminal-cwd', payload:{tid,cwd}}` so the File Explorer panel bound to
+// a given tab re-lists when you `cd` inside it — distinct from the focused-only
+// `{type:'cwd'}` above, which drives the app-wide StatusBar.
+setTerminalCwdListener((tid, cwd) =>
+  broadcast({ type: "terminal-cwd", payload: { tid, cwd } }),
+);
 
 // Bundled plugins: symlink CONAN_PLUGIN_DIR/<name>/ into ~/.claude/plugins/<name>/
 // on boot so Claude Code discovers them with the same plugin source path it

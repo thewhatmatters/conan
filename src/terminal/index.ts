@@ -399,8 +399,10 @@ function maybeAdoptCwd(s: TermSession, chunk: string): void {
   // see background `cd`s too. Reset the scan for every successful parse — a
   // lingering report must not be re-applied chunk after chunk; a fresh prompt
   // re-emits OSC 7 and we re-track then.
+  const changed = s.lastKnownCwd !== cwd;
   s.lastKnownCwd = cwd;
   s.osc7Scan = "";
+  if (changed) emitTerminalCwd(s, cwd); // per-tab cwd → File Explorer re-list
   if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
   if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
   setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
@@ -437,7 +439,9 @@ function pollProcessCwd(s: TermSession): void {
   s.lastCwdPollAt = now;
   const cwd = processCwd(s.term.pid);
   if (!cwd) return; // failed lookup — no-op
+  const changed = s.lastKnownCwd !== cwd;
   s.lastKnownCwd = cwd;
+  if (changed) emitTerminalCwd(s, cwd); // per-tab cwd → File Explorer re-list
   if (s.id !== focusedTermId) return; // only the focused terminal moves the cwd
   if (cwd === getActiveCwd()) return; // unchanged — no-op (and no listener churn)
   setActiveCwd(cwd); // validates + persists + notifies; bad paths are rejected
@@ -652,6 +656,31 @@ export function setUsageCapturedListener(
   fn: ((sessionId: string) => void) | null,
 ): void {
   usageCapturedListener = fn;
+}
+
+/** Notified with (tid, cwd) whenever ANY terminal's own working directory
+ *  changes — focused or not. Wired by the gateway to broadcast
+ *  `{type:'terminal-cwd', payload:{tid,cwd}}` so the per-tab File Explorer
+ *  re-lists when you `cd` inside that tab, independent of the focused-only
+ *  app-wide cwd. Single listener — setting again overwrites; null clears. */
+let terminalCwdListener: ((tid: string, cwd: string) => void) | null = null;
+
+/** Register the per-terminal cwd-change callback; pass null to clear. */
+export function setTerminalCwdListener(
+  fn: ((tid: string, cwd: string) => void) | null,
+): void {
+  terminalCwdListener = fn;
+}
+
+/** Fire the per-terminal cwd listener, swallowing listener errors so a bad
+ *  subscriber can't disrupt the pty data path. */
+function emitTerminalCwd(s: TermSession, cwd: string): void {
+  if (!terminalCwdListener) return;
+  try {
+    terminalCwdListener(s.id, cwd);
+  } catch {
+    /* a listener throwing must not disrupt terminal output handling */
+  }
 }
 
 /**

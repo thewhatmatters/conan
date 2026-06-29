@@ -155,6 +155,11 @@ export interface GatewayState {
    *  directory as the focused terminal `cd`s. Feeds the StatusBar so the footer
    *  tracks where the user is working live, without re-polling /api/config. */
   lastCwd: { cwd: string; seq: number } | null;
+  /** Latest `{type:'terminal-cwd'}` broadcast — a SPECIFIC terminal tab's own
+   *  working directory changed (focused or not). Distinct from `lastCwd` (the
+   *  focused-only app-wide cwd): this carries the tab's `tid` so useTerminals
+   *  can live-patch that tab's cwd for the per-tab File Explorer. */
+  lastTerminalCwd: { tid: string; cwd: string; seq: number } | null;
   /** Live connection state for the header indicator (US-018). */
   status: ConnStatus;
   /** Bumps on every successful (re)connect so dependent hooks re-pull state. */
@@ -188,6 +193,8 @@ export function useGateway(
   const [lastUsageCapture, setLastUsageCapture] =
     useState<GatewayState["lastUsageCapture"]>(null);
   const [lastCwd, setLastCwd] = useState<GatewayState["lastCwd"]>(null);
+  const [lastTerminalCwd, setLastTerminalCwd] =
+    useState<GatewayState["lastTerminalCwd"]>(null);
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [reconnectSeq, setReconnectSeq] = useState(0);
 
@@ -264,6 +271,11 @@ export function useGateway(
             });
           else if (msg.type === "cwd")
             setLastCwd({ cwd: String(msg.payload ?? ""), seq: ++seq });
+          else if (msg.type === "terminal-cwd") {
+            const p = msg.payload as { tid?: unknown; cwd?: unknown };
+            if (typeof p?.tid === "string" && typeof p?.cwd === "string")
+              setLastTerminalCwd({ tid: p.tid, cwd: p.cwd, seq: ++seq });
+          }
           // hello / pong / subscribed: liveness only, no state change.
         } catch {
           /* ignore non-JSON frames */
@@ -283,6 +295,7 @@ export function useGateway(
     lastRadio,
     lastUsageCapture,
     lastCwd,
+    lastTerminalCwd,
     status,
     reconnectSeq,
   };

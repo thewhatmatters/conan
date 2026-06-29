@@ -27,8 +27,26 @@ const POLL_MS = 4000;
  * dropdown falls back to "Term N". Polling (not WS) keeps it simple — a
  * /rename inside the pty has no app-WS event to hang off of.
  */
-export function useTerminals(): Map<string, TerminalInfo> {
+export function useTerminals(
+  liveCwd?: { tid: string; cwd: string; seq: number } | null,
+): Map<string, TerminalInfo> {
   const [byTid, setByTid] = useState<Map<string, TerminalInfo>>(new Map());
+
+  // Live per-tab cwd patch (File Explorer): the `{type:'terminal-cwd'}`
+  // broadcast updates a single tab's cwd between the 4s polls so the explorer
+  // re-lists the instant you `cd`. An unknown tab (poll hasn't seen it yet) is
+  // skipped — the next poll picks it up; the gateway's lastKnownCwd keeps the
+  // poll value current so it never regresses what we patched here.
+  useEffect(() => {
+    if (!liveCwd) return;
+    setByTid((prev) => {
+      const cur = prev.get(liveCwd.tid);
+      if (!cur || cur.cwd === liveCwd.cwd) return prev;
+      const next = new Map(prev);
+      next.set(liveCwd.tid, { ...cur, cwd: liveCwd.cwd });
+      return next;
+    });
+  }, [liveCwd?.tid, liveCwd?.cwd, liveCwd?.seq]);
 
   useEffect(() => {
     let cancelled = false;

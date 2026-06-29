@@ -2,9 +2,10 @@
 
 **A terminal-primary native desktop app that wraps and observes Claude Code.**
 Conan puts Claude Code's `xterm.js` terminal front-and-center — with a cwd/branch
-**status bar** and an optional **per-terminal Timeline split panel** showing
-hooks, skill firing (and the heuristic *considered but didn't fire* reasons),
-plan rows, `/loop` cadence, and the build-loop trail — beside a DevTools-style
+**status bar** and an optional **per-terminal split panel** that toggles between a
+**File Explorer** (the tab's live cwd, with "Claude touched this" badges) and a
+**Timeline** showing hooks, skill firing (and the heuristic *considered but didn't
+fire* reasons), plan rows, `/loop` cadence, and the build-loop trail — beside a DevTools-style
 **widget HUD** (**Context · Usage · Pulse · Skills · MCP**) and a **Claude
 Radio** play/pause toolbar, all backed by one loopback Node gateway packaged as
 a Tauri sidecar.
@@ -84,6 +85,9 @@ v4.2, then grown back deliberately in v4.3/v4.4 — is exactly what the app call
 | GET/POST | `/api/claude/config` | Claude config mirror (read) + single-key edit (write) |
 | GET | `/api/claude/timeline?session=…&since=…&limit=…` | the chronological per-session log (hook + build + skill-fired + skill-considered + plan + loop rows) |
 | POST | `/api/claude/events` | hook ingestion |
+| GET | `/api/fs/list?path=…` | File Explorer: immediate contents (files + dirs) of a directory |
+| GET | `/api/fs/touched?session=…` | the files Claude Edited/Wrote/Read in a session (powers the "Claude touched this" badges) |
+| POST | `/api/fs/reveal` | reveal a path in Finder (macOS `open -R`, existence-checked, no shell) |
 
 Still gone (removed in v2/v4.2): the launch/steer drive routes, the read-only
 catalog routes (`/agents`, `/stats`, …), and the web-served + TLS/remote-access +
@@ -92,9 +96,12 @@ read/write surface the HUD + Settings actually use — not the old catalog.
 
 **WebSockets** — `/ws` carries `{type:'event'}` hook events, `{type:'tasks'}` the
 build-loop trail, plus `{type:'skill-fired'}`, `{type:'skill-considered'}`, and
-`{type:'plan'}` broadcasts (added in v4.5-timeline US-002/003/006); snapshot on
-connect. `/ws/terminal` (a `node-pty` that auto-launches `claude` in the active
-cwd). Both are **authenticated on upgrade**.
+`{type:'plan'}` broadcasts (added in v4.5-timeline US-002/003/006), plus
+`{type:'cwd'}` (the focused-only app-wide cwd → StatusBar) and
+`{type:'terminal-cwd', payload:{tid,cwd}}` (any tab's own cwd changes, focused or
+not → the per-tab File Explorer re-lists); snapshot on connect. `/ws/terminal`
+(a `node-pty` that auto-launches `claude` in the active cwd). Both are
+**authenticated on upgrade**.
 
 **Auth** (`src/gateway/auth.ts`) — a token (`CONAN_AUTH_TOKEN` | `.data/auth-token`
 | generated) **plus an Origin allowlist** (incl. `tauri://localhost`), required
@@ -110,10 +117,17 @@ self-reports; the UI filters the firehose by the active cwd.
 The app is terminal-primary: the `xterm.js` terminal fills the main pane behind a
 **VS-Code-style tab strip** (multiple terminals, each its own pty; switching never
 tears one down), with a cwd/branch **status bar** below it and an optional
-**Timeline split panel** to its right (toggle next to `+` or `⌘\`) tethered
-per-terminal. A drag-resizable, width-persisted HUD docks to the right of all
-that. The HUD's session-scoped tabs follow the **active terminal tab**.
+**per-terminal split panel** to its right (toggle next to `+` or `⌘\`) tethered
+per-terminal — it hosts two views you switch between per tab, **Files** and
+**Timeline** (each tab remembers its choice). A drag-resizable, width-persisted
+HUD docks to the right of all that. The HUD's session-scoped tabs follow the
+**active terminal tab**.
 
+- **Files** — a File Explorer for THIS tab's live working directory (it re-lists
+  the instant you `cd` inside the tab). Files + directories (dirs first), with
+  per-entry **"Claude touched this"** badges — *edited* (Edit/Write) outranks
+  *read* (Read) — derived from the session's hook events, plus a
+  reveal-in-Finder action.
 - **Timeline** — a per-tab vertical split that lists THIS terminal's session as a
   chronological log: hook events, **skills fired** + the heuristic *considered
   but didn't fire* reasons per prompt (BM25-scored against each skill's

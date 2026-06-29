@@ -82,6 +82,7 @@ export default function App() {
     lastRadio,
     lastUsageCapture,
     lastCwd,
+    lastTerminalCwd,
     reconnectSeq,
   } = useGateway(config?.token ?? null, []);
   // A trigger that advances on each live event *and* each reconnect, so the
@@ -266,6 +267,7 @@ export default function App() {
         lastSkillFired={lastSkillFired}
         lastSkillConsidered={lastSkillConsidered}
         lastPlan={lastPlan}
+        lastTerminalCwd={lastTerminalCwd}
         activeSession={activeSession}
         sessions={sessions}
         widgetData={widgetData}

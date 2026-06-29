@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ClockFading, Plus } from "lucide-react";
+import { ClockFading, Folder, PanelRight, Plus } from "lucide-react";
 import Terminal from "./Terminal.tsx";
 import StatusBar from "./StatusBar.tsx";
+import FileExplorer from "./FileExplorer.tsx";
 import type { Theme } from "../hooks/useTheme.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import {
@@ -12,6 +13,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import Timeline from "./Timeline.tsx";
 import ContextHeader from "./ContextHeader.tsx";
+import HudTabHeader from "./shared/HudTabHeader.tsx";
 import type { Session } from "../hooks/useSessions.ts";
 import type {
   GatewayEvent,
@@ -52,6 +54,9 @@ interface TerminalPaneProps {
   lastSkillConsidered?: SkillConsideredEvent | null;
   /** Live TodoWrite / ExitPlanMode broadcast (US-007 v4.5) — fed to PLAN rows. */
   lastPlan?: PlanEvent | null;
+  /** Live per-tab cwd broadcast — patched into useTerminals so each tab's
+   *  File Explorer view re-lists as you `cd` inside that tab. */
+  lastTerminalCwd?: { tid: string; cwd: string; seq: number } | null;
   // — context-header bindings (dropped-Context-tab refactor) —
   /** Active session — drives the per-terminal ContextHeader's data + actions. */
   activeSession?: Session | null;
@@ -81,6 +86,13 @@ const TERMS_KEY = "conan.terms"; // sessionStorage: ordered list of tab tids
 // terminal-restore code (TERMS_KEY) keeps working unchanged.
 const TIMELINE_OPEN_KEY = "conan.terms.timeline"; // JSON string[] of open tids
 const TIMELINE_WIDTH_KEY = "conan.terms.timeline.w"; // JSON Record<tid, number>
+// The right panel now hosts BOTH the Files explorer and the Timeline; this
+// records which view each tab last had selected. (TIMELINE_OPEN/WIDTH above are
+// now really the shared panel's open-set + width — names kept for storage compat.)
+const RIGHTPANEL_TAB_KEY = "conan.terms.rightpanel.tab"; // JSON Record<tid,'files'|'timeline'>
+
+/** Which view the per-tab right panel is showing. */
+type PanelTab = "files" | "timeline";
 
 /** A single terminal tab — its `tid` keys an independent pty on the backend. */
 interface TermTab {
@@ -148,6 +160,26 @@ function loadTimelineWidth(): Record<string, number> {
   return {};
 }
 
+/** Restore the per-tab right-panel view (Files vs Timeline) from sessionStorage. */
+function loadRightPanelTab(): Record<string, PanelTab> {
+  try {
+    const raw = sessionStorage.getItem(RIGHTPANEL_TAB_KEY);
+    if (raw) {
+      const m = JSON.parse(raw) as unknown;
+      if (m && typeof m === "object" && !Array.isArray(m)) {
+        const out: Record<string, PanelTab> = {};
+        for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+          if (v === "files" || v === "timeline") out[k] = v;
+        }
+        return out;
+      }
+    }
+  } catch {
+    /* corrupt entry — fall through to an empty map */
+  }
+  return {};
+}
+
 /** Skip the global ⌘\ shortcut when typing into a real text input (forms,
  *  dialogs); xterm's helper textarea is the terminal, not a text input, so we
  *  intentionally let the shortcut through there too. */
@@ -183,6 +215,7 @@ export default function TerminalPane({
   lastSkillFired,
   lastSkillConsidered,
   lastPlan,
+  lastTerminalCwd,
   activeSession,
   sessions,
   widgetData,
@@ -205,6 +238,14 @@ export default function TerminalPane({
   const [timelineWidth, setTimelineWidth] = useState<Record<string, number>>(
     loadTimelineWidth,
   );
+  // Which view (Files vs Timeline) each tab's right panel is showing. Defaults
+  // to "timeline" for tabs with no stored choice, preserving prior behavior.
+  const [rightPanelTab, setRightPanelTab] = useState<Record<string, PanelTab>>(
+    loadRightPanelTab,
+  );
+  const panelTabFor = (tid: string): PanelTab => rightPanelTab[tid] ?? "timeline";
+  const setPanelTab = (tid: string, tab: PanelTab) =>
+    setRightPanelTab((prev) => (prev[tid] === tab ? prev : { ...prev, [tid]: tab }));
 
   // US-005: persist the open-set on every toggle/close (rare changes, no debounce).
   useEffect(() => {
@@ -233,6 +274,16 @@ export default function TerminalPane({
     }, 150);
     return () => clearTimeout(t);
   }, [timelineWidth]);
+
+  // Persist the per-tab right-panel view (Files vs Timeline) on change — rare,
+  // so no debounce needed.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(RIGHTPANEL_TAB_KEY, JSON.stringify(rightPanelTab));
+    } catch {
+      /* sessionStorage may be unavailable; ignore */
+    }
+  }, [rightPanelTab]);
   // US-003: surface the active tab's tid upward on every change (initial mount,
   // tab switch, new, close) so App can repoint the session-scoped HUD widgets.
   useEffect(() => {
@@ -241,7 +292,7 @@ export default function TerminalPane({
   // Per-tab Claude session info, so a notification click can jump to the tab
   // whose pty runs the prompting session (US-011). Kept in a ref so the
   // `conan:focus-session` listener reads the live map without rebinding.
-  const byTid = useTerminals();
+  const byTid = useTerminals(lastTerminalCwd ?? null);
   const byTidRef = useRef(byTid);
   byTidRef.current = byTid;
   // Tab-strip labels (1.0.1 US-003): cwd folder basenames with duplicate
@@ -296,6 +347,11 @@ export default function TerminalPane({
       return next;
     });
     setTimelineWidth((prev) => {
+      if (!(tid in prev)) return prev;
+      const { [tid]: _, ...rest } = prev;
+      return rest;
+    });
+    setRightPanelTab((prev) => {
       if (!(tid in prev)) return prev;
       const { [tid]: _, ...rest } = prev;
       return rest;
@@ -449,8 +505,8 @@ export default function TerminalPane({
             the same button also closes it. Semantic tokens only. */}
         <button
           onClick={toggleTimelineForActive}
-          title="Toggle Timeline (⌘\)"
-          aria-label="Toggle Timeline (⌘\)"
+          title="Toggle panel (⌘\)"
+          aria-label="Toggle panel (⌘\)"
           aria-pressed={timelineOpen.has(activeTid)}
           className={
             "mr-1 shrink-0 rounded-md p-1 transition-colors " +
@@ -459,7 +515,7 @@ export default function TerminalPane({
               : "text-muted-foreground hover:bg-muted hover:text-foreground")
           }
         >
-          <ClockFading className="size-4" />
+          <PanelRight className="size-4" />
         </button>
       </div>
 
@@ -475,6 +531,57 @@ export default function TerminalPane({
             const on = activeTid === t.tid;
             const tlOn = timelineOpen.has(t.tid);
             const tlW = timelineWidth[t.tid] ?? TIMELINE_DEFAULT_W;
+            const info = byTid.get(t.tid);
+            const panelTab = panelTabFor(t.tid);
+            // The shared right-panel body: a Files | Timeline switch above the
+            // selected view. Built once and slotted into whichever aside layout
+            // (overlay vs side-by-side) applies, so the two stay in lockstep.
+            const panel = (
+              <div className="flex h-full min-h-0 flex-col bg-card">
+                {/* Files | Timeline switch — rides the shared <HudTabHeader> so
+                    this secondary toolbar is the exact same chrome + height
+                    (h-9) as the HUD's Usage/Skills/MCP secondary toolbars. */}
+                <HudTabHeader
+                  name={
+                    <>
+                      <PanelTabBtn
+                        active={panelTab === "files"}
+                        onClick={() => setPanelTab(t.tid, "files")}
+                        icon={<Folder className="size-3.5" />}
+                        label="Files"
+                      />
+                      <PanelTabBtn
+                        active={panelTab === "timeline"}
+                        onClick={() => setPanelTab(t.tid, "timeline")}
+                        icon={<ClockFading className="size-3.5" />}
+                        label="Timeline"
+                      />
+                    </>
+                  }
+                />
+                <div className="min-h-0 flex-1">
+                  {panelTab === "files" ? (
+                    <FileExplorer
+                      token={token}
+                      sessionId={info?.sessionId ?? null}
+                      cwd={info?.cwd ?? cwd ?? null}
+                      lastEvent={lastEvent ?? null}
+                    />
+                  ) : (
+                    <Timeline
+                      token={token}
+                      sessionId={info?.sessionId ?? null}
+                      terminalLabel={labelFor(t.tid, i)}
+                      lastEvent={lastEvent ?? null}
+                      lastSkillFired={lastSkillFired ?? null}
+                      lastSkillConsidered={lastSkillConsidered ?? null}
+                      lastPlan={lastPlan ?? null}
+                      tasks={tasks ?? null}
+                    />
+                  )}
+                </div>
+              </div>
+            );
             return (
               <div
                 key={t.tid}
@@ -507,23 +614,12 @@ export default function TerminalPane({
                 </div>
                 {tlOn &&
                   (timelineOverlay ? (
-                    /* Narrow window: Timeline overlays the terminal column at
+                    /* Narrow window: the panel overlays the terminal column at
                        full width. Terminal stays mounted underneath (z-0) so
-                       its pty keeps running; closing the Timeline reveals it
-                       again instantly with all scrollback intact. No drag
-                       divider — there's nothing to size against. */
-                    <aside className="absolute inset-0 z-20 bg-card">
-                      <Timeline
-                        token={token}
-                        sessionId={byTid.get(t.tid)?.sessionId ?? null}
-                        terminalLabel={labelFor(t.tid, i)}
-                        lastEvent={lastEvent ?? null}
-                        lastSkillFired={lastSkillFired ?? null}
-                        lastSkillConsidered={lastSkillConsidered ?? null}
-                        lastPlan={lastPlan ?? null}
-                        tasks={tasks ?? null}
-                      />
-                    </aside>
+                       its pty keeps running; closing the panel reveals it again
+                       instantly with all scrollback intact. No drag divider —
+                       there's nothing to size against. */
+                    <aside className="absolute inset-0 z-20 bg-card">{panel}</aside>
                   ) : (
                     /* Wide window: classic side-by-side split with a draggable
                        divider. The terminal column keeps its remaining slice. */
@@ -533,20 +629,8 @@ export default function TerminalPane({
                         title="Drag to resize"
                         className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/40"
                       />
-                      <aside
-                        style={{ width: tlW }}
-                        className="shrink-0 bg-card"
-                      >
-                        <Timeline
-                          token={token}
-                          sessionId={byTid.get(t.tid)?.sessionId ?? null}
-                          terminalLabel={labelFor(t.tid, i)}
-                          lastEvent={lastEvent ?? null}
-                          lastSkillFired={lastSkillFired ?? null}
-                          lastSkillConsidered={lastSkillConsidered ?? null}
-                          lastPlan={lastPlan ?? null}
-                          tasks={tasks ?? null}
-                        />
+                      <aside style={{ width: tlW }} className="shrink-0 bg-card">
+                        {panel}
                       </aside>
                     </>
                   ))}
@@ -562,6 +646,37 @@ export default function TerminalPane({
 
       <StatusBar cwd={cwd} git={git} />
     </section>
+  );
+}
+
+/** A compact segmented-control button for the right panel's Files | Timeline
+ *  switch. Active = filled muted bg + bold foreground (VS Code tab feel). */
+function PanelTabBtn({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-normal transition-colors " +
+        (active
+          ? "bg-muted font-medium text-foreground"
+          : "text-muted-foreground hover:bg-muted/60")
+      }
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

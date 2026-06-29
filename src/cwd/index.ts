@@ -169,3 +169,72 @@ export function listDirs(input?: string): DirListing {
 
   return { path: target, parent, entries };
 }
+
+export interface FileEntry {
+  name: string;
+  /** Absolute path of the entry. */
+  path: string;
+  isDir: boolean;
+  /** Size in bytes (0 for directories or un-stat-able entries). */
+  size: number;
+  /** Last-modified time in epoch ms (0 when un-stat-able). */
+  mtimeMs: number;
+}
+
+export interface FileListing {
+  /** The directory that was listed (resolved absolute path). */
+  path: string;
+  /** Its parent, or null at the filesystem root. */
+  parent: string | null;
+  /** Immediate contents — files AND directories, dirs first then name-sorted. */
+  entries: FileEntry[];
+  error?: string;
+}
+
+/**
+ * List the immediate contents (files AND directories) of `input` for the file
+ * explorer. Unlike {@link listDirs}, this keeps files and dot-entries (the UI
+ * dims the latter). Directories sort first, then case-insensitive name order.
+ * Unreadable targets degrade to an empty listing with an `error`; a single
+ * un-stat-able entry (broken symlink, EACCES) never throws the whole listing.
+ */
+export function listEntries(input?: string): FileListing {
+  const target =
+    typeof input === "string" && input.trim()
+      ? path.resolve(expandHome(input.trim()))
+      : active;
+  const parentOf = path.dirname(target);
+  const parent = parentOf === target ? null : parentOf;
+
+  let dirents: fs.Dirent[];
+  try {
+    dirents = fs.readdirSync(target, { withFileTypes: true });
+  } catch {
+    return { path: target, parent, entries: [], error: `cannot read: ${target}` };
+  }
+
+  const entries = dirents
+    .map((d) => {
+      const full = path.join(target, d.name);
+      let isDir = d.isDirectory();
+      let size = 0;
+      let mtimeMs = 0;
+      try {
+        // stat (not lstat) so symlinks report their target's kind + size.
+        const st = fs.statSync(full);
+        isDir = st.isDirectory();
+        size = st.size;
+        mtimeMs = st.mtimeMs;
+      } catch {
+        // Broken symlink or permission denied — keep the entry with the
+        // dirent's own type and zeroed stats rather than dropping it.
+      }
+      return { name: d.name, path: full, isDir, size, mtimeMs };
+    })
+    .sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  return { path: target, parent, entries };
+}
