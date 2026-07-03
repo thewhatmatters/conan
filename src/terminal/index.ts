@@ -70,6 +70,21 @@ setSessionCandidateLookup((): SessionPidCandidate[] => {
 const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
 
 /**
+ * What the claude-mode pty actually launches; override with CONAN_TERMINAL_CMD.
+ * Interpolated into the interactive-login-shell command line, so a full shell
+ * command works, not just a binary name. This is the supported seam for
+ * launching conan-cli (the spec-first setup menu) instead of bare claude:
+ * conan-cli renders Stage 0 (splash/menu/detect) and then execs `claude`
+ * itself, so session correlation and hook observation still see a normal
+ * claude process. Deliberately a SEPARATE knob from CONAN_CLAUDE_BIN: the
+ * /usage throwaway probe (src/usage/probe.ts) spawns CLAUDE_BIN expecting the
+ * bare claude TUI — pointing the shared var at a setup menu breaks the probe.
+ * Default (no env var) remains CLAUDE_BIN — behavior unchanged. Setup-menu
+ * logic must never live in this repo; see conan-cli's CLAUDE.md.
+ */
+const TERMINAL_CMD = process.env.CONAN_TERMINAL_CMD ?? CLAUDE_BIN;
+
+/**
  * Ring-buffer cap per terminal session (US-017). Recent pty output is held so a
  * reconnecting client can replay what it missed; oldest chunks are evicted once
  * the cap is exceeded. Override with CONAN_TERM_RING_BYTES (used by tests).
@@ -137,7 +152,7 @@ function resolveCommand(mode: string): { file: string; args: string[] } {
   if (mode === "shell") return { file: DEFAULT_SHELL, args: [] };
   return {
     file: DEFAULT_SHELL,
-    args: ["-i", "-l", "-c", `${CLAUDE_BIN}; exec ${DEFAULT_SHELL} -i -l`],
+    args: ["-i", "-l", "-c", `${TERMINAL_CMD}; exec ${DEFAULT_SHELL} -i -l`],
   };
 }
 
