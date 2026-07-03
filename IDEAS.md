@@ -1,5 +1,23 @@
 # Conan — Feature Ideas
 
+## Decided — next build (not ideas; user calls, 2026-07-03)
+
+- **"Auto" context tracking OFF by default.** Today
+  `contextAutoRefreshEnabled` defaults ON (`src/terminal/index.ts:537`,
+  `process.env.CONAN_CONTEXT_AUTOREFRESH !== "0"`). Flip it: default OFF; on
+  only when the env var explicitly enables it (`=== "1"`) or the user turns
+  on the Context widget's "Auto" toggle. Keep the runtime GET/POST endpoints
+  (`src/gateway/index.ts` `/api/claude/context/autorefresh`) as-is; update
+  the env-var semantics in both comments. Rationale: Auto spends context to
+  measure context — that observer cost should be opt-in.
+- **Both context-refresh controls disabled when Claude Code isn't running.**
+  In the Context widget's refresh control group
+  (`ui/src/components/Widgets.tsx` ~line 128): the manual "↻ /context"
+  button is already gated on a live correlated pty (`hasLivePty`), but the
+  "Auto" toggle renders whenever its state loads. Gate/disable the Auto
+  toggle the same way — with no live `claude` session neither control can do
+  anything, so both should read as disabled.
+
 A running list of candidate features. Conan already nails "observe one Claude
 Code session" — these either **deepen the observability**, **scale to many
 sessions**, or **let you act from the HUD** instead of just watching. Each is

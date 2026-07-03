@@ -130,52 +130,91 @@ _Deferred to later versions (Karpathy Layers 2–3, the full method):_
   loop, which Conan's Timeline BUILD rows already observe. _This is the step that
   literally closes the loop in §1._
 
-## 5. The conan method (v1 = route pick → docs → hand off)
+## 5. The conan method (v1 = environment interview → CLAUDE.md-as-OS → hand off)
 
-The house **environment scaffolder** — light and fast. Different *output* from
-Karpathy, not just a faster version of it.
+> **Evolution (2026-07-03, decided while planning the conan-cli method build):**
+> the route-pick frame is replaced by a **layer-stack** frame. A real project
+> setup isn't one archetype bucket — it's the same layers every time (docs hub,
+> gates, session rituals, knowledge wiring, build playbook), with project kind
+> acting only as a *modifier*. The clean differentiator from Karpathy is what
+> the `CLAUDE.md` is **about**: Karpathy's CLAUDE.md is about *the product*
+> (distilled from the locked spec, §4); conan's CLAUDE.md is about *the
+> operating system* — how we work here. Skill name locked: `conan-scaffold`.
 
-1. **Route pick** — the user chooses a project archetype (see §6).
-2. **Light, one-pass interview** — roughly a single screen: _"In a sentence or
-   two: what are you building, who's it for, the one outcome that matters, and
-   what's explicitly out of scope?"_
-3. **Scaffold the workspace (DOCS ONLY in v1):**
-   - **`CLAUDE.md`** — always (via `craft-claude`), tuned by the route.
-   - **`DESIGN.md`** — only on UI routes (via `design-md`).
-4. **Hand off** — launch a fresh `claude` session in the dir. The hand-off is
+The house **environment scaffolder** — light and fast. Its `CLAUDE.md` is not
+a static description: it is **behavioral**. It encodes *deferred offers* that
+fire in future sessions at the right moments (spec time, first UI work, session
+boundaries, build time). The environment scaffolds itself lazily.
+
+1. **Light, one-pass environment interview** — roughly one screen, about *how
+   we'll work*, not what we're building:
+   - **What is this?** — 2–3 free-text sentences (heads the CLAUDE.md; the
+     spec itself is a deferred offer, not an interview goal).
+   - **Kind** — web app / API / CLI / research / content / other. The modifier:
+     decides whether `DESIGN.md` is offered now and which skills get wired.
+   - **Stack + commands** — language, runtime, typecheck/test/build commands
+     (the gates). "Not decided yet" is recorded as an open decision.
+   - **Rituals** — handoff at session boundaries (convention only, or install
+     enforcement hooks in the first session); knowledge-vault wiring (now /
+     later / never).
+   - **Build style** — will a locked PRD get the decompose → `prd.json` →
+     runner-loop treatment?
+   Enumerable questions go through option prompts; free-text stays free.
+2. **Scaffold the workspace (DOCS ONLY in v1):**
+   - **`CLAUDE.md`** — always: the OS hub (sections in the table below).
+   - **`DESIGN.md`** — only when the kind has UI *and* the user opts in now;
+     otherwise it becomes a deferred offer in the hub.
+3. **Hand off** — launch a fresh `claude` session in the dir. The hand-off is
    **~free**: Claude Code auto-loads `CLAUDE.md` on session start, so the new
-   session "just knows what to do." conan's whole job is to make those docs
+   session "just knows what to do." conan's whole job is to make that doc
    *good*, fast.
 
-**Docs-only (v1):** conan writes the **context docs**, NOT real project
-files/folders/deps. The handed-off Claude session builds the actual structure
-*from* the docs. This keeps conan light and avoids Conan owning a pile of
-per-stack templates. Real file scaffolding is a possible fast-follow.
+### The CLAUDE.md-as-OS sections
+
+| Section | Carries | Deferred offer it encodes |
+|---|---|---|
+| **Project** | the 2–3 interview sentences | — |
+| **Docs hub (with state)** | pointers to `PRD.md` / `DESIGN.md` or "not yet written" | spec time → run `karpathy-spec` (deep) or `generate-prd` (from a discussion); UI work starts → offer `DESIGN.md` (via `design-md`) |
+| **Commands + gates** | stack, commands, typecheck/test-before-commit | — |
+| **Session rituals** | session boundaries end with `/handoff` | hooks not installed → offer to install the handoff enforcement setup |
+| **Knowledge** | vault layer pointer, gated write path | not wired yet → offer `wire-vault` |
+| **When ready to build** | the build playbook | PRD locked → `decompose-prd` → `prd.json` → runner loop (observed by Conan's Timeline) |
+| **Kind→skill map** | skills matched to the project kind | each guarded "if available" — never a dependency |
+
+**Docs-only (v1), preserved via "docs instruct, session installs":** conan
+writes the **context docs**, NOT real project files/folders/deps — including
+no hooks and no runner scripts. The hub's instructions cause the *handed-off
+session* to install hooks, create docs, and write runners at the moment they
+are needed, with the user present. When a later session creates a deferred
+doc, the hub instruction says to flip its entry from "not yet written" to a
+live pointer — self-maintaining, no machinery.
 
 ### Output split (the clean differentiator)
-| Method | Interview | Output | Answers |
+| Method | Interview subject | Output | The CLAUDE.md is about |
 |---|---|---|---|
-| **Karpathy** | Deep, multi-round | `PRD.md` | *what & why* (the plan) |
-| **conan** | Light, one-pass | `CLAUDE.md` (+ `DESIGN.md`) | *the environment* (the workspace) |
+| **Karpathy** | the product (deep, multi-round) | `PRD.md` + `CLAUDE.md` from the locked spec | *the product* (what & why) |
+| **conan** | the environment (light, one-pass) | `CLAUDE.md`-as-OS (+ `DESIGN.md` on UI opt-in) | *the operating system* (how we work here) |
 
-Distinct menu choices in v1. Could **chain** later (Karpathy's `PRD.md` → conan's
-scaffold).
+Distinct menu choices in v1. They **compose without method chaining**: a conan
+environment's docs hub naturally hands the user into `karpathy-spec` when
+speccing time comes ("run conan first, Karpathy later from inside it").
 
-## 6. conan routes (v1 — tighter starter set)
+## 6. conan kinds (v1 — the modifier, not a fork)
 
-The route tunes **which sections land in `CLAUDE.md`** and **whether
-`DESIGN.md` fires**.
+Kind tunes **which skills land in the CLAUDE.md map** and **whether
+`DESIGN.md` is offered immediately**. It never changes the layer stack.
 
-| Route | Scaffolds | DESIGN.md? |
+| Kind | Skill wiring (all "if available") | DESIGN.md offer |
 |---|---|---|
-| **Web app** | CLAUDE.md (stack, conventions) + DESIGN.md | ✅ |
-| **API / backend** | CLAUDE.md (routes, data model, conventions) | — |
-| **CLI tool** | CLAUDE.md (command structure, UX) | — |
-| **Other / blank** | minimal CLAUDE.md from the interview only | — |
+| **Web app** | design-md, build-ui, audit-ui | ✅ now |
+| **API / backend** | (gates + data-model conventions in prose) | — |
+| **CLI tool** | pty-testing patterns in prose | — |
+| **Research** | deep-research, scan-trends, ingest-source | — |
+| **Content / writing** | polish-copy, format-markdown, render-html | — |
+| **Other / blank** | minimal map from the interview only | — |
 
-**Web is the only v1 route that fires DESIGN.md.** Fast-follow routes:
-full-stack, library/package (public API + semver), content/writing (+ a
-`VOICE.md` in place of DESIGN.md).
+Fast-follow kinds: full-stack, library/package (public API + semver), plus a
+`VOICE.md` counterpart to DESIGN.md for content-heavy projects.
 
 ## 7. v1 scope summary
 
@@ -185,8 +224,9 @@ full-stack, library/package (public API + semver), content/writing (+ a
 - Methods registry (data-driven).
 - **Karpathy** method skill — Stages 1–4 → `PRD.md` + `CLAUDE.md`
   (Stage 4 added 2026-07-03; see §4 evolution note).
-- **conan** method skill — route pick (Web/API/CLI/Other) → CLAUDE.md
-  (+ DESIGN.md on Web), docs-only → hand off.
+- **conan** method skill (`conan-scaffold`) — light environment interview →
+  CLAUDE.md-as-OS (+ DESIGN.md on UI opt-in), docs-only via "docs instruct,
+  session installs" → hand off (see §5 evolution note, 2026-07-03).
 - **Start Claude instead** escape hatch.
 - Auto-run on launch; free for everyone.
 
@@ -194,11 +234,12 @@ full-stack, library/package (public API + semver), content/writing (+ a
 
 **Out (fast-follows / later versions):** Karpathy Stages 4–6 (verifier,
 environment, decompose→build), real file/folder scaffolding, additional conan
-routes, functional "Create a Method", method chaining.
+kinds, functional "Create a Method", method chaining.
 
 ## 8. Open questions / TBD
 
-- **Skill names** — e.g. `karpathy-spec` and `conan-scaffold`? Naming TBD.
+- ~~**Skill names**~~ — decided: `karpathy-spec` (shipped) and `conan-scaffold`
+  (2026-07-03).
 - **Resumability mechanics** — how a half-finished method is detected and
   resumed on next launch (write artifacts incrementally; detect partial state).
 - **Splash / menu visual** — the branded Stage-0 UI (TUI in the pty? native UI
