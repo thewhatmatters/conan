@@ -8,7 +8,7 @@ import { THEME_APPLIED_EVENT } from "../lib/themes.ts";
 import { ResilientSocket } from "../lib/resilientSocket.ts";
 import { wsUrl } from "../lib/gateway.ts";
 import type { Theme } from "../hooks/useTheme.ts";
-import { useAppearance } from "../hooks/useAppearance.ts";
+import { useAppearance, getAppearance } from "../hooks/useAppearance.ts";
 
 /** The built-in fallback stack; a picked font is prepended so a missing glyph
  *  still resolves down through Geist Mono → the OS monospaces. */
@@ -125,6 +125,11 @@ export default function Terminal({
           cols: String(term.cols),
           rows: String(term.rows),
         });
+        // Settings ▸ Terminal "Conan Setup" toggle (1.2.0): fresh claude-mode
+        // ptys start in the bundled conan-cli menu. Read at connect time (not
+        // render time); reconnects re-attach to the surviving pty, so the
+        // param only matters for fresh spawns.
+        if (getAppearance().terminalSetupLauncher) params.set("setup", "1");
         return wsUrl(`/ws/terminal?${params}`);
       },
       onMessage: (ev) => term.write(ev.data as string),

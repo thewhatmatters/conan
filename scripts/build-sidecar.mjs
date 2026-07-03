@@ -33,6 +33,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -212,6 +213,66 @@ if (existsSync(ptyPrebuilds)) {
     if (existsSync(helper)) chmodSync(helper, 0o755);
   }
 }
+
+// 5b. Bundle conan-cli (the spec-first setup menu, Conan 1.2.0). The gateway
+//     launches it in claude-mode ptys when the Settings toggle is on:
+//     `<runtime>/node <runtime>/conan-cli/dist/index.js`. Copied as real files
+//     (not esbuild-bundled): figlet resolves its .flf fonts from disk relative
+//     to its own package dir, and conan-cli's skill installer copies
+//     `skills/` + `methods/` out of the package root at run time — both break
+//     under inlining. Pure-JS deps only, so unlike the native modules above
+//     there is no codesign concern; we just prune the figlet font library
+//     (~20 MB) down to the fonts the splash actually uses.
+const CLI_SRC = process.env.CONAN_CLI_DIR || path.join(ROOT, "..", "conan-cli");
+const CLI_OUT = path.join(RUNTIME, "conan-cli");
+if (!existsSync(path.join(CLI_SRC, "dist", "index.js"))) {
+  throw new Error(
+    `conan-cli dist not found at ${CLI_SRC} — run \`npm run build\` there first ` +
+      "(or point CONAN_CLI_DIR at a built checkout).",
+  );
+}
+console.log(`[sidecar] bundling conan-cli from ${path.relative(ROOT, CLI_SRC)} …`);
+for (const piece of ["dist", "methods", "skills", "package.json"]) {
+  cpSync(path.join(CLI_SRC, piece), path.join(CLI_OUT, piece), {
+    recursive: true,
+  });
+}
+// Prod dependency closure, walked from package.json through node_modules —
+// deterministic and offline (no npm install at build time).
+const cliDeps = (() => {
+  const read = (p) => JSON.parse(readFileSync(p, "utf8"));
+  const seen = new Set();
+  const stack = Object.keys(read(path.join(CLI_SRC, "package.json")).dependencies ?? {});
+  while (stack.length > 0) {
+    const mod = stack.pop();
+    if (seen.has(mod)) continue;
+    seen.add(mod);
+    const pj = path.join(CLI_SRC, "node_modules", mod, "package.json");
+    if (existsSync(pj)) stack.push(...Object.keys(read(pj).dependencies ?? {}));
+  }
+  return [...seen].sort();
+})();
+console.log(`[sidecar] conan-cli deps: ${cliDeps.join(", ")}`);
+for (const mod of cliDeps) {
+  const from = path.join(CLI_SRC, "node_modules", mod);
+  if (!existsSync(from)) throw new Error(`conan-cli missing node_modules/${mod}`);
+  cpSync(from, path.join(CLI_OUT, "node_modules", mod), { recursive: true });
+}
+// Keep only the splash's font ladder (src/splash.ts FONTS) — the rest of
+// figlet's library is dead weight in the .app.
+const CLI_FONTS = ["ANSI Shadow.flf", "Block.flf", "Colossal.flf"];
+const fontsDir = path.join(CLI_OUT, "node_modules", "figlet", "fonts");
+if (existsSync(fontsDir)) {
+  for (const f of readdirSync(fontsDir)) {
+    if (!CLI_FONTS.includes(f)) rmSync(path.join(fontsDir, f), { force: true });
+  }
+}
+// figlet also ships a 12 MB browser-oriented JS mirror of the font library
+// (importable-fonts/); the Node loader never touches it.
+rmSync(path.join(CLI_OUT, "node_modules", "figlet", "importable-fonts"), {
+  recursive: true,
+  force: true,
+});
 
 // 6. Compile the launcher: a relocatable Mach-O that execs runtime/node
 //    runtime/gateway.cjs. Mach-O (not a shell script) so `codesign -s -` is

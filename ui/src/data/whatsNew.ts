@@ -18,6 +18,14 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: Record<string, WhatsNewEntry> = {
+  "1.2.0": {
+    version: "1.2.0",
+    highlights: [
+      "Conan Setup: new terminals open a spec-first project setup — pick a method, get interviewed, start Claude with a real PRD and CLAUDE.md.",
+      "One keystroke (“Start Claude instead”) skips straight to Claude; turn it off anytime in Settings ▸ Terminal.",
+      "Auto context tracking is now opt-in — Conan no longer spends your context to measure it unless you ask.",
+    ],
+  },
   "1.1.0": {
     version: "1.1.0",
     highlights: [

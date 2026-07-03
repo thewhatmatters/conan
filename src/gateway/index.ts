@@ -747,8 +747,9 @@ app.post("/api/claude/sessions/:id/context/refresh", (req, res) => {
 // Adaptive /context auto-refresh toggle (US-006): the runtime-settable gate for
 // autoRefreshContextOnStop, lifting the CONAN_CONTEXT_AUTOREFRESH env var to a UI
 // control so the user owns the observer-effect tradeoff (Auto spends context to
-// measure context). GET reads the flag; POST {enabled:boolean} sets it. The flag
-// lives in gateway memory and defaults from the env var on boot, so a UI reload
+// measure context). OFF by default since 1.2.0 — env var "1" or the UI toggle
+// opts in. GET reads the flag; POST {enabled:boolean} sets it. The flag lives
+// in gateway memory and defaults from the env var on boot, so a UI reload
 // re-reads the same value. Token-gated.
 app.get("/api/claude/context/autorefresh", (req, res) => {
   if (!authed(req, res)) return;

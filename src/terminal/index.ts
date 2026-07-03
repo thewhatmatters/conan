@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
@@ -79,10 +81,42 @@ const CLAUDE_BIN = process.env.CONAN_CLAUDE_BIN ?? "claude";
  * claude process. Deliberately a SEPARATE knob from CONAN_CLAUDE_BIN: the
  * /usage throwaway probe (src/usage/probe.ts) spawns CLAUDE_BIN expecting the
  * bare claude TUI — pointing the shared var at a setup menu breaks the probe.
- * Default (no env var) remains CLAUDE_BIN — behavior unchanged. Setup-menu
- * logic must never live in this repo; see conan-cli's CLAUDE.md.
+ * Default (no env var) is the Settings-toggle resolution in resolveCommand
+ * (bundled conan-cli when `setup=1`, else CLAUDE_BIN). Setup-menu logic must
+ * never live in this repo; see conan-cli's CLAUDE.md.
  */
-const TERMINAL_CMD = process.env.CONAN_TERMINAL_CMD ?? CLAUDE_BIN;
+const TERMINAL_CMD_ENV = process.env.CONAN_TERMINAL_CMD;
+
+/**
+ * The bundled conan-cli entry (Conan 1.2.0): the spec-first setup menu a
+ * claude-mode pty runs INSTEAD of bare claude when the client asks for it
+ * (`?setup=1`, driven by the Settings toggle). Resolution mirrors the sidecar
+ * layout first, then the dev sibling checkout:
+ *   1. `<moduledir>/conan-cli/dist/index.js` — the sidecar bundle
+ *      (gateway.cjs and conan-cli/ are siblings under runtime/).
+ *   2. `<repo>/../conan-cli/dist/index.js` — dev, running from src/.
+ * Launched with `process.execPath` (the bundled node in the sidecar, the dev
+ * node under tsx), so no PATH assumptions. Null when neither exists — the pty
+ * then falls back to bare claude rather than stranding the user. The
+ * CONAN_TERMINAL_CMD env var above stays the explicit dev override and always
+ * wins over this resolution.
+ */
+const SETUP_CLI = ((): string | null => {
+  const candidates = [
+    new URL("conan-cli/dist/index.js", import.meta.url),
+    new URL("../../../conan-cli/dist/index.js", import.meta.url),
+  ];
+  for (const candidate of candidates) {
+    const p = fileURLToPath(candidate);
+    if (existsSync(p)) return p;
+  }
+  return null;
+})();
+
+/** Shell-quote a path for the interactive-login-shell command line. */
+function shq(p: string): string {
+  return `'${p.replaceAll("'", `'\\''`)}'`;
+}
 
 /**
  * Ring-buffer cap per terminal session (US-017). Recent pty output is held so a
@@ -148,11 +182,17 @@ const CWD_POLL_MIN_SPACING_MS = clampEnvInt(
  * We fall back to an interactive login shell when claude exits so the dock stays
  * usable.
  */
-function resolveCommand(mode: string): { file: string; args: string[] } {
+function resolveCommand(mode: string, setup = false): { file: string; args: string[] } {
   if (mode === "shell") return { file: DEFAULT_SHELL, args: [] };
+  // Precedence: CONAN_TERMINAL_CMD (explicit dev override) > the Settings
+  // toggle's bundled conan-cli > bare claude. conan-cli ends by exec'ing
+  // claude itself, so observation still sees a normal claude process.
+  const setupCmd =
+    setup && SETUP_CLI !== null ? `${shq(process.execPath)} ${shq(SETUP_CLI)}` : null;
+  const cmd = TERMINAL_CMD_ENV ?? setupCmd ?? CLAUDE_BIN;
   return {
     file: DEFAULT_SHELL,
-    args: ["-i", "-l", "-c", `${TERMINAL_CMD}; exec ${DEFAULT_SHELL} -i -l`],
+    args: ["-i", "-l", "-c", `${cmd}; exec ${DEFAULT_SHELL} -i -l`],
   };
 }
 
@@ -301,7 +341,10 @@ export function attachTerminal(ws: WebSocket, req: IncomingMessage): void {
   // wins. Already-running ptys keep the cwd they were spawned with.
   const cwd = url.searchParams.get("cwd") ?? getActiveCwd();
   const mode = url.searchParams.get("mode") ?? "claude";
-  const { file, args } = resolveCommand(mode);
+  // `setup=1` (the Settings "spec-first setup" toggle, passed per-connection
+  // like `mode`) starts claude-mode ptys in the bundled conan-cli menu.
+  const setup = url.searchParams.get("setup") === "1";
+  const { file, args } = resolveCommand(mode, setup);
 
   const id = tid ?? crypto.randomUUID();
   let term: pty.IPty;
@@ -528,13 +571,14 @@ export function injectHandoff(sessionId: string): boolean {
 }
 
 /**
- * Whether the adaptive /context auto-refresh is enabled (US-006). Defaults from
- * the CONAN_CONTEXT_AUTOREFRESH env var (off only when explicitly "0") but is
- * runtime-settable from the UI's Context-tab "Auto" toggle, so the user owns the
- * observer-effect tradeoff without an env var. Held in gateway memory — resets to
- * the env default on restart.
+ * Whether the adaptive /context auto-refresh is enabled (US-006). OFF by
+ * default since 1.2.0 — Auto spends context to measure context, so that
+ * observer cost is opt-in: on only when CONAN_CONTEXT_AUTOREFRESH is
+ * explicitly "1" or the user flips the UI's Context-tab "Auto" toggle
+ * (runtime-settable). Held in gateway memory — resets to the env default on
+ * restart.
  */
-let contextAutoRefreshEnabled = process.env.CONAN_CONTEXT_AUTOREFRESH !== "0";
+let contextAutoRefreshEnabled = process.env.CONAN_CONTEXT_AUTOREFRESH === "1";
 
 /** Current state of the adaptive /context auto-refresh gate (US-006). */
 export function getContextAutoRefresh(): boolean {

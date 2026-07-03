@@ -126,11 +126,12 @@ export function ContextWidget({
   };
 
   // Refresh controls (US-006): one inline control group — the "Auto" toggle (the
-  // adaptive auto-inject gate) alongside the manual ↻ /context button. The toggle
-  // shows once its state loads; the manual button only when a live pty is
-  // correlated (it types into it). Both are honest about the token cost.
+  // adaptive auto-inject gate) alongside the manual ↻ /context button. Both are
+  // gated on a live correlated pty (1.2.0): with no claude session running,
+  // neither can do anything — auto-inject and manual refresh both type into a
+  // terminal. Both are honest about the token cost.
   const refreshBtn =
-    autoOn != null || hasLivePty ? (
+    hasLivePty ? (
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {autoOn != null && (
           <button
@@ -149,17 +150,15 @@ export function ContextWidget({
             {autoOn ? "Auto ✓" : "Auto ○"}
           </button>
         )}
-        {hasLivePty && (
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={refreshing}
-            title="Run /context in the live terminal and capture the exact breakdown — note: each refresh consumes a few thousand tokens of context"
-            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            {refreshing ? "capturing…" : "↻ /context"}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={refreshing}
+          title="Run /context in the live terminal and capture the exact breakdown — note: each refresh consumes a few thousand tokens of context"
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          {refreshing ? "capturing…" : "↻ /context"}
+        </button>
       </div>
     ) : null;
 

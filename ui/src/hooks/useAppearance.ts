@@ -28,6 +28,12 @@ export interface Appearance {
    *  them. Surfaced via `useMotion()` so consumers don't reimplement the
    *  combined check. */
   animationsEnabled: boolean;
+  /** Whether new claude-mode terminals start in Conan Setup (the bundled
+   *  conan-cli spec-first menu) instead of bare claude (1.2.0). Passed
+   *  per-connection as `setup=1` on the terminal socket — the gateway resolves
+   *  the bundled CLI, and the one-keystroke "Start Claude instead" escape
+   *  hatch keeps auto-run acceptable. Default on. */
+  terminalSetupLauncher: boolean;
 }
 
 /** The defaults applied when nothing is stored (or a stored value is invalid). */
@@ -35,6 +41,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   terminalFontFamily: null,
   terminalFontSize: 13,
   animationsEnabled: true,
+  terminalSetupLauncher: true,
 };
 
 const STORAGE_KEY = "conan-appearance";
@@ -58,6 +65,10 @@ function readInitial(): Appearance {
         typeof parsed.animationsEnabled === "boolean"
           ? parsed.animationsEnabled
           : DEFAULT_APPEARANCE.animationsEnabled,
+      terminalSetupLauncher:
+        typeof parsed.terminalSetupLauncher === "boolean"
+          ? parsed.terminalSetupLauncher
+          : DEFAULT_APPEARANCE.terminalSetupLauncher,
     };
   } catch {
     return { ...DEFAULT_APPEARANCE };
@@ -90,6 +101,14 @@ function subscribe(cb: () => void): () => void {
 }
 
 function getSnapshot(): Appearance {
+  return current;
+}
+
+/**
+ * Snapshot accessor for non-React call sites (e.g. the terminal socket's URL
+ * builder, which runs at [re]connect time, not render time).
+ */
+export function getAppearance(): Appearance {
   return current;
 }
 

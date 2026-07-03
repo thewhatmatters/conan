@@ -555,6 +555,25 @@ function AppearanceTab({
           <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5">
             <div className="min-w-0">
               <div className="truncate text-[13px] font-medium text-foreground">
+                Conan Setup on launch
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                New terminals open the spec-first setup menu before Claude.
+                &ldquo;Start Claude instead&rdquo; skips it in one keystroke.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center">
+              <Switch
+                checked={appearance.terminalSetupLauncher}
+                onCheckedChange={(v) => set({ terminalSetupLauncher: v })}
+                aria-label="Start new terminals with Conan Setup"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5">
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-foreground">
                 Font family
               </div>
               <div className="truncate text-[11px] text-muted-foreground">
