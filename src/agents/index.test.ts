@@ -68,11 +68,19 @@ test("missing description → null, never fabricated", () => {
   assert.equal(agents[0]!.description, null);
 });
 
-test("no frontmatter at all → filename name, null description", () => {
-  const root = fixture({ "plain.md": "# Just markdown\n" });
+test("plain markdown with no frontmatter is not an agent — skipped", () => {
+  const root = fixture({
+    "real.md": AGENT_MD,
+    "CLAUDE.md": "<!-- wire-vault:start -->\n## Knowledge vault\n",
+    "HANDOFF.md": "# Handoff — session checkpoint\n\n## Goal\n",
+  });
   const agents = readAgentsRoot(root, "User");
-  assert.equal(agents[0]!.name, "plain");
-  assert.equal(agents[0]!.description, null);
+  assert.deepEqual(agents.map((a) => a.name), ["skill-auditor"]);
+});
+
+test("frontmatter without name or description is skipped too", () => {
+  const root = fixture({ "odd.md": "---\ntools: Read\n---\nBody\n" });
+  assert.deepEqual(readAgentsRoot(root, "User"), []);
 });
 
 test("absent root → empty list", () => {

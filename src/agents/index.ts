@@ -44,9 +44,15 @@ function readAgentFile(root: string, fileName: string, source: AgentSource, plug
   } catch {
     return null; // unreadable → caller skips it
   }
+  const name = frontmatterField(text, "name");
+  const description = frontmatterField(text, "description");
+  // A real subagent declares frontmatter (Claude Code requires name +
+  // description). A plain .md with neither — a stray CLAUDE.md/HANDOFF.md
+  // dropped in the agents dir — is not an agent.
+  if (name == null && description == null) return null;
   const entry: AgentEntry = {
-    name: frontmatterField(text, "name") ?? fileName.replace(/\.md$/, ""),
-    description: frontmatterField(text, "description"),
+    name: name ?? fileName.replace(/\.md$/, ""),
+    description,
     source,
     path: homeRelative(file),
     tools: frontmatterField(text, "tools"),
