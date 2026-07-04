@@ -18,6 +18,13 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: Record<string, WhatsNewEntry> = {
+  "1.3.0": {
+    version: "1.3.0",
+    highlights: [
+      "New Agents HUD tab — see every Claude Code subagent installed on your machine (yours, this project’s, and plugin-shipped) with what each one does.",
+      "Skill descriptions written as YAML block scalars now render correctly in the Skills tab (no more literal “>-”).",
+    ],
+  },
   "1.2.0": {
     version: "1.2.0",
     highlights: [

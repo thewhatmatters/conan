@@ -2,7 +2,7 @@
 
 Conan is a **terminal-primary native desktop app (Tauri v2) that wraps and
 observes Claude Code**: an `xterm.js` terminal as the main surface plus a
-DevTools-style widget HUD (Context · Usage · Pulse · Skills · MCP) backed by
+DevTools-style widget HUD (Context · Usage · Pulse · Skills · Agents · MCP) backed by
 one loopback Node gateway packaged as a Tauri sidecar. This file is
 auto-loaded by every Claude Code session in this repo — keep it accurate.
 
@@ -54,6 +54,8 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   Context-pressure Compact), `GET/POST /api/claude/context/autorefresh`,
   `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`,
   `GET /api/claude/skills` (carries `lastFiredAt` per skill),
+  `GET /api/claude/agents` (installed subagent `.md` files — user + project +
+  plugin — with frontmatter name/description/tools/model),
   `GET /api/claude/mcp` (`+?force=1`; shells `claude mcp list`),
   `GET /api/claude/config` + `POST /api/claude/config`,
   `GET /api/claude/timeline?session=…&since=…&limit=…`,
@@ -95,14 +97,15 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   `PanelRightOpen` next to `+` or `⌘\` — tethered visually to the terminal
   so its rows describe THAT session's hooks/skills/plan/loop/build) beside
   `components/Hud.tsx` (the DevTools-style widget HUD). The HUD tabs are
-  **Context · Usage · Pulse · Skills · MCP** — `Widgets.tsx`
-  (Context+Usage), `PulseChart.tsx`, `SkillsWidget.tsx`, `McpWidget.tsx` —
+  **Context · Usage · Pulse · Skills · Agents · MCP** — `Widgets.tsx`
+  (Context+Usage), `PulseChart.tsx`, `SkillsWidget.tsx`, `AgentsWidget.tsx`,
+  `McpWidget.tsx` —
   with a `RadioBar.tsx` (Claude Radio play/pause, gateway-hosted YouTube
   iframe at `/radio/embed`) pinned at the HUD's bottom. The session-scoped
   tabs follow the **active terminal tab**. `SettingsView.tsx` is the tabbed
   Status/Config dialog (⌘,). Charts live in `components/charts/` (vendored
   Tremor `AreaChart`/`ProgressCircle`). Hooks `hooks/{useTheme,useTasks,
-  useWidgets,usePulse,useUsage,useSessions,useTerminals,useSkills,useMcp,
+  useWidgets,usePulse,useUsage,useSessions,useTerminals,useSkills,useAgents,useMcp,
   useConfig,useDoctor,useNativeNotifications}.ts`;
   `lib/{chartUtils,nativeNotify,appMenu,gateway}.ts`.
 

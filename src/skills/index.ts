@@ -48,7 +48,7 @@ export interface SkillEntry {
 }
 
 /** Rewrite an absolute path to a `~/…` home-relative form for display. */
-function homeRelative(abs: string): string {
+export function homeRelative(abs: string): string {
   if (abs === HOME) return "~";
   return abs.startsWith(HOME + path.sep) ? "~" + abs.slice(HOME.length) : abs;
 }
@@ -158,8 +158,8 @@ function readRoot(root: string, source: SkillSource, plugin?: string): SkillEntr
 }
 
 /** Installed plugins from ~/.claude/plugins/installed_plugins.json (key→installPaths). */
-function pluginRoots(): { plugin: string; skillsDir: string }[] {
-  const out: { plugin: string; skillsDir: string }[] = [];
+export function pluginRoots(): { plugin: string; installPath: string }[] {
+  const out: { plugin: string; installPath: string }[] = [];
   let json: unknown;
   try {
     json = JSON.parse(
@@ -175,7 +175,7 @@ function pluginRoots(): { plugin: string; skillsDir: string }[] {
     for (const inst of installs) {
       const installPath = (inst as Record<string, unknown>)?.installPath;
       if (typeof installPath === "string" && installPath) {
-        out.push({ plugin: key, skillsDir: path.join(installPath, "skills") });
+        out.push({ plugin: key, installPath });
       }
     }
   }
@@ -193,8 +193,8 @@ export function readSkills(cwd: string | null, builtins: string[] = []): SkillEn
   const collected: SkillEntry[] = [];
   collected.push(...readRoot(path.join(HOME, ".claude", "skills"), "User"));
   if (cwd) collected.push(...readRoot(path.join(cwd, ".claude", "skills"), "Project"));
-  for (const { plugin, skillsDir } of pluginRoots()) {
-    collected.push(...readRoot(skillsDir, "Plugin", plugin));
+  for (const { plugin, installPath } of pluginRoots()) {
+    collected.push(...readRoot(path.join(installPath, "skills"), "Plugin", plugin));
   }
   for (const name of builtins) {
     collected.push({ name, description: null, source: "Built-in" });

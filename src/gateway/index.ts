@@ -35,6 +35,7 @@ import { getActiveCwd, onCwdChange, listEntries } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { readAgents } from "../agents/index.js";
 import { scoreSkills, topMatches, CONSIDERATION_TOP_N } from "../skills/match.js";
 import {
   ensureSkillFiredWatcher,
@@ -671,6 +672,14 @@ app.get("/api/claude/skills", (req, res) => {
     lastFiredAt: fired.get(s.name) ?? null,
   }));
   res.json(enriched);
+});
+
+// Installed agents for the Agents HUD tab: user + project + plugin subagent
+// `.md` files with their frontmatter descriptions. Token-gated, read-only, no
+// firing enrichment — agent definitions are static files.
+app.get("/api/claude/agents", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(readAgents(getActiveCwd()));
 });
 
 // Mirror of Claude Code's /config (US-007): the confidently-mapped settings rows

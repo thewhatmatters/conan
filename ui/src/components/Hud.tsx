@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { UsageWidget, UsageRefreshButton } from "./Widgets.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
+import AgentsWidget from "./AgentsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
 import PulseChart, { PulseRange } from "./PulseChart.tsx";
@@ -10,6 +11,7 @@ import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
+import type { AgentEntry } from "../hooks/useAgents.ts";
 import type { RadioState } from "../hooks/useRadio.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import FadeScroll from "./FadeScroll.tsx";
@@ -71,6 +73,8 @@ interface HudProps {
   onPulseRange?: (minutes: number) => void;
   // — Skills widget (US-006): VS Code-extensions-style list, always present —
   skills?: SkillEntry[];
+  // — Agents widget: installed subagent .md files, same static-list shape —
+  agents?: AgentEntry[];
   /** Claude Radio state — videoId + title for the bottom RadioBar. */
   radio?: RadioState | null;
 }
@@ -96,6 +100,7 @@ export default function Hud({
   pulseMinutes = 60,
   onPulseRange,
   skills,
+  agents,
   radio,
 }: HudProps) {
   // US-007 (v4.5): the Plan HUD tab was removed — plan rows live on the
@@ -199,6 +204,9 @@ export default function Hud({
             <TabsTrigger value="skills" className={TAB_TRIGGER}>
               Skills
             </TabsTrigger>
+            <TabsTrigger value="agents" className={TAB_TRIGGER}>
+              Agents
+            </TabsTrigger>
             <TabsTrigger value="mcp" className={TAB_TRIGGER}>
               MCP
             </TabsTrigger>
@@ -272,6 +280,10 @@ export default function Hud({
             TabsContent just gives them the flex column slot to expand into. */}
         <TabsContent value="skills" className="mt-0 flex min-h-0 flex-1 flex-col">
           <SkillsWidget skills={skills ?? []} />
+        </TabsContent>
+
+        <TabsContent value="agents" className="mt-0 flex min-h-0 flex-1 flex-col">
+          <AgentsWidget agents={agents ?? []} />
         </TabsContent>
 
         <TabsContent value="mcp" className="mt-0 flex min-h-0 flex-1 flex-col">

@@ -9,6 +9,7 @@ import TerminalPane from "./components/TerminalPane.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
+import { useAgents } from "./hooks/useAgents.ts";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useRadio } from "./hooks/useRadio.ts";
 import { useDoctor } from "./hooks/useDoctor.ts";
@@ -138,6 +139,8 @@ export default function App() {
   );
   // US-006: installed skills (name + description + source) for the Skills tab.
   const skills = useSkills(config?.token ?? null);
+  // Installed subagents (name + description + source) for the Agents tab.
+  const agents = useAgents(config?.token ?? null);
   // US-008: Claude Code's config mirror for the Settings view; refetch re-reads
   // after the Config tab writes a key (US-010) so the saved value sticks.
   const [claudeConfig, refetchConfig] = useConfig(config?.token ?? null);
@@ -288,6 +291,7 @@ export default function App() {
         pulseMinutes={pulseMinutes}
         onPulseRange={setPulseMinutes}
         skills={skills}
+        agents={agents}
         radio={radio}
       />
       <SettingsView
