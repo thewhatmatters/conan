@@ -55,10 +55,11 @@ function homeRelative(abs: string): string {
 
 /**
  * Extract the `description:` value from a SKILL.md's YAML frontmatter, or null.
- * Pure + tested: parses only the leading `---`…`---` block, reads simple
- * `key: value` lines (the description is a single long line in practice), and
- * strips a matched surrounding quote. Returns null when there's no frontmatter
- * or no `description` key — so callers never invent one.
+ * Pure + tested: parses only the leading `---`…`---` block, reads `key: value`
+ * lines plus YAML block scalars (`>-`/`|`-style — descriptions with `: ` on
+ * continuation lines must be written this way), and strips a matched
+ * surrounding quote. Returns null when there's no frontmatter or no
+ * `description` key — so callers never invent one.
  */
 export function frontmatterDescription(text: string): string | null {
   return frontmatterField(text, "description");
@@ -69,12 +70,17 @@ export function frontmatterField(text: string, key: string): string | null {
   // Frontmatter must be the very first thing in the file: `---` then lines then `---`.
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!m || m[1] == null) return null;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+  const lines = m[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const kv = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(lines[i] ?? "");
     if (!kv) continue;
     const [, field, rawValue] = kv;
     if (field !== key) continue;
     let v = (rawValue ?? "").trim();
+    // Block scalar header (`>-`, `|`, `>+2`, …): the value is the indented
+    // lines below, not the sigil itself — never return the bare header.
+    const block = /^([|>])(?:[+-]?\d*|\d*[+-]?)$/.exec(v);
+    if (block) return blockScalarValue(lines, i + 1, block[1] === ">");
     if (v.length === 0) return null;
     // Strip one matched surrounding quote pair.
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
@@ -83,6 +89,35 @@ export function frontmatterField(text: string, key: string): string | null {
     return v.length > 0 ? v : null;
   }
   return null;
+}
+
+/**
+ * Collect a block scalar's body: the run of blank-or-indented lines following
+ * its header, ending at the first dedent back to column 0 (the next key).
+ * Folded (`>`) joins lines with spaces; literal (`|`) keeps newlines. Chomping
+ * indicators only govern trailing newlines, which a one-line HUD card never
+ * shows — trailing blanks are just trimmed. A header with no body returns null.
+ */
+function blockScalarValue(lines: string[], start: number, folded: boolean): string | null {
+  const body: string[] = [];
+  let indent: number | null = null;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (line.trim().length === 0) {
+      body.push("");
+      continue;
+    }
+    const lineIndent = line.length - line.trimStart().length;
+    if (lineIndent === 0) break; // dedent → next frontmatter key
+    if (indent == null) indent = lineIndent; // first line fixes the block indent
+    body.push(line.slice(Math.min(indent, lineIndent)));
+  }
+  while (body.length > 0 && body[body.length - 1] === "") body.pop();
+  if (body.length === 0) return null;
+  const v = folded
+    ? body.map((l) => l.trim()).join(" ").replace(/\s+/g, " ").trim()
+    : body.join("\n");
+  return v.length > 0 ? v : null;
 }
 
 /** Read + parse a single skill dir's SKILL.md into an entry (name + description). */
