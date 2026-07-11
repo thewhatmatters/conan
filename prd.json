@@ -74,8 +74,8 @@
         "Verify in browser using automate-browser skill: render AgentLanes with at least one closed bar and one open-ended (running) bar (a small fixture/mock is fine for this story; live wiring is US-005) and screenshot both states"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser"
+      "passes": true,
+      "notes": "Suggested skills: automate-browser. Wraps its own TooltipProvider (Timeline's existing provider only spans the classic row-list branch, which US-005 will swap out) so it works standalone wherever it's mounted. fmtDuration exported from Widgets.tsx to reuse the existing helper."
     },
     {
       "id": "US-005",

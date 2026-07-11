@@ -977,7 +977,7 @@ function fmtCapturedAgo(
 }
 
 /** Compact "1h 02m" / "12m 30s" / "45s" duration for the reset countdown. */
-function fmtDuration(ms: number): string {
+export function fmtDuration(ms: number): string {
   const total = Math.ceil(ms / 1000);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
