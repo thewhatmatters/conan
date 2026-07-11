@@ -31,6 +31,7 @@ import {
   getGlobalUsageWindows,
   getLastProbeError,
 } from "../usage/probe.js";
+import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
 import { getActiveCwd, onCwdChange, listEntries } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
@@ -842,6 +843,15 @@ app.get("/api/claude/usage", async (req, res) => {
     if (!authed(req, res)) return; // a probe spawns a process — token-gate it
     planUtilization = await maybeProbe();
   }
+  // US-004: on macOS, prefer the passive OAuth-endpoint poller's latest
+  // PlanUtilization over the pty-probe result when it has data — no pty
+  // spawn needed. Falls back to the pty-probe result above untouched when
+  // the OAuth path hasn't produced a usable snapshot yet (Keychain read
+  // failed, endpoint call failed, or no window came back non-null).
+  const oauthPlanUtilization = getOAuthPlanUtilization();
+  if (oauthPlanUtilization) {
+    planUtilization = oauthPlanUtilization;
+  }
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
   const captured = sessionId ? getCapturedUsage(sessionId) : null;
   // US-006: the rate-limit windows are account-global — serve the single
@@ -1088,6 +1098,10 @@ function broadcast(message: unknown): void {
   }
 }
 const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: state }));
+
+// US-004: start the passive OAuth-endpoint usage poller (macOS-only, no-op
+// elsewhere — see startOAuthUsagePoller's platform guard).
+startOAuthUsagePoller();
 
 // Wire the live /usage capture broadcast: when the terminal's passive scanner
 // lands a fresh frame, push `{type:'usage-captured', sessionId}` over /ws so

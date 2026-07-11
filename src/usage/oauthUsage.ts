@@ -135,3 +135,49 @@ export function parseOAuthUsage(json: unknown): PlanUtilization {
     probedAt: Date.now(),
   };
 }
+
+function clampEnvInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  if (Number.isNaN(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+const POLL_INTERVAL_MS = clampEnvInt("CONAN_OAUTH_USAGE_POLL_MS", 60_000, 15_000, 30 * 60_000);
+
+let cachedPlanUtilization: PlanUtilization | null = null;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+async function pollOnce(): Promise<void> {
+  try {
+    const token = await readOAuthToken();
+    if (!token) return;
+    const json = await fetchOAuthUsage(token);
+    const parsed = parseOAuthUsage(json);
+    // Only replace the cache with a response that actually carries at least
+    // one window — never let a degenerate parse clobber a good prior cache.
+    if (parsed.fiveHour || parsed.sevenDay || parsed.sevenDaySonnet) {
+      cachedPlanUtilization = parsed;
+    }
+  } catch {
+    // Keep the last good cache; the caller falls back to the pty-probe path
+    // when the cache is still null.
+  }
+}
+
+/** Latest PlanUtilization from the background OAuth poller, or null if none has landed yet. */
+export function getOAuthPlanUtilization(): PlanUtilization | null {
+  return cachedPlanUtilization;
+}
+
+/**
+ * Start the background OAuth usage poller (idempotent). No-ops on any
+ * platform other than macOS — the Keychain read this path depends on is
+ * macOS-only, so GET /api/claude/usage stays pty-probe-only elsewhere.
+ */
+export function startOAuthUsagePoller(): void {
+  if (process.platform !== "darwin" || pollTimer) return;
+  void pollOnce();
+  pollTimer = setInterval(() => void pollOnce(), POLL_INTERVAL_MS);
+  pollTimer.unref();
+}
