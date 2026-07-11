@@ -18,6 +18,15 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: Record<string, WhatsNewEntry> = {
+  "1.4.0": {
+    version: "1.4.0",
+    highlights: [
+      "Agent activity now shows right in the Timeline — see every subagent Claude spawns, with live status, duration, model, and tools, no separate panel to open.",
+      "Skills tab gets a Project view — local skills in the current project's .claude/skills, alongside your User and System skills.",
+      "Usage windows now stay passively fresh via a background OAuth poll — no more manual refresh, plus a badge showing whether a reading is live or a fallback.",
+      "The Pulse throughput chart is smoother and its hover values are now whole numbers.",
+    ],
+  },
   "1.3.0": {
     version: "1.3.0",
     highlights: [
