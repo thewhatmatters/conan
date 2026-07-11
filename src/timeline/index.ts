@@ -329,6 +329,94 @@ export function mapHookEventToRow(row: EventRow): TimelineRow | null {
 }
 
 /**
+ * One derived subagent-spawn bar for the Agent Lanes waterfall (US-002 —
+ * backend derivation only; the `kind:"agent"` TimelineRow that ships these to
+ * the UI lands in US-003).
+ */
+export interface AgentSpawnBar {
+  toolUseId: string;
+  startedAt: number;
+  /** null means still running: no PostToolUse (or Stop/SessionEnd close-out) yet. */
+  endedAt: number | null;
+  /** From PreToolUse's tool_input.subagent_type; null if somehow absent. */
+  agentType: string | null;
+  /** From PreToolUse's tool_input.description; null if somehow absent. */
+  description: string | null;
+  /** From PostToolUse's tool_response — only present once the bar closes via a
+   *  real PostToolUse (absent on a still-running or orphan-closed bar). */
+  durationMs?: number;
+  tokens?: number;
+  toolCallCount?: number;
+}
+
+/**
+ * Derive one bar per subagent spawn from a session's raw PreToolUse/PostToolUse
+ * hook events. The spawn tool is named "Agent" in this environment's hook
+ * payloads (verified against live data — NOT "Task", the source PRD's
+ * assumption). Pure (no DB) for unit-testability, mirroring mapHookEventToRow.
+ *
+ * Pairs Pre/Post by `payload.tool_use_id`, which is present and matching on
+ * both events for every real Agent-tool pair audited in .data/conan.db — no
+ * order-based fallback pairing for MVP. `events` need not be pre-sorted —
+ * this sorts ascending by (ts, id) internally so a bar's Pre is always
+ * processed before its Post, and before any Stop/SessionEnd that follows it.
+ *
+ * A bar whose PreToolUse arrived but whose matching PostToolUse never did
+ * (gateway restart, session killed) is closed out when a Stop or SessionEnd
+ * event turns up in `events`, so it doesn't render as running forever after
+ * the session is clearly over.
+ */
+export function deriveAgentSpawns(events: EventRow[]): AgentSpawnBar[] {
+  const ordered = [...events].sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.id - b.id));
+  const bars = new Map<string, AgentSpawnBar>();
+
+  for (const ev of ordered) {
+    if (ev.stream_type !== "hook") continue;
+    const name = ev.hook_event_name ?? "";
+
+    if (name === "Stop" || name === "SessionEnd") {
+      for (const bar of bars.values()) {
+        if (bar.endedAt === null) bar.endedAt = ev.ts;
+      }
+      continue;
+    }
+
+    if (name !== "PreToolUse" && name !== "PostToolUse") continue;
+    const payload = parsePayload(ev.payload);
+    const toolName =
+      ev.tool_name ?? (typeof payload?.tool_name === "string" ? payload.tool_name : "");
+    if (toolName !== "Agent") continue;
+    const toolUseId = typeof payload?.tool_use_id === "string" ? payload.tool_use_id : null;
+    if (!toolUseId) continue;
+
+    if (name === "PreToolUse") {
+      const toolInput = payload?.tool_input as Record<string, unknown> | undefined;
+      const agentType =
+        toolInput && typeof toolInput.subagent_type === "string" ? toolInput.subagent_type : null;
+      const description =
+        toolInput && typeof toolInput.description === "string" ? toolInput.description : null;
+      bars.set(toolUseId, { toolUseId, startedAt: ev.ts, endedAt: null, agentType, description });
+      continue;
+    }
+
+    // PostToolUse: only closes a bar whose PreToolUse we've already seen — a
+    // Post with no matching Pre has no start time to render a bar from.
+    const bar = bars.get(toolUseId);
+    if (!bar) continue;
+    bar.endedAt = ev.ts;
+    const toolResponse = payload?.tool_response as Record<string, unknown> | undefined;
+    if (toolResponse) {
+      if (typeof toolResponse.totalDurationMs === "number") bar.durationMs = toolResponse.totalDurationMs;
+      if (typeof toolResponse.totalTokens === "number") bar.tokens = toolResponse.totalTokens;
+      if (typeof toolResponse.totalToolUseCount === "number")
+        bar.toolCallCount = toolResponse.totalToolUseCount;
+    }
+  }
+
+  return [...bars.values()].sort((a, b) => a.startedAt - b.startedAt);
+}
+
+/**
  * Parse the leading timestamp off a progress.txt activity line into epoch ms.
  * progress.txt mixes two human-written formats:
  *   `[2026-05-27 13:46:06] iteration 10 → US-010: …`  (bracketed, w/ seconds)

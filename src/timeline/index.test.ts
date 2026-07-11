@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTouchedFiles, mapHookEventToRow } from "./index.js";
+import { parseTouchedFiles, mapHookEventToRow, deriveAgentSpawns } from "./index.js";
 import type { EventRow } from "../session/index.js";
 
 /** A persisted-event row as the gateway query hands it to the parser. */
@@ -108,4 +108,101 @@ test("SubagentStop with no last_assistant_message has no detail", () => {
     assert.equal(result.subtype, "SUBAGENT");
     assert.equal(result.detail, undefined);
   }
+});
+
+/** A PreToolUse/PostToolUse("Agent") event, as the gateway persists it. */
+function agentEvent(overrides: Partial<EventRow> & { hook_event_name: string }): EventRow {
+  return {
+    id: 1,
+    session_id: "s1",
+    parent_tool_use_id: null,
+    stream_type: "hook",
+    tool_name: "Agent",
+    payload: null,
+    ts: 1000,
+    ...overrides,
+  };
+}
+
+test("a matched Agent Pre/Post pair closes with duration/tokens/toolCallCount populated", () => {
+  const pre = agentEvent({
+    id: 1,
+    hook_event_name: "PreToolUse",
+    ts: 1000,
+    payload: JSON.stringify({
+      tool_use_id: "toolu_1",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", description: "audit the skill" },
+    }),
+  });
+  const post = agentEvent({
+    id: 2,
+    hook_event_name: "PostToolUse",
+    ts: 5000,
+    payload: JSON.stringify({
+      tool_use_id: "toolu_1",
+      tool_name: "Agent",
+      tool_response: {
+        agentType: "general-purpose",
+        totalDurationMs: 4000,
+        totalTokens: 12345,
+        totalToolUseCount: 7,
+      },
+    }),
+  });
+  const bars = deriveAgentSpawns([pre, post]);
+  assert.equal(bars.length, 1);
+  assert.deepEqual(bars[0], {
+    toolUseId: "toolu_1",
+    startedAt: 1000,
+    endedAt: 5000,
+    agentType: "general-purpose",
+    description: "audit the skill",
+    durationMs: 4000,
+    tokens: 12345,
+    toolCallCount: 7,
+  });
+});
+
+test("an unmatched Agent Pre with no Post yields a running (endedAt: null) bar", () => {
+  const pre = agentEvent({
+    id: 1,
+    hook_event_name: "PreToolUse",
+    ts: 1000,
+    payload: JSON.stringify({
+      tool_use_id: "toolu_2",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "Explore", description: "find the config" },
+    }),
+  });
+  const bars = deriveAgentSpawns([pre]);
+  assert.equal(bars.length, 1);
+  assert.equal(bars[0]?.endedAt, null);
+  assert.equal(bars[0]?.agentType, "Explore");
+});
+
+test("a Stop event closes any still-open Agent bars for that session", () => {
+  const pre = agentEvent({
+    id: 1,
+    hook_event_name: "PreToolUse",
+    ts: 1000,
+    payload: JSON.stringify({
+      tool_use_id: "toolu_3",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", description: "still running" },
+    }),
+  });
+  const stop = agentEvent({
+    id: 2,
+    hook_event_name: "Stop",
+    tool_name: null,
+    ts: 9000,
+    payload: JSON.stringify({}),
+  });
+  const bars = deriveAgentSpawns([pre, stop]);
+  assert.equal(bars.length, 1);
+  assert.equal(bars[0]?.endedAt, 9000);
+  // Orphan close-out never fabricates duration/token totals — those only
+  // come from a real PostToolUse.
+  assert.equal(bars[0]?.durationMs, undefined);
 });
