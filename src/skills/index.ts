@@ -182,30 +182,40 @@ export function pluginRoots(): { plugin: string; installPath: string }[] {
   return out;
 }
 
-/**
- * Read every installed skill (user + project + plugin) with its frontmatter
- * description. `builtins` (optional) are harness slash-commands with no on-disk
- * SKILL.md — emitted name-only (description null, source Built-in); the route
- * passes none since the gateway can't enumerate the harness's command list.
- * Deduped by name across sources (User > Project > Plugin > Built-in precedence).
- */
-export function readSkills(cwd: string | null, builtins: string[] = []): SkillEntry[] {
-  const collected: SkillEntry[] = [];
-  collected.push(...readRoot(path.join(HOME, ".claude", "skills"), "User"));
-  if (cwd) collected.push(...readRoot(path.join(cwd, ".claude", "skills"), "Project"));
-  for (const { plugin, installPath } of pluginRoots()) {
-    collected.push(...readRoot(path.join(installPath, "skills"), "Plugin", plugin));
-  }
-  for (const name of builtins) {
-    collected.push({ name, description: null, source: "Built-in" });
-  }
-  // First-seen wins, so the source-order above is the precedence.
+/** First-seen-wins dedup by name, for merging entries within one display group. */
+function dedupeByName(entries: SkillEntry[]): SkillEntry[] {
   const seen = new Set<string>();
   const out: SkillEntry[] = [];
-  for (const e of collected) {
+  for (const e of entries) {
     if (seen.has(e.name)) continue;
     seen.add(e.name);
     out.push(e);
   }
   return out;
+}
+
+/**
+ * Read every installed skill (user + project + plugin) with its frontmatter
+ * description. `builtins` (optional) are harness slash-commands with no on-disk
+ * SKILL.md — emitted name-only (description null, source Built-in); the route
+ * passes none since the gateway can't enumerate the harness's command list.
+ * Deduped by name only *within* a display group (User, Project, Plugin+Built-in)
+ * — a User and a Project skill sharing a name are two distinct, separately
+ * scoped skills (they render in separate HUD tabs) and both must survive; only
+ * a genuine same-scope collision (e.g. two plugin roots installing the same
+ * skill) is collapsed, Plugin taking precedence over Built-in.
+ */
+export function readSkills(cwd: string | null, builtins: string[] = []): SkillEntry[] {
+  const user = dedupeByName(readRoot(path.join(HOME, ".claude", "skills"), "User"));
+  const project = cwd
+    ? dedupeByName(readRoot(path.join(cwd, ".claude", "skills"), "Project"))
+    : [];
+  const system: SkillEntry[] = [];
+  for (const { plugin, installPath } of pluginRoots()) {
+    system.push(...readRoot(path.join(installPath, "skills"), "Plugin", plugin));
+  }
+  for (const name of builtins) {
+    system.push({ name, description: null, source: "Built-in" });
+  }
+  return [...user, ...project, ...dedupeByName(system)];
 }

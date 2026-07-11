@@ -742,23 +742,6 @@ function emitTerminalCwd(s: TermSession, cwd: string): void {
   }
 }
 
-/**
- * On-demand /usage refresh (US-010): inject `/usage` into the pty running a given
- * session, reusing the keystroke-injection path. The resulting frame is captured
- * passively by maybeCaptureUsage. Returns whether a live correlated pty was found
- * — false falls back to the throwaway-probe windows / token-trend baseline.
- */
-export function injectUsageRefresh(sessionId: string): boolean {
-  const s = findTermForSession(sessionId);
-  if (!s || s.exited) return false;
-  try {
-    s.term.write("/usage\r");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Re-attach a surviving session to a new socket, replaying its backlog first. */
 function reattach(session: TermSession, ws: WebSocket): void {
   if (session.killTimer) {

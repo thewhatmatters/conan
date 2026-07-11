@@ -10,7 +10,6 @@ import {
   closeAllTerminals,
   listTerminalSessions,
   injectContextRefresh,
-  injectUsageRefresh,
   injectHandoff,
   autoRefreshContextOnStop,
   getContextAutoRefresh,
@@ -776,39 +775,6 @@ app.post("/api/claude/context/autorefresh", (req, res) => {
   res.json({ ok: true, enabled: getContextAutoRefresh() });
 });
 
-// On-demand /usage refresh: derive-AND-inject (user-requested, restores the
-// pre-b382946 in-chat echo). Two independent jobs happen on every click:
-//
-//  1. Panel data — the Session block is derived from the JSONL transcript
-//     (deriveSessionUsage in src/transcript/index.ts). Always fresh (the
-//     transcript writes after every assistant turn), never depends on the
-//     terminal, and is what GET /api/claude/usage prefers. This is what
-//     actually populates the HUD.
-//  2. In-chat echo — we ALSO type `/usage` into the live pty so the command
-//     visibly runs in the user's terminal, the way it did before b382946.
-//
-// ⚠ Caveat (8ee2dfe): the injected `/usage` modal stays open until the user
-// presses ESC — programmatic ESC doesn't reach the TUI's input handler. So
-// the user has to dismiss the modal themselves. The panel does NOT need the
-// modal (it reads the transcript), so the data lands regardless; the modal is
-// purely the visible echo. injectUsageRefresh no-ops (returns false) when no
-// live pty is correlated, so derive-only sessions still populate the panel.
-app.post("/api/claude/sessions/:id/usage/refresh", (req, res) => {
-  if (!authed(req, res)) return;
-  const sessionId = req.params.id;
-  const row = getDb()
-    .prepare("SELECT cwd FROM session WHERE id = ?")
-    .get(sessionId) as { cwd?: string } | undefined;
-  const derived = deriveSessionUsage(sessionId, row?.cwd ?? null);
-  const injected = injectUsageRefresh(sessionId);
-  broadcast({ type: "usage-captured", sessionId });
-  res.json({
-    ok: true,
-    injected,
-    source: derived ? "derived" : injected ? "injected" : "none",
-  });
-});
-
 // Context-pressure compact (US-013): inject `/handoff` into the session's live
 // pty so the conversation checkpoints itself to HANDOFF.md before a /compact.
 // Conan can't author the handoff (only the session knows its own state) — it
@@ -832,10 +798,15 @@ app.post("/api/claude/sessions/:id/handoff", (req, res) => {
 // token-gated `?probe=1` requests a fresh, bounded PTY probe on demand (throttled
 // to once per TTL) — that's how the widget refreshes when the dashboard opens.
 // US-010: also surfaces liveUsage — the EXACT Session block (cost/durations/code/
-// per-model tokens) + all 3 windows captured from the active session's correlated
-// pty (passive when a user runs /usage, or via POST …/usage/refresh). Source
-// precedence in the widget: liveUsage → planUtilization (probe windows) → the
-// token-trend baseline. Pass ?session=<id> to bind the live block to that session.
+// per-model tokens) + all 3 windows, transcript-derived (deriveSessionUsage)
+// with windows from the account-global slot (US-007: OAuth poller preferred,
+// pty-capture fallback — see usageWindows below). Source precedence in the
+// widget: liveUsage → planUtilization (probe windows) → the token-trend
+// baseline. Pass ?session=<id> to bind the live block to that session.
+// US-008: usageSource ("oauth" | "pty-probe" | null) tags which path produced
+// planUtilization/usageWindows, so the UI can badge freshness instead of
+// rendering two data sources — one passive/~60s, one throttled/5min — as
+// visually identical.
 app.get("/api/claude/usage", async (req, res) => {
   const base = usageStatus();
   let planUtilization = getCachedPlanUtilization();
@@ -852,13 +823,33 @@ app.get("/api/claude/usage", async (req, res) => {
   if (oauthPlanUtilization) {
     planUtilization = oauthPlanUtilization;
   }
+  // US-008: tag which path produced the rate-limit windows so the UI can show
+  // an "oauth" vs "pty fallback" badge instead of two indistinguishable-
+  // looking data sources with very different freshness/cost characteristics.
+  const usageSource: "oauth" | "pty-probe" | null = oauthPlanUtilization
+    ? "oauth"
+    : planUtilization
+      ? "pty-probe"
+      : null;
   const sessionId = typeof req.query.session === "string" ? req.query.session : null;
   const captured = sessionId ? getCapturedUsage(sessionId) : null;
   // US-006: the rate-limit windows are account-global — serve the single
   // global slot (latest capture from ANY session's pty or the probe) to every
   // requesting session; only the Session block below stays per-session. The
   // slot carries capturedAt + fromSessionId so the UI can render freshness.
-  const usageWindows = getGlobalUsageWindows();
+  // US-007: prefer the OAuth poller's windows here too (same precedence as
+  // planUtilization above) — the per-session Session block used to only ever
+  // see pty-captured windows, so it stayed stale until someone ran /usage.
+  const usageWindows = oauthPlanUtilization
+    ? {
+        fiveHour: oauthPlanUtilization.fiveHour,
+        sevenDay: oauthPlanUtilization.sevenDay,
+        sevenDaySonnet: oauthPlanUtilization.sevenDaySonnet,
+        status: oauthPlanUtilization.status,
+        capturedAt: oauthPlanUtilization.probedAt,
+        fromSessionId: null,
+      }
+    : getGlobalUsageWindows();
   // Prefer derived-from-transcript Session block when available — it's
   // always fresh (the transcript writes after every assistant turn), so
   // the HUD refresh no longer needs to pop the /usage modal in the live
@@ -904,7 +895,14 @@ app.get("/api/claude/usage", async (req, res) => {
   // US-005 (1.0.2): when the most recent probe attempt failed (and nothing
   // fresher has landed since), say WHY instead of a silent planUtilization:
   // null. The last good cache above is never clobbered by a failed probe.
-  res.json({ ...base, planUtilization, liveUsage, usageWindows, probeError: getLastProbeError() });
+  res.json({
+    ...base,
+    planUtilization,
+    liveUsage,
+    usageWindows,
+    usageSource,
+    probeError: getLastProbeError(),
+  });
 });
 
 // Per-session Timeline feed (US-001 v4.5): the chronological log the Timeline

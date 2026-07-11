@@ -168,6 +168,12 @@ as latest, so the redirect resolves to the new manifest automatically.
 Every installed app picks up the new version within its poll interval
 (currently 4h; see `ui/src/components/UpdateBanner.tsx`).
 
+**This skill only builds and ships the artifact — it does not announce it.**
+Once the release is published, run the `announce-conan-release` skill (global,
+`~/.claude/skills/announce-conan-release/`) with the version + highlights to
+update the marketing changelog, the in-app What's New popup, and the draft
+buyer email.
+
 ## Common failure modes + recovery
 
 ### `Invalid symbol 46, offset 24` (or any base64 decode error during `tauri signer sign`)

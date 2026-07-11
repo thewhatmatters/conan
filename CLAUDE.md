@@ -2,7 +2,7 @@
 
 Conan is a **terminal-primary native desktop app (Tauri v2) that wraps and
 observes Claude Code**: an `xterm.js` terminal as the main surface plus a
-DevTools-style widget HUD (Context · Usage · Pulse · Skills · Agents · MCP) backed by
+DevTools-style widget HUD (Usage · Skills · Agents · MCP) backed by
 one loopback Node gateway packaged as a Tauri sidecar. This file is
 auto-loaded by every Claude Code session in this repo — keep it accurate.
 
@@ -48,10 +48,6 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   that ship a `prd.json`/`progress.txt` — Conan itself does not),
   `GET /api/terminals`, `GET /api/claude/sessions`,
   `GET /api/claude/sessions/:id/widgets` (Context breakdown),
-  `POST /api/claude/sessions/:id/context/refresh` and `.../usage/refresh`
-  (inject `/context`/`/usage` into the correlated pty + capture),
-  `POST /api/claude/sessions/:id/handoff` (inject `/handoff` for the
-  Context-pressure Compact), `GET/POST /api/claude/context/autorefresh`,
   `GET /api/claude/usage` (`+?probe=1`), `GET /api/claude/pulse`,
   `GET /api/claude/skills` (carries `lastFiredAt` per skill),
   `GET /api/claude/agents` (installed subagent `.md` files — user + project +
@@ -78,15 +74,37 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 - pty↔session correlation (`src/terminal/correlate.ts`): maps the live
   `/ws/terminal` pty to its `session_id`, and carries the
   **keystroke-injection** path used to run TUI slash commands (answer
-  interactive prompts; inject `/context`, `/usage`, `/handoff`).
+  interactive prompts; inject `/context`, `/handoff`).
 - Usage / Context capture (`src/usage/probe.ts`): pure ANSI-strip + bounded
   scrape + testable frame parsers (`parseUsageFrame`, `parseContextFrame`).
   Two capture paths: a **throwaway probe** for the account-global `/usage`
-  rate-limit windows (`/api/claude/usage?probe=1`), and **live-pty capture**
-  for session-specific `/context` and `/usage` Session-block frames
-  (passive when the user runs the command, or via the
-  `.../context/refresh` and `.../usage/refresh` routes). Disk estimates
-  (MCP/skills/memory size readers) are the labelled `≈ estimated` fallback.
+  rate-limit windows (`/api/claude/usage?probe=1`, macOS-preferred by the
+  OAuth poller — see below), and **live-pty capture** for session-specific
+  `/context` and `/usage` Session-block frames (passive when the user runs
+  the command). Disk estimates (MCP/skills/memory size readers) are the
+  labelled `≈ estimated` fallback. **Orphaned since the Context tab/banner
+  removal:** `POST /api/claude/sessions/:id/context/refresh`,
+  `GET/POST /api/claude/context/autorefresh`, and
+  `POST /api/claude/sessions/:id/handoff` (the Context-pressure Compact
+  action) still exist in the gateway but have no UI caller left — candidates
+  for a follow-up backend cleanup pass, not removed yet.
+- OAuth usage poller (`src/usage/oauthUsage.ts`, macOS-only): passively polls
+  Anthropic's OAuth usage endpoint (token from the macOS Keychain entry
+  `Claude Code-credentials`, never logged) on a background interval
+  (`CONAN_OAUTH_USAGE_POLL_MS`, default 60s) — no pty, no throttle. `GET
+  /api/claude/usage` prefers its cache over both the pty-probe
+  `planUtilization` AND the pty-capture-only account-global windows slot
+  (`getGlobalUsageWindows()` in `src/usage/probe.ts`), falling back to the
+  pty paths untouched when the OAuth cache is empty (non-macOS, Keychain
+  read failed, endpoint call failed). Replaced the old manual ↻ /usage
+  refresh button (`UsageRefreshButton`, `POST
+  /api/claude/sessions/:id/usage/refresh`) — removed once both windows and
+  the per-session Session block became passively fresh with no user action.
+  `GET /api/claude/usage` also tags which path produced the windows —
+  `usageSource: "oauth" | "pty-probe" | null` — surfaced as an `· oauth` /
+  `· pty fallback` badge in the Usage tab's sub-header (`Widgets.tsx`), since
+  the two sources have very different freshness (passive ~60s vs throttled
+  5min) but otherwise render identically.
 - Doctor (`src/doctor/claude.ts`): cached (10min TTL) Claude Code install
   detection — probes via interactive login shell, falls back to historical
   `session.claude_version` from the DB. Drives the install banner.
@@ -96,18 +114,39 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   optional **per-tab `Timeline.tsx` split panel** toggled via
   `PanelRightOpen` next to `+` or `⌘\` — tethered visually to the terminal
   so its rows describe THAT session's hooks/skills/plan/loop/build) beside
-  `components/Hud.tsx` (the DevTools-style widget HUD). The HUD tabs are
-  **Context · Usage · Pulse · Skills · Agents · MCP** — `Widgets.tsx`
-  (Context+Usage), `PulseChart.tsx`, `SkillsWidget.tsx`, `AgentsWidget.tsx`,
-  `McpWidget.tsx` —
-  with a `RadioBar.tsx` (Claude Radio play/pause, gateway-hosted YouTube
-  iframe at `/radio/embed`) pinned at the HUD's bottom. The session-scoped
-  tabs follow the **active terminal tab**. `SettingsView.tsx` is the tabbed
-  Status/Config dialog (⌘,). Charts live in `components/charts/` (vendored
-  Tremor `AreaChart`/`ProgressCircle`). Hooks `hooks/{useTheme,useTasks,
-  useWidgets,usePulse,useUsage,useSessions,useTerminals,useSkills,useAgents,useMcp,
-  useConfig,useDoctor,useNativeNotifications}.ts`;
-  `lib/{chartUtils,nativeNotify,appMenu,gateway}.ts`.
+  `components/Hud.tsx` (the DevTools-style widget HUD). Agent spawns
+  (`kind:"agent"` rows, backend in `src/timeline/index.ts`) render inline in
+  the Timeline's classic feed — an icon+status-colored "AGENT" pill (running
+  = pulsing primary, done = the same dim treatment `skill-considered` rows
+  use) plus an always-visible detail card (model/tools/duration/tokens),
+  same pattern as the nested "Skills considered" card under PROMPT rows.
+  Two other placements were tried and dropped: a toggle inside the Timeline
+  split panel (buried, nobody opened it), then a dedicated
+  `AgentLanesBar.tsx` toolbar + `AgentLanes.tsx` waterfall popover above the
+  terminal (the popover itself didn't land — dogfooding feedback). Both were
+  deleted; identity now lives in the row label, not a comparative
+  multi-agent view. Free tier: AGENT rows are Premium-masked the same way
+  SKILL/PLAN/LOOP/BUILD already are. The Timeline's row-kind filter is a
+  `FilterDropdown` (multiselect `DropdownMenu`, not a chip row — a chip
+  stopped scaling once Agents joined the set): "All" is the first item,
+  separated and single-select-only; every other kind (Hooks always visible,
+  Skills/Plan/Loop/Build/Agents Premium-gated) is an independent checkbox
+  that keeps the menu open on toggle. The HUD tabs are **Usage · Skills ·
+  Agents · MCP** — `Widgets.tsx` (Usage; folds in the Pulse throughput chart
+  via `PulseChart.tsx`), `SkillsWidget.tsx`, `AgentsWidget.tsx` (installed
+  subagent *definitions*, static — distinct from the Timeline's live runtime
+  spawns), `McpWidget.tsx` — the Context tab/banner (`ContextHeader.tsx`)
+  was removed once Claude Code's own statusline started surfacing live
+  context % directly in the terminal, making the scraped/estimated Context
+  view redundant — with a `RadioBar.tsx` (Claude Radio play/pause,
+  gateway-hosted YouTube iframe at `/radio/embed`) pinned at the HUD's
+  bottom. The session-scoped tabs follow the **active terminal tab**.
+  `SettingsView.tsx` is the tabbed Status/Config dialog (⌘,). Charts live in
+  `components/charts/` (vendored Tremor `AreaChart`/`ProgressCircle`). Hooks
+  `hooks/{useTheme,useTasks,useWidgets,usePulse,useUsage,useSessions,
+  useTerminals,useSkills,useAgents,useMcp,useConfig,useDoctor,
+  useNativeNotifications}.ts`; `lib/{chartUtils,nativeNotify,appMenu,
+  gateway}.ts`.
 
 ## Conventions
 - **Semantic theme tokens only** — `bg-background`, `text-foreground`,
@@ -118,6 +157,16 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 - **shadcn primitives** in `ui/src/components/ui/*` (`button`, `select`,
   `dropdown-menu`, `tabs`, …) — reach for these for any new control; the
   semantic token names match shadcn so they drop in cleanly.
+- **Secondary toolbars are always `h-9 shrink-0` — a fixed height, not
+  padding that happens to land close.** Every in-panel header bar (HUD tab
+  headers via `shared/HudTabHeader.tsx`, `Timeline.tsx`'s own header,
+  `FileExplorer.tsx`'s breadcrumb header, the Files/Timeline switch) must
+  match exactly so panels read as one consistent chrome, not
+  slightly-different bars. This drifted twice in one session (`py-1.5`
+  instead of `h-9`, `text-sm` instead of the `text-[11px]
+  text-muted-foreground` title convention) — check new/edited toolbars
+  against an existing one (e.g. `HudTabHeader`) before shipping, don't just
+  eyeball it.
 - **Charts ride Tremor Raw** (recharts-based, Tailwind-v4-native copy-in
   components vendored under `ui/src/components/charts/`), themed through
   `ui/src/lib/chartUtils.ts` so colors resolve to the `--color-chart-1..5`

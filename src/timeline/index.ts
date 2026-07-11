@@ -128,12 +128,13 @@ export type TimelineRow =
       plan?: string;
     }
   | {
-      // Agent Lanes waterfall bar (US-003). `ts` mirrors `startedAt` so this
-      // kind sorts into the feed like every other row. Rides the same
-      // readTimeline()/GET /api/claude/timeline path as hook/skill/plan rows —
-      // no separate endpoint. Rendered as a lane by AgentLanes.tsx (US-004),
-      // toggled in via the Timeline toolbar (US-005); until then it mixes
-      // into the classic chronological feed like any other row.
+      // Agent spawn bar (US-003). `ts` mirrors `startedAt` so this kind
+      // sorts into the feed like every other row. Rides the same
+      // readTimeline()/GET /api/claude/timeline path as hook/skill/plan rows
+      // — no separate endpoint. Renders inline in the classic feed as an
+      // icon+status-colored pill with an always-visible detail card (see
+      // Timeline.tsx) — a separate waterfall/toolbar view was tried and
+      // dropped, see CLAUDE.md.
       kind: "agent";
       ts: number;
       toolUseId: string;
