@@ -385,3 +385,16 @@ a running Conan.app writes to its own Resources directory between sign
 and notarize. If notarization complains about "a sealed resource is
 missing or invalid", look for stray files in
 `Conan.app/Contents/Resources/`.
+
+<!-- wire-vault:start -->
+## Knowledge vault — project layer
+
+This project's durable knowledge (overview, decisions, gotchas) lives in the
+cross-project vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/OBSDN/projects/conan/`
+(default vault: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/OBSDN`).
+
+- **Read first:** before re-deriving an architecture decision or re-debugging
+  a non-obvious issue, check `projects/conan/index.md` there.
+- **Write path:** durable insights go through `/curate-knowledge` (gated) —
+  never write vault articles directly.
+<!-- wire-vault:end -->
