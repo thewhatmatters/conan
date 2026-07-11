@@ -138,6 +138,29 @@ export type TimelineRow =
       items?: PlanItem[];
       /** ExitPlanMode plan text; present only when subtype === 'plan-mode'. */
       plan?: string;
+    }
+  | {
+      // Agent Lanes waterfall bar (US-003). Rides the same GET
+      // /api/claude/timeline backfill as every other row kind; rendered as a
+      // lane by AgentLanes.tsx (US-004), toggled in via the toolbar (US-005).
+      // Until then it mixes into the classic chronological feed like any
+      // other row.
+      kind: "agent";
+      ts: number;
+      toolUseId: string;
+      startedAt: number;
+      /** null means still running. */
+      endedAt: number | null;
+      agentType: string | null;
+      description: string | null;
+      durationMs?: number;
+      tokens?: number;
+      toolCallCount?: number;
+      /** Correlated against the installed agent .md definitions — null when
+       *  there's no match (e.g. a `fork` spawn). Never fabricated. */
+      model: string | null;
+      tools: string | null;
+      definitionDescription: string | null;
     };
 
 /** The active filter chips; an empty set means "All". */
@@ -327,6 +350,8 @@ function rowKey(row: TimelineRow): string {
       return `sc:${row.promptEventId ?? row.eventId ?? row.ts}:${row.skill}`;
     case "plan":
       return `p:${row.ts}:${row.subtype}:${row.promptEventId ?? row.eventId ?? ""}`;
+    case "agent":
+      return `a:${row.toolUseId}`;
   }
 }
 
@@ -389,6 +414,7 @@ function rowPillLabel(row: TimelineRow): string {
   if (row.kind === "loop") return "LOOP";
   if (row.kind === "plan") return "PLAN";
   if (row.kind === "skill-fired") return "SKILL";
+  if (row.kind === "agent") return "AGENT";
   return "SKILL?";
 }
 
@@ -542,6 +568,8 @@ function renderTimelineRow(
               ? `${row.skill} considered`
               : row.kind === "plan"
               ? planRowTitle(row)
+              : row.kind === "agent"
+              ? `${row.agentType ?? "agent"} · ${row.description ?? ""}`
               : row.title}
           </span>
           {/* Per-turn token-burn badge (STOP rows only). Pinned to the

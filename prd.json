@@ -56,8 +56,8 @@
         "Tests pass"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Live-update check (no new broadcast logic added): confirmed src/gateway/index.ts:381 `broadcast({ type: \"event\", payload: event })` fires unconditionally for every persisted hook event, including PreToolUse/PostToolUse where tool_name === \"Agent\" — no tool-name filtering exists on that path. The UI's job in US-004/US-005 is to re-derive bars client-side or re-fetch on that signal."
     },
     {
       "id": "US-004",

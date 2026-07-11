@@ -15,6 +15,7 @@ import { readTasks, progressMtimeMs } from "../tasks/index.js";
  */
 export const BUILD_ACTIVE_WINDOW_MS = 1_800_000;
 import { getActiveCwd } from "../cwd/index.js";
+import { readAgents, type AgentEntry } from "../agents/index.js";
 import {
   readSessionSkillFirings,
   readSessionPlans,
@@ -125,6 +126,31 @@ export type TimelineRow =
       items?: PlanItem[];
       /** ExitPlanMode plan text; present only when subtype === 'plan-mode'. */
       plan?: string;
+    }
+  | {
+      // Agent Lanes waterfall bar (US-003). `ts` mirrors `startedAt` so this
+      // kind sorts into the feed like every other row. Rides the same
+      // readTimeline()/GET /api/claude/timeline path as hook/skill/plan rows —
+      // no separate endpoint. Rendered as a lane by AgentLanes.tsx (US-004),
+      // toggled in via the Timeline toolbar (US-005); until then it mixes
+      // into the classic chronological feed like any other row.
+      kind: "agent";
+      ts: number;
+      toolUseId: string;
+      startedAt: number;
+      /** null means still running — see AgentSpawnBar. */
+      endedAt: number | null;
+      agentType: string | null;
+      description: string | null;
+      durationMs?: number;
+      tokens?: number;
+      toolCallCount?: number;
+      /** Correlated against readAgents(cwd) by `agentType === AgentEntry.name`.
+       *  Null when there's no match (e.g. a `fork` spawn, or an agentType
+       *  with no installed .md definition) — never fabricated. */
+      model: string | null;
+      tools: string | null;
+      definitionDescription: string | null;
     };
 
 /** Hard cap on `limit`; matches what the UI ever asks for in one backfill. */
@@ -417,6 +443,34 @@ export function deriveAgentSpawns(events: EventRow[]): AgentSpawnBar[] {
 }
 
 /**
+ * Correlate each derived Agent bar (US-002) against the installed agent
+ * definitions — readAgents(cwd) — by matching `agentType` to `AgentEntry.name`,
+ * producing the `kind:"agent"` TimelineRow rows this story adds to the feed.
+ * Pure (agents is whatever the caller already read via readAgents), so this
+ * stays independently testable without touching the filesystem. A bar whose
+ * agentType has no matching installed definition (a `fork` spawn, or a name
+ * with no .md file) gets `model`/`tools`/`definitionDescription: null` rather
+ * than a fabricated value.
+ */
+export function correlateAgentBars(
+  bars: AgentSpawnBar[],
+  agents: AgentEntry[],
+): Extract<TimelineRow, { kind: "agent" }>[] {
+  const byName = new Map(agents.map((a) => [a.name, a] as const));
+  return bars.map((bar) => {
+    const match = bar.agentType ? byName.get(bar.agentType) : undefined;
+    return {
+      kind: "agent",
+      ts: bar.startedAt,
+      ...bar,
+      model: match?.model ?? null,
+      tools: match?.tools ?? null,
+      definitionDescription: match?.description ?? null,
+    };
+  });
+}
+
+/**
  * Parse the leading timestamp off a progress.txt activity line into epoch ms.
  * progress.txt mixes two human-written formats:
  *   `[2026-05-27 13:46:06] iteration 10 → US-010: …`  (bracketed, w/ seconds)
@@ -508,6 +562,13 @@ export interface BuildTimelineOpts {
    * here against the mapped PROMPT rows — never fabricated.
    */
   plans?: PlanRecord[];
+  /**
+   * Installed agent definitions (US-003) — readAgents(cwd) — used to
+   * correlate each Agent bar derived from `events` (via deriveAgentSpawns)
+   * against its .md frontmatter (model/tools/description). Empty when cwd
+   * has no installed agents.
+   */
+  agents?: AgentEntry[];
   /** The session's cwd, from the session row. Used to gate loop rows. */
   sessionCwd: string | null;
   /** The cwd progress.txt itself is read from (the build-loop's project). */
@@ -678,7 +739,14 @@ export function buildTimeline(opts: BuildTimelineOpts): TimelineRow[] {
     }
   }
 
-  const all = [...hookRows, ...loopRows, ...skillRows, ...planRows];
+  // US-003: Agent Lanes bars, derived from the same session events already
+  // passed in and correlated against the installed agent definitions.
+  const agentRows: TimelineRow[] = correlateAgentBars(
+    deriveAgentSpawns(opts.events),
+    opts.agents ?? [],
+  ).filter((row) => since === undefined || row.ts > since);
+
+  const all = [...hookRows, ...loopRows, ...skillRows, ...planRows, ...agentRows];
   // Descending by ts. Stable secondary key (hook event id) keeps two events at
   // the exact same epoch-ms in their persisted order — Stop after PostToolUse.
   all.sort((a, b) => {
@@ -778,12 +846,15 @@ export function readTimeline(
   // Post-loop polish: per-assistant-turn token totals from the JSONL — fuel
   // for the +12k badge attached to STOP rows in buildTimeline.
   const assistantUsages = readAssistantTurnUsages(sessionId, cwd);
+  // US-003: installed agent definitions, for correlating Agent Lanes bars.
+  const agents = readAgents(cwd);
   return buildTimeline({
     events,
     activity: activeActivity,
     skillsFired,
     skillsConsidered,
     plans,
+    agents,
     assistantUsages,
     sessionCwd: cwd,
     activeCwd: getActiveCwd(),

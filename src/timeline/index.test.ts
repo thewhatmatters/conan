@@ -5,8 +5,15 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTouchedFiles, mapHookEventToRow, deriveAgentSpawns } from "./index.js";
+import {
+  parseTouchedFiles,
+  mapHookEventToRow,
+  deriveAgentSpawns,
+  correlateAgentBars,
+  type AgentSpawnBar,
+} from "./index.js";
 import type { EventRow } from "../session/index.js";
+import type { AgentEntry } from "../agents/index.js";
 
 /** A persisted-event row as the gateway query hands it to the parser. */
 function row(tool: string, filePath?: string, raw?: string) {
@@ -205,4 +212,56 @@ test("a Stop event closes any still-open Agent bars for that session", () => {
   // Orphan close-out never fabricates duration/token totals — those only
   // come from a real PostToolUse.
   assert.equal(bars[0]?.durationMs, undefined);
+});
+
+/** A minimal AgentSpawnBar fixture for correlateAgentBars tests. */
+function bar(overrides: Partial<AgentSpawnBar> = {}): AgentSpawnBar {
+  return {
+    toolUseId: "toolu_1",
+    startedAt: 1000,
+    endedAt: 5000,
+    agentType: "skill-auditor",
+    description: "audit render-html",
+    ...overrides,
+  };
+}
+
+/** A minimal installed AgentEntry fixture. */
+function agentEntry(overrides: Partial<AgentEntry> = {}): AgentEntry {
+  return {
+    name: "skill-auditor",
+    description: "Audit a Claude skill against the canonical spec.",
+    source: "Project",
+    model: "sonnet",
+    tools: "Read, Grep, Glob, Bash",
+    ...overrides,
+  };
+}
+
+test("correlateAgentBars: agentType matching an installed definition attaches model/tools/description", () => {
+  const rows = correlateAgentBars([bar()], [agentEntry()]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.kind, "agent");
+  assert.equal(rows[0]?.model, "sonnet");
+  assert.equal(rows[0]?.tools, "Read, Grep, Glob, Bash");
+  assert.equal(rows[0]?.definitionDescription, "Audit a Claude skill against the canonical spec.");
+  // Carries the full bar shape through untouched.
+  assert.equal(rows[0]?.toolUseId, "toolu_1");
+  assert.equal(rows[0]?.ts, 1000);
+});
+
+test("correlateAgentBars: agentType with no matching installed definition leaves correlation fields null", () => {
+  const rows = correlateAgentBars([bar({ agentType: "fork" })], [agentEntry()]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.model, null);
+  assert.equal(rows[0]?.tools, null);
+  assert.equal(rows[0]?.definitionDescription, null);
+});
+
+test("correlateAgentBars: null agentType (somehow absent) never throws and leaves correlation fields null", () => {
+  const rows = correlateAgentBars([bar({ agentType: null })], [agentEntry()]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.model, null);
+  assert.equal(rows[0]?.tools, null);
+  assert.equal(rows[0]?.definitionDescription, null);
 });
