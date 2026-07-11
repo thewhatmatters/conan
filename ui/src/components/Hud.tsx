@@ -1,12 +1,11 @@
 import { useCallback, useRef, useState } from "react";
-import { UsageWidget, UsageRefreshButton } from "./Widgets.tsx";
+import { UsageWidget } from "./Widgets.tsx";
 import SkillsWidget from "./SkillsWidget.tsx";
 import AgentsWidget from "./AgentsWidget.tsx";
 import McpWidget from "./McpWidget.tsx";
 import RadioBar from "./RadioBar.tsx";
 import PulseChart, { PulseRange } from "./PulseChart.tsx";
 import HudTabHeader from "./shared/HudTabHeader.tsx";
-import type { Session } from "../hooks/useSessions.ts";
 import type { UsageState } from "../hooks/useUsage.ts";
 import type { WidgetData } from "../hooks/useWidgets.ts";
 import type { PulseSeries } from "../hooks/usePulse.ts";
@@ -58,15 +57,12 @@ interface HudProps {
   /** Live window height (US-026). Only consumed by the bottom dock to clamp its
    *  rendered height so the terminal keeps TERMINAL_MIN_H on a short window. */
   windowHeight?: number;
-  // — Usage widget (session-scoped via its rate-limit windows) —
-  activeSession: Session | null;
-  /** Widgets payload — only `hasLivePty` is consumed here (UsageWidget refresh). */
+  // — Usage widget —
+  /** Widgets payload — only `hasLivePty` is consumed here (UsageWidget). */
   data: WidgetData | null;
-  /** Auth token for the token-gated /usage Refresh POST. */
+  /** Auth token for the token-gated MCP ↻ refresh. */
   token?: string | null;
   usage: UsageState;
-  /** Re-pull the usage payload (after a /usage capture lands, US-010). */
-  onRefetchUsage?: () => void;
   // — Pulse graph —
   pulse?: PulseSeries | null;
   pulseMinutes?: number;
@@ -83,19 +79,20 @@ interface HudProps {
  * The DevTools-style HUD (US-003/US-004): a drag-resizable panel docked to the
  * right of the terminal with a flat tab bar. Width persists in localStorage
  * exactly like the old dock did. The Context tab moved out of the HUD in
- * favour of the always-visible ContextHeader banner pinned above the terminal
- * — what remains here is Usage · Skills · MCP. The Pulse throughput chart was
- * folded into the Usage tab (v4.6), since it's usage-over-time itself.
+ * favour of a ContextHeader banner pinned above the terminal; that banner was
+ * removed in turn once Claude Code's own statusline started surfacing live
+ * context % directly in the terminal, making the scraped/estimated banner
+ * redundant — what remains here is Usage · Skills · MCP. The Pulse throughput
+ * chart was folded into the Usage tab (v4.6), since it's usage-over-time
+ * itself.
  */
 export default function Hud({
   hidden,
   dock = "right",
   windowHeight,
-  activeSession,
   data,
   token,
   usage,
-  onRefetchUsage,
   pulse,
   pulseMinutes = 60,
   onPulseRange,
@@ -221,23 +218,17 @@ export default function Hud({
           value="usage"
           className="mt-0 flex min-h-0 flex-1 flex-col"
         >
-          {/* Pinned secondary toolbar (US-006): 'Usage' + the ↻ /usage refresh
-              ride the shared <HudTabHeader> outside the FadeScroll so they stay
-              put while the content scrolls — matching the Pulse/Skills/MCP tabs.
-              The refresh keeps its live-pty gating (hidden with no live pty). */}
+          {/* Pinned secondary toolbar (US-006): 'Usage' rides the shared
+              <HudTabHeader> outside the FadeScroll so it stays put while the
+              content scrolls — matching the Pulse/Skills/MCP tabs. The old
+              ↻ /usage refresh button was removed once the OAuth usage poller
+              made both the rate-limit windows and the per-session Session
+              block passively fresh — see CLAUDE.md. */}
           <HudTabHeader
             name={
               <span className="px-1 text-[11px] font-medium text-muted-foreground">
                 Usage
               </span>
-            }
-            actions={
-              <UsageRefreshButton
-                session={activeSession}
-                token={token}
-                hasLivePty={data?.hasLivePty ?? false}
-                onRefetch={onRefetchUsage}
-              />
             }
           />
           <FadeScroll>

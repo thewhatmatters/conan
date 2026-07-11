@@ -502,6 +502,12 @@ interface AreaChartProps extends React.HTMLAttributes<HTMLDivElement> {
    *  without touching the shared default `fill-foreground/70`. */
   xAxisTickClassName?: string;
   type?: "default" | "stacked" | "percent";
+  /** Recharts curve interpolation for the Area/Line paths — "linear" (sharp
+   *  vertices, the default) vs "monotone"/"natural" (smoothed, no
+   *  overshoot past the real data points). Applies to both the visible
+   *  Area and its hidden click-target Line so hover/click stay aligned
+   *  with what's drawn. */
+  curveType?: "linear" | "monotone" | "natural" | "step" | "basis";
   legendPosition?: "left" | "center" | "right";
   fill?: "gradient" | "solid" | "none";
   tooltipCallback?: (tooltipCallbackContent: TooltipProps) => void;
@@ -537,6 +543,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
       xAxisTickClassName,
       yAxisLabel,
       type = "default",
+      curveType = "linear",
       legendPosition = "right",
       fill = "gradient",
       tooltipCallback,
@@ -962,7 +969,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
                       return <React.Fragment key={index}></React.Fragment>;
                     }}
                     name={category}
-                    type="linear"
+                    type={curveType}
                     dataKey={category}
                     stroke=""
                     strokeWidth={2}
@@ -984,7 +991,7 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
                     strokeOpacity={0}
                     key={category}
                     name={category}
-                    type="linear"
+                    type={curveType}
                     dataKey={category}
                     stroke="transparent"
                     fill="transparent"

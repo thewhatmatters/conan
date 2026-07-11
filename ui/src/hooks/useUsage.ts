@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiBase } from "../lib/gateway.ts";
 
 /** Output-token consumption over recent rolling windows (plan-usage trend). */
@@ -110,6 +110,8 @@ export interface UsageState {
   liveUsage: LiveUsage | null;
   /** Account-global windows slot (US-006/US-007); null before ANY capture. */
   usageWindows: UsageWindows | null;
+  /** Which path produced planUtilization/usageWindows (US-008); null → no data yet. */
+  usageSource: "oauth" | "pty-probe" | null;
 }
 
 const EMPTY: UsageState = {
@@ -123,6 +125,7 @@ const EMPTY: UsageState = {
   planUtilization: null,
   liveUsage: null,
   usageWindows: null,
+  usageSource: null,
 };
 
 /** Normalize one raw /usage window into a typed UsageWindow (or null). */
@@ -259,6 +262,7 @@ function normalize(u: Record<string, unknown>): UsageState {
     planUtilization: parsePlanUtilization(u.planUtilization),
     liveUsage: parseLiveUsage(u.liveUsage),
     usageWindows: parseUsageWindows(u.usageWindows),
+    usageSource: u.usageSource === "oauth" || u.usageSource === "pty-probe" ? u.usageSource : null,
   };
 }
 
@@ -277,29 +281,26 @@ function normalize(u: Record<string, unknown>): UsageState {
  * baseline; it is NOT repeated on every event (no tight billed-probe loop).
  *
  * `sessionId` binds the live /usage capture (US-010) to the active session via
- * `?session=` so the Session block surfaces. The returned `refetch` re-pulls on
- * demand (used by the Usage widget's /usage Refresh after a passive capture).
+ * `?session=` so the Session block surfaces.
  */
 export function useUsage(
   eventSeq: number | null,
   token: string | null = null,
   sessionId: string | null = null,
-): { usage: UsageState; refetch: () => void } {
+): { usage: UsageState } {
   const [usage, setUsage] = useState<UsageState>(EMPTY);
-  const [nonce, setNonce] = useState(0);
-  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   const sessionQuery = sessionId
     ? `?session=${encodeURIComponent(sessionId)}`
     : "";
 
-  // Baseline + cached scrape + live capture: refetch on every event / on demand.
+  // Baseline + cached scrape + live capture: refetch on every event.
   useEffect(() => {
     fetch(apiBase() + "/api/claude/usage" + sessionQuery)
       .then((r) => r.json())
       .then((u) => setUsage(normalize(u)))
       .catch(() => {});
-  }, [eventSeq, sessionQuery, nonce]);
+  }, [eventSeq, sessionQuery]);
 
   // Lazily request ONE fresh /usage scrape when the dashboard opens (token-gated).
   useEffect(() => {
@@ -319,5 +320,5 @@ export function useUsage(
     };
   }, [token, sessionQuery]);
 
-  return { usage, refetch };
+  return { usage };
 }

@@ -3,16 +3,22 @@ import type { SkillEntry } from "../hooks/useSkills.ts";
 import FadeScroll from "./FadeScroll.tsx";
 import HudTabHeader from "./shared/HudTabHeader.tsx";
 
-/** "User" group = your own skills (User + Project); "System" = Plugin + Built-in. */
-type Group = "user" | "system";
-const isUserSkill = (s: SkillEntry) =>
-  s.source === "User" || s.source === "Project";
+/** "User" = ~/.claude/skills; "Project" = <cwd>/.claude/skills; "System" = Plugin + Built-in. */
+type Group = "user" | "project" | "system";
+const GROUPS: { key: Group; label: string }[] = [
+  { key: "user", label: "User" },
+  { key: "project", label: "Project" },
+  { key: "system", label: "System" },
+];
+const isProjectSkill = (s: SkillEntry) => s.source === "Project";
+const isUserSkill = (s: SkillEntry) => s.source === "User";
 
 /**
  * The Skills HUD tab (US-006): a VS Code Extensions–style list of installed
  * skills from GET /api/claude/skills (US-005). A flat tab group at the top splits
- * them into **User** (your own ~/.claude + project skills) and **System** (Plugin
- * + Built-in), each with its count, so the two are easy to tell apart. Each row
+ * them into **User** (~/.claude/skills), **Project** (the active working
+ * directory's own .claude/skills — empty unless that project ships local
+ * skills), and **System** (Plugin + Built-in), each with its count. Each row
  * shows the bold skill name, a clamped description (the panel is only ~320px
  * wide), and the skill's on-disk **path** (home-relative `~/…`) in place of a
  * source badge. Built-in skills with no readable SKILL.md show name only (+ a
@@ -22,10 +28,16 @@ const isUserSkill = (s: SkillEntry) =>
  */
 export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
   const user = skills.filter(isUserSkill);
-  const system = skills.filter((s) => !isUserSkill(s));
-  // Default to whichever group has skills, preferring User.
+  const project = skills.filter(isProjectSkill);
+  const system = skills.filter((s) => !isUserSkill(s) && !isProjectSkill(s));
+  const counts: Record<Group, number> = {
+    user: user.length,
+    project: project.length,
+    system: system.length,
+  };
+  // Default to the first non-empty group, preferring User.
   const [group, setGroup] = useState<Group>(
-    user.length === 0 && system.length > 0 ? "system" : "user",
+    GROUPS.find((g) => counts[g.key] > 0)?.key ?? "user",
   );
 
   if (skills.length === 0) {
@@ -36,29 +48,27 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
     );
   }
 
-  const shown = group === "user" ? user : system;
+  const byGroup: Record<Group, SkillEntry[]> = { user, project, system };
+  const shown = byGroup[group];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Flat tab group: User (N) / System (N) — rides the shared
-          <HudTabHeader> so it stays pinned at the top (outside the FadeScroll,
-          which would otherwise fade its text on overflow) and matches the MCP /
-          Pulse / Usage header chrome. User/System stays one click away. */}
+      {/* Flat tab group: User (N) / Project (N) / System (N) — rides the
+          shared <HudTabHeader> so it stays pinned at the top (outside the
+          FadeScroll, which would otherwise fade its text on overflow) and
+          matches the MCP / Pulse / Usage header chrome. */}
       <HudTabHeader
         name={
           <>
-            <GroupTab
-              label="User"
-              count={user.length}
-              active={group === "user"}
-              onClick={() => setGroup("user")}
-            />
-            <GroupTab
-              label="System"
-              count={system.length}
-              active={group === "system"}
-              onClick={() => setGroup("system")}
-            />
+            {GROUPS.map((g) => (
+              <GroupTab
+                key={g.key}
+                label={g.label}
+                count={counts[g.key]}
+                active={group === g.key}
+                onClick={() => setGroup(g.key)}
+              />
+            ))}
           </>
         }
       />
@@ -66,7 +76,9 @@ export default function SkillsWidget({ skills }: { skills: SkillEntry[] }) {
       <FadeScroll>
         {shown.length === 0 ? (
           <p className="px-3 py-3 text-[11px] text-muted-foreground">
-            No {group} skills.
+            {group === "project"
+              ? "No local skills in this project's .claude/skills."
+              : `No ${group} skills.`}
           </p>
         ) : (
           <ul className="flex flex-col">

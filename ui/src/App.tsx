@@ -117,8 +117,8 @@ export default function App() {
   // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
   // US-025: also surfaces the real /usage scrape; token-gated probe on open.
   // US-010: bind the live /usage capture (Session block + 3 windows) to the
-  // active session via the session id; refetch drives the on-demand Refresh.
-  const { usage, refetch: refetchUsage } = useUsage(
+  // active session via the session id.
+  const { usage } = useUsage(
     wsTrigger,
     config?.token ?? null,
     activeSession?.id ?? null,
@@ -126,13 +126,13 @@ export default function App() {
   // US-020: time-series throughput across sessions for the Pulse chart.
   const [pulseMinutes, setPulseMinutes] = useState(60);
   const pulse = usePulse(wsTrigger, pulseMinutes);
-  // US-004: the Context widget's live breakdown for the active session. Always
-  // fetched (the Context HUD tab is permanent now) when a session is correlated.
-  // `lastCwd.seq` is folded in so each `{type:'cwd'}` broadcast (focus switch
-  // or a `cd` in the focused tab, 1.0.1 US-002) re-pulls the widgets — the git
-  // branch is computed from the live tab cwd, so the footer branch recomputes
-  // from the same notification that flips the footer path.
-  const { data: widgetData, refetch: refetchWidgets } = useWidgets(
+  // US-004: widgets payload (git + Context/Usage estimate data) for the
+  // active session — feeds the status-bar git branch and the Hud's Usage
+  // tab. `lastCwd.seq` is folded in so each `{type:'cwd'}` broadcast (focus
+  // switch or a `cd` in the focused tab, 1.0.1 US-002) re-pulls the widgets
+  // — the git branch is computed from the live tab cwd, so the footer
+  // branch recomputes from the same notification that flips the footer path.
+  const { data: widgetData } = useWidgets(
     activeSession?.id ?? null,
     wsTrigger + (lastCwd?.seq ?? 0),
     true,
@@ -271,10 +271,6 @@ export default function App() {
         lastSkillConsidered={lastSkillConsidered}
         lastPlan={lastPlan}
         lastTerminalCwd={lastTerminalCwd}
-        activeSession={activeSession}
-        sessions={sessions}
-        widgetData={widgetData}
-        onRefetchWidgets={refetchWidgets}
         windowWidth={windowWidth}
         doctor={doctor}
       />
@@ -282,11 +278,9 @@ export default function App() {
         hidden={!hudOpen}
         dock={hudBottomDock ? "bottom" : "right"}
         windowHeight={windowHeight}
-        activeSession={activeSession}
         data={widgetData}
         token={config?.token ?? null}
         usage={usage}
-        onRefetchUsage={refetchUsage}
         pulse={pulse}
         pulseMinutes={pulseMinutes}
         onPulseRange={setPulseMinutes}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Lock } from "lucide-react";
+import { Bot, ChevronDown, Lock } from "lucide-react";
 import conanIcon from "../assets/conan-icon.png";
 import { apiBase } from "../lib/gateway.ts";
 import { isIdleNotification } from "../lib/idleNotification.ts";
@@ -17,12 +17,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip.tsx";
-import { fmtTokens } from "./Widgets.tsx";
+import { fmtDuration, fmtTokens } from "./Widgets.tsx";
 import { useTier } from "../hooks/useTier.ts";
 import { PREMIUM_PRICE } from "../lib/license.ts";
 import { openCheckout } from "../lib/buy.ts";
 import { SkillFiredLottie } from "./SkillFiredLottie.tsx";
-import AgentLanes, { type AgentRow } from "./AgentLanes.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu.tsx";
 
 /* ───── US-102: Free-tier gating constants ─────────────────────────────────
  * The Free tier sees:
@@ -141,11 +148,13 @@ export type TimelineRow =
       plan?: string;
     }
   | {
-      // Agent Lanes waterfall bar (US-003). Rides the same GET
-      // /api/claude/timeline backfill as every other row kind; rendered as a
-      // lane by AgentLanes.tsx (US-004), toggled in via the toolbar (US-005).
-      // Until then it mixes into the classic chronological feed like any
-      // other row.
+      // Agent spawn bar (US-003). Rides the same GET /api/claude/timeline
+      // backfill as every other row kind, and renders inline in the classic
+      // feed like any other row — an icon+status-colored "AGENT" pill plus
+      // an always-visible detail card (model/tools/duration/tokens), same
+      // treatment as the nested "Skills considered" card under PROMPT rows.
+      // (A separate waterfall/toolbar view was tried and dropped — see
+      // CLAUDE.md.)
       kind: "agent";
       ts: number;
       toolUseId: string;
@@ -164,8 +173,8 @@ export type TimelineRow =
       definitionDescription: string | null;
     };
 
-/** The active filter chips; an empty set means "All". */
-type Filter = "hooks" | "skills" | "plan" | "loop" | "build";
+/** The active filter selections; an empty set means "All". */
+type Filter = "hooks" | "skills" | "plan" | "loop" | "build" | "agents";
 
 interface TimelineProps {
   token: string | null;
@@ -367,13 +376,28 @@ function insertRow(rows: TimelineRow[], row: TimelineRow): TimelineRow[] {
   return next;
 }
 
-/** Per-kind palette — token-driven so light + dark recolor naturally. */
-function kindColor(kind: TimelineRow["kind"]): {
+/** Per-kind palette — token-driven so light + dark recolor naturally. Takes
+ *  the full row (not just its kind) because "agent" needs its live status
+ *  (running vs done) to pick a color — identity (which agent) already lives
+ *  in the label, so the badge encodes state instead, not a per-type hue. */
+function kindColor(row: TimelineRow): {
   dot: string;
   pillBg: string;
   pillFg: string;
 } {
-  switch (kind) {
+  switch (row.kind) {
+    case "agent":
+      // Running: the same accent used for "active/live" elsewhere (Usage's
+      // ok-status bars) + the badge's icon carries the rest. Done: the exact
+      // dim treatment skill-considered already uses for "settled, no action
+      // needed" — reused rather than inventing a second muted style.
+      return row.endedAt == null
+        ? { dot: "bg-primary", pillBg: "bg-primary/15", pillFg: "text-primary" }
+        : {
+            dot: "bg-muted-foreground",
+            pillBg: "bg-muted",
+            pillFg: "text-muted-foreground",
+          };
     case "skill-fired":
       return { dot: "bg-chart-1", pillBg: "bg-chart-1/15", pillFg: "text-chart-1" };
     case "skill-considered":
@@ -425,6 +449,7 @@ function rowFilterBucket(row: TimelineRow): Filter {
   if (row.kind === "loop") return "loop";
   if (row.kind === "plan") return "plan";
   if (row.kind === "skill-fired" || row.kind === "skill-considered") return "skills";
+  if (row.kind === "agent") return "agents";
   return "hooks";
 }
 
@@ -517,7 +542,7 @@ function renderTimelineRow(
     );
   }
 
-  const color = kindColor(row.kind);
+  const color = kindColor(row);
   const considered =
     row.kind === "hook" && row.subtype === "PROMPT"
       ? opts.consideredByPrompt.get(row.eventId)
@@ -554,12 +579,13 @@ function renderTimelineRow(
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <span
             className={
-              "inline-flex items-center rounded px-1.5 py-px text-[9px] font-semibold tracking-wider " +
+              "inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[9px] font-semibold tracking-wider " +
               color.pillBg +
               " " +
               color.pillFg
             }
           >
+            {row.kind === "agent" && <Bot className="size-2.5" />}
             {rowPillLabel(row)}
           </span>
           <span className="truncate text-[12px] text-foreground">
@@ -605,6 +631,25 @@ function renderTimelineRow(
       {row.kind === "skill-considered" && (
         <div className="mt-0.5 truncate pl-[100px] text-[11px] text-muted-foreground">
           {row.reason}
+        </div>
+      )}
+      {/* Agent spawn detail — always-visible, same treatment as the nested
+          "Skills considered" card below: no click-to-expand, the data is
+          just there. Status text carries the primary accent while running
+          so it visually agrees with the pill/dot above. */}
+      {row.kind === "agent" && (
+        <div className="ml-[100px] mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-background/40 p-2 text-[11px] text-muted-foreground">
+          <span className={row.endedAt == null ? "font-medium text-primary" : undefined}>
+            {row.endedAt == null
+              ? "running…"
+              : `duration: ${fmtDuration(row.durationMs ?? row.endedAt - row.startedAt)}`}
+          </span>
+          {row.model && <span>model: {row.model}</span>}
+          {row.tools && <span>tools: {row.tools}</span>}
+          {row.tokens != null && <span>tokens: {fmtTokens(row.tokens)}</span>}
+          {row.toolCallCount != null && (
+            <span>tool calls: {row.toolCallCount}</span>
+          )}
         </div>
       )}
       {row.kind === "plan" &&
@@ -713,32 +758,83 @@ function renderTimelineRow(
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-  title,
+/** {key, label, premium} for every non-"All" filter, in display order. */
+const FILTER_ITEMS: { key: Filter; label: string; premium: boolean }[] = [
+  { key: "hooks", label: "Hooks", premium: false },
+  { key: "skills", label: "Skills", premium: true },
+  { key: "plan", label: "Plan", premium: true },
+  { key: "loop", label: "Loop", premium: true },
+  { key: "build", label: "Build", premium: true },
+  { key: "agents", label: "Agents", premium: true },
+];
+
+/**
+ * The Timeline's row-kind filter — one dropdown rather than a chip per kind
+ * (a chip row stopped scaling once Agents joined the set). "All" is the
+ * first item, visually separated from the rest, and single-select-only —
+ * picking it clears every other selection. Every other item is an
+ * independent multi-select checkbox that keeps the menu open on toggle.
+ * Bucket visibility (only kinds present in this session) and Premium gating
+ * (Skills/Plan/Loop/Build/Agents) match the old chip row's rules exactly.
+ */
+function FilterDropdown({
+  filters,
+  allActive,
+  bucketCounts,
+  isFree,
+  onClearFilters,
+  onToggleFilter,
 }: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  title?: string;
+  filters: Set<Filter>;
+  allActive: boolean;
+  bucketCounts: Record<Filter, number>;
+  isFree: boolean;
+  onClearFilters: () => void;
+  onToggleFilter: (bucket: Filter) => void;
 }) {
+  const visible = FILTER_ITEMS.filter(
+    (item) => bucketCounts[item.key] > 0 && (!item.premium || !isFree),
+  );
+  const selectedLabels = visible
+    .filter((item) => filters.has(item.key))
+    .map((item) => item.label);
+  const triggerLabel = allActive
+    ? "All"
+    : selectedLabels.length <= 2
+      ? selectedLabels.join(", ")
+      : `${selectedLabels.length} filters`;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-pressed={active}
-      className={
-        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors " +
-        (active
-          ? "border-primary bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:bg-muted")
-      }
-    >
-      {label}
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={
+            "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors " +
+            (allActive
+              ? "border-border text-muted-foreground hover:bg-muted"
+              : "border-primary bg-primary/10 text-primary")
+          }
+        >
+          {triggerLabel}
+          <ChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onSelect={onClearFilters}>All</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {visible.map((item) => (
+          <DropdownMenuCheckboxItem
+            key={item.key}
+            checked={filters.has(item.key)}
+            onCheckedChange={() => onToggleFilter(item.key)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            {item.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -754,10 +850,6 @@ export default function Timeline({
 }: TimelineProps) {
   const tier = useTier();
   const isFree = tier.tier === "free";
-  // US-005: toolbar toggle between the classic chronological feed and the
-  // Agent Lanes waterfall (US-004). Both read from the same `rows` state —
-  // no separate fetch.
-  const [view, setView] = useState<"classic" | "lanes">("classic");
   const [rows, setRows] = useState<TimelineRow[]>([]);
   // Row keys that came from the initial backfill — used to tell SkillFiredLottie
   // not to animate historical rows on the first render. Populated atomically
@@ -963,14 +1055,6 @@ export default function Timeline({
     return map;
   }, [rows]);
 
-  // US-005: Agent Lanes reads the same kind:"agent" rows already delivered
-  // through readTimeline() (US-003) — no separate fetch, no filtering by the
-  // classic feed's build-row aging or filter chips.
-  const agentRows = useMemo(
-    () => rows.filter((r): r is AgentRow => r.kind === "agent"),
-    [rows],
-  );
-
   // Apply filter-chip predicate on top of the fresh (aged-out) set. Empty set = "All".
   const visibleRows = useMemo(() => {
     if (filters.size === 0) return freshRows;
@@ -991,9 +1075,11 @@ export default function Timeline({
   }, [freshRows, filters]);
 
   /* US-102: For Free, swap Premium-only rows (SKILL fired, SKILL? considered,
-   * PLAN, LOOP, BUILD) with masked stubs in their original position. The
-   * chronology stays honest — every entry shows up — but the Premium ones
-   * read as "[Premium] · KIND" placeholders that nudge upgrade.  */
+   * PLAN, LOOP, BUILD, AGENT) with masked stubs in their original position.
+   * The chronology stays honest — every entry shows up — but the Premium
+   * ones read as "[Premium] · KIND" placeholders that nudge upgrade. AGENT
+   * joined this list once the standalone Agent Lanes gate was retired in
+   * favor of gating the row itself (see CLAUDE.md). */
   const renderRows = useMemo<(TimelineRow | FreeStubRow)[]>(() => {
     if (!isFree) return visibleRows;
     return visibleRows.map<TimelineRow | FreeStubRow>((r) => {
@@ -1002,7 +1088,8 @@ export default function Timeline({
         r.kind === "skill-considered" ||
         r.kind === "plan" ||
         r.kind === "loop" ||
-        r.kind === "build"
+        r.kind === "build" ||
+        r.kind === "agent"
       ) {
         return {
           kind: "free-stub",
@@ -1099,6 +1186,7 @@ export default function Timeline({
       plan: 0,
       loop: 0,
       build: 0,
+      agents: 0,
     };
     for (const r of freshRows) c[rowFilterBucket(r)]++;
     return c;
@@ -1110,65 +1198,23 @@ export default function Timeline({
           title carries the terminal label instead of a session picker. */}
       <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-sm font-medium text-foreground">Timeline</span>
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+            Timeline
+          </span>
           {terminalLabel && (
             <span className="truncate text-[11px] text-muted-foreground">
               · {terminalLabel}
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <FilterChip label="All" active={allActive} onClick={clearFilters} />
-          {bucketCounts.hooks > 0 && (
-            <FilterChip
-              label="Hooks"
-              active={filters.has("hooks")}
-              onClick={() => toggleFilter("hooks")}
-            />
-          )}
-          {/* US-102: Skills / Plan / Loop / Build chips are Premium. Free sees
-              only the Hooks chip — the other event kinds are masked into
-              "[Premium]" stubs below, with no filter affordance. */}
-          {!isFree && bucketCounts.skills > 0 && (
-            <FilterChip
-              label="Skills"
-              active={filters.has("skills")}
-              onClick={() => toggleFilter("skills")}
-            />
-          )}
-          {!isFree && bucketCounts.plan > 0 && (
-            <FilterChip
-              label="Plan"
-              active={filters.has("plan")}
-              onClick={() => toggleFilter("plan")}
-            />
-          )}
-          {!isFree && bucketCounts.loop > 0 && (
-            <FilterChip
-              label="Loop"
-              active={filters.has("loop")}
-              onClick={() => toggleFilter("loop")}
-            />
-          )}
-          {!isFree && bucketCounts.build > 0 && (
-            <FilterChip
-              label="Build"
-              active={filters.has("build")}
-              onClick={() => toggleFilter("build")}
-            />
-          )}
-          {/* US-005: Agent Lanes toggle — swaps the panel body between the
-              classic feed and the AgentLanes waterfall. Always visible (it's
-              a view switch, not a filter bucket) — Free-tier sees it but
-              selecting it shows a locked/blurred preview instead of hiding
-              the toggle outright. */}
-          <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
-          <FilterChip
-            label="Agent Lanes"
-            active={view === "lanes"}
-            onClick={() => setView((v) => (v === "lanes" ? "classic" : "lanes"))}
-          />
-        </div>
+        <FilterDropdown
+          filters={filters}
+          allActive={allActive}
+          bucketCounts={bucketCounts}
+          isFree={isFree}
+          onClearFilters={clearFilters}
+          onToggleFilter={toggleFilter}
+        />
       </div>
 
       {/* Scrollable body — one row per event, descending. Wrapped in a
@@ -1303,57 +1349,6 @@ export default function Timeline({
           </button>
         </div>
       </div>
-      {/* US-005: Agent Lanes overlay — swaps the panel body by covering the
-          classic feed (kept mounted underneath) rather than unmounting it,
-          so switching back doesn't re-run the backfill/scroll effects above.
-          Free tier reuses the exact blur + centered-card + Upgrade pattern
-          from the Timeline's own row-gate and PulseChart's wall — no third,
-          novel gating pattern. */}
-      {view === "lanes" && (
-        <div className="absolute inset-0 z-30 bg-card">
-          {isFree ? (
-            <div className="relative h-full">
-              <div
-                aria-hidden
-                className="pointer-events-none h-full select-none opacity-70 [filter:blur(7px)]"
-              >
-                <AgentLanes rows={agentRows} />
-              </div>
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
-                <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
-                  <div className="relative">
-                    <img
-                      src={conanIcon}
-                      alt="Conan"
-                      className="size-10 rounded-md"
-                    />
-                    <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full border border-border bg-card shadow-sm">
-                      <Lock className="size-3 text-muted-foreground" />
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-center gap-0.5">
-                    <div className="text-[13px] font-semibold leading-tight text-foreground">
-                      Unlock Agent Lanes
-                    </div>
-                    <div className="text-[11px] leading-tight text-muted-foreground">
-                      Conan Premium · {PREMIUM_PRICE} · lifetime
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void openCheckout()}
-                    className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                  >
-                    Upgrade
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <AgentLanes rows={agentRows} />
-          )}
-        </div>
-      )}
       </div>
     </div>
   );

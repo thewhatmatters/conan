@@ -211,8 +211,10 @@ export default function FileExplorer({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      {/* Breadcrumb header — mirrors the Timeline panel's header height/feel. */}
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+      {/* Breadcrumb header — h-9 fixed, matching every other secondary
+          toolbar (Timeline's own header, HudTabHeader) exactly, not just
+          "close enough" padding. */}
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <Folder className="size-3.5 shrink-0 text-muted-foreground" />
         <span
           className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"

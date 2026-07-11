@@ -12,9 +12,7 @@ import {
 } from "../hooks/useTerminals.ts";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.tsx";
 import Timeline from "./Timeline.tsx";
-import ContextHeader from "./ContextHeader.tsx";
 import HudTabHeader from "./shared/HudTabHeader.tsx";
-import type { Session } from "../hooks/useSessions.ts";
 import type {
   GatewayEvent,
   PlanEvent,
@@ -57,15 +55,6 @@ interface TerminalPaneProps {
   /** Live per-tab cwd broadcast — patched into useTerminals so each tab's
    *  File Explorer view re-lists as you `cd` inside that tab. */
   lastTerminalCwd?: { tid: string; cwd: string; seq: number } | null;
-  // — context-header bindings (dropped-Context-tab refactor) —
-  /** Active session — drives the per-terminal ContextHeader's data + actions. */
-  activeSession?: Session | null;
-  /** All known sessions — lets the estimate fallback infer a 1M window. */
-  sessions?: Session[];
-  /** Widgets payload (liveContext + estimate fallback) for ContextHeader. */
-  widgetData?: WidgetData | null;
-  /** Re-pull widgets after a /context capture lands. */
-  onRefetchWidgets?: () => void;
   /** Live window width (px) for responsive Timeline layout — at narrow
    *  widths the Timeline split overlays the terminal instead of side-by-side. */
   windowWidth?: number;
@@ -216,10 +205,6 @@ export default function TerminalPane({
   lastSkillConsidered,
   lastPlan,
   lastTerminalCwd,
-  activeSession,
-  sessions,
-  widgetData,
-  onRefetchWidgets,
   windowWidth,
   doctor,
 }: TerminalPaneProps) {
@@ -589,28 +574,14 @@ export default function TerminalPane({
                   "absolute inset-0 flex " + (on ? "z-10" : "z-0 invisible")
                 }
               >
-                {/* Terminal column — flex-col so the ContextHeader sits above
-                    the terminal but stays constrained to THIS column's width
-                    (not the timeline split's). The banner replaces the HUD's
-                    Context tab; it binds to the app-wide active session so the
-                    visible column always shows the right data. */}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <ContextHeader
-                    activeSession={activeSession ?? null}
-                    sessions={sessions}
-                    data={widgetData ?? null}
+                <div className="min-h-0 min-w-0 flex-1 bg-term-bg p-4">
+                  <Terminal
                     token={token}
-                    onRefetch={onRefetchWidgets}
+                    theme={theme}
+                    tid={t.tid}
+                    closeOnUnmount={flagFor(t.tid)}
+                    active={on}
                   />
-                  <div className="min-h-0 flex-1 bg-term-bg p-4">
-                    <Terminal
-                      token={token}
-                      theme={theme}
-                      tid={t.tid}
-                      closeOnUnmount={flagFor(t.tid)}
-                      active={on}
-                    />
-                  </div>
                 </div>
                 {tlOn &&
                   (timelineOverlay ? (

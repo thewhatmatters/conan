@@ -148,6 +148,13 @@ export default function PulseChart({
   // prepends the locale's short month/day so a 24h or 7d window doesn't read
   // ambiguously when the start crosses midnight (e.g. `05/29 14:49`). 24h
   // clock so users with `hour12: true` system prefs don't see AM/PM mixed in.
+  //
+  // Each category's series is smoothed with a 3-bucket rolling average
+  // before it's plotted — raw per-minute counts are bursty (a turn fires a
+  // handful of tool calls in a few seconds, then goes quiet), so unsmoothed
+  // they read as a jagged EKG line rather than an activity trend. This is
+  // display-only: typeTotals/totals below still sum the raw bucket counts,
+  // so the footer numbers stay exact.
   const data = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(undefined, {
       month: "2-digit",
@@ -156,9 +163,16 @@ export default function PulseChart({
       minute: "2-digit",
       hour12: false,
     });
-    return buckets.map((b) => {
+    const smoothed: Partial<Record<string, number[]>> = {};
+    for (const c of CATEGORIES) {
+      smoothed[c.label] = smoothSeries(
+        buckets.map((b) => b.types?.[c.key] ?? 0),
+        3,
+      );
+    }
+    return buckets.map((b, i) => {
       const row: Record<string, number | string> = { t: fmt.format(b.t) };
-      for (const c of CATEGORIES) row[c.label] = b.types?.[c.key] ?? 0;
+      for (const c of CATEGORIES) row[c.label] = smoothed[c.label]?.[i] ?? 0;
       return row;
     });
   }, [buckets]);
@@ -253,9 +267,15 @@ export default function PulseChart({
             categories={categories}
             colors={colors}
             type="stacked"
+            curveType="monotone"
             showYAxis={!compact}
             startEndOnly={compact}
-            valueFormatter={(v) => String(v)}
+            // Smoothed values are a rolling average, so they're rarely whole
+            // numbers — but these are counts (tool calls, prompts, …), so a
+            // fractional tooltip ("9.3 tools") reads as broken rather than
+            // precise. Round for display; the underlying smoothing (and the
+            // plotted line shape) is untouched.
+            valueFormatter={(v) => String(Math.round(v))}
             yAxisWidth={40}
             // Smaller + monospaced X-axis ticks. The date+time label
             // (e.g. `05/29 14:49`) reads cleaner in mono since the digit
@@ -335,6 +355,21 @@ export default function PulseChart({
       </div>
     </section>
   );
+}
+
+/** Centered rolling average, edge-clipped (no zero-padding) so the first/last
+ *  points aren't pulled down toward an out-of-range neighbor. `windowSize`
+ *  should be odd; an even value rounds down via the same floor(window/2)
+ *  half-width on both sides. */
+function smoothSeries(values: number[], windowSize: number): number[] {
+  const half = Math.floor(windowSize / 2);
+  return values.map((_, i) => {
+    const start = Math.max(0, i - half);
+    const end = Math.min(values.length, i + half + 1);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += values[j] ?? 0;
+    return sum / (end - start);
+  });
 }
 
 function fmtTokens(n: number): string {
