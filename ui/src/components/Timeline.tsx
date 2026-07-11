@@ -22,6 +22,7 @@ import { useTier } from "../hooks/useTier.ts";
 import { PREMIUM_PRICE } from "../lib/license.ts";
 import { openCheckout } from "../lib/buy.ts";
 import { SkillFiredLottie } from "./SkillFiredLottie.tsx";
+import AgentLanes, { type AgentRow } from "./AgentLanes.tsx";
 
 /* ───── US-102: Free-tier gating constants ─────────────────────────────────
  * The Free tier sees:
@@ -753,6 +754,10 @@ export default function Timeline({
 }: TimelineProps) {
   const tier = useTier();
   const isFree = tier.tier === "free";
+  // US-005: toolbar toggle between the classic chronological feed and the
+  // Agent Lanes waterfall (US-004). Both read from the same `rows` state —
+  // no separate fetch.
+  const [view, setView] = useState<"classic" | "lanes">("classic");
   const [rows, setRows] = useState<TimelineRow[]>([]);
   // Row keys that came from the initial backfill — used to tell SkillFiredLottie
   // not to animate historical rows on the first render. Populated atomically
@@ -958,6 +963,14 @@ export default function Timeline({
     return map;
   }, [rows]);
 
+  // US-005: Agent Lanes reads the same kind:"agent" rows already delivered
+  // through readTimeline() (US-003) — no separate fetch, no filtering by the
+  // classic feed's build-row aging or filter chips.
+  const agentRows = useMemo(
+    () => rows.filter((r): r is AgentRow => r.kind === "agent"),
+    [rows],
+  );
+
   // Apply filter-chip predicate on top of the fresh (aged-out) set. Empty set = "All".
   const visibleRows = useMemo(() => {
     if (filters.size === 0) return freshRows;
@@ -1144,6 +1157,17 @@ export default function Timeline({
               onClick={() => toggleFilter("build")}
             />
           )}
+          {/* US-005: Agent Lanes toggle — swaps the panel body between the
+              classic feed and the AgentLanes waterfall. Always visible (it's
+              a view switch, not a filter bucket) — Free-tier sees it but
+              selecting it shows a locked/blurred preview instead of hiding
+              the toggle outright. */}
+          <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
+          <FilterChip
+            label="Agent Lanes"
+            active={view === "lanes"}
+            onClick={() => setView((v) => (v === "lanes" ? "classic" : "lanes"))}
+          />
         </div>
       </div>
 
@@ -1279,6 +1303,57 @@ export default function Timeline({
           </button>
         </div>
       </div>
+      {/* US-005: Agent Lanes overlay — swaps the panel body by covering the
+          classic feed (kept mounted underneath) rather than unmounting it,
+          so switching back doesn't re-run the backfill/scroll effects above.
+          Free tier reuses the exact blur + centered-card + Upgrade pattern
+          from the Timeline's own row-gate and PulseChart's wall — no third,
+          novel gating pattern. */}
+      {view === "lanes" && (
+        <div className="absolute inset-0 z-30 bg-card">
+          {isFree ? (
+            <div className="relative h-full">
+              <div
+                aria-hidden
+                className="pointer-events-none h-full select-none opacity-70 [filter:blur(7px)]"
+              >
+                <AgentLanes rows={agentRows} />
+              </div>
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
+                <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border bg-card/95 px-6 py-5 text-center shadow-xl backdrop-blur-md">
+                  <div className="relative">
+                    <img
+                      src={conanIcon}
+                      alt="Conan"
+                      className="size-10 rounded-md"
+                    />
+                    <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full border border-border bg-card shadow-sm">
+                      <Lock className="size-3 text-muted-foreground" />
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <div className="text-[13px] font-semibold leading-tight text-foreground">
+                      Unlock Agent Lanes
+                    </div>
+                    <div className="text-[11px] leading-tight text-muted-foreground">
+                      Conan Premium · {PREMIUM_PRICE} · lifetime
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void openCheckout()}
+                    className="rounded-md bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  >
+                    Upgrade
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <AgentLanes rows={agentRows} />
+          )}
+        </div>
+      )}
       </div>
     </div>
   );

@@ -90,8 +90,8 @@
         "Verify in browser using automate-browser skill: as a Free-tier session (no license JWT, matching how the existing theme-gating and Pulse-gating stories were verified in this codebase), confirm the toggle is visible but the Agent Lanes view is locked with an upgrade nudge; note in this story's notes whether a Premium fixture (or JWT) was available to also verify the unlocked state, or whether that's left to US-006"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Suggested skills: automate-browser"
+      "passes": true,
+      "notes": "Suggested skills: automate-browser. Verified Free-tier gating on a throwaway gateway+UI stack (:3798/:5199, isolated CONAN_DATA_DIR, never touched the live :3747/:5173 dogfood instance) via automate-browser: the Agent Lanes toggle is visible in the Timeline toolbar and clicking it (with no license configured, so useTier() resolves to \"free\") shows the blurred waterfall preview under a centered \"Unlock Agent Lanes\" card (Conan icon + lock badge, \"Conan Premium · $29 · lifetime\", Upgrade button) — matching Timeline's own free-stub / PulseChart's blur-then-upgrade-wall pattern, no third novel gating pattern. No Premium fixture/JWT was available in this pass, so the unlocked-view check is left to US-006."
     },
     {
       "id": "US-006",
