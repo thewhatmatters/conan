@@ -1,112 +1,87 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-1-0-2-correlation",
-  "description": "Conan 1.0.2 — marker-independent pty↔session correlation (Claude Code 2.1.173 stopped writing ~/.claude/sessions markers, killing the Timeline, both ↻ refresh CTAs, the Compact bar, and passive /usage capture) plus /usage probe hardening and Sonnet-window capture.",
-  "generatedAt": "2026-06-11",
-  "sourcePrd": "prd-conan-1-0-2-correlation.md",
+  "branchName": "loop/usage-oauth-endpoint",
+  "description": "Replace the throwaway-pty /usage scrape with a direct, passive HTTP call to Anthropic's OAuth usage endpoint — same data, no pty, no billed probe, no 5-minute TTL wait.",
+  "generatedAt": "2026-07-10",
+  "sourcePrd": "prd-usage-oauth-endpoint.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Hook reports the live claude pid on every event",
-      "description": "As the gateway, I need each hook event to carry the pid of the claude process that fired it, so sessions can be correlated to ptys without Claude Code's marker files.",
+      "title": "Read the Claude Code OAuth token from macOS Keychain",
+      "description": "As the gateway, I need the same OAuth access token Claude Code itself already holds locally, so I can call Anthropic's usage endpoint without any new auth flow.",
       "acceptanceCriteria": [
-        "scripts/hooks/send-event.mjs determines the nearest ancestor process named 'claude' (walk the ppid chain via ps; do NOT assume a fixed depth) and includes it as claudePid in the event payload",
-        "When no claude ancestor is found, claudePid is omitted (payload shape otherwise unchanged — existing consumers unaffected)",
-        "Manual check: run the hook script as a child of a live claude session (or a mock ancestor named claude) and confirm the POSTed JSON contains the right claudePid",
+        "New module src/usage/oauthUsage.ts exports readOAuthToken(): reads the macOS Keychain entry 'Claude Code-credentials' via `security find-generic-password -s \"Claude Code-credentials\" -w`, parses the JSON, and returns claudeAiOauth.accessToken",
+        "Returns null (never throws) when the Keychain entry is missing, the output isn't valid JSON, or there is no claudeAiOauth.accessToken field (e.g. an entry containing only mcpOAuth state) — this is an expected clean-fallback case, not an error",
+        "The raw token is never passed to console.log/console.error or any other logging call anywhere in the function — trace every code path that touches the token string",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "The hook runs under a shell layer spawned by claude — the ppid walk must search upward by process name, not depth. Keep the script dependency-free (plain node, ps -axo pid=,ppid=,comm=)."
+      "notes": ""
     },
     {
       "id": "US-002",
-      "title": "Gateway persists claude_pid per session",
-      "description": "As the gateway, I want to store the hook-reported claude pid on the session row, so correlation can match pty descendants against known live session pids.",
+      "title": "Fetch usage data from Anthropic's OAuth usage endpoint",
+      "description": "As the gateway, I want to call the OAuth usage endpoint with the token from US-001, so I can get real-time rate-limit data without spawning a pty.",
       "acceptanceCriteria": [
-        "session table gains a nullable claude_pid INTEGER column via idempotent ALTER on boot (existing DBs upgrade cleanly; fresh DBs include it in CREATE)",
-        "POST /api/claude/events accepts an optional claudePid field and updates session.claude_pid for that session_id",
-        "Events without claudePid leave the existing claude_pid value untouched",
+        "src/usage/oauthUsage.ts exports fetchOAuthUsage(token): performs GET https://api.anthropic.com/api/oauth/usage with headers Authorization: Bearer <token> and anthropic-beta: oauth-2025-04-20",
+        "On a 200 response, returns the parsed JSON body",
+        "On any non-200 response (401/403/404/etc), throws (or returns a clearly-typed failure) rather than returning a fabricated/empty success value — callers must be able to distinguish success from failure",
+        "The token is never logged in this function either (same discipline as US-001)",
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "DB init lives in src/db/. Follow the existing idempotent-init pattern (the 1.0.1 loop's session columns are precedent)."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Marker-independent correlation fallback in correlate.ts",
-      "description": "As a Conan user, I want my terminal correlated to its Claude session even though Claude Code 2.1.173 no longer writes ~/.claude/sessions/<pid>.json, so the Timeline and live-pty features work again.",
+      "title": "Parse the OAuth usage response into Conan's existing PlanUtilization shape",
+      "description": "As the gateway, I want the OAuth response normalized into the same PlanUtilization shape the pty-probe path already produces, so the UI needs zero changes.",
       "acceptanceCriteria": [
-        "correlateClaudeSession keeps the marker path as primary, then falls back to matching the pty's descendant pids (existing ps walk) against session.claude_pid values of recent sessions from the DB, then the existing cwd+recency heuristic stays as last resort",
-        "With ~/.claude/sessions empty and a live hooked claude running in a Conan terminal, GET /api/terminals returns a non-null sessionId for that terminal",
-        "GET /api/claude/sessions/:id/widgets returns hasLivePty: true for that session",
-        "Two terminals in the same cwd with two live sessions correlate to their own sessions (pid match wins over cwd heuristic)",
+        "src/usage/oauthUsage.ts exports parseOAuthUsage(json): returns a PlanUtilization object matching the existing shape in src/usage/probe.ts (fiveHour, sevenDay, sevenDaySonnet: UsageWindow | null; status: 'ok'|'warning'|'limit'; probedAt: number)",
+        "Prefers the response's limits[] array (kind/group/percent/resets_at) as the source of truth over the named five_hour/seven_day/seven_day_sonnet top-level fields, per the spike's finding that named fields can be null while limits[] carries the data",
+        "Maps limits[] entries to window slots by kind/group: a 'session'-kind entry -> fiveHour, a 'weekly_all'-kind entry -> sevenDay, a weekly entry scoped to a Sonnet model -> sevenDaySonnet",
+        "Each mapped window's utilizationPct comes from the entry's percent, and resetAt is the entry's resets_at ISO string parsed to epoch ms (null when resets_at is null)",
+        "A missing or null window in the response (e.g. seven_day_sonnet: null) maps to a null UsageWindow slot, never a synthesized zero-value window",
+        "status is derived with the same ok < 80% <= warning < 100% <= limit thresholds the existing probe.ts logic uses",
+        "Add a unit test using the sample JSON response documented in prd-usage-oauth-endpoint.md's Data model section, asserting the parsed PlanUtilization matches expectations including the null seven_day_sonnet/seven_day_opus case",
         "Typecheck passes",
-        "Verify in browser using automate-browser skill: Timeline panel shows hook events for the live terminal, and the ↻ /context and ↻ /usage buttons are visible"
+        "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Suggested skills: automate-browser. ⚠ Dogfooding footgun: this story edits src/terminal/* — the loop must run OUTSIDE the Conan dock (npm start, never tsx watch from an in-dock session). DB access from correlate.ts should go through a thin injected lookup to keep the function testable."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Regression guard: surface uncorrelated-session health signal",
-      "description": "As a Conan developer, I want a visible signal when a running session has no correlated pty, so the next silent Claude Code behavior change is caught in QA instead of by users.",
+      "title": "Wire the OAuth path into GET /api/claude/usage as primary source with pty-probe fallback",
+      "description": "As a user, I want the Usage HUD tab to show fresh rate-limit data automatically, without clicking refresh or spawning a pty, while still working exactly as today if the OAuth path can't be used.",
       "acceptanceCriteria": [
-        "Gateway tracks when a session with status 'running' and a live Conan terminal has had no pty correlation for more than 60 seconds",
-        "The condition is exposed as a field on an existing API payload (e.g. correlationDegraded on GET /api/terminals or /api/health) and logged once per occurrence (no log spam)",
-        "Field is false/absent in the healthy case",
+        "A background poller (module-level interval in src/usage/oauthUsage.ts) periodically calls readOAuthToken() -> fetchOAuthUsage() -> parseOAuthUsage() and keeps the latest successful PlanUtilization in an in-memory cache, exposed via an exported getter (e.g. getOAuthPlanUtilization())",
+        "This entire OAuth path only runs when process.platform === 'darwin'; on any other platform the poller never starts and GET /api/claude/usage behaves exactly as it does today (pty-probe path only, unchanged)",
+        "On macOS, GET /api/claude/usage (src/gateway/index.ts:838) prefers a fresh OAuth-sourced PlanUtilization over the existing getCachedPlanUtilization()/pty-probe result when available",
+        "If readOAuthToken() returns null, fetchOAuthUsage() throws/fails, or parseOAuthUsage() can't produce at least one non-null window, GET /api/claude/usage falls back to the existing getCachedPlanUtilization()/maybeProbe() pty-probe path completely unchanged from its current behavior, including the existing CONAN_USAGE_PROBE_TTL_MS throttle applying only to that fallback path",
+        "The response shape of GET /api/claude/usage (the JSON body: planUtilization, liveUsage, usageWindows, probeError, etc.) is unchanged — ui/src/hooks/useUsage.ts and ui/src/components/Widgets.tsx require no changes",
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Keep it cheap — piggyback on the existing reaper/poll cadence rather than a new timer."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-005",
-      "title": "Harden the throwaway /usage probe",
-      "description": "As a Conan user, I want the account-global usage windows to refresh reliably, because on Claude Code 2.1.173 the probe intermittently returns nothing and the HUD goes stale.",
+      "title": "End-to-end verification: OAuth usage path replaces the pty probe on macOS",
+      "description": "As a user, I want to confirm the Usage HUD tab now gets fast, passive data instead of the old click-refresh-and-wait pty scrape, and that everything still works if the OAuth path is unavailable.",
       "acceptanceCriteria": [
-        "On a parse miss the probe logs the raw (ANSI-stripped, truncated) scrape so the failure mode is diagnosable from logs",
-        "Probe retries exactly once on an empty parse (hard cap — each probe spawns a real claude)",
-        "A failed probe surfaces probeError (string) in the GET /api/claude/usage payload instead of silently returning planUtilization: null, and still never clobbers the last good cache",
-        "GET /api/claude/usage?probe=1 returns populated planUtilization on a healthy run (live verification)",
+        "On this macOS dev machine, GET /api/claude/usage returns a planUtilization whose values match a manual /usage TUI check, with no claude pty process spawned during the poll (verify via ps / process listing while the poller runs)",
+        "Simulate a Keychain-read failure (e.g. temporarily stub readOAuthToken to return null) and confirm GET /api/claude/usage falls back to the pty-probe path without crashing the gateway and without any token ever appearing in gateway logs",
+        "Verify in browser using automate-browser skill: the Usage HUD tab renders real 5-hour/7-day/7-day-Sonnet rate-limit windows without the user needing to click the manual refresh button",
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Observed 2026-06-11: probe succeeded at ~10:10 and failed at ~10:24 on the same machine/version — suspect the capture window vs the TUI render timing. src/usage/probe.ts."
-    },
-    {
-      "id": "US-006",
-      "title": "Capture the Sonnet-only week window (incl. 0%)",
-      "description": "As a Conan user, I want the third /usage window (Current week, Sonnet only) to appear in the HUD like it does in the terminal, instead of permanently 'Awaiting capture'.",
-      "acceptanceCriteria": [
-        "The probe/live scrape captures the full three-window /usage frame (the Sonnet window renders last — ensure the capture bound doesn't cut it off)",
-        "Add a parser fixture test from a real Claude Code 2.1.173 /usage frame that includes 'Current week (Sonnet only) 0% used', asserting sevenDaySonnet = {utilizationPct: 0}",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "matchWindow (src/usage/probe.ts:415) already parses '0%used' — the bug is upstream in what the scrape feeds it. Capture the fixture from a real frame, not a hand-typed one."
-    },
-    {
-      "id": "US-007",
-      "title": "End-to-end QA: all correlation-dependent surfaces restored",
-      "description": "As a Conan user, I want everything the marker break killed verified working again in the running app, so 1.0.2 can ship with confidence.",
-      "acceptanceCriteria": [
-        "With ~/.claude/sessions empty and a live hooked claude session: Timeline renders hook rows live (no 'no Claude session yet'), ↻ /context and ↻ /usage buttons visible and functional, and running /usage in the terminal updates the HUD windows with a fresh 'captured 0m ago' hint (passive capture works)",
-        "Build chip 30-min window (1.0.1 US-004) is now eye-testable and behaves per its original criteria",
-        "Compact/handoff action bar arms when context pressure is simulated or hasLivePty is true under pressure",
-        "cd ui && npm run build passes clean",
-        "Typecheck passes",
-        "Verify in browser using automate-browser skill: screenshot the Timeline with live rows and the Usage tab with all three windows populated"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Suggested skills: automate-browser. Integration story — no new code expected; fix regressions found here in place. Remember the stale-sidecar gotcha: gateway/terminal changes need npm run build:sidecar before any tauri:build verification."
+      "passes": false,
+      "notes": "Suggested skills: automate-browser"
     }
   ]
 }
