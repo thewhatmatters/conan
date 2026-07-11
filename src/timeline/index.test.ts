@@ -5,13 +5,28 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTouchedFiles } from "./index.js";
+import { parseTouchedFiles, mapHookEventToRow } from "./index.js";
+import type { EventRow } from "../session/index.js";
 
 /** A persisted-event row as the gateway query hands it to the parser. */
 function row(tool: string, filePath?: string, raw?: string) {
   return {
     tool_name: tool,
     payload: raw ?? JSON.stringify({ tool_input: { file_path: filePath } }),
+  };
+}
+
+/** A persisted hook event row, as mapHookEventToRow consumes it. */
+function hookRow(overrides: Partial<EventRow> & { hook_event_name: string }): EventRow {
+  return {
+    id: 1,
+    session_id: "s1",
+    parent_tool_use_id: null,
+    stream_type: "hook",
+    tool_name: null,
+    payload: null,
+    ts: 1000,
+    ...overrides,
   };
 }
 
@@ -51,4 +66,46 @@ test("skips rows with malformed payloads or no file_path", () => {
   ]);
   assert.deepEqual(edited, ["/p/ok.ts"]);
   assert.deepEqual(read, []);
+});
+
+test("SubagentStop maps to a SUBAGENT row, not the generic EVENT default", () => {
+  const result = mapHookEventToRow(
+    hookRow({
+      hook_event_name: "SubagentStop",
+      payload: JSON.stringify({
+        agent_id: "a1",
+        agent_type: "",
+        agent_transcript_path: "/tmp/transcript.jsonl",
+        last_assistant_message: "Audited the skill and found no issues.",
+        stop_hook_active: false,
+      }),
+    }),
+  );
+  assert.ok(result);
+  assert.equal(result?.kind, "hook");
+  if (result?.kind === "hook") {
+    assert.equal(result.subtype, "SUBAGENT");
+    assert.equal(result.title, "Subagent finished");
+    assert.equal(result.detail, "Audited the skill and found no issues.");
+  }
+});
+
+test("SubagentStop with no last_assistant_message has no detail", () => {
+  const result = mapHookEventToRow(
+    hookRow({
+      hook_event_name: "SubagentStop",
+      payload: JSON.stringify({
+        agent_id: "a1",
+        agent_type: "",
+        agent_transcript_path: "/tmp/transcript.jsonl",
+        last_assistant_message: "",
+        stop_hook_active: false,
+      }),
+    }),
+  );
+  assert.ok(result);
+  if (result?.kind === "hook") {
+    assert.equal(result.subtype, "SUBAGENT");
+    assert.equal(result.detail, undefined);
+  }
 });

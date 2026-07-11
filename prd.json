@@ -1,19 +1,22 @@
 {
   "project": "Conan",
-  "branchName": "loop/usage-oauth-endpoint",
-  "description": "Replace the throwaway-pty /usage scrape with a direct, passive HTTP call to Anthropic's OAuth usage endpoint — same data, no pty, no billed probe, no 5-minute TTL wait.",
-  "generatedAt": "2026-07-10",
-  "sourcePrd": "prd-usage-oauth-endpoint.md",
+  "branchName": "loop/conan-agent-gantt",
+  "description": "A live waterfall/trace view in Conan that visualizes Claude Code subagent spawns as lanes on a time axis — DevTools-network style, not project-management gantt. MVP scope: flat (non-nested) live bars inside the existing per-terminal Timeline split panel, Premium-gated.",
+  "generatedAt": "2026-07-11",
+  "sourcePrd": "prd-conan-agent-gantt.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Read the Claude Code OAuth token from macOS Keychain",
-      "description": "As the gateway, I need the same OAuth access token Claude Code itself already holds locally, so I can call Anthropic's usage endpoint without any new auth flow.",
+      "title": "Give SubagentStop a proper Timeline row instead of a generic EVENT fallthrough",
+      "description": "As a user watching the Timeline, I want a SubagentStop hook to render as a clearly-labeled 'subagent finished' row instead of a generic, unhelpful 'EVENT: SubagentStop' row, so the classic feed isn't noisy even before Agent Lanes exists.",
       "acceptanceCriteria": [
-        "New module src/usage/oauthUsage.ts exports readOAuthToken(): reads the macOS Keychain entry 'Claude Code-credentials' via `security find-generic-password -s \"Claude Code-credentials\" -w`, parses the JSON, and returns claudeAiOauth.accessToken",
-        "Returns null (never throws) when the Keychain entry is missing, the output isn't valid JSON, or there is no claudeAiOauth.accessToken field (e.g. an entry containing only mcpOAuth state) — this is an expected clean-fallback case, not an error",
-        "The raw token is never passed to console.log/console.error or any other logging call anywhere in the function — trace every code path that touches the token string",
-        "Typecheck passes"
+        "mapHookEventToRow (src/timeline/index.ts:219-318) gets a `case \"SubagentStop\":` branch instead of falling through to the generic `default` case at line 301-304",
+        "Verified live payload shape (audited against this machine's real .data/conan.db, 59 SubagentStop rows): fields are `agent_id`, `agent_type` (often an empty string — do not assume it's populated), `agent_transcript_path`, `last_assistant_message`, `stop_hook_active`. There is NO `tool_use_id` field on SubagentStop — do not attempt to pair it against PreToolUse/PostToolUse by tool-use id",
+        "Row title is descriptive (e.g. 'Subagent finished'); when `last_assistant_message` is a non-empty string, surface it truncated (~160 chars, matching the existing `truncate()` helper) as the row's `detail`, same pattern SessionEnd already uses for its `reason` field",
+        "This story does NOT need to touch `parent_tool_use_id` — it is unrelated to this row's classification",
+        "Add a test case to src/timeline/index.test.ts asserting a SubagentStop hook event row maps to the new title/detail shape, not the generic 'event' default",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 1,
       "passes": true,
@@ -21,66 +24,90 @@
     },
     {
       "id": "US-002",
-      "title": "Fetch usage data from Anthropic's OAuth usage endpoint",
-      "description": "As the gateway, I want to call the OAuth usage endpoint with the token from US-001, so I can get real-time rate-limit data without spawning a pty.",
+      "title": "Pair Agent spawn start/end events into bar records (backend)",
+      "description": "As the gateway, I need to derive one bar record per subagent spawn (start time, end time or still-running, duration, token/tool-call totals) from the raw PreToolUse/PostToolUse event history, so the UI has ready-made data to render as a waterfall instead of raw hook rows.",
       "acceptanceCriteria": [
-        "src/usage/oauthUsage.ts exports fetchOAuthUsage(token): performs GET https://api.anthropic.com/api/oauth/usage with headers Authorization: Bearer <token> and anthropic-beta: oauth-2025-04-20",
-        "On a 200 response, returns the parsed JSON body",
-        "On any non-200 response (401/403/404/etc), throws (or returns a clearly-typed failure) rather than returning a fabricated/empty success value — callers must be able to distinguish success from failure",
-        "The token is never logged in this function either (same discipline as US-001)",
-        "Typecheck passes"
+        "IMPORTANT — corrected PRD assumption, verified against live data: the subagent-spawn tool is named `\"Agent\"` in this environment's hook payloads, NOT `\"Task\"` as the source PRD assumed. Match on `tool_name === \"Agent\"` (or `payload.tool_name`), not `\"Task\"`",
+        "New function (e.g. `deriveAgentSpawns(sessionId, events)` in src/timeline/index.ts, alongside the existing `readSessionSkillFirings`/`readSessionPlans` derivations) scans a session's PreToolUse/PostToolUse events where tool_name is 'Agent'",
+        "Pairs PreToolUse('Agent')/PostToolUse('Agent') by `payload.tool_use_id` — verified present and matching on BOTH events for every real Agent-tool pair audited in .data/conan.db (this also matches the sibling prd-timeline-rollup.md's independent audit finding). Do NOT implement an order-based fallback for MVP — it's unverified and unnecessary given id-based pairing works reliably",
+        "IMPORTANT — corrected PRD assumption: `parent_tool_use_id` is the column the PRD describes as 'populated on ingest' for subagent nesting, but a live audit found it is NEVER populated (0 of 1000+ real event rows had a non-empty value). Do not build pairing or nesting logic on top of it — MVP's flat (non-nested) bar list sidesteps this entirely since it only needs tool_use_id",
+        "Each bar record: `{ toolUseId, startedAt, endedAt: number | null, agentType (from tool_input.subagent_type), description (from tool_input.description) }`. `endedAt: null` means still running — render as an open-ended bar, this IS the live view",
+        "Bonus finding to use, not deferred to a later depth layer: PostToolUse('Agent')'s payload already carries `tool_response.totalDurationMs`, `tool_response.totalTokens`, `tool_response.totalToolUseCount`, and `tool_response.agentType` — populate `durationMs`, `tokens`, `toolCallCount` on the closed bar record straight from these fields (no sidechain transcript parsing needed for MVP; that stays deferred to the PRD's 'depth layer' follow-up for per-turn sparklines/nested spawns)",
+        "Orphan-bar close-out: a bar whose PreToolUse arrived but whose matching PostToolUse never did (gateway restart, session killed) gets closed out when a `Stop` or `SessionEnd` event arrives for that session — set `endedAt` to that event's `ts` so no bar renders as running forever after the session is clearly over",
+        "Add unit tests in src/timeline/index.test.ts: a matched Pre/Post pair closes correctly with duration/tokens/toolCallCount populated; an unmatched Pre with no Post yields a running (`endedAt: null`) bar; a Stop event closes any still-open bars for that session",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Parse the OAuth usage response into Conan's existing PlanUtilization shape",
-      "description": "As the gateway, I want the OAuth response normalized into the same PlanUtilization shape the pty-probe path already produces, so the UI needs zero changes.",
+      "title": "Correlate agent bars against installed definitions and deliver them as a new Timeline row kind",
+      "description": "As a user hovering an agent bar, I want to see the subagent's real identity (model, tools, description) from its installed definition, and as the UI, I want these bars delivered through the existing Timeline data path so no new endpoint or WS channel is needed.",
       "acceptanceCriteria": [
-        "src/usage/oauthUsage.ts exports parseOAuthUsage(json): returns a PlanUtilization object matching the existing shape in src/usage/probe.ts (fiveHour, sevenDay, sevenDaySonnet: UsageWindow | null; status: 'ok'|'warning'|'limit'; probedAt: number)",
-        "Prefers the response's limits[] array (kind/group/percent/resets_at) as the source of truth over the named five_hour/seven_day/seven_day_sonnet top-level fields, per the spike's finding that named fields can be null while limits[] carries the data",
-        "Maps limits[] entries to window slots by kind/group: a 'session'-kind entry -> fiveHour, a 'weekly_all'-kind entry -> sevenDay, a weekly entry scoped to a Sonnet model -> sevenDaySonnet",
-        "Each mapped window's utilizationPct comes from the entry's percent, and resetAt is the entry's resets_at ISO string parsed to epoch ms (null when resets_at is null)",
-        "A missing or null window in the response (e.g. seven_day_sonnet: null) maps to a null UsageWindow slot, never a synthesized zero-value window",
-        "status is derived with the same ok < 80% <= warning < 100% <= limit thresholds the existing probe.ts logic uses",
-        "Add a unit test using the sample JSON response documented in prd-usage-oauth-endpoint.md's Data model section, asserting the parsed PlanUtilization matches expectations including the null seven_day_sonnet/seven_day_opus case",
+        "New function correlates each bar's `agentType` (from US-002) against `readAgents(cwd)` (src/agents/index.ts:87) by matching `agentType` to `AgentEntry.name` — when there's a match, attach `{ model, tools, definitionDescription }` from that entry; when there's no match (e.g. a `fork` spawn, or a name that doesn't correspond to an installed .md file), leave those fields null rather than fabricating a value",
+        "Add a new `TimelineRow` variant with `kind: \"agent\"` (ui/src/components/Timeline.tsx:83+ union, mirrored in the gateway's row type in src/timeline/index.ts) carrying the full bar shape from US-002 plus the correlation fields from this story",
+        "Wire the derivation into `readTimeline()`/`buildTimeline()` (src/timeline/index.ts:653-694) the same way `skillsFired`/`plans` already are — no new gateway route; `GET /api/claude/timeline` (src/gateway/index.ts) starts returning `kind:\"agent\"` rows alongside the existing hook/skill/plan/build rows for sessions that have any Agent spawns",
+        "Live updates: confirm (write a short note in this story's notes/verification, don't add new broadcast logic) that a session's Agent PreToolUse/PostToolUse events already ride the existing WS `{type:'event'}` broadcast (src/gateway/index.ts:381) unchanged — the UI's job in US-004/US-005 is to re-derive bars client-side or re-fetch on that signal, not to expect a new dedicated broadcast type",
+        "Add unit tests in src/timeline/index.test.ts covering: correlation hit (agentType matches an installed definition fixture), correlation miss (agentType with no matching definition — fields stay null, no throw)",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Wire the OAuth path into GET /api/claude/usage as primary source with pty-probe fallback",
-      "description": "As a user, I want the Usage HUD tab to show fresh rate-limit data automatically, without clicking refresh or spawning a pty, while still working exactly as today if the OAuth path can't be used.",
+      "title": "Build the AgentLanes.tsx waterfall component",
+      "description": "As a user, I want to see subagent spawns as horizontal bars on a time axis — like Chrome DevTools' network panel — so I can tell at a glance how many agents are running, which is the straggler, and how long each took.",
       "acceptanceCriteria": [
-        "A background poller (module-level interval in src/usage/oauthUsage.ts) periodically calls readOAuthToken() -> fetchOAuthUsage() -> parseOAuthUsage() and keeps the latest successful PlanUtilization in an in-memory cache, exposed via an exported getter (e.g. getOAuthPlanUtilization())",
-        "This entire OAuth path only runs when process.platform === 'darwin'; on any other platform the poller never starts and GET /api/claude/usage behaves exactly as it does today (pty-probe path only, unchanged)",
-        "On macOS, GET /api/claude/usage (src/gateway/index.ts:838) prefers a fresh OAuth-sourced PlanUtilization over the existing getCachedPlanUtilization()/pty-probe result when available",
-        "If readOAuthToken() returns null, fetchOAuthUsage() throws/fails, or parseOAuthUsage() can't produce at least one non-null window, GET /api/claude/usage falls back to the existing getCachedPlanUtilization()/maybeProbe() pty-probe path completely unchanged from its current behavior, including the existing CONAN_USAGE_PROBE_TTL_MS throttle applying only to that fallback path",
-        "The response shape of GET /api/claude/usage (the JSON body: planUtilization, liveUsage, usageWindows, probeError, etc.) is unchanged — ui/src/hooks/useUsage.ts and ui/src/components/Widgets.tsx require no changes",
-        "Typecheck passes"
+        "New component `ui/src/components/AgentLanes.tsx` (custom SVG/absolutely-positioned divs — no new npm dependency, matching the PRD's explicit rejection of a recharts-gantt hack and the project's existing hand-rolled-chart precedent)",
+        "Renders one lane/bar per `kind:\"agent\"` row (from US-003): bar position + width from `startedAt`/`endedAt` on a shared time axis; a still-running bar (`endedAt: null`) renders open-ended and visibly distinct (e.g. a subtle pulse/gradient) from a closed bar",
+        "Lane label reads `{agentType} · {description}` (e.g. 'skill-auditor · audit render-html'), truncated consistently with the rest of the Timeline's row-title truncation convention",
+        "Hovering a bar shows a card with: agent type, correlated `model`/`tools` (from US-003, when present — omit those lines gracefully when null instead of showing 'null'), spawn description, duration (`durationMs`, formatted with the existing `fmtDuration`-style helper already used elsewhere in the Usage widget), and token/tool-call totals when the bar is closed",
+        "Semantic theme tokens only (`bg-background`, `text-foreground`, `border-border`, etc.) — no hard-coded `neutral-*`/hex, matching CLAUDE.md conventions; correct in both light and dark",
+        "No new npm dependency added to ui/package.json",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill: render AgentLanes with at least one closed bar and one open-ended (running) bar (a small fixture/mock is fine for this story; live wiring is US-005) and screenshot both states"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "Suggested skills: automate-browser"
     },
     {
       "id": "US-005",
-      "title": "End-to-end verification: OAuth usage path replaces the pty probe on macOS",
-      "description": "As a user, I want to confirm the Usage HUD tab now gets fast, passive data instead of the old click-refresh-and-wait pty scrape, and that everything still works if the OAuth path is unavailable.",
+      "title": "Wire an Agent Lanes toggle into the Timeline split panel, Premium-gated",
+      "description": "As a user, I want to switch the per-terminal Timeline panel between the classic chronological feed and the new Agent Lanes waterfall, so I can drop into whichever view answers my current question — and as a Free-tier user, I want to see the feature exists without it being fully unlocked.",
       "acceptanceCriteria": [
-        "On this macOS dev machine, GET /api/claude/usage returns a planUtilization whose values match a manual /usage TUI check, with no claude pty process spawned during the poll (verify via ps / process listing while the poller runs)",
-        "Simulate a Keychain-read failure (e.g. temporarily stub readOAuthToken to return null) and confirm GET /api/claude/usage falls back to the pty-probe path without crashing the gateway and without any token ever appearing in gateway logs",
-        "Verify in browser using automate-browser skill: the Usage HUD tab renders real 5-hour/7-day/7-day-Sonnet rate-limit windows without the user needing to click the manual refresh button",
-        "Typecheck passes"
+        "Add an 'Agent Lanes' toggle to the Timeline split panel's existing toolbar (ui/src/components/Timeline.tsx, same toolbar that already hosts the hooks/skills/plan/loop/build filter chips around line 1074-1098) — clicking it swaps the panel body between the classic row list and `<AgentLanes>` (US-004), it does not filter/hide rows from the classic list",
+        "`<AgentLanes>` receives the `kind:\"agent\"` rows already present in the same `readTimeline()`-backed data the classic list uses (from US-003) — no separate fetch",
+        "Premium gate via the existing `useTier()` hook (ui/src/hooks/useTier.ts, already imported in Timeline.tsx at line 21): Free-tier users see the toggle exists but selecting it shows a locked/blurred preview + upgrade nudge, consistent with an existing gating pattern already in this codebase (e.g. Timeline's own `free-stub` row treatment, or PulseChart's blur-then-upgrade-wall) — do not silently hide the toggle, and do not build a third, novel gating pattern",
+        "Premium users see the live waterfall with no gate",
+        "Typecheck passes",
+        "Verify in browser using automate-browser skill: as a Free-tier session (no license JWT, matching how the existing theme-gating and Pulse-gating stories were verified in this codebase), confirm the toggle is visible but the Agent Lanes view is locked with an upgrade nudge; note in this story's notes whether a Premium fixture (or JWT) was available to also verify the unlocked state, or whether that's left to US-006"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
+      "notes": "Suggested skills: automate-browser"
+    },
+    {
+      "id": "US-006",
+      "title": "End-to-end verification: a real subagent spawn renders live in Agent Lanes",
+      "description": "As a user, I want to confirm that spawning a real subagent makes a bar appear live in Agent Lanes, grow while the subagent runs, and close out with correct duration/tokens when it finishes — and that the feature behaves honestly when there's no data or the gateway restarts mid-run.",
+      "acceptanceCriteria": [
+        "On this macOS dev machine, spawn a real subagent (e.g. via the Agent tool, or use the throwaway-gateway pattern this project already relies on for verification — ports other than :3747) and confirm via automate-browser: a bar appears in Agent Lanes at/near spawn time, stays open-ended while the subagent runs, and closes with a real duration + token count once it completes, matching what the corresponding PostToolUse('Agent') event's `tool_response` reports",
+        "Confirm a session with zero Agent spawns renders an honest empty/no-agents state in the Agent Lanes view (not a blank crash, not a fabricated bar)",
+        "Confirm the orphan-bar close-out from US-002: simulate (or reason through, if a live repro isn't practical) a session ending (`Stop`/`SessionEnd`) with an unmatched open bar, and confirm it does not render as running forever",
+        "Confirm Free-tier gating (US-005) end-to-end in the browser one more time alongside the live Premium waterfall, so both tiers are checked together in the same pass",
+        "Typecheck passes",
+        "All tests pass (`npm test`)",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
       "notes": "Suggested skills: automate-browser"
     }
   ]

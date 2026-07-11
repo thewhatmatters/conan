@@ -69,6 +69,7 @@ type HookSubtype =
   | "STOP"
   | "NOTIF"
   | "SESSION"
+  | "SUBAGENT"
   | "EVENT";
 
 /** progress.txt activity subtypes — the `run-tasks.sh` runner trail. Renamed
@@ -242,6 +243,16 @@ function mapHookEventToRow(ev: GatewayEvent): TimelineRow | null {
         const reason = typeof payload?.reason === "string" ? payload.reason : "";
         if (reason) detail = reason;
       }
+      break;
+    }
+    case "SubagentStop": {
+      subtype = "SUBAGENT";
+      title = "Subagent finished";
+      const lastMessage =
+        typeof payload?.last_assistant_message === "string"
+          ? payload.last_assistant_message
+          : "";
+      if (lastMessage) detail = truncate(lastMessage, 160);
       break;
     }
     default:
