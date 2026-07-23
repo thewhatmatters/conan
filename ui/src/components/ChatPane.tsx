@@ -48,13 +48,41 @@ const PERMISSIONS: { label: string; value: NonNullable<AgentOpts["permissionMode
   { label: "Plan", value: "plan" },
 ];
 
-export default function ChatPane({ token }: { token: string | null }) {
-  const { items, busy, status, send, interrupt } = useAgentChat(token);
+/** Render-facing thread state, reported up to the sidebar (US-006) so the
+ *  thread list can show status pills for hidden threads. */
+export interface ThreadUiState {
+  status: "connecting" | "open" | "closed";
+  busy: boolean;
+  awaitingApproval: boolean;
+  /** First user prompt (sidebar label). Null until the first turn is sent. */
+  title: string | null;
+}
+
+export default function ChatPane({
+  token,
+  cwd,
+  onState,
+}: {
+  token: string | null;
+  /** Working directory for this thread's session (US-001/US-006); sent with
+   *  every prompt frame — the gateway pins the first one. Null → gateway cwd. */
+  cwd?: string | null;
+  onState?: (s: ThreadUiState) => void;
+}) {
+  const { items, busy, status, pendingApproval, send, interrupt } = useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
   const [permission, setPermission] =
     useState<NonNullable<AgentOpts["permissionMode"]>>("bypassPermissions");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Report thread state up to the sidebar. The parent's setter bails when
+  // nothing changed, so an unstable onState identity can't loop renders.
+  const firstUser = items.find((it) => it.role === "user");
+  const title = firstUser && firstUser.role === "user" ? firstUser.text : null;
+  useEffect(() => {
+    onState?.({ status, busy, awaitingApproval: pendingApproval != null, title });
+  }, [status, busy, pendingApproval, title, onState]);
 
   // Stick to the bottom as the transcript grows.
   useEffect(() => {
@@ -64,7 +92,7 @@ export default function ChatPane({ token }: { token: string | null }) {
 
   const submit = () => {
     if (!text.trim() || busy) return;
-    send(text, { model, permissionMode: permission });
+    send(text, { model, permissionMode: permission, cwd: cwd ?? undefined });
     setText("");
   };
 

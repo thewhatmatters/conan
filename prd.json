@@ -96,7 +96,7 @@
         "Verify in browser using automate-browser skill: create two threads, run a turn in each, switch between them, confirm neither is interrupted and status pills update"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Reuses the mounted-but-hidden pattern from TerminalPane.tsx. Browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack (never :3747); set CONAN_ALLOWED_ORIGINS to include the throwaway UI port. Suggested skills: automate-browser, build-ui."
     },
     {

@@ -18,6 +18,9 @@ import { wsUrl } from "../lib/gateway.ts";
 export interface AgentOpts {
   model?: string;
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions";
+  /** Working directory for the session — the FIRST prompt's cwd fixes it
+   *  (US-001); omitted → the gateway's active cwd. */
+  cwd?: string;
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */

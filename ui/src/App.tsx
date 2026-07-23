@@ -6,7 +6,7 @@ import { useSessions } from "./hooks/useSessions.ts";
 import { useUsage } from "./hooks/useUsage.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
 import TerminalPane from "./components/TerminalPane.tsx";
-import ChatPane from "./components/ChatPane.tsx";
+import ChatSurface from "./components/ChatSurface.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
@@ -301,7 +301,10 @@ export default function App() {
               (surface === "chat" ? "z-10" : "z-0 invisible")
             }
           >
-            <ChatPane token={config?.token ?? null} />
+            <ChatSurface
+              token={config?.token ?? null}
+              defaultCwd={config?.cwd ?? null}
+            />
           </div>
         </div>
       </div>
