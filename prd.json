@@ -12,7 +12,7 @@
       "acceptanceCriteria": [
         "The /ws/agent client prompt frame accepts an optional `cwd` string; the first prompt of a session fixes the launch cwd (extend AgentLaunchOpts in src/agent/driver.ts + attachAgent in src/agent/index.ts)",
         "ClaudeDriver spawns claude in that cwd instead of the boot-time getActiveCwd(); no cwd supplied falls back to getActiveCwd()",
-        "Spawn resolves the binary + PATH via a login shell so a Finder-launched bundle finds claude/node/git — mirror detectClaude() (src/doctor/claude.ts) and terminal resolveCommand()'s -i -l pattern; prefer CONAN_CLAUDE_BIN then the resolved path",
+        "Spawn resolves the binary + PATH via a login shell so a Finder-launched bundle finds claude/node/git \u2014 mirror detectClaude() (src/doctor/claude.ts) and terminal resolveCommand()'s -i -l pattern; prefer CONAN_CLAUDE_BIN then the resolved path",
         "Existing single-turn flow still drives a prompt to a `result` event with no regression",
         "Build the gateway with `npm start` (NOT `npm run dev` tsx-watch, which kills ptys) when editing from an in-dock session; note in commit",
         "Typecheck passes"
@@ -42,7 +42,7 @@
       "description": "As a user, I want Stop to cancel the current turn without killing my conversation, so I don't lose context.",
       "acceptanceCriteria": [
         "The {type:'interrupt'} frame cancels the in-flight turn via the stream-json control channel (control_request) rather than killing the process; the session/process survives and accepts the next prompt",
-        "If the control-channel interrupt is not supported by the installed claude, fall back to the current kill behavior BUT surface it honestly (an `exit`/notice) — do not silently pretend the session survived",
+        "If the control-channel interrupt is not supported by the installed claude, fall back to the current kill behavior BUT surface it honestly (an `exit`/notice) \u2014 do not silently pretend the session survived",
         "After a graceful interrupt, a follow-up prompt in the same session continues the conversation",
         "Typecheck passes"
       ],
@@ -55,7 +55,7 @@
       "title": "Interactive tool-approval round-trip in the driver + WS (Supervised mode)",
       "description": "As a user with no terminal fallback, I want to approve/deny each tool call in Supervised mode, so the agent can't run destructive tools unattended.",
       "acceptanceCriteria": [
-        "EARLY SPIKE: determine the CLI subscription-path mechanism for interactive permission — a stdin permission control request vs a `--permission-prompt-tool` MCP shim — and document the choice in the commit. MUST keep subscription auth (claude -p), never ANTHROPIC_API_KEY (sk-ant-oat* is blocked, CLAUDE.md gotcha)",
+        "EARLY SPIKE: determine the CLI subscription-path mechanism for interactive permission \u2014 a stdin permission control request vs a `--permission-prompt-tool` MCP shim \u2014 and document the choice in the commit. MUST keep subscription auth (claude -p), never ANTHROPIC_API_KEY (sk-ant-oat* is blocked, CLAUDE.md gotcha)",
         "In Supervised (`--permission-mode default` or the chosen equivalent), a tool needing approval emits a `permission-request` AgentEvent {id, kind (command|file-read|file-change), summary, detail}",
         "The driver accepts a {type:'permission-response', id, decision} frame with decision in accept | acceptForSession | decline | cancel; acceptForSession auto-approves that tool kind for the rest of the session",
         "The turn blocks on the pending request and resumes on the response; decline continues the turn without the tool; cancel ends the turn (session survives)",
@@ -64,7 +64,7 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Backend — the riskiest story; sequenced early on purpose (foundational for Supervised default). Suggested skills: none."
+      "notes": "Backend \u2014 the riskiest story; sequenced early on purpose (foundational for Supervised default). Suggested skills: none."
     },
     {
       "id": "US-005",
@@ -83,7 +83,7 @@
     },
     {
       "id": "US-006",
-      "title": "Thread sidebar shell — ephemeral list of chat sessions",
+      "title": "Thread sidebar shell \u2014 ephemeral list of chat sessions",
       "description": "As a user, I want a left sidebar of conversations grouped by project, so I can run and switch between multiple chats.",
       "acceptanceCriteria": [
         "A left sidebar lists threads; a New button creates a draft thread; selecting a thread shows it in the main pane; a thread can be closed (ends its /ws/agent session)",
@@ -106,7 +106,7 @@
       "acceptanceCriteria": [
         "The transcript renders user bubbles, assistant prose that appears token-by-token as deltas arrive, and reasoning entries rendered muted and COLLAPSED by default (expandable)",
         "Auto-scroll sticks to the bottom while streaming unless the user has scrolled up",
-        "A per-turn footer shows `Turn complete · $cost · Ns · N steps` (from the result event, as in the spike)",
+        "A per-turn footer shows `Turn complete \u00b7 $cost \u00b7 Ns \u00b7 N steps` (from the result event, as in the spike)",
         "Markdown in assistant text renders (code blocks, lists, inline code)",
         "Typecheck passes",
         "cd ui && npm run build passes",
@@ -134,11 +134,11 @@
     },
     {
       "id": "US-009",
-      "title": "Composer chips — model + permission with Supervised default",
+      "title": "Composer chips \u2014 model + permission with Supervised default",
       "description": "As a user, I want to pick the model and permission mode from the composer, defaulting to a safe mode.",
       "acceptanceCriteria": [
-        "Model chip: Default / Opus / Sonnet / Haiku → maps to --model (alias); locked after the first turn of a thread (stream-json keeps one model per process)",
-        "Permission chip: Plan / Supervised / Accept-edits / Full access → maps to --permission-mode (plan/default/acceptEdits/bypassPermissions); DEFAULT is Supervised",
+        "Model chip: Default / Opus / Sonnet / Haiku \u2192 maps to --model (alias); locked after the first turn of a thread (stream-json keeps one model per process)",
+        "Permission chip: Plan / Supervised / Accept-edits / Full access \u2192 maps to --permission-mode (plan/default/acceptEdits/bypassPermissions); DEFAULT is Supervised",
         "Selecting Full access shows a one-time confirm explaining it runs every tool without prompting; declining reverts",
         "The active permission mode is always visible on the composer (persistent indicator, not only inside the dropdown)",
         "Send button + a Stop control that calls the graceful interrupt (US-003) while a turn runs",
@@ -156,7 +156,7 @@
       "description": "As a user in Supervised mode, I want the composer to become an approval prompt when the agent needs permission, so I can approve or deny in-flow.",
       "acceptanceCriteria": [
         "When a pendingApproval exists (US-005), the composer input area is REPLACED by an approval panel showing the request kind + a summary + the command/file detail in a mono block, with a 1/N counter for multiple pending",
-        "Four actions map to the decisions: Approve once (accept), Always allow this session (acceptForSession), Decline (decline), Cancel turn (cancel) — each calls respondToApproval and restores the composer",
+        "Four actions map to the decisions: Approve once (accept), Always allow this session (acceptForSession), Decline (decline), Cancel turn (cancel) \u2014 each calls respondToApproval and restores the composer",
         "Approval events also read clearly in the transcript (a work entry for requested/resolved)",
         "Typecheck passes",
         "cd ui && npm run build passes",
@@ -185,13 +185,13 @@
     },
     {
       "id": "US-012",
-      "title": "Remove the terminal from the UI — chat is the only surface (V1-CORE CHECKPOINT)",
-      "description": "As the product, I want chat to be Conan's only main surface and the terminal removed from the UI, committing to chat-primary. THIS COMPLETES THE V1-CORE CHECKPOINT — stop and dogfood before the richness stories.",
+      "title": "Remove the terminal from the UI \u2014 chat is the only surface (V1-CORE CHECKPOINT)",
+      "description": "As the product, I want chat to be Conan's only main surface and the terminal removed from the UI, committing to chat-primary. THIS COMPLETES THE V1-CORE CHECKPOINT \u2014 stop and dogfood before the richness stories.",
       "acceptanceCriteria": [
         "App.tsx renders the thread sidebar + chat as the sole main surface; remove the spike's Terminal|Chat SurfaceSwitch and the TerminalPane mount and the HUD dock from the shell",
         "activeSessionId comes from the active thread; the install banner + StatusBar still render",
         "Rename native menu items File > New/Close Terminal to New/Close Chat and repoint their window events to thread actions",
-        "The pty/gateway terminal code (src/terminal/*, terminal_session, correlate.ts) is left in the repo but DORMANT — UI removal only, not a backend deletion",
+        "The pty/gateway terminal code (src/terminal/*, terminal_session, correlate.ts) is left in the repo but DORMANT \u2014 UI removal only, not a backend deletion",
         "No dead imports; no typecheck errors after TerminalPane/Hud are unmounted",
         "Typecheck passes",
         "cd ui && npm run build passes",
@@ -199,42 +199,65 @@
       ],
       "priority": 12,
       "passes": true,
-      "notes": "*** V1-CORE CHECKPOINT: after this story the app is a usable chat-primary cockpit — dogfood here before running the richness stories (US-013+). *** Irreversible-feeling; done after core UI + approval already work. Suggested skills: automate-browser."
+      "notes": "*** V1-CORE CHECKPOINT: after this story the app is a usable chat-primary cockpit \u2014 dogfood here before running the richness stories (US-013+). *** Irreversible-feeling; done after core UI + approval already work. Suggested skills: automate-browser."
     },
     {
-      "id": "US-013",
-      "title": "chat_thread table + migration",
-      "description": "As a developer, I need lightweight thread metadata persisted so the sidebar and resume survive restarts.",
+      "id": "US-025",
+      "title": "Projects in the sidebar \u2014 create a project with a path, threads live inside it",
+      "description": "As a user, I want to add a project by choosing a folder and start chats inside it, so conversations are organized by codebase instead of each thread independently picking a directory.",
       "acceptanceCriteria": [
-        "Add a chat_thread table (session_id PK, cwd, model, title, project, created_at, last_activity) via the idempotent init/migrate path in src/db/index.ts",
-        "No message/turn columns — transcripts are reconstructed from Claude's JSONL, not stored here",
-        "Table creation is idempotent on boot; existing DBs migrate cleanly",
-        "Typecheck passes"
+        "Sidebar header becomes PROJECTS with an add-project button that opens a folder picker (reuse CwdPicker's native Tauri dialog + the in-app /api/fs/list browse fallback); the chosen path becomes a project named after the folder basename",
+        "A Project is a first-class entity {id, path, name}; a Thread BELONGS to a project and inherits the project's path as its cwd \u2014 no per-thread directory divergence (a thread wandering off its project's path would make the grouping lie)",
+        "Each project group is collapsible (chevron + folder icon + name) and lists its threads nested beneath it; a per-project new-chat affordance creates a thread in THAT project",
+        "Each thread row shows a relative timestamp (just now / 1m ago / 15h ago); the active thread is visually highlighted",
+        "The composer's cwd pill reflects the thread's project path and is no longer a per-thread picker (the project owns the path); it remains locked after the first turn as today",
+        "Creating a chat when no project exists either prompts to add one or auto-creates a project from the app's active cwd \u2014 never a thread with an undefined home",
+        "Projects are in-memory for THIS story; persistence lands in US-013/US-014 which follow",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: add a project, create two chats inside it, add a second project, confirm nesting, collapse, timestamps and active highlight"
       ],
       "priority": 13,
       "passes": false,
-      "notes": "Backend/schema. Suggested skills: none."
+      "notes": "Dogfooding-driven IA change (2026-07-23): the sidebar had no way to CREATE a project \u2014 threads each picked their own cwd and 'projects' were merely derived from the basename. Sequenced BEFORE the persistence stories so they persist the project->thread model rather than the derived one. Suggested skills: automate-browser."
     },
     {
-      "id": "US-014",
-      "title": "Persist + list threads in the sidebar",
-      "description": "As a user, I want my conversations to survive reloads and restarts, listed in the sidebar.",
+      "id": "US-013",
+      "title": "project + chat_thread tables + migration",
+      "description": "As a developer, I need projects and lightweight thread metadata persisted so the sidebar, its project grouping, and resume survive restarts.",
       "acceptanceCriteria": [
-        "On a thread's system-init event, upsert a chat_thread row (session_id, cwd, model, project, timestamps); set `title` from the first user prompt (truncated) if empty",
-        "Add a token-gated GET /api/agent/threads returning the rows (newest activity first) and wire the sidebar to list them, grouped by project",
-        "The sidebar survives a UI reload AND a gateway restart (rows read from the DB)",
-        "last_activity updates as turns complete",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: start a thread, reload the app, confirm the thread is still listed"
+        "Add a `project` table (id, path UNIQUE, name, created_at) via the idempotent init/migrate path in src/db/index.ts",
+        "Add a `chat_thread` table (session_id PK, project_id FK -> project.id, cwd, model, title, created_at, last_activity)",
+        "Threads reference their project by id (the US-025 model: the project owns the path); do NOT re-derive the project from a basename string",
+        "No message/turn columns \u2014 transcripts are reconstructed from Claude's JSONL, not stored here",
+        "Table creation is idempotent on boot; existing DBs migrate cleanly",
+        "Typecheck passes"
       ],
       "priority": 14,
       "passes": false,
-      "notes": "Depends on US-013. New GET route needs the CORS reflector + token gate like the others. Suggested skills: automate-browser."
+      "notes": "Backend/schema. Depends on the US-025 project model. Suggested skills: none."
+    },
+    {
+      "id": "US-014",
+      "title": "Persist + list projects and their threads in the sidebar",
+      "description": "As a user, I want my conversations to survive reloads and restarts, listed in the sidebar.",
+      "acceptanceCriteria": [
+        "Adding a project (US-025) upserts a `project` row; on a thread's system-init event, upsert a chat_thread row (session_id, project_id, cwd, model, timestamps) and set `title` from the first user prompt (truncated) if empty",
+        "Add token-gated GET /api/agent/projects (projects with their threads, newest activity first) and wire the sidebar to render from it \u2014 project groups with nested threads, matching the US-025 shape",
+        "Projects AND their threads survive a UI reload and a gateway restart (read from the DB)",
+        "last_activity updates as turns complete, driving the relative timestamps",
+        "Deleting/closing a thread removes its row; a project with no threads still persists",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: add a project, start a thread, reload the app, confirm the project and its thread are still listed"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Depends on US-013 + US-025. New route needs the CORS reflector + token gate like the others. Suggested skills: automate-browser."
     },
     {
       "id": "US-015",
-      "title": "Reopen a thread — reconstruct transcript + resume",
+      "title": "Reopen a thread \u2014 reconstruct transcript + resume",
       "description": "As a user, I want to reopen a past thread, see its history, and continue it.",
       "acceptanceCriteria": [
         "Opening a persisted thread reconstructs its transcript from Claude Code's own JSONL for that session_id (adapter over the existing readers in src/transcript/ and src/timeline/transcriptScan.ts), rendering user/assistant/tool history",
@@ -244,13 +267,13 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: run a thread, reload, reopen it, confirm prior messages render and a follow-up continues the conversation"
       ],
-      "priority": 15,
+      "priority": 16,
       "passes": false,
       "notes": "The heart of T2-lite. Reuses existing JSONL readers; may need a transcript->chat-item adapter. Depends on US-014. Suggested skills: automate-browser."
     },
     {
       "id": "US-016",
-      "title": "Activity spine — rail + prompt ticks + navigation",
+      "title": "Activity spine \u2014 rail + prompt ticks + navigation",
       "description": "As a user, I want a thin rail beside the transcript with a tick per prompt that previews on hover and jumps on click, so I can navigate the conversation.",
       "acceptanceCriteria": [
         "A thin vertical rail renders beside the transcript with one prominent tick per user turn (evenly spaced, not pixel-proportional)",
@@ -261,13 +284,13 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: run several prompts, hover a tick to preview, click to scroll to that turn"
       ],
-      "priority": 16,
+      "priority": 17,
       "passes": false,
       "notes": "The fused Timeline+prompt-nav surface (skills+tools added next). Suggested skills: automate-browser."
     },
     {
       "id": "US-017",
-      "title": "Activity spine — skill + tool ticks with hierarchy + density guard",
+      "title": "Activity spine \u2014 skill + tool ticks with hierarchy + density guard",
       "description": "As a user, I want the spine to also mark skills fired and tools run, grouped under their turn, without clutter.",
       "acceptanceCriteria": [
         "Skill-fired ticks (accent color, medium) render from the session-scoped {type:'skill-fired'} WS rows; hover shows the skill name",
@@ -278,7 +301,7 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: run a turn that fires a skill and several tools, confirm accent skill ticks + faint tool ticks appear grouped under the prompt, and a busy turn caps with +N"
       ],
-      "priority": 17,
+      "priority": 18,
       "passes": false,
       "notes": "Depends on US-016. Skill-fired proven to flow to the session in the spike. Suggested skills: automate-browser."
     },
@@ -294,7 +317,7 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: type @ and part of a filename, confirm matches appear and selecting inserts the path"
       ],
-      "priority": 18,
+      "priority": 19,
       "passes": false,
       "notes": "Builds the overlay framework reused by US-019/US-020. Suggested skills: automate-browser."
     },
@@ -310,7 +333,7 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: type $ and confirm installed skills list and insert"
       ],
-      "priority": 19,
+      "priority": 20,
       "passes": false,
       "notes": "Depends on US-018. Reuses existing /api/claude/skills. Suggested skills: automate-browser."
     },
@@ -327,7 +350,7 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: type / and confirm the available commands list and insert"
       ],
-      "priority": 20,
+      "priority": 21,
       "passes": false,
       "notes": "Depends on US-018. Needs a small commands reader + a headless-safety check. Suggested skills: automate-browser."
     },
@@ -336,14 +359,14 @@
       "title": "Inline diffs in file-edit tool cards",
       "description": "As a user, I want file edits to show their diff inline in the tool card, since there's no separate Diff panel.",
       "acceptanceCriteria": [
-        "Edit / Write / MultiEdit tool cards render a collapsed summary (path · +N -M) and expand to an inline patch with red/green +/- line coloring, derived from the tool input/result",
+        "Edit / Write / MultiEdit tool cards render a collapsed summary (path \u00b7 +N -M) and expand to an inline patch with red/green +/- line coloring, derived from the tool input/result",
         "Large diffs scroll within a bounded height; binary/huge writes degrade to a summary line",
-        "No separate panel or modal — the diff lives in the transcript card",
+        "No separate panel or modal \u2014 the diff lives in the transcript card",
         "Typecheck passes",
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: have the agent edit a file, confirm the card shows +N -M and expands to a colored inline diff"
       ],
-      "priority": 21,
+      "priority": 22,
       "passes": false,
       "notes": "Depends on US-008. Suggested skills: automate-browser."
     },
@@ -358,13 +381,13 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: run a plan-mode prompt, confirm a plan card renders with a proceed affordance"
       ],
-      "priority": 22,
+      "priority": 23,
       "passes": false,
       "notes": "Ties to the permission chip (US-009). Suggested skills: automate-browser."
     },
     {
       "id": "US-023",
-      "title": "Onboarding hard-gate — claude install + global hooks",
+      "title": "Onboarding hard-gate \u2014 claude install + global hooks",
       "description": "As a first-run user, I need Conan to confirm claude is installed and global hooks are set up, since the spine/skills need hooks and there's no terminal fallback.",
       "acceptanceCriteria": [
         "Add a token-gated gateway endpoint reporting global-hook install status (does ~/.claude/settings.json forward to send-event.mjs) and a POST that installs them via installGlobalHooks (src/hooks/install.ts); CORS-reflected + token-gated like the other routes",
@@ -374,14 +397,14 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: simulate missing hooks and confirm the one-click setup path"
       ],
-      "priority": 23,
+      "priority": 24,
       "passes": false,
       "notes": "installGlobalHooks already exists; this exposes it over HTTP + wires onboarding. Suggested skills: automate-browser."
     },
     {
       "id": "US-024",
       "title": "Design + chrome consistency pass",
-      "description": "As a user, I want the chat surface to feel like first-class Conan — consistent chrome, light/dark, sensible states.",
+      "description": "As a user, I want the chat surface to feel like first-class Conan \u2014 consistent chrome, light/dark, sensible states.",
       "acceptanceCriteria": [
         "Every toolbar/header is h-9 shrink-0 matching HudTabHeader; semantic tokens only (no neutral-*/hex), checked against an existing toolbar",
         "Sidebar, transcript, tool cards, inline diffs, plan cards, spine, and composer all render correctly in light AND dark",
@@ -391,7 +414,7 @@
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill and audit-ui: screenshot the chat surface in light + dark and confirm chrome consistency"
       ],
-      "priority": 24,
+      "priority": 25,
       "passes": false,
       "notes": "Final aggregate polish. Suggested skills: audit-ui, automate-browser."
     }
