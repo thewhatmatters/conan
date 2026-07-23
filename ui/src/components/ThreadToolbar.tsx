@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   FolderOpen,
-  GitBranch,
   GitCommitHorizontal,
   GitPullRequestArrow,
   Loader2,
@@ -273,19 +272,10 @@ export default function ThreadToolbar({
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3 text-xs">
-      {/* Left: title + git context */}
+      {/* Left: the chat title (branch lives in the composer context row). */}
       <span className="min-w-0 truncate font-medium text-foreground" title={title ?? "New chat"}>
         {title ?? "New chat"}
       </span>
-      {isRepo && git?.branch && (
-        <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
-          <GitBranch className="size-3.5" />
-          <span className="max-w-40 truncate">
-            {git.branch}
-            {git.dirty ? "*" : ""}
-          </span>
-        </span>
-      )}
 
       <div className="ml-auto flex items-center gap-1">
         {/* Custom actions */}

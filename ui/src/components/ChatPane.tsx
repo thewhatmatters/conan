@@ -232,7 +232,12 @@ export default function ChatPane({
   // Report thread state up to the sidebar. The parent's setter bails when
   // nothing changed, so an unstable onState identity can't loop renders.
   const firstUser = items.find((it) => it.role === "user");
-  const title = firstUser && firstUser.role === "user" ? firstUser.text : null;
+  // Title: the first user prompt — from the live items, or the restored history
+  // for a resumed thread (otherwise the toolbar/sidebar read "New chat" on
+  // reopen). Capped at 256 so a pasted wall of text can't blow out the bar.
+  const titleSource = firstUser ?? history.find((it) => it.role === "user");
+  const title =
+    titleSource && titleSource.role === "user" ? titleSource.text.slice(0, 256) : null;
   useEffect(() => {
     onState?.({
       status,
