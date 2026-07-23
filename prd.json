@@ -1,113 +1,150 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-chat-v1-polish",
-  "description": "Polish pass on the shipped chat-v1 build, from the A–G QA walkthrough. Six substantive UX refinements on top of the existing chat surfaces (trivial fixes already landed by hand). Mostly UI wiring against contracts the chat-v1 loop already built. Source: docs/chat-v1-qa-backlog.md + prd-conan-chat-v1-polish.md. Runs on the loop/conan-chat-v1 git branch; the completed 25-story chat-v1 prd.json is archived under archive/2026-07-23-conan-chat-v1-complete/.",
+  "branchName": "loop/conan-thread-toolbar",
+  "description": "A top toolbar above the chat transcript (t3-code BranchToolbar idea): chat title + Open-in-editor + git Commit/Push/Create-PR + user-definable per-project custom actions. Ports T3-18 + T3-13 + T3-14 from docs/t3-port-backlog.md, scoped to GitHub via gh, macOS editor launch, commit-message dialog, and modal action output. Built on the shipped chat-primary Conan (branch loop/conan-chat-v1). Backend routes are token-gated + CORS-reflected like the existing gateway routes; frontend is a ThreadToolbar above ChatPane's transcript, h-9 + semantic tokens. Source PRD: prd-conan-thread-toolbar.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first — Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart.",
   "generatedAt": "2026-07-23",
-  "sourcePrd": "prd-conan-chat-v1-polish.md",
+  "sourcePrd": "prd-conan-thread-toolbar.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Unlock the permission mode chip — change mode mid-conversation",
-      "description": "As a user, I want to change the permission mode (Supervised / Accept edits / Full access / Plan) at any point in a conversation, not just before the first turn — model and cwd stay locked, but the mode should be live-switchable.",
+      "title": "Backend: editor detection + open-in route",
+      "description": "As a user, I want Conan to detect my installed editors and open a project folder in one, so the toolbar's Open-in works.",
       "acceptanceCriteria": [
-        "The composer's PERMISSION chip is NOT locked after the first turn (the model chip + cwd pill stay locked as today — one process = one model/dir)",
-        "Before the first turn: selecting a mode sets the local launch state (unchanged)",
-        "After the first turn (live session): selecting a mode calls useAgentChat.setPermissionMode(mode) — the existing US-022 control-request switch — and the chip reflects the live `permissionMode` reported by the hook",
-        "The Full-access one-time confirm dialog still gates selecting bypassPermissions, live too; declining reverts",
-        "A failed live switch surfaces honestly (the hook already emits an error item) and the chip stays on the prior mode",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: send a turn, then switch the mode via the chip and confirm the change takes effect (e.g. Supervised→Full access: a subsequent tool no longer raises the approval panel)"
+        "GET /api/editor/detect returns the editors available on PATH — probe `code` (VS Code), `cursor`, `zed`, `idea` (JetBrains), `subl` (Sublime) via a login-shell PATH (mirror src/doctor/claude.ts) — plus always include a `finder` entry (Reveal in Finder)",
+        "POST /api/editor/open {path, editor?} launches the given editor at `path` (its CLI if present, else `open -a <App>`); `finder`/omitted-with-no-preference reveals the folder via `open <dir>`; existence-checked; args passed as an array (no shell injection)",
+        "Both routes token-gated (x-conan-token) + covered by the CORS reflector, like the other gateway routes",
+        "Unavailable editor / bad path returns a clear JSON error (never a hang or raw stack)",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Backend already supports it (setPermissionMode, US-022) — this is UI wiring in ChatPane.tsx. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backend only. t3 evidence: t3code/packages/contracts/src/editor.ts, apps/server/src/process/externalLauncher.ts, apps/web/src/components/chat/OpenInPicker.tsx. Suggested skills: none."
     },
     {
       "id": "US-002",
-      "title": "Auto-open the most recent thread on load",
-      "description": "As a user, when I open the app I want my most recent conversation to reopen automatically instead of landing on 'No open chats' — so persistence feels real rather than looking like everything cleared.",
+      "title": "Backend: git commit + push routes",
+      "description": "As a user, I want to commit and push a project's changes from the toolbar.",
       "acceptanceCriteria": [
-        "On boot, after the persisted projects/threads load (GET /api/agent/projects), if at least one saved thread exists and nothing is open, auto-open (reopen — the US-015 flow) the thread with the newest last_activity",
-        "The auto-opened thread reconstructs its transcript from JSONL and can be continued via --resume, exactly as a manual reopen does",
-        "If NO saved threads exist, keep the current behavior (a fresh draft thread)",
-        "After the user EXPLICITLY closes a thread down to none in a session, show 'No open chats' — do not immediately re-auto-open (only auto-open on a fresh load)",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: with a saved thread present, reload the app and confirm it opens automatically showing restored history (not the empty state)"
+        "POST /api/agent/git/commit {cwd, message} runs `git add -A` then `git commit -m <message>` in cwd; returns {ok, output} or {ok:false, error} with git stderr surfaced honestly",
+        "POST /api/agent/git/push {cwd} runs `git push` in cwd (sets upstream with -u to origin/<branch> when none exists); returns ok/output or a clear error",
+        "Both reject a cwd that isn't inside a git work tree with a clear error; args passed as arrays via execFile (no shell), message is not interpolated into a shell",
+        "Token-gated + CORS-reflected. Reuse the existing GET /api/fs/git for status (do not duplicate it)",
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Frontend in ChatSurface.tsx boot logic; reuses the US-015 reopen path. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backend. t3 evidence: t3code/apps/server/src/git/GitManager.ts, apps/web/src/components/GitActionsControl.tsx. Suggested skills: none."
     },
     {
       "id": "US-003",
-      "title": "In-UI Settings + theme entry point",
-      "description": "As a user, I want a visible way to reach Settings (theme, license) from the chat UI — right now it only opens from the native menu, so themes are unreachable in the browser and buried in the app.",
+      "title": "Backend: create-PR route via gh",
+      "description": "As a user, I want to open a pull request for the pushed branch from the toolbar.",
       "acceptanceCriteria": [
-        "Add a Settings affordance (gear icon) to the sidebar — bottom of the rail, standard chat-app placement — that dispatches the existing `conan:open-settings` window event and opens SettingsView",
-        "Add a direct ⌘, / Ctrl+, keyboard handler at the app level (not only via the native menu) so Settings is reachable without Tauri; must not fire while typing in the composer/inputs",
-        "SettingsView is reachable to the Appearance tab (Light/Dark/Auto theme switch works and reskins the app) AND the License tab",
-        "The gear is reachable in both expanded and collapsed sidebar states (or the keyboard shortcut covers collapsed)",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: click the gear → Settings opens → switch to Dark → the app goes dark"
+        "POST /api/agent/git/pr {cwd, title, body} runs `gh pr create --title <title> --body <body>` in cwd; returns {ok, url} parsed from gh output, or {ok:false, error, reason}",
+        "Degrades honestly: when `gh` is not on PATH, not authenticated (`gh auth status` fails), or the remote is not GitHub, return ok:false with a machine-readable `reason` (gh-missing | gh-unauthed | not-github) so the UI can disable + explain — never hang or fabricate a URL",
+        "Token-gated + CORS-reflected; args as arrays (no shell); title/body never shell-interpolated",
+        "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "SettingsView + useThemes already exist; this adds the missing entry points. The native menu path stays. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backend. GitHub-only via gh CLI (multi-provider is out of scope). t3 evidence: t3code/apps/web/src/components/PullRequestThreadDialog.tsx, apps/server/src/sourceControl/GitHubSourceControlProvider.ts. Suggested skills: none."
     },
     {
       "id": "US-004",
-      "title": "Stronger skill-tick treatment on the activity spine",
-      "description": "As a user, I want a fired skill to stand out on the activity spine — the accent tick works but is easy to miss next to tool ticks; make it more legible without making the rail noisy.",
+      "title": "Backend: per-project custom actions — schema + CRUD + run",
+      "description": "As a user, I want to define runnable scripts per project and execute them, so the toolbar can host custom actions.",
       "acceptanceCriteria": [
-        "In ActivitySpine.tsx, skill ticks get a clearly more distinct treatment than tool ticks (e.g. a larger/filled accent mark or a subtle ring) so a fired skill is legible at a glance",
-        "The prompt > skill > tool visual hierarchy and the +N density guard are preserved — the rail must stay 'graceful, not cluttered' (the F7 property); do NOT make skill ticks so loud they dominate",
-        "Hover still shows `Skill · <name>`; click still jumps to the turn",
-        "Renders correctly in light AND dark",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: a turn that fires a skill shows a clearly distinct skill tick alongside faint tool ticks"
+        "Add a `project_action` table (id TEXT PK, project_id TEXT REFERENCES project(id) ON DELETE CASCADE, name TEXT, command TEXT, created_at INTEGER) via the idempotent schema.sql + migrate() path (mirror the chat_thread last_message migration in src/db/index.ts)",
+        "GET /api/agent/projects/:id/actions lists a project's actions; POST adds {name, command}; DELETE /api/agent/actions/:actionId removes one",
+        "POST /api/agent/actions/:actionId/run executes the action's `command` in its project's cwd (via a shell, since commands are user-authored), capturing stdout+stderr (bounded) + exit code; returns them",
+        "All token-gated + CORS-reflected; a run never blocks indefinitely (bounded timeout, killed on overrun with an honest error)",
+        "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Small, self-contained in ActivitySpine.tsx. Respect F7 (don't reintroduce clutter). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Backend + schema. t3 evidence: t3code/apps/web/src/components/ProjectScriptsControl.tsx, apps/web/src/projectScripts.ts. Suggested skills: none."
     },
     {
       "id": "US-005",
-      "title": "Sidebar sort / group menu",
-      "description": "As a user with several projects and threads, I want to sort and group the sidebar — the ↑↓ header icon should open sort/group options like t3-code.",
+      "title": "UI: thread toolbar shell (title + branch/cwd)",
+      "description": "As a user, I want a slim toolbar above the transcript showing the chat title and project context.",
       "acceptanceCriteria": [
-        "The sidebar header's ↑↓ icon opens a menu with: Sort projects (last activity / created / manual), Sort threads (last activity / created), a Visible-threads count stepper, and Group projects (by repository / by path / keep separate)",
-        "Selections reorder/regroup the sidebar immediately and persist to localStorage across reloads",
-        "Defaults match current behavior: sort by last activity, group by repository",
-        "The Visible-threads count caps how many threads show per project with a 'show more' affordance beyond it",
+        "A new ThreadToolbar.tsx renders pinned above the transcript in ChatPane.tsx, per-thread; h-9 shrink-0, semantic theme tokens only (matches the app's chrome conventions)",
+        "Left: the thread's title (display-only for v1 — 'New chat' placeholder until the first prompt). Also shows the cwd basename + git branch (reuse the per-thread git already used for the composer context row)",
+        "Right: a slot for the action controls (Open-in / git / custom actions land here in US-006..008) — an empty but laid-out region for now",
+        "Renders correctly in light AND dark; does not shift the transcript/composer layout",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: change the project sort and confirm the order updates and survives a reload"
+        "Verify in browser using automate-browser skill: the toolbar appears above the transcript with the title + branch"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Frontend in ChatSurface.tsx (sidebar header + grouping/sort logic). Medium. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Frontend shell that US-006..008 fill. t3 evidence: t3code/apps/web/src/components/BranchToolbar.tsx. Browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack (never :3747); set CONAN_ALLOWED_ORIGINS for the throwaway UI port. Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
-      "title": "Command-palette project picker (Local folder)",
-      "description": "As a user, I want adding a project to feel like a keyboard-navigable command palette (t3-code's Sources sheet), not a raw OS folder dialog.",
+      "title": "UI: Open-in-editor control in the toolbar",
+      "description": "As a user, I want to open the project in my editor from the toolbar.",
       "acceptanceCriteria": [
-        "The add-project flow opens a keyboard-navigable palette: ↑↓ navigate, Enter select, Backspace back (out of the folder browser), Esc close — styled as a 'Sources' sheet",
-        "V1 source is 'Local folder' (browse a folder on disk) — reuse the existing DirBrowser + /api/fs/list; remote sources (Git URL / GitHub) are explicitly OUT of scope (deferred A1-b)",
-        "Recent projects are offered inline in the palette for quick re-add",
-        "Selecting a folder creates the project exactly as today (POST /api/agent/projects) and opens a chat in it",
-        "Fully keyboard-operable end to end; a mouse still works",
+        "An 'Open' dropdown lists the detected editors (GET /api/editor/detect) + 'Reveal in Finder'; selecting one POSTs /api/editor/open for the thread's cwd",
+        "The last-used editor is remembered (localStorage) and offered as the primary click; the dropdown exposes the rest",
+        "Honest empty/disabled state when detection returns only Finder (no editors found)",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: open the picker, keyboard-navigate to Local folder, browse and select a directory, confirm the project is added"
+        "Verify in browser using automate-browser skill: the Open dropdown lists editors and firing it calls the open route"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Frontend; reuses DirBrowser/CwdPicker + overlay patterns. Local-folder only (A1-b remote sources deferred). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-001, US-005. t3 evidence: OpenInPicker.tsx. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-007",
+      "title": "UI: git actions in the toolbar (Commit / Push / Create PR)",
+      "description": "As a user, I want to commit, push, and open a PR from the toolbar.",
+      "acceptanceCriteria": [
+        "A branch + dirty indicator (from GET /api/fs/git). Commit opens a dialog for a message → POST /api/agent/git/commit; Push → POST /api/agent/git/push; Create PR opens a dialog (title, body) → POST /api/agent/git/pr",
+        "Create PR is disabled with an explanatory tooltip when the backend reports gh-missing / gh-unauthed / not-github; a successful PR surfaces its URL (toast with an open-link)",
+        "Every git error surfaces honestly (toast with the git/gh message); controls disable while a request is in flight; the branch/dirty indicator refreshes after commit/push",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: in a real git project, commit + push succeed and update the indicator; PR disabled-state shows when gh is unavailable"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Depends on US-002, US-003, US-005. Reuse the app's existing toast (Toaster). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-008",
+      "title": "UI: custom actions in the toolbar (add + run)",
+      "description": "As a user, I want to define per-project scripts and run them from the toolbar.",
+      "acceptanceCriteria": [
+        "The toolbar renders the project's custom actions (GET .../actions) as buttons; a '+' opens an add-action dialog (name + command) → POST; each action has a delete affordance → DELETE",
+        "Clicking an action POSTs .../run and shows the captured stdout/stderr + exit code in a modal (bounded, scrollable); a running action shows a spinner and disables re-click",
+        "Actions are scoped to the active thread's project and persist across reloads (from the DB)",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: add an action (e.g. `echo hi`), run it, confirm the output modal shows 'hi', reload and confirm the action persists"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Depends on US-004, US-005. t3 evidence: ProjectScriptsControl.tsx. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-009",
+      "title": "Design + chrome consistency + states pass",
+      "description": "As a user, I want the toolbar to feel like first-class Conan — consistent, quiet, correct in light/dark, with sensible empty/error states.",
+      "acceptanceCriteria": [
+        "The toolbar is h-9 shrink-0 matching the app's other secondary bars; semantic tokens only (no neutral-*/hex), checked against an existing toolbar",
+        "All controls render correctly in light AND dark; the toolbar stays quiet (doesn't dominate the thread)",
+        "Sensible states throughout: not-a-git-repo (git actions hidden/disabled), no editors detected (Finder-only), gh unavailable (PR disabled + why), no custom actions (just the + affordance)",
+        "Keyboard reachable; dialogs (commit/PR/add-action) are focus-trapped and Esc-dismissable",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill and audit-ui: screenshot the toolbar in light + dark and confirm chrome consistency + the disabled/empty states"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Final aggregate polish. Suggested skills: audit-ui, automate-browser."
     }
   ]
 }
