@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
+  FilePenLine,
+  FileText,
+  Globe,
   Loader2,
   Lock,
+  Plug,
   Sparkles,
+  Terminal,
   Wrench,
+  type LucideIcon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -331,8 +337,48 @@ function ReasoningEntry({ text }: { text: string }) {
   );
 }
 
+/** Coarse card categories for the icon — command/read/edit/mcp/web + fallback. */
+type ToolCardKind = "command" | "read" | "edit" | "mcp" | "web" | "other";
+
+const TOOL_ICONS: Record<ToolCardKind, LucideIcon> = {
+  command: Terminal,
+  read: FileText,
+  edit: FilePenLine,
+  mcp: Plug,
+  web: Globe,
+  other: Wrench,
+};
+
+function toolCardKind(name: string): ToolCardKind {
+  if (name.startsWith("mcp__")) return "mcp";
+  if (/^(Bash|BashOutput|KillShell)$/.test(name)) return "command";
+  if (/^(Read|Glob|Grep|LS|NotebookRead)$/.test(name)) return "read";
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name)) return "edit";
+  if (/^(WebFetch|WebSearch)$/.test(name)) return "web";
+  return "other";
+}
+
+/** Best-effort one-line summary of a tool's input (the command, file, query…)
+ *  for the collapsed header. Falls back to null → header shows the name only. */
+function toolSummary(input: unknown): string | null {
+  if (typeof input === "string") return input || null;
+  if (input == null || typeof input !== "object") return null;
+  const o = input as Record<string, unknown>;
+  for (const key of ["command", "file_path", "pattern", "url", "query", "path", "description", "prompt"]) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return null;
+}
+
 function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
   const [open, setOpen] = useState(false);
+  const kind = toolCardKind(item.name);
+  const Icon = TOOL_ICONS[kind];
+  // MCP tool ids read noisily (`mcp__server__tool`) — show `server · tool`.
+  const displayName =
+    kind === "mcp" ? item.name.slice(5).replace(/__/g, " · ") : item.name;
+  const summary = toolSummary(item.input);
   const inputStr =
     typeof item.input === "string" ? item.input : JSON.stringify(item.input, null, 2);
   return (
@@ -341,11 +387,16 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
-        <Wrench className="size-3.5 text-muted-foreground" />
-        <span className="font-medium text-foreground">{item.name}</span>
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 font-medium text-foreground">{displayName}</span>
+        {summary && (
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+            {summary}
+          </span>
+        )}
         <span
           className={cn(
-            "ml-auto rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
             item.result == null
               ? "bg-primary/10 text-primary"
               : item.isError
@@ -355,17 +406,27 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
         >
           {item.result == null ? "running" : item.isError ? "error" : "done"}
         </span>
-        <ChevronDown className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div className="space-y-2 border-t border-border px-3 py-2">
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
-            {inputStr}
-          </pre>
-          {item.result != null && (
-            <pre className="max-h-52 overflow-auto whitespace-pre-wrap border-t border-border/60 pt-2 font-mono text-[11px] text-foreground">
-              {item.result.slice(0, 4000)}
+          <div>
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              Input
+            </div>
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
+              {inputStr}
             </pre>
+          </div>
+          {item.result != null && (
+            <div className="border-t border-border/60 pt-2">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                Result{item.result.length > 4000 ? " (truncated)" : ""}
+              </div>
+              <pre className="max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-foreground">
+                {item.result.slice(0, 4000)}
+              </pre>
+            </div>
           )}
         </div>
       )}

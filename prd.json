@@ -129,7 +129,7 @@
         "Verify in browser using automate-browser skill: run a prompt that uses Bash + Read, confirm each renders a card with input and result"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Refines the spike's ToolCard. Inline diffs for Edit/Write come later (US-021). Suggested skills: automate-browser."
     },
     {
