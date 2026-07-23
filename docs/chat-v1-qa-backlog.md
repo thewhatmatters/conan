@@ -103,3 +103,11 @@ dark). G2/G3/G4 not testable in the browser dev context.
 | G5-a | **Theme/Settings unreachable in the chat UI.** Settings opens ONLY via the native menu (Conan ▸ Settings) — no in-UI affordance, no direct ⌘, handler. In the browser it's completely unreachable; even in Tauri it's buried with no visible entry now the HUD is gone. Settings also holds the **License tab**, so the whole Premium surface is hard to reach. Fix: add an in-UI entry point — a gear at the bottom of the sidebar (standard chat-app pattern) opening Settings ▸ Appearance/License. | S–M | backlog |
 | G3 | Onboarding gate (install + hooks) — untested (first-run only). Can stub the missing-hooks state to verify. | — | pending |
 | G4 | Native File menu (New/Close Chat) — **can't verify without the native build** → H pile. | — | H |
+
+---
+
+## Post-polish design (queued 2026-07-23, build AFTER the polish loop)
+
+| ID | Item | Size | Status |
+|----|------|------|--------|
+| PD-1 | **Richer thread rows** — restyle each chat row in the sidebar like the reference: a **status icon (left)** · **title** (the summarized chat title) + a one-line **description** (last prompt or response, muted) · a **status badge / timestamp (right)**. Theme colors only (semantic tokens, no hex). Status→token map: Ready = check · `chart-2`; Working = spinner · `primary`; Awaiting approval = alert · amber/`destructive`; Idle = dot · muted; add a Failed/error state when a turn errors. **Description needs a data source**: either derive the last message from the reconstructed JSONL transcript, or persist a `last_message` preview on `chat_thread` at turn end (cheaper to render). Sequence AFTER US-002 (auto-open), US-003 (settings gear), US-005 (sort/group) since those reshape the same sidebar — building PD-1 first would be reworked. | M | backlog |
