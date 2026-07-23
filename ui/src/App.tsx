@@ -7,6 +7,7 @@ import ChatSurface from "./components/ChatSurface.tsx";
 import InstallBanner from "./components/InstallBanner.tsx";
 import { useConfig } from "./hooks/useConfig.ts";
 import { useDoctor } from "./hooks/useDoctor.ts";
+import { useGlobalHooks } from "./hooks/useGlobalHooks.ts";
 import { useTier } from "./hooks/useTier.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
@@ -69,6 +70,9 @@ export default function App() {
   // Drives the install banner above the chat surface + the Settings ▸ Status
   // line. Backend caches 10min so this is cheap.
   const doctor = useDoctor(config?.token ?? null);
+  // US-023: global-hook install status + one-click installer for the
+  // onboarding hard-gate — the spine/skills need hooks, no terminal fallback.
+  const globalHooks = useGlobalHooks(config?.token ?? null);
   // US-101: Premium tier hook — boots once when the token arrives, then every
   // gated surface reads `useTier()` to flip Free ↔ Premium. Idempotent.
   useTier(config?.token ?? null);
@@ -174,7 +178,7 @@ export default function App() {
         buyUrl={config?.buyUrl ?? null}
       />
       <UpdateBanner />
-      <Onboarding doctor={doctor} />
+      <Onboarding doctor={doctor} hooks={globalHooks} />
       <WhatsNew />
     </div>
   );

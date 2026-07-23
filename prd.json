@@ -398,7 +398,7 @@
         "Verify in browser using automate-browser skill: simulate missing hooks and confirm the one-click setup path"
       ],
       "priority": 24,
-      "passes": false,
+      "passes": true,
       "notes": "installGlobalHooks already exists; this exposes it over HTTP + wires onboarding. Suggested skills: automate-browser."
     },
     {

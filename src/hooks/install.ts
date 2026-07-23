@@ -164,6 +164,32 @@ export interface InstallResult {
   command: string;
 }
 
+export interface HooksStatus {
+  path: string;
+  /** True iff EVERY forwarded event already routes to send-event.mjs. */
+  installed: boolean;
+  /** Events with no Conan forwarder yet (what an install would add). */
+  missing: string[];
+  events: readonly string[];
+  command: string;
+}
+
+/**
+ * Report whether the global hooks are wired, without writing anything.
+ * A dry-run of the merge: whatever it *would* add is what's missing.
+ */
+export function globalHooksStatus(): HooksStatus {
+  const file = globalSettingsPath();
+  const { changed, added } = mergeGlobalHooks(readSettings(file));
+  return {
+    path: file,
+    installed: !changed,
+    missing: added,
+    events: CONAN_HOOK_EVENTS,
+    command: conanHookCommand(),
+  };
+}
+
 /**
  * Install (idempotently) the global hooks into ~/.claude/settings.json. Backs
  * up an existing file once before the first mutation, merges, and writes.

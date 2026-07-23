@@ -62,6 +62,7 @@ import {
   setRadio,
 } from "../radio/index.js";
 import { detectClaude } from "../doctor/claude.js";
+import { globalHooksStatus, installGlobalHooks } from "../hooks/install.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 import { attachAgent, closeAllAgents } from "../agent/index.js";
@@ -1055,6 +1056,30 @@ app.post("/api/claude/mcp/:name/reconnect", async (req, res) => {
 app.get("/api/claude/doctor", async (req, res) => {
   if (!authed(req, res)) return;
   res.json(await detectClaude());
+});
+
+// Global-hook status (US-023). Reports whether ~/.claude/settings.json (or
+// CONAN_GLOBAL_SETTINGS) forwards every observed lifecycle event to Conan's
+// send-event.mjs — the onboarding hard-gate reads this, since the activity
+// spine/skills need hooks and the chat-primary shell has no terminal fallback.
+// Pure read (dry-run merge), token-gated like the rest of the control plane.
+app.get("/api/claude/hooks", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(globalHooksStatus());
+});
+
+// One-click "Set up observability" (US-023): idempotently merges Conan's
+// forwarder into the user-level settings via installGlobalHooks (backs up the
+// file once, preserves foreign hooks/keys). Token-gated — it writes to the
+// user's home directory.
+app.post("/api/claude/hooks/install", (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const result = installGlobalHooks();
+    res.json({ ...result, status: globalHooksStatus() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Claude Radio state — read the current { videoId, title } the UI's player is
