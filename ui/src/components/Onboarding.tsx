@@ -39,6 +39,11 @@ export default function Onboarding({
   );
   const acknowledgedEver = read(localStorage, ACK_KEY);
 
+  // Suppressed during dev (Vite dev server) so the welcome/recovery splash
+  // doesn't block iteration — matches WhatsNew's own `import.meta.env.DEV`
+  // gate. The bundled Tauri app (production build) still shows it normally.
+  if (import.meta.env.DEV) return null;
+
   // First run, or Claude Code went missing after a prior acknowledgment.
   const shouldShow =
     !dismissed && (!acknowledgedEver || doctor?.installed === false);

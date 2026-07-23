@@ -6,6 +6,7 @@ import { useSessions } from "./hooks/useSessions.ts";
 import { useUsage } from "./hooks/useUsage.ts";
 import { useTerminals } from "./hooks/useTerminals.ts";
 import TerminalPane from "./components/TerminalPane.tsx";
+import ChatPane from "./components/ChatPane.tsx";
 import Hud from "./components/Hud.tsx";
 import { usePulse } from "./hooks/usePulse.ts";
 import { useSkills } from "./hooks/useSkills.ts";
@@ -29,6 +30,7 @@ import SettingsView from "./components/SettingsView.tsx";
 import UpdateBanner from "./components/UpdateBanner.tsx";
 import Onboarding from "./components/Onboarding.tsx";
 import WhatsNew from "./components/WhatsNew.tsx";
+import { Terminal as TerminalIcon, MessageSquare } from "lucide-react";
 import { apiBase } from "./lib/gateway.ts";
 import { installAppMenu } from "./lib/appMenu.ts";
 import { useNativeNotifications } from "./hooks/useNativeNotifications.ts";
@@ -57,6 +59,11 @@ export default function App() {
   // top, the HUD docked to the bottom (dock="bottom") — instead of the HUD
   // hiding. Wide windows keep the side-by-side right dock.
   const hudBottomDock = windowWidth < HUD_BOTTOM_BREAKPOINT;
+  // Level-2 chat spike: which primary surface fills the main column. Both stay
+  // mounted (TerminalPane MUST — unmounting kills its ptys); the inactive one is
+  // hidden with visibility+z-index, mirroring the terminal tabs' own pattern so
+  // xterm keeps its layout/size and the chat WS/agent process survives a switch.
+  const [surface, setSurface] = useState<"terminal" | "chat">("terminal");
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
   // US-102: the Timeline's Upgrade button dispatches `conan:open-settings`
@@ -259,21 +266,45 @@ export default function App() {
       }
     >
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <TerminalPane
-        token={config?.token ?? null}
-        theme={theme}
-        cwd={lastCwd?.cwd ?? activeSession?.cwd ?? config?.cwd ?? null}
-        git={widgetData?.git ?? null}
-        onActiveTidChange={setActiveTid}
-        tasks={tasks}
-        lastEvent={lastEvent}
-        lastSkillFired={lastSkillFired}
-        lastSkillConsidered={lastSkillConsidered}
-        lastPlan={lastPlan}
-        lastTerminalCwd={lastTerminalCwd}
-        windowWidth={windowWidth}
-        doctor={doctor}
-      />
+      {/* Main column: a Terminal | Chat surface switch (Level-2 spike) above the
+          active surface. Both panes stay mounted (TerminalPane must — ptys die
+          on unmount) and are toggled by visibility, so the HUD stays a sibling
+          to the right/bottom exactly as before. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <SurfaceSwitch value={surface} onChange={setSurface} />
+        <div className="relative min-h-0 flex-1">
+          <div
+            className={
+              "absolute inset-0 flex " +
+              (surface === "terminal" ? "z-10" : "z-0 invisible")
+            }
+          >
+            <TerminalPane
+              token={config?.token ?? null}
+              theme={theme}
+              cwd={lastCwd?.cwd ?? activeSession?.cwd ?? config?.cwd ?? null}
+              git={widgetData?.git ?? null}
+              onActiveTidChange={setActiveTid}
+              tasks={tasks}
+              lastEvent={lastEvent}
+              lastSkillFired={lastSkillFired}
+              lastSkillConsidered={lastSkillConsidered}
+              lastPlan={lastPlan}
+              lastTerminalCwd={lastTerminalCwd}
+              windowWidth={windowWidth}
+              doctor={doctor}
+            />
+          </div>
+          <div
+            className={
+              "absolute inset-0 flex " +
+              (surface === "chat" ? "z-10" : "z-0 invisible")
+            }
+          >
+            <ChatPane token={config?.token ?? null} />
+          </div>
+        </div>
+      </div>
       <Hud
         hidden={!hudOpen}
         dock={hudBottomDock ? "bottom" : "right"}
@@ -304,6 +335,44 @@ export default function App() {
       <UpdateBanner />
       <Onboarding doctor={doctor} />
       <WhatsNew />
+    </div>
+  );
+}
+
+/** Terminal | Chat surface switch (Level-2 spike). A fixed-height (h-9) chrome
+ *  strip per the secondary-toolbar convention, scoped to the main column so the
+ *  HUD chrome is untouched. */
+function SurfaceSwitch({
+  value,
+  onChange,
+}: {
+  value: "terminal" | "chat";
+  onChange: (v: "terminal" | "chat") => void;
+}) {
+  const btn = (v: "terminal" | "chat", label: string) => (
+    <button
+      type="button"
+      onClick={() => onChange(v)}
+      aria-pressed={value === v}
+      className={
+        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors " +
+        (value === v
+          ? "bg-muted font-medium text-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")
+      }
+    >
+      {v === "terminal" ? (
+        <TerminalIcon className="size-3.5" />
+      ) : (
+        <MessageSquare className="size-3.5" />
+      )}
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-card px-2">
+      {btn("terminal", "Terminal")}
+      {btn("chat", "Chat")}
     </div>
   );
 }

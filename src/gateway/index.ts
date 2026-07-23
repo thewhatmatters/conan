@@ -63,6 +63,7 @@ import {
 import { detectClaude } from "../doctor/claude.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
+import { attachAgent, closeAllAgents } from "../agent/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // US-007: optional runtime override for the Buy Premium checkout URL the
@@ -1043,6 +1044,10 @@ const server = http.createServer(app);
 // `noServer` lets us run the auth check before accepting the socket.
 const eventsWss = new WebSocketServer({ noServer: true });
 const terminalWss = new WebSocketServer({ noServer: true });
+// Level-2 chat spike: headless agent sessions (`/ws/agent`), the programmatic
+// peer of the pty-backed `/ws/terminal`. One connection = one `claude -p`
+// stream-json process driving a custom transcript. See src/agent/.
+const agentWss = new WebSocketServer({ noServer: true });
 
 eventsWss.on("connection", (socket) => {
   // ws emits 'error' on a malformed frame / abrupt reset; with no listener Node
@@ -1085,6 +1090,10 @@ eventsWss.on("connection", (socket) => {
 terminalWss.on("connection", (socket, req) => {
   socket.on("error", () => {}); // see eventsWss: never let a bad frame crash us
   attachTerminal(socket, req);
+});
+agentWss.on("connection", (socket, req) => {
+  socket.on("error", () => {}); // see eventsWss: never let a bad frame crash us
+  attachAgent(socket, req);
 });
 
 // Broadcast build-loop progress to all app clients whenever prd.json /
@@ -1165,6 +1174,10 @@ server.on("upgrade", (req, socket, head) => {
     terminalWss.handleUpgrade(req, socket, head, (ws) =>
       terminalWss.emit("connection", ws, req),
     );
+  } else if (pathname === "/ws/agent") {
+    agentWss.handleUpgrade(req, socket, head, (ws) =>
+      agentWss.emit("connection", ws, req),
+    );
   } else {
     socket.destroy();
   }
@@ -1191,9 +1204,11 @@ function shutdown(): void {
   stopReaper();
   stopAllSkillFiredWatchers();
   closeAllTerminals();
+  closeAllAgents();
   server.close();
   eventsWss.close();
   terminalWss.close();
+  agentWss.close();
   closeDb();
   process.exit(0);
 }

@@ -37,3 +37,5 @@ archive/
 HANDOFF.md
 .claude/current-task.txt
 .claude/handoff-archive/
+t3code/
+loop.log
