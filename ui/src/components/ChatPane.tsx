@@ -7,6 +7,8 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAgentChat, type ChatItem, type AgentOpts } from "../hooks/useAgentChat.ts";
 import {
   DropdownMenu,
@@ -75,6 +77,10 @@ export default function ChatPane({
   const [permission, setPermission] =
     useState<NonNullable<AgentOpts["permissionMode"]>>("bypassPermissions");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Whether the view is pinned to the bottom. Scrolling up releases the pin
+  // (so streaming doesn't yank the user back down); scrolling back near the
+  // bottom re-engages it.
+  const pinnedRef = useRef(true);
 
   // Report thread state up to the sidebar. The parent's setter bails when
   // nothing changed, so an unstable onState identity can't loop renders.
@@ -84,10 +90,10 @@ export default function ChatPane({
     onState?.({ status, busy, awaitingApproval: pendingApproval != null, title });
   }, [status, busy, pendingApproval, title, onState]);
 
-  // Stick to the bottom as the transcript grows.
+  // Stick to the bottom as the transcript grows — unless the user scrolled up.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [items, busy]);
 
   const submit = () => {
@@ -102,7 +108,14 @@ export default function ChatPane({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
-      <aside ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <aside
+        ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
           {items.length === 0 ? (
             <EmptyState status={status} />
@@ -229,11 +242,7 @@ function Item({ item }: { item: ChatItem }) {
         </div>
       );
     case "assistant":
-      return (
-        <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-          {item.text}
-        </div>
-      );
+      return <Markdown text={item.text} />;
     case "reasoning":
       return <ReasoningEntry text={item.text} />;
     case "tool":
@@ -263,6 +272,39 @@ function Item({ item }: { item: ChatItem }) {
     default:
       return null;
   }
+}
+
+/** Assistant prose — markdown rendered to React elements (no raw HTML), styled
+ *  through semantic tokens via descendant variants so it inherits the theme.
+ *  Re-parsing the whole text per streamed delta is fine at chat-message sizes. */
+function Markdown({ text }: { text: string }) {
+  return (
+    <div
+      className={cn(
+        "min-w-0 text-sm leading-relaxed text-foreground",
+        "[&_p]:my-1.5 first:[&_p]:mt-0 last:[&_p]:mb-0",
+        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5",
+        "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-base [&_h1]:font-semibold",
+        "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-sm [&_h2]:font-semibold",
+        "[&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-medium",
+        "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs",
+        "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.85em]",
+        "[&_a]:underline [&_a]:underline-offset-2",
+        "[&_blockquote]:my-1.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
+        "[&_hr]:my-3 [&_hr]:border-border",
+        "[&_table]:my-2 [&_table]:text-xs [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
+      )}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 /** Thinking/reasoning entry — muted and collapsed by default so the

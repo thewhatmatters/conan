@@ -113,7 +113,7 @@
         "Verify in browser using automate-browser skill: send a prompt, confirm text streams incrementally and reasoning shows collapsed"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Upgrades the spike's message-level transcript to token-level (US-002/US-005). Suggested skills: automate-browser."
     },
     {
