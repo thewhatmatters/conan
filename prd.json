@@ -1,7 +1,7 @@
 {
   "project": "Conan",
   "branchName": "loop/conan-thread-toolbar",
-  "description": "A top toolbar above the chat transcript (t3-code BranchToolbar idea): chat title + Open-in-editor + git Commit/Push/Create-PR + user-definable per-project custom actions. Ports T3-18 + T3-13 + T3-14 from docs/t3-port-backlog.md, scoped to GitHub via gh, macOS editor launch, commit-message dialog, and modal action output. Built on the shipped chat-primary Conan (branch loop/conan-chat-v1). Backend routes are token-gated + CORS-reflected like the existing gateway routes; frontend is a ThreadToolbar above ChatPane's transcript, h-9 + semantic tokens. Source PRD: prd-conan-thread-toolbar.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first — Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart.",
+  "description": "A top toolbar above the chat transcript (t3-code BranchToolbar idea): chat title + Open-in-editor + git Commit/Push/Create-PR + user-definable per-project custom actions. Ports T3-18 + T3-13 + T3-14 from docs/t3-port-backlog.md, scoped to GitHub via gh, macOS editor launch, commit-message dialog, and modal action output. Built on the shipped chat-primary Conan (branch loop/conan-chat-v1). Backend routes are token-gated + CORS-reflected like the existing gateway routes; frontend is a ThreadToolbar above ChatPane's transcript, h-9 + semantic tokens. Source PRD: prd-conan-thread-toolbar.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first \u2014 Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart.",
   "generatedAt": "2026-07-23",
   "sourcePrd": "prd-conan-thread-toolbar.md",
   "userStories": [
@@ -10,7 +10,7 @@
       "title": "Backend: editor detection + open-in route",
       "description": "As a user, I want Conan to detect my installed editors and open a project folder in one, so the toolbar's Open-in works.",
       "acceptanceCriteria": [
-        "GET /api/editor/detect returns the editors available on PATH — probe `code` (VS Code), `cursor`, `zed`, `idea` (JetBrains), `subl` (Sublime) via a login-shell PATH (mirror src/doctor/claude.ts) — plus always include a `finder` entry (Reveal in Finder)",
+        "GET /api/editor/detect returns the editors available on PATH \u2014 probe `code` (VS Code), `cursor`, `zed`, `idea` (JetBrains), `subl` (Sublime) via a login-shell PATH (mirror src/doctor/claude.ts) \u2014 plus always include a `finder` entry (Reveal in Finder)",
         "POST /api/editor/open {path, editor?} launches the given editor at `path` (its CLI if present, else `open -a <App>`); `finder`/omitted-with-no-preference reveals the folder via `open <dir>`; existence-checked; args passed as an array (no shell injection)",
         "Both routes token-gated (x-conan-token) + covered by the CORS reflector, like the other gateway routes",
         "Unavailable editor / bad path returns a clear JSON error (never a hang or raw stack)",
@@ -41,7 +41,7 @@
       "description": "As a user, I want to open a pull request for the pushed branch from the toolbar.",
       "acceptanceCriteria": [
         "POST /api/agent/git/pr {cwd, title, body} runs `gh pr create --title <title> --body <body>` in cwd; returns {ok, url} parsed from gh output, or {ok:false, error, reason}",
-        "Degrades honestly: when `gh` is not on PATH, not authenticated (`gh auth status` fails), or the remote is not GitHub, return ok:false with a machine-readable `reason` (gh-missing | gh-unauthed | not-github) so the UI can disable + explain — never hang or fabricate a URL",
+        "Degrades honestly: when `gh` is not on PATH, not authenticated (`gh auth status` fails), or the remote is not GitHub, return ok:false with a machine-readable `reason` (gh-missing | gh-unauthed | not-github) so the UI can disable + explain \u2014 never hang or fabricate a URL",
         "Token-gated + CORS-reflected; args as arrays (no shell); title/body never shell-interpolated",
         "Typecheck passes"
       ],
@@ -51,7 +51,7 @@
     },
     {
       "id": "US-004",
-      "title": "Backend: per-project custom actions — schema + CRUD + run",
+      "title": "Backend: per-project custom actions \u2014 schema + CRUD + run",
       "description": "As a user, I want to define runnable scripts per project and execute them, so the toolbar can host custom actions.",
       "acceptanceCriteria": [
         "Add a `project_action` table (id TEXT PK, project_id TEXT REFERENCES project(id) ON DELETE CASCADE, name TEXT, command TEXT, created_at INTEGER) via the idempotent schema.sql + migrate() path (mirror the chat_thread last_message migration in src/db/index.ts)",
@@ -70,15 +70,15 @@
       "description": "As a user, I want a slim toolbar above the transcript showing the chat title and project context.",
       "acceptanceCriteria": [
         "A new ThreadToolbar.tsx renders pinned above the transcript in ChatPane.tsx, per-thread; h-9 shrink-0, semantic theme tokens only (matches the app's chrome conventions)",
-        "Left: the thread's title (display-only for v1 — 'New chat' placeholder until the first prompt). Also shows the cwd basename + git branch (reuse the per-thread git already used for the composer context row)",
-        "Right: a slot for the action controls (Open-in / git / custom actions land here in US-006..008) — an empty but laid-out region for now",
+        "Left: the thread's title (display-only for v1 \u2014 'New chat' placeholder until the first prompt). Also shows the cwd basename + git branch (reuse the per-thread git already used for the composer context row)",
+        "Right: a slot for the action controls (Open-in / git / custom actions land here in US-006..008) \u2014 an empty but laid-out region for now",
         "Renders correctly in light AND dark; does not shift the transcript/composer layout",
         "Typecheck passes",
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill: the toolbar appears above the transcript with the title + branch"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Frontend shell that US-006..008 fill. t3 evidence: t3code/apps/web/src/components/BranchToolbar.tsx. Browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack (never :3747); set CONAN_ALLOWED_ORIGINS for the throwaway UI port. Suggested skills: automate-browser."
     },
     {
@@ -94,7 +94,7 @@
         "Verify in browser using automate-browser skill: the Open dropdown lists editors and firing it calls the open route"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001, US-005. t3 evidence: OpenInPicker.tsx. Suggested skills: automate-browser."
     },
     {
@@ -102,7 +102,7 @@
       "title": "UI: git actions in the toolbar (Commit / Push / Create PR)",
       "description": "As a user, I want to commit, push, and open a PR from the toolbar.",
       "acceptanceCriteria": [
-        "A branch + dirty indicator (from GET /api/fs/git). Commit opens a dialog for a message → POST /api/agent/git/commit; Push → POST /api/agent/git/push; Create PR opens a dialog (title, body) → POST /api/agent/git/pr",
+        "A branch + dirty indicator (from GET /api/fs/git). Commit opens a dialog for a message \u2192 POST /api/agent/git/commit; Push \u2192 POST /api/agent/git/push; Create PR opens a dialog (title, body) \u2192 POST /api/agent/git/pr",
         "Create PR is disabled with an explanatory tooltip when the backend reports gh-missing / gh-unauthed / not-github; a successful PR surfaces its URL (toast with an open-link)",
         "Every git error surfaces honestly (toast with the git/gh message); controls disable while a request is in flight; the branch/dirty indicator refreshes after commit/push",
         "Typecheck passes",
@@ -110,7 +110,7 @@
         "Verify in browser using automate-browser skill: in a real git project, commit + push succeed and update the indicator; PR disabled-state shows when gh is unavailable"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-002, US-003, US-005. Reuse the app's existing toast (Toaster). Suggested skills: automate-browser."
     },
     {
@@ -118,7 +118,7 @@
       "title": "UI: custom actions in the toolbar (add + run)",
       "description": "As a user, I want to define per-project scripts and run them from the toolbar.",
       "acceptanceCriteria": [
-        "The toolbar renders the project's custom actions (GET .../actions) as buttons; a '+' opens an add-action dialog (name + command) → POST; each action has a delete affordance → DELETE",
+        "The toolbar renders the project's custom actions (GET .../actions) as buttons; a '+' opens an add-action dialog (name + command) \u2192 POST; each action has a delete affordance \u2192 DELETE",
         "Clicking an action POSTs .../run and shows the captured stdout/stderr + exit code in a modal (bounded, scrollable); a running action shows a spinner and disables re-click",
         "Actions are scoped to the active thread's project and persist across reloads (from the DB)",
         "Typecheck passes",
@@ -126,13 +126,13 @@
         "Verify in browser using automate-browser skill: add an action (e.g. `echo hi`), run it, confirm the output modal shows 'hi', reload and confirm the action persists"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-004, US-005. t3 evidence: ProjectScriptsControl.tsx. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
       "title": "Design + chrome consistency + states pass",
-      "description": "As a user, I want the toolbar to feel like first-class Conan — consistent, quiet, correct in light/dark, with sensible empty/error states.",
+      "description": "As a user, I want the toolbar to feel like first-class Conan \u2014 consistent, quiet, correct in light/dark, with sensible empty/error states.",
       "acceptanceCriteria": [
         "The toolbar is h-9 shrink-0 matching the app's other secondary bars; semantic tokens only (no neutral-*/hex), checked against an existing toolbar",
         "All controls render correctly in light AND dark; the toolbar stays quiet (doesn't dominate the thread)",
@@ -143,7 +143,7 @@
         "Verify in browser using automate-browser skill and audit-ui: screenshot the toolbar in light + dark and confirm chrome consistency + the disabled/empty states"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Final aggregate polish. Suggested skills: audit-ui, automate-browser."
     }
   ]

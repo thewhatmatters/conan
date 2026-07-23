@@ -55,6 +55,7 @@ import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
+import ThreadToolbar from "./ThreadToolbar.tsx";
 import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
 
 /** One slash command from GET /api/claude/commands (src/commands/index.ts). */
@@ -507,6 +508,12 @@ export default function ChatPane({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <ThreadToolbar
+        token={token}
+        cwd={effectiveCwd}
+        projectId={projectId ?? null}
+        title={title}
+      />
       <div className="flex min-h-0 flex-1">
       {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
       <aside
