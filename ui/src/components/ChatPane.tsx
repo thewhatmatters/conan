@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FilePenLine,
   FileText,
+  FolderOpen,
   GitBranch,
   Globe,
   Loader2,
@@ -45,7 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
-import CwdPicker, { recordRecentCwd } from "./CwdPicker.tsx";
+import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 
 /**
@@ -102,19 +103,13 @@ export interface ThreadUiState {
 export default function ChatPane({
   token,
   cwd,
-  defaultCwd,
-  onCwdChange,
   onState,
 }: {
   token: string | null;
-  /** Working directory explicitly chosen for this thread (US-011 picker);
-   *  null → falls back to `defaultCwd`. The effective cwd is sent with every
-   *  prompt frame — the gateway pins the first one (US-001). */
+  /** The thread's working directory — its PROJECT's path (US-025: the project
+   *  owns the path; threads never diverge from it). Sent with every prompt
+   *  frame — the gateway pins the first one (US-001). */
   cwd?: string | null;
-  /** The app's active cwd from /api/config — the default for new threads. */
-  defaultCwd?: string | null;
-  /** Reports a picker selection up so the sidebar's project grouping follows. */
-  onCwdChange?: (cwd: string) => void;
   onState?: (s: ThreadUiState) => void;
 }) {
   const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
@@ -153,7 +148,7 @@ export default function ChatPane({
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [items, busy]);
 
-  const effectiveCwd = cwd ?? defaultCwd ?? null;
+  const effectiveCwd = cwd ?? null;
   // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
   // on another repo never shows the active thread's branch.
   const git = useDirGit(token, effectiveCwd);
@@ -164,9 +159,6 @@ export default function ChatPane({
 
   const submit = () => {
     if (!text.trim() || busy) return;
-    // The first prompt fixes the session's cwd — record it as a recent so the
-    // picker offers it for future threads (US-011).
-    if (!locked && effectiveCwd) recordRecentCwd(effectiveCwd);
     send(text, { model, permissionMode: permission, cwd: effectiveCwd ?? undefined });
     setText("");
   };
@@ -211,13 +203,24 @@ export default function ChatPane({
             full-width app footer. Left = the working directory (interactive
             picker); then the branch it's on (informational). */}
         <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-1.5">
-          <CwdPicker
-            token={token}
-            value={cwd ?? null}
-            defaultCwd={defaultCwd ?? null}
-            locked={locked}
-            onChange={(c) => onCwdChange?.(c)}
-          />
+          {/* Static directory pill (US-025): the PROJECT owns the path, so
+              this is an indicator, not a picker. Lock appears once the first
+              turn fixes the session's launch cwd, as before. */}
+          <span
+            title={
+              (effectiveCwd ? `${effectiveCwd}\n` : "") +
+              (locked
+                ? "Locked for this session — the project owns the path"
+                : "Project directory")
+            }
+            className="flex min-w-0 cursor-default items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
+          >
+            <FolderOpen className="size-3.5 shrink-0" />
+            <span className="max-w-40 truncate">
+              {effectiveCwd ? basename(effectiveCwd) : "Directory"}
+            </span>
+            {locked && <Lock className="size-3 shrink-0 opacity-60" />}
+          </span>
           {git?.available && git.branch && (
             <span
               title={`${git.branch}${git.dirty ? ` · ${git.dirty} uncommitted` : ""}`}
