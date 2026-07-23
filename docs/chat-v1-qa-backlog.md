@@ -17,7 +17,7 @@ Functional result: **A1–A9 all pass.** Enhancements found:
 | A1-a | **Command-K style project picker.** Replace the plain folder dialog with a keyboard-navigable palette (↑↓ navigate · Enter select · Backspace back · Esc close), matching t3-code's "Sources" sheet. | M | backlog |
 | A1-b | **Remote project sources** — Git URL / GitHub / GitLab / Bitbucket / Azure clone (t3-code's other Sources rows). Real cloning subsystem. | L | defer |
 | A8-a | **Close-thread confirmation** — "Are you sure?" dialog before closing a thread. User: nice-to-have. | S | defer |
-| A9-a | **Hover-to-reveal new-chat icon** on project rows — currently always shown; t3-code only shows it on project hover. | S | backlog |
+| A9-a | Hover-to-reveal new-chat icon on project rows. | S | **done** |
 | A9-b | **Sort / group menu** — the ↑↓ header icon opens: Sort projects (last message / created / manual), Sort threads (last message / created), Visible-threads count, Group by repository / path / keep separate. | M | backlog |
 
 Notes:
@@ -49,7 +49,7 @@ Functional result: **C1–C10 all pass.** Findings:
 | ID | Item | Size | Status |
 |----|------|------|--------|
 | C1-a | **Permission mode should NOT lock after the first turn.** Model + cwd locking is correct (one process = one model/dir), but the mode must be changeable mid-conversation (Supervised → Accept edits → Full access). The backend already supports this — `useAgentChat.setPermissionMode()` (US-022, the plan card's "Proceed in build") sends a live control-request switch. This is mostly UI wiring: unlock the permission chip; when a session is live use `permissionMode`/`setPermissionMode`, pre-launch use the local state as today. | S–M | backlog |
-| C9-a | **Pointer cursor on hover** for the send AND stop buttons (`cursor-pointer`). | S | backlog |
+| C9-a | Pointer cursor on send/stop buttons. | S | **done** |
 | C10 | General refinement — composer reads close to t3-code; polish opportunities as we go (ongoing, not a discrete task). | — | note |
 
 ---
@@ -86,7 +86,7 @@ cluttered) reads as GRACEFUL. Refinements:
 
 | ID | Item | Size | Status |
 |----|------|------|--------|
-| F1-a | **Center the ticks** in the rail (currently left-aligned; t3-code centers them for a cleaner spine). | S | backlog |
+| F1-a | Vertically center the spine tick cluster (was top-jammed). | S | **done** |
 | F4-a | **Better skill visualization** in the spine/timeline — skill ticks work (accent color) but deserve a stronger/clearer treatment so a fired skill is more legible at a glance. | S–M | backlog |
 | F6 | Density guard (`+N` on tool-heavy turns) — **unverified**, hard to trigger manually (needs a 20+ tool turn). Can force it live if wanted. | — | pending |
 
