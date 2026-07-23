@@ -302,7 +302,7 @@
         "Verify in browser using automate-browser skill: run a turn that fires a skill and several tools, confirm accent skill ticks + faint tool ticks appear grouped under the prompt, and a busy turn caps with +N"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-016. Skill-fired proven to flow to the session in the spike. Suggested skills: automate-browser."
     },
     {

@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
+import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import DirBrowser, { basename } from "./DirBrowser.tsx";
 import { apiBase, isTauri } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
@@ -110,12 +111,16 @@ function timeAgo(ts: number): string {
 export default function ChatSurface({
   token,
   defaultCwd,
+  lastSkillFired,
   onActiveSessionChange,
 }: {
   token: string | null;
   /** The app's active cwd (from /api/config) — seeds the auto-created first
    *  project so a fresh boot is immediately usable without a picker trip. */
   defaultCwd: string | null;
+  /** Latest `{type:'skill-fired'}` app-WS broadcast (US-017), fanned out to
+   *  every pane — each filters by its own session id for its activity spine. */
+  lastSkillFired?: SkillFiredEvent | null;
   /** Reports the ACTIVE thread's Claude session id up to the shell (US-012)
    *  so session-scoped concerns (native notifications) follow the thread the
    *  user is looking at — the chat-era replacement for pty correlation. */
@@ -521,6 +526,7 @@ export default function ChatSurface({
                   ? { sessionId: t.resume.sessionId, model: t.resume.model }
                   : null
               }
+              lastSkillFired={lastSkillFired}
               onState={(s) => reportState(t.id, s)}
             />
           </div>

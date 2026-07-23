@@ -50,6 +50,7 @@ import { cn } from "../lib/utils.ts";
 import { apiBase } from "../lib/gateway.ts";
 import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
+import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 
 /**
@@ -122,6 +123,7 @@ export default function ChatPane({
   cwd,
   projectId,
   resume,
+  lastSkillFired,
   onState,
 }: {
   token: string | null;
@@ -135,6 +137,10 @@ export default function ChatPane({
   /** Saved session to reopen (US-015): its transcript is reconstructed above
    *  the live items and the first prompt launches with `--resume`. */
   resume?: ResumeTarget | null;
+  /** Latest `{type:'skill-fired'}` app-WS broadcast (US-017) — each pane
+   *  filters by its OWN session id, so a firing lands on the right spine even
+   *  with several threads mounted. */
+  lastSkillFired?: SkillFiredEvent | null;
   onState?: (s: ThreadUiState) => void;
 }) {
   const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
@@ -253,11 +259,64 @@ export default function ChatPane({
     : MODELS.find((m) => m.value === model)?.label ?? "Default model";
   const perm = PERMISSIONS.find((p) => p.value === permission) ?? PERMISSIONS[1]!;
 
-  // Activity-spine turns (US-016): one entry per user prompt across the
-  // restored history + the live transcript, in render order.
-  const turns: SpineTurn[] = [...history, ...items].flatMap((it) =>
-    it.role === "user" ? [{ id: it.id, text: it.text }] : [],
-  );
+  // Activity-spine turns (US-016/US-017): one group per user prompt across
+  // the restored history + the live transcript, with the tools that ran
+  // during each turn clustered beneath it. The Skill tool_use card itself is
+  // skipped — the accent skill tick (from the WS broadcast below) covers it,
+  // and a faint duplicate underneath would double-count the firing.
+  const turnGroups: SpineTurn[] = [];
+  for (const it of [...history, ...items]) {
+    if (it.role === "user") {
+      turnGroups.push({ id: it.id, text: it.text, ticks: [] });
+    } else if (it.role === "tool" && it.name !== "Skill") {
+      const group = turnGroups[turnGroups.length - 1];
+      if (group) {
+        const summary = toolSummary(it.input);
+        group.ticks.push({
+          kind: "tool",
+          label: summary ? `${it.name} · ${summary}` : it.name,
+        });
+      }
+    }
+  }
+
+  // Skills fired in THIS session (US-017), from the app-WS broadcast. Each
+  // firing is pinned to the turn that was current when it arrived (the JSONL
+  // reconstruct carries no skill rows, so these only accrue live).
+  const [firedSkills, setFiredSkills] = useState<
+    { turnIndex: number; skill: string; ts: number }[]
+  >([]);
+  const turnCountRef = useRef(0);
+  turnCountRef.current = turnGroups.length;
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  useEffect(() => {
+    if (!lastSkillFired) return;
+    const sid = sessionIdRef.current;
+    if (!sid || lastSkillFired.sessionId !== sid) return;
+    const { skill, ts } = lastSkillFired.payload;
+    const turnIndex = turnCountRef.current - 1;
+    if (turnIndex < 0) return;
+    setFiredSkills((prev) =>
+      prev.some((f) => f.skill === skill && f.ts === ts)
+        ? prev
+        : [...prev, { turnIndex, skill, ts }],
+    );
+  }, [lastSkillFired]);
+
+  // Merge: skill ticks lead their turn's cluster (accent before faint).
+  const turns: SpineTurn[] = turnGroups.map((g, i) => {
+    const skills = firedSkills.filter((f) => f.turnIndex === i);
+    return skills.length === 0
+      ? g
+      : {
+          ...g,
+          ticks: [
+            ...skills.map((f) => ({ kind: "skill" as const, label: f.skill })),
+            ...g.ticks,
+          ],
+        };
+  });
   const jumpToTurn = (id: string) => {
     // Scoped to THIS pane's scroller — item ids repeat across the
     // mounted-but-hidden threads, so a global lookup could hit another pane.

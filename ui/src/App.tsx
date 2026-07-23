@@ -51,7 +51,7 @@ export default function App() {
   // menu — reskins the app live and persists by id across reload.
   const userThemes = useUserThemes(config?.token ?? null);
   const { themes, activeId, setActiveTheme } = useThemes(userThemes);
-  const { tasks, lastEvent, reconnectSeq } = useGateway(
+  const { tasks, lastEvent, lastSkillFired, reconnectSeq } = useGateway(
     config?.token ?? null,
     [],
   );
@@ -157,6 +157,7 @@ export default function App() {
       <ChatSurface
         token={config?.token ?? null}
         defaultCwd={config?.cwd ?? null}
+        lastSkillFired={lastSkillFired}
         onActiveSessionChange={setActiveSessionId}
       />
       <SettingsView
