@@ -136,6 +136,58 @@ export function upsertChatThread(t: {
     .run({ ...t, now });
 }
 
+/** One thread row by session id (US-015: the transcript route needs its cwd
+ *  to locate the JSONL). Null when unknown. */
+export function getChatThread(sessionId: string): ThreadRow | null {
+  const row = getDb()
+    .prepare(
+      `SELECT session_id, project_id, cwd, model, title, created_at, last_activity
+         FROM chat_thread WHERE session_id = ?`,
+    )
+    .get(sessionId) as
+    | {
+        session_id: string;
+        project_id: string;
+        cwd: string;
+        model: string | null;
+        title: string | null;
+        created_at: number;
+        last_activity: number;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    sessionId: row.session_id,
+    projectId: row.project_id,
+    cwd: row.cwd,
+    model: row.model,
+    title: row.title,
+    createdAt: row.created_at,
+    lastActivity: row.last_activity,
+  };
+}
+
+/** Re-key a thread row after a resume (US-015): `claude --resume` forks the
+ *  conversation into a NEW session id, so the saved row follows it — title,
+ *  created_at and project stay; the sidebar never shows the thread twice.
+ *  No-ops when the ids match, the old row is gone, or the new id already has
+ *  a row (the session-init upsert lost the race — the old row is dropped so
+ *  the thread still lists once). */
+export function adoptChatThread(oldSessionId: string, newSessionId: string): void {
+  if (oldSessionId === newSessionId) return;
+  const db = getDb();
+  const clash = db
+    .prepare("SELECT 1 FROM chat_thread WHERE session_id = ?")
+    .get(newSessionId);
+  if (clash) {
+    db.prepare("DELETE FROM chat_thread WHERE session_id = ?").run(oldSessionId);
+    return;
+  }
+  db.prepare(
+    "UPDATE chat_thread SET session_id = ?, last_activity = ? WHERE session_id = ?",
+  ).run(newSessionId, Date.now(), oldSessionId);
+}
+
 /** Bump a thread's last_activity (turn completed). Unknown ids are a no-op. */
 export function touchChatThread(sessionId: string): void {
   getDb()

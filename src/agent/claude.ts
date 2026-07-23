@@ -292,6 +292,7 @@ export class ClaudeDriver implements AgentDriver {
       "--include-partial-messages",
     ];
     if (this.opts.model) args.push("--model", this.opts.model);
+    if (this.opts.resume) args.push("--resume", this.opts.resume);
     if (this.opts.permissionMode)
       args.push("--permission-mode", this.opts.permissionMode);
     // Supervised (`default`, or no mode — the CLI's default IS default) routes

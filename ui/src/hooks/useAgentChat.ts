@@ -24,6 +24,9 @@ export interface AgentOpts {
   /** Sidebar project this thread belongs to (US-014). Consumed by the WS
    *  handler to persist the chat_thread row — never reaches the driver. */
   projectId?: string;
+  /** Past session id to resume (US-015) — the driver launches with
+   *  `--resume` so the conversation context is restored server-side. */
+  resume?: string;
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */

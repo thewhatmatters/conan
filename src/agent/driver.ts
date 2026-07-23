@@ -33,6 +33,10 @@ export interface AgentLaunchOpts {
    *  operates on. Like the rest of the launch config, fixed at the first
    *  prompt. Omitted → the gateway's active cwd (no pty supplies one here). */
   cwd?: string;
+  /** Resume a past conversation (US-015): `--resume <session-id>` restores
+   *  the full context server-side. Claude forks the resumed conversation into
+   *  a NEW session id, reported by the system init event as usual. */
+  resume?: string;
 }
 
 /**

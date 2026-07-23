@@ -8,6 +8,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  History,
   Loader2,
   Lock,
   Plug,
@@ -46,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
+import { apiBase } from "../lib/gateway.ts";
 import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 
@@ -100,10 +102,25 @@ export interface ThreadUiState {
   sessionId: string | null;
 }
 
+/** Reopened-thread context (US-015): the saved session to reconstruct and
+ *  continue. `model` is the saved launch model, re-applied on resume so the
+ *  continued conversation stays on the model it started with. */
+export interface ResumeTarget {
+  sessionId: string;
+  model: string | null;
+}
+
+/** One reconstructed history entry from GET /api/agent/threads/:id/transcript
+ *  (mirrors the gateway's HistoryItem). */
+type HistoryItem =
+  | { role: "user" | "assistant" | "reasoning"; text: string }
+  | { role: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean };
+
 export default function ChatPane({
   token,
   cwd,
   projectId,
+  resume,
   onState,
 }: {
   token: string | null;
@@ -114,6 +131,9 @@ export default function ChatPane({
   /** Persisted project id (US-014) — rides the prompt frame so the gateway
    *  can upsert this thread's chat_thread row at session init. */
   projectId?: string | null;
+  /** Saved session to reopen (US-015): its transcript is reconstructed above
+   *  the live items and the first prompt launches with `--resume`. */
+  resume?: ResumeTarget | null;
   onState?: (s: ThreadUiState) => void;
 }) {
   const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
@@ -131,6 +151,47 @@ export default function ChatPane({
   // (so streaming doesn't yank the user back down); scrolling back near the
   // bottom re-engages it.
   const pinnedRef = useRef(true);
+
+  // Reopened thread (US-015): reconstruct the saved transcript once. "missing"
+  // (JSONL gone) degrades to metadata-only — the next prompt starts a FRESH
+  // session instead of passing --resume, so a new turn still works.
+  const [history, setHistory] = useState<ChatItem[]>([]);
+  const [historyState, setHistoryState] = useState<
+    "loading" | "found" | "missing" | null
+  >(resume ? "loading" : null);
+  useEffect(() => {
+    if (!resume || !token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(
+          apiBase() +
+            `/api/agent/threads/${encodeURIComponent(resume.sessionId)}/transcript`,
+          { headers: { "x-conan-token": token } },
+        );
+        const data = (await r.json()) as { found: boolean; items: HistoryItem[] };
+        if (cancelled) return;
+        if (!r.ok || !data.found) {
+          setHistoryState("missing");
+          return;
+        }
+        setHistory(
+          data.items.map((it, i) =>
+            it.role === "tool"
+              ? { ...it, id: `h${i}-${it.id}` }
+              : { id: `h${i}`, role: it.role, text: it.text },
+          ),
+        );
+        setHistoryState("found");
+      } catch {
+        if (!cancelled) setHistoryState("missing");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resume?.sessionId, token]);
 
   // Report thread state up to the sidebar. The parent's setter bails when
   // nothing changed, so an unstable onState identity can't loop renders.
@@ -150,7 +211,7 @@ export default function ChatPane({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [items, busy]);
+  }, [items, history, busy]);
 
   const effectiveCwd = cwd ?? null;
   // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
@@ -159,15 +220,21 @@ export default function ChatPane({
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.
-  const locked = firstUser != null;
+  // A reopened thread is locked from the start: its config came from the
+  // saved session it resumes.
+  const locked = firstUser != null || resume != null;
 
   const submit = () => {
     if (!text.trim() || busy) return;
+    // A resumed first prompt must know whether the JSONL exists (missing →
+    // fresh session, no --resume) — hold sends until the history fetch lands.
+    if (historyState === "loading") return;
     send(text, {
-      model,
+      model: resume ? resume.model ?? undefined : model,
       permissionMode: permission,
       cwd: effectiveCwd ?? undefined,
       projectId: projectId ?? undefined,
+      resume: resume && historyState === "found" ? resume.sessionId : undefined,
     });
     setText("");
   };
@@ -180,7 +247,9 @@ export default function ChatPane({
     setPermission(value);
   };
 
-  const modelLabel = MODELS.find((m) => m.value === model)?.label ?? "Default model";
+  const modelLabel = resume
+    ? resume.model ?? "Default model"
+    : MODELS.find((m) => m.value === model)?.label ?? "Default model";
   const perm = PERMISSIONS.find((p) => p.value === permission) ?? PERMISSIONS[1]!;
 
   return (
@@ -195,7 +264,33 @@ export default function ChatPane({
         className="min-h-0 flex-1 overflow-y-auto"
       >
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-          {items.length === 0 ? (
+          {historyState === "loading" && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              Restoring conversation…
+            </div>
+          )}
+          {historyState === "missing" && (
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              This chat's saved history couldn't be found on disk — your next
+              message starts a fresh session in this project.
+            </div>
+          )}
+          {history.map((it) => (
+            <Item key={it.id} item={it} />
+          ))}
+          {historyState === "found" && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <History className="size-3 shrink-0" />
+              <span>
+                {items.length === 0
+                  ? "Restored from history — your next message resumes this conversation."
+                  : "Resumed from history"}
+              </span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          )}
+          {items.length === 0 && historyState === null ? (
             <EmptyState status={status} />
           ) : (
             items.map((it) => <Item key={it.id} item={it} />)

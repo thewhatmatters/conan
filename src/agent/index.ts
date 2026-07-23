@@ -3,7 +3,7 @@ import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import { ClaudeDriver } from "./claude.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
-import { touchChatThread, upsertChatThread } from "./threads.js";
+import { adoptChatThread, touchChatThread, upsertChatThread } from "./threads.js";
 
 /**
  * WS handler for the Level-2 chat spike (`/ws/terminal`'s peer at `/ws/agent`).
@@ -13,11 +13,14 @@ import { touchChatThread, upsertChatThread } from "./threads.js";
  * `server.on("upgrade")`), same as `/ws/terminal`.
  *
  * Client → server frames:
- *   {type:"prompt", text, model?, permissionMode?, cwd?, projectId?}  submit a
- *     turn — the FIRST prompt's cwd fixes the session's working directory (no
- *     cwd → the gateway's active cwd); later prompts can't move a live
- *     process. projectId (US-014) links the session to its sidebar project so
- *     the thread row persists; it never reaches the driver.
+ *   {type:"prompt", text, model?, permissionMode?, cwd?, projectId?, resume?}
+ *     submit a turn — the FIRST prompt's cwd fixes the session's working
+ *     directory (no cwd → the gateway's active cwd); later prompts can't move
+ *     a live process. projectId (US-014) links the session to its sidebar
+ *     project so the thread row persists; it never reaches the driver.
+ *     resume (US-015) is a past session id — the driver launches with
+ *     `--resume` and the saved chat_thread row is re-keyed to the forked
+ *     session id claude reports at init.
  *   {type:"interrupt"}   cancel the in-flight turn (graceful — the session
  *     survives and takes the next prompt; falls back to ending the session,
  *     surfaced as an `exit` event, if the CLI has no control channel)
@@ -43,11 +46,23 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   let projectId: string | null = null;
   let firstPrompt: string | null = null;
   let sessionId: string | null = null;
+  /** Session id this connection resumes (US-015) — the saved row to re-key. */
+  let resumeFrom: string | null = null;
 
   const driver: AgentDriver = new ClaudeDriver((e: AgentEvent) => {
     send({ type: "event", event: e });
     if (e.kind === "system" && e.sessionId) {
       sessionId = e.sessionId;
+      if (resumeFrom) {
+        // --resume forks into a new session id; move the saved row (title,
+        // project, created_at intact) so the sidebar lists the thread once.
+        try {
+          adoptChatThread(resumeFrom, e.sessionId);
+        } catch (err) {
+          console.warn(`[agent] thread adopt failed: ${(err as Error).message}`);
+        }
+        resumeFrom = null;
+      }
       if (projectId) {
         try {
           upsertChatThread({
@@ -93,6 +108,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       if (typeof msg.model === "string") opts.model = msg.model;
       if (typeof msg.cwd === "string" && msg.cwd.trim()) {
         opts.cwd = msg.cwd.trim();
+      }
+      if (typeof msg.resume === "string" && msg.resume.trim()) {
+        opts.resume = msg.resume.trim();
+        if (!resumeFrom && !sessionId) resumeFrom = opts.resume;
       }
       if (
         msg.permissionMode === "default" ||

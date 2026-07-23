@@ -268,7 +268,7 @@
         "Verify in browser using automate-browser skill: run a thread, reload, reopen it, confirm prior messages render and a follow-up continues the conversation"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "The heart of T2-lite. Reuses existing JSONL readers; may need a transcript->chat-item adapter. Depends on US-014. Suggested skills: automate-browser."
     },
     {

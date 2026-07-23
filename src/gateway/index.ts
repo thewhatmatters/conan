@@ -68,7 +68,9 @@ import {
   listChatProjects,
   upsertChatProject,
   deleteChatThread,
+  getChatThread,
 } from "../agent/threads.js";
+import { readChatHistory } from "../agent/history.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // US-007: optional runtime override for the Buy Premium checkout URL the
@@ -299,6 +301,15 @@ app.post("/api/agent/projects", (req, res) => {
 app.delete("/api/agent/threads/:sessionId", (req, res) => {
   if (!authed(req, res)) return;
   res.json({ deleted: deleteChatThread(req.params.sessionId) });
+});
+
+// Reopen a saved thread (US-015): reconstruct its transcript from Claude
+// Code's own JSONL session record. `found:false` (JSONL gone — trashed, or
+// another machine) degrades the UI to metadata-only; a new turn still works.
+app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
+  if (!authed(req, res)) return;
+  const row = getChatThread(req.params.sessionId);
+  res.json(readChatHistory(req.params.sessionId, row?.cwd));
 });
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */

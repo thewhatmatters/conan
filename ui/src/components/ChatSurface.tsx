@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
-  History,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -32,11 +31,11 @@ import { cn } from "../lib/utils.ts";
  * SQLite (`GET/POST /api/agent/projects`, thread rows upserted at session
  * init) and survive reloads + gateway restarts. The sidebar renders the
  * persisted list merged with live threads — a live thread whose session is
- * already persisted renders once, with the DB's title/last-activity. A saved
- * thread from a previous run lists with its title + relative activity time;
- * reopening it with full history is US-015 (selecting one shows a metadata
- * placeholder for now). Closing any thread deletes its row; a project with no
- * threads persists.
+ * already persisted renders once, with the DB's title/last-activity. Selecting
+ * a saved thread from a previous run REOPENS it (US-015): a live pane
+ * reconstructs the transcript from Claude's JSONL and the next prompt resumes
+ * the session (`--resume`). Closing any thread deletes its row; a project
+ * with no threads persists.
  */
 
 /** First-class project: a chosen folder that chats live inside (US-025).
@@ -56,6 +55,9 @@ interface Thread {
   /** Creation time, for the sidebar's relative timestamp until the thread's
    *  persisted row (keyed by session id) supplies last_activity. */
   createdAt: number;
+  /** The saved thread this pane reopens (US-015) — its transcript restores
+   *  and the first prompt resumes its session. Absent for fresh chats. */
+  resume?: SavedThread;
 }
 
 /** A persisted chat_thread row from GET /api/agent/projects (US-014). */
@@ -125,8 +127,6 @@ export default function ChatSurface({
   const [saved, setSaved] = useState<Record<string, SavedThread[]>>({});
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  /** A selected SAVED thread (no live pane yet — US-015 reopens it). */
-  const [activeSaved, setActiveSaved] = useState<SavedThread | null>(null);
   const [states, setStates] = useState<Record<string, ThreadUiState>>({});
   const [collapsed, setCollapsed] = useState(false);
   /** Per-project group collapse (chevron). Absent/false = expanded. */
@@ -203,12 +203,25 @@ export default function ChatSurface({
     const id = `t${++seq.current}`;
     setThreads((prev) => [...prev, { id, projectId, createdAt: Date.now() }]);
     setActiveId(id);
-    setActiveSaved(null);
     // Make the new thread visible: a chat landing in a collapsed group (or a
     // collapsed sidebar) reads as "nothing happened" while a real agent
     // session quietly spawns.
     setClosedGroups((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
     setCollapsed(false);
+  };
+
+  /** Reopen a saved thread (US-015): mount a live pane that restores the
+   *  transcript and resumes the session on the next prompt. A pane already
+   *  reopening this session is focused instead of duplicated. */
+  const openSavedThread = (projectId: string, s: SavedThread) => {
+    const existing = threads.find((t) => t.resume?.sessionId === s.sessionId);
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    const id = `t${++seq.current}`;
+    setThreads((prev) => [...prev, { id, projectId, createdAt: s.createdAt, resume: s }]);
+    setActiveId(id);
   };
 
   /** Add a project and open its first chat — the add-project flows land here
@@ -290,7 +303,6 @@ export default function ChatSurface({
 
   /** Delete a thread's persisted row (close-X on any thread — US-014). */
   const deleteSavedRow = async (sessionId: string) => {
-    setActiveSaved((cur) => (cur?.sessionId === sessionId ? null : cur));
     if (token) {
       try {
         await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(sessionId)}`, {
@@ -306,8 +318,10 @@ export default function ChatSurface({
 
   const closeThread = (id: string) => {
     // Closing a live chat also deletes its persisted row (US-014) — closing
-    // IS the delete gesture; a reload (no close) keeps threads listed.
-    const sid = states[id]?.sessionId;
+    // IS the delete gesture; a reload (no close) keeps threads listed. A
+    // reopened pane that hasn't taken a turn yet still owns its SAVED row.
+    const sid =
+      states[id]?.sessionId ?? threads.find((t) => t.id === id)?.resume?.sessionId;
     if (sid) void deleteSavedRow(sid);
     const idx = threads.findIndex((t) => t.id === id);
     const next = threads.filter((t) => t.id !== id);
@@ -385,10 +399,13 @@ export default function ChatSurface({
                 const list = threads.filter((t) => t.projectId === proj.id);
                 const savedAll = saved[proj.id] ?? [];
                 const bySession = new Map(savedAll.map((s) => [s.sessionId, s]));
-                // A live thread whose session is persisted renders ONCE, as
-                // the live row (with the DB's fresher activity time).
+                // A live thread whose session is persisted — or which is
+                // REOPENING a saved session (US-015) — renders ONCE, as the
+                // live row (with the DB's fresher activity time).
                 const liveSessions = new Set(
-                  list.map((t) => states[t.id]?.sessionId).filter(Boolean),
+                  list.flatMap((t) =>
+                    [states[t.id]?.sessionId, t.resume?.sessionId].filter(Boolean),
+                  ),
                 );
                 const savedOnly = savedAll.filter((s) => !liveSessions.has(s.sessionId));
                 const closed = closedGroups[proj.id] === true;
@@ -429,18 +446,22 @@ export default function ChatSurface({
                         <div className="ml-2.5 border-l border-border pl-1">
                           {list.map((t) => {
                             const sid = states[t.id]?.sessionId;
-                            const row = sid ? bySession.get(sid) : undefined;
+                            const row =
+                              (sid ? bySession.get(sid) : undefined) ??
+                              (t.resume ? bySession.get(t.resume.sessionId) : undefined);
+                            // A reopened thread keeps its saved title until a
+                            // fresh live one exists (DB titles are sticky).
+                            const title = t.resume
+                              ? row?.title ?? t.resume.title ?? states[t.id]?.title ?? null
+                              : states[t.id]?.title ?? row?.title ?? null;
                             return (
                               <ThreadRow
                                 key={t.id}
-                                title={states[t.id]?.title ?? row?.title ?? null}
+                                title={title}
                                 when={timeAgo(row?.lastActivity ?? t.createdAt)}
                                 pill={pillOf(states[t.id])}
-                                active={t.id === activeId && !activeSaved}
-                                onSelect={() => {
-                                  setActiveId(t.id);
-                                  setActiveSaved(null);
-                                }}
+                                active={t.id === activeId}
+                                onSelect={() => setActiveId(t.id)}
                                 onClose={() => closeThread(t.id)}
                               />
                             );
@@ -451,8 +472,8 @@ export default function ChatSurface({
                               title={s.title}
                               when={timeAgo(s.lastActivity)}
                               pill="idle"
-                              active={activeSaved?.sessionId === s.sessionId}
-                              onSelect={() => setActiveSaved(s)}
+                              active={false}
+                              onSelect={() => openSavedThread(proj.id, s)}
                               onClose={() => void deleteSavedRow(s.sessionId)}
                             />
                           ))}
@@ -468,7 +489,7 @@ export default function ChatSurface({
 
       {/* Thread panes — all mounted, only the active one visible/interactive. */}
       <div className="relative min-h-0 min-w-0 flex-1">
-        {threads.length === 0 && !activeSaved && (
+        {threads.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
             <p className="text-sm">
               {projects.length === 0 ? "Add a project to start chatting." : "No open chats."}
@@ -488,36 +509,22 @@ export default function ChatSurface({
             key={t.id}
             className={cn(
               "absolute inset-0 flex",
-              t.id === activeId && !activeSaved ? "z-10" : "invisible z-0",
+              t.id === activeId ? "z-10" : "invisible z-0",
             )}
           >
             <ChatPane
               token={token}
               cwd={projectPath(t.projectId) ?? defaultCwd}
               projectId={t.projectId}
+              resume={
+                t.resume
+                  ? { sessionId: t.resume.sessionId, model: t.resume.model }
+                  : null
+              }
               onState={(s) => reportState(t.id, s)}
             />
           </div>
         ))}
-        {/* Saved-thread placeholder (US-014): metadata only until US-015
-            reconstructs the transcript + resumes the session. */}
-        {activeSaved && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background px-8 text-center">
-            <History className="size-6 text-muted-foreground/60" />
-            <p className="max-w-md truncate text-sm font-medium text-foreground">
-              {activeSaved.title ?? "Saved chat"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {activeSaved.cwd}
-              {activeSaved.model ? ` · ${activeSaved.model}` : ""}
-              {` · last active ${timeAgo(activeSaved.lastActivity)}`}
-            </p>
-            <p className="max-w-sm text-xs text-muted-foreground/80">
-              Saved conversation — reopening with full history and resume is
-              coming in an upcoming update.
-            </p>
-          </div>
-        )}
         </div>
       </div>
 
