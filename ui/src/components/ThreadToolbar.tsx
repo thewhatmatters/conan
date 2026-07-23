@@ -5,6 +5,7 @@ import {
   GitCommitHorizontal,
   GitPullRequestArrow,
   Loader2,
+  Pencil,
   Play,
   Plus,
   Terminal,
@@ -135,6 +136,7 @@ export default function ThreadToolbar({
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null); // null = add, else edit
   const [actName, setActName] = useState("");
   const [actCmd, setActCmd] = useState("");
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -219,17 +221,37 @@ export default function ThreadToolbar({
     }
   };
 
-  const addAction = async () => {
-    if (!projectId || !actName.trim() || !actCmd.trim()) return;
+  const openAdd = () => {
+    setEditingId(null);
+    setActName("");
+    setActCmd("");
+    setAddOpen(true);
+  };
+
+  const openEdit = (a: ProjectAction) => {
+    setEditingId(a.id);
+    setActName(a.name);
+    setActCmd(a.command);
+    setAddOpen(true);
+  };
+
+  // Add (POST) or edit (PUT) depending on editingId.
+  const submitAction = async () => {
+    if (!actName.trim() || !actCmd.trim()) return;
+    if (!editingId && !projectId) return;
     setBusy("add");
     try {
-      await fetch(apiBase() + `/api/agent/projects/${projectId}/actions`, {
-        method: "POST",
+      const url = editingId
+        ? apiBase() + `/api/agent/actions/${editingId}`
+        : apiBase() + `/api/agent/projects/${projectId}/actions`;
+      await fetch(url, {
+        method: editingId ? "PUT" : "POST",
         headers: auth,
         body: JSON.stringify({ name: actName.trim(), command: actCmd.trim() }),
       });
       setActName("");
       setActCmd("");
+      setEditingId(null);
       setAddOpen(false);
       refreshActions();
     } finally {
@@ -297,10 +319,19 @@ export default function ThreadToolbar({
             </button>
             <button
               type="button"
+              onClick={() => openEdit(a)}
+              aria-label={`Edit ${a.name}`}
+              title="Edit action"
+              className="ml-0.5 hidden cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground group-hover/act:inline-flex"
+            >
+              <Pencil className="size-3" />
+            </button>
+            <button
+              type="button"
               onClick={() => void deleteAction(a.id)}
               aria-label={`Delete ${a.name}`}
               title="Delete action"
-              className="ml-0.5 hidden cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive group-hover/act:inline-flex"
+              className="hidden cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive group-hover/act:inline-flex"
             >
               <Trash2 className="size-3" />
             </button>
@@ -308,7 +339,7 @@ export default function ThreadToolbar({
         ))}
         <button
           type="button"
-          onClick={() => setAddOpen(true)}
+          onClick={openAdd}
           disabled={!projectId}
           title={projectId ? "Add a custom action" : "Send a message first to create the project"}
           aria-label="Add action"
@@ -443,12 +474,19 @@ export default function ThreadToolbar({
       </Dialog>
 
       {/* ── Add-action dialog ── */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog
+        open={addOpen}
+        onOpenChange={(o) => {
+          setAddOpen(o);
+          if (!o) setEditingId(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add a custom action</DialogTitle>
+            <DialogTitle>{editingId ? "Edit action" : "Add a custom action"}</DialogTitle>
             <DialogDescription>
-              A named shell command run in this project's directory, shown as a toolbar button.
+              A named command run in a shell in this project's directory (no prefix
+              needed — e.g. <code>pwd</code>, not <code>! pwd</code>), shown as a toolbar button.
             </DialogDescription>
           </DialogHeader>
           <input
@@ -468,8 +506,12 @@ export default function ThreadToolbar({
             <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={() => void addAction()} disabled={!actName.trim() || !actCmd.trim() || busy === "add"}>
-              Add
+            <Button
+              size="sm"
+              onClick={() => void submitAction()}
+              disabled={!actName.trim() || !actCmd.trim() || busy === "add"}
+            >
+              {editingId ? "Save" : "Add"}
             </Button>
           </DialogFooter>
         </DialogContent>

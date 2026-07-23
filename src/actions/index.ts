@@ -80,6 +80,22 @@ export function addProjectAction(input: {
   return action;
 }
 
+export function updateProjectAction(
+  actionId: string,
+  input: { name: string; command: string },
+): ProjectAction | { error: string } {
+  const name = input.name.trim();
+  const command = input.command.trim();
+  if (!name) return { error: "name required" };
+  if (!command) return { error: "command required" };
+  const changed = getDb()
+    .prepare("UPDATE project_action SET name = ?, command = ? WHERE id = ?")
+    .run(name, command, actionId).changes;
+  if (!changed) return { error: "action not found" };
+  const target = getActionWithProject(actionId);
+  return target ? target.action : { error: "action not found" };
+}
+
 export function deleteProjectAction(actionId: string): boolean {
   return getDb()
     .prepare("DELETE FROM project_action WHERE id = ?")

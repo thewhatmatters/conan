@@ -80,6 +80,7 @@ import {
   deleteProjectAction,
   listProjectActions,
   runProjectAction,
+  updateProjectAction,
 } from "../actions/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
@@ -421,6 +422,20 @@ app.post("/api/agent/projects/:id/actions", (req, res) => {
   const body = (req.body ?? {}) as { name?: unknown; command?: unknown };
   const result = addProjectAction({
     projectId: req.params.id,
+    name: typeof body.name === "string" ? body.name : "",
+    command: typeof body.command === "string" ? body.command : "",
+  });
+  if ("error" in result) {
+    res.status(400).json({ ok: false, error: result.error });
+    return;
+  }
+  res.json({ ok: true, action: result });
+});
+
+app.put("/api/agent/actions/:actionId", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown };
+  const result = updateProjectAction(req.params.actionId, {
     name: typeof body.name === "string" ? body.name : "",
     command: typeof body.command === "string" ? body.command : "",
   });
