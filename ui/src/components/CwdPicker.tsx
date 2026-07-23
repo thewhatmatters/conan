@@ -119,7 +119,7 @@ export default function CwdPicker({
           (effective ? `${effective}\n` : "") +
           "Locked for this thread — a new chat starts a fresh directory"
         }
-        className="flex min-w-0 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground"
+        className="flex min-w-0 cursor-default items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
       >
         <FolderOpen className="size-3.5 shrink-0" />
         <span className="max-w-40 truncate">{label}</span>
@@ -133,7 +133,7 @@ export default function CwdPicker({
       <DropdownMenu>
         <DropdownMenuTrigger
           title={effective ?? undefined}
-          className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
+          className="flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
         >
           <FolderOpen className="size-3.5 shrink-0" />
           <span className="max-w-40 truncate">{label}</span>

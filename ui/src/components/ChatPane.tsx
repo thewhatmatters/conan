@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FilePenLine,
   FileText,
+  GitBranch,
   Globe,
   Loader2,
   Lock,
@@ -45,6 +46,7 @@ import {
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
 import CwdPicker, { recordRecentCwd } from "./CwdPicker.tsx";
+import { useDirGit } from "../hooks/useDirGit.ts";
 
 /**
  * Level-2 chat spike — the programmatic peer of the terminal surface.
@@ -152,6 +154,9 @@ export default function ChatPane({
   }, [items, busy]);
 
   const effectiveCwd = cwd ?? defaultCwd ?? null;
+  // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
+  // on another repo never shows the active thread's branch.
+  const git = useDirGit(token, effectiveCwd);
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.
@@ -194,17 +199,44 @@ export default function ChatPane({
           ) : (
             items.map((it) => <Item key={it.id} item={it} />)
           )}
-          {busy && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              Working…
-            </div>
-          )}
+          {busy && <WorkingIndicator items={items} />}
         </div>
       </aside>
 
-      {/* Composer — mirrors the mock: textarea with a chip row + send button. */}
+      {/* Composer — textarea with a chip row + send button. */}
       <div className="shrink-0 px-4 pb-4">
+        {/* Thread context pills — ABOVE the input (the Claude Code pattern),
+            scoped to THIS thread. cwd and branch describe the conversation,
+            not the app, so they live with the composer instead of in a
+            full-width app footer. Left = the working directory (interactive
+            picker); then the branch it's on (informational). */}
+        <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-1.5">
+          <CwdPicker
+            token={token}
+            value={cwd ?? null}
+            defaultCwd={defaultCwd ?? null}
+            locked={locked}
+            onChange={(c) => onCwdChange?.(c)}
+          />
+          {git?.available && git.branch && (
+            <span
+              title={`${git.branch}${git.dirty ? ` · ${git.dirty} uncommitted` : ""}`}
+              className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
+            >
+              <GitBranch className="size-3.5 shrink-0" />
+              <span className="max-w-48 truncate">
+                {git.branch}
+                {git.dirty ? "*" : ""}
+              </span>
+            </span>
+          )}
+          <div className="flex-1" />
+          {status !== "open" && (
+            <span className="text-[11px] text-muted-foreground">
+              {status === "connecting" ? "connecting to agent…" : "agent disconnected"}
+            </span>
+          )}
+        </div>
         <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
           {pendingApproval ? (
             /* Supervised mode: the input area becomes the approval prompt —
@@ -230,14 +262,6 @@ export default function ChatPane({
                 className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
               <div className="mt-2 flex items-center gap-2">
-                <CwdPicker
-                  token={token}
-                  value={cwd ?? null}
-                  defaultCwd={defaultCwd ?? null}
-                  locked={locked}
-                  onChange={(c) => onCwdChange?.(c)}
-                />
-                <span className="text-border">|</span>
                 <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
                   {MODELS.map((m) => (
                     <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
@@ -290,11 +314,6 @@ export default function ChatPane({
             </>
           )}
         </div>
-        {status !== "open" && (
-          <p className="mx-auto mt-1 w-full max-w-3xl text-[11px] text-muted-foreground">
-            {status === "connecting" ? "connecting to agent…" : "agent disconnected"}
-          </p>
-        )}
       </div>
 
       {/* One-time Full-access confirm — declining (or dismissing) reverts to
@@ -332,6 +351,54 @@ export default function ChatPane({
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+/**
+ * Live turn indicator. A bare "Working…" reads as a hang on long turns (a
+ * verification-heavy prompt can legitimately run for minutes), so this shows
+ * elapsed time plus what the agent is doing right now — the last tool it
+ * reached for. Dogfooding finding: the transcript looked frozen mid-turn.
+ */
+function WorkingIndicator({ items }: { items: ChatItem[] }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const t = setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  // The most recent tool card still awaiting its result = current activity.
+  let activity: string | null = null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]!;
+    if (it.role === "tool") {
+      if (it.result == null) activity = it.name;
+      break;
+    }
+  }
+
+  const label =
+    elapsed >= 60
+      ? `${Math.floor(elapsed / 60)}m ${String(elapsed % 60).padStart(2, "0")}s`
+      : `${elapsed}s`;
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <Loader2 className="size-3.5 animate-spin" />
+      <span>Working…</span>
+      {activity && (
+        <>
+          <span className="text-border">·</span>
+          <span className="font-medium text-foreground/70">{activity}</span>
+        </>
+      )}
+      <span className="text-border">·</span>
+      <span className="tabular-nums">{label}</span>
+    </div>
   );
 }
 

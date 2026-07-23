@@ -6,8 +6,6 @@ import {
   X,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
-import StatusBar from "./StatusBar.tsx";
-import { useDirGit } from "../hooks/useDirGit.ts";
 import { cn } from "../lib/utils.ts";
 
 /**
@@ -89,10 +87,15 @@ export default function ChatSurface({
     const id = `t${++seq.current}`;
     setThreads((prev) => [...prev, { id, cwd: null }]);
     setActiveId(id);
+    // A new thread spawns a real agent session — never create one the user
+    // can't see. The collapsed rail has no New-chat button for exactly this
+    // reason; the File ▸ New Chat menu item can still fire while collapsed,
+    // so reveal the sidebar rather than adding a thread silently.
+    setCollapsed(false);
   }, []);
 
-  // US-011: the composer's cwd chip reports a picked directory up so the
-  // sidebar's project grouping + the StatusBar follow the choice.
+  // US-011: the composer's cwd picker reports a picked directory up so the
+  // sidebar's project grouping follows the choice.
   const setThreadCwd = useCallback((id: string, cwd: string) => {
     setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, cwd } : t)));
   }, []);
@@ -170,12 +173,9 @@ export default function ChatSurface({
     else groups.set(name, [t]);
   }
 
-  // US-011: the StatusBar follows the ACTIVE thread's effective cwd, with the
-  // git branch polled for that directory (chat threads have no correlated
-  // session to derive git from).
-  const activeThread = threads.find((t) => t.id === activeId) ?? null;
-  const activeCwd = activeThread ? activeThread.cwd ?? defaultCwd : defaultCwd;
-  const activeGit = useDirGit(token, activeCwd);
+  // cwd + git branch are per-thread and now render in each ChatPane's own
+  // context row beneath its composer — the app-wide StatusBar was removed
+  // because it read as global chrome while describing only the active thread.
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -187,9 +187,10 @@ export default function ChatSurface({
               <PanelLeftOpen className="size-4" />
             </IconButton>
           </div>
-          <IconButton title="New chat" onClick={newThread}>
-            <MessageSquarePlus className="size-4" />
-          </IconButton>
+          {/* No New-chat button while collapsed: creating a thread here spawns
+              an agent session the user can't see land in the (hidden) list,
+              which reads as "nothing happened" and silently stacks up
+              processes. Expand first — the sidebar is one click away. */}
         </div>
       ) : (
         <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card">
@@ -264,7 +265,6 @@ export default function ChatSurface({
         ))}
         </div>
       </div>
-      <StatusBar cwd={activeCwd} git={activeGit} />
     </section>
   );
 }
