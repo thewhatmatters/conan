@@ -46,12 +46,15 @@ export interface AgentLaunchOpts {
  */
 export type AgentEvent =
   | {
-      /** Session bootstrap — the agent reports its resolved id/model/cwd/tools. */
+      /** Session bootstrap — the agent reports its resolved id/model/cwd/tools.
+       *  Re-emitted by the CLI after a mid-session permission-mode switch, so
+       *  `permissionMode` is the live mode, not just the launch mode. */
       kind: "system";
       sessionId: string | null;
       model: string | null;
       cwd: string | null;
       tools: string[];
+      permissionMode: string | null;
     }
   | {
       /** Assistant prose. With `--include-partial-messages` these arrive as
@@ -98,6 +101,16 @@ export type AgentEvent =
        *  approval panel's mono block. */
       detail: string;
       toolName: string;
+      /** The tool_use id this request gates — lets the UI pin the approval to
+       *  its transcript card (the plan card's proceed buttons, US-022). */
+      toolUseId: string | null;
+    }
+  | {
+      /** The session's permission mode changed mid-flight — either a
+       *  `setPermissionMode()` the provider confirmed, or an ExitPlanMode
+       *  approval that exits plan mode. The UI's mode indicator follows. */
+      kind: "permission-mode";
+      mode: string;
     }
   | {
       /** Turn complete — the agent is idle and ready for the next prompt. */
@@ -154,6 +167,12 @@ export interface AgentDriver {
   /** Answer a pending `permission-request` by its id. Unknown/already-settled
    *  ids are ignored (the request may have been cleared by a turn ending). */
   respondPermission(id: string, decision: PermissionDecision): void;
+  /** Switch the live session's permission mode (US-022: a plan card's
+   *  "Proceed in build" moves the thread off plan for the next turn). Rides
+   *  the provider's control channel; confirmation arrives as a
+   *  `permission-mode` event, failure as an `error` event. No-op before the
+   *  process exists — the launch config still owns the first turn's mode. */
+  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void;
   /** Tear down the process and release resources (WS close / shutdown). */
   dispose(): void;
 }

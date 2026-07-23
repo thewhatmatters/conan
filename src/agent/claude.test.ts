@@ -140,6 +140,29 @@ test("non-JSON noise, blank lines, and unknown types produce nothing", () => {
 // control_request like an interrupt): it must never leak into the AgentEvent
 // stream, only into the driver's callback. Success shape captured live from
 // claude 2.1.218.
+test("system init carries the live permissionMode (re-emitted after a mode switch)", () => {
+  const p = new ClaudeStreamParser();
+  const init = j({
+    type: "system",
+    subtype: "init",
+    session_id: "sess-1",
+    model: "claude-fable-5",
+    cwd: "/tmp/p",
+    tools: ["Bash", "Write"],
+    permissionMode: "plan",
+  });
+  assert.deepEqual(p.push(init), [
+    {
+      kind: "system",
+      sessionId: "sess-1",
+      model: "claude-fable-5",
+      cwd: "/tmp/p",
+      tools: ["Bash", "Write"],
+      permissionMode: "plan",
+    },
+  ]);
+});
+
 test("control_response routes to the callback, not the event stream", () => {
   const got: ControlResponse[] = [];
   const p = new ClaudeStreamParser((r) => got.push(r));

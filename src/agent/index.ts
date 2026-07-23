@@ -27,6 +27,9 @@ import { adoptChatThread, touchChatThread, upsertChatThread } from "./threads.js
  *   {type:"permission-response", id, decision}   answer a `permission-request`
  *     event (Supervised mode); decision is accept | acceptForSession |
  *     decline | cancel
+ *   {type:"set-permission-mode", mode}   switch the live session's permission
+ *     mode (US-022: the plan card's "Proceed in build"); confirmed back as a
+ *     `permission-mode` event, failure as an `error` event
  * Server → client frames:
  *   {type:"event", event: AgentEvent}   one normalized agent event
  *   {type:"busy",  busy: boolean}       composer enable/disable
@@ -137,6 +140,14 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         msg.decision === "cancel")
     ) {
       driver.respondPermission(msg.id, msg.decision);
+    } else if (
+      msg.type === "set-permission-mode" &&
+      (msg.mode === "default" ||
+        msg.mode === "plan" ||
+        msg.mode === "acceptEdits" ||
+        msg.mode === "bypassPermissions")
+    ) {
+      driver.setPermissionMode(msg.mode);
     }
   });
 

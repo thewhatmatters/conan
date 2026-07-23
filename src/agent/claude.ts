@@ -47,8 +47,21 @@ import type {
  * message, interrupt?}`. Deny continues the turn without the tool (the model
  * sees `message` as an error tool_result); `interrupt:true` aborts the whole
  * turn while the session survives — all three verified live on claude
- * 2.1.218. Only Supervised (`default`/unset) wires the flag: acceptEdits /
- * bypassPermissions / plan keep today's no-prompt behavior.
+ * 2.1.218. Supervised (`default`/unset) AND plan wire the flag; acceptEdits /
+ * bypassPermissions keep today's no-prompt behavior.
+ *
+ * Plan mode (US-022): headless plan sessions never offer ExitPlanMode
+ * WITHOUT the stdio prompt tool (verified on 2.1.218 — the model just writes
+ * a plan file and ends). WITH it, ExitPlanMode appears, carries the full plan
+ * markdown in `input.plan`, and raises a `can_use_tool` request — approving
+ * it exits plan mode CLI-side and the same turn continues straight into
+ * build under `default` (Supervised) rules; the driver emits a
+ * `permission-mode` event so the UI's indicator follows. Plan mode's own
+ * read-only tools and the plans-dir Write are settled CLI-side and never
+ * prompt. A `control_request {subtype:"set_permission_mode", mode}` on stdin
+ * switches a live session's mode (also verified: success response echoes the
+ * mode and the next init frame reports it) — that's `setPermissionMode()`,
+ * the "proceed in build" path for an already-settled plan turn.
  *
  * Spike scope remaining: launch config fixed at the first prompt.
  */
@@ -68,11 +81,16 @@ export class ClaudeDriver implements AgentDriver {
   /** The one in-flight interrupt request, armed with its fallback timer. */
   private pendingInterrupt: { id: string; timer: NodeJS.Timeout } | null = null;
   private interruptSeq = 0;
+  /** In-flight `set_permission_mode` requests by request_id → target mode.
+   *  No fallback timer: a lost response just leaves the mode as-is, honestly
+   *  reflected by the indicator never changing. */
+  private readonly pendingModeSwitches = new Map<string, string>();
+  private modeSwitchSeq = 0;
   /** Permission requests awaiting the user's decision, by CLI request_id.
    *  The CLI blocks the turn on each until we write a control_response. */
   private readonly pendingPermissions = new Map<
     string,
-    { toolUseId: string | null; input: unknown; toolKind: ToolPermissionKind }
+    { toolUseId: string | null; input: unknown; toolKind: ToolPermissionKind; toolName: string }
   >();
   /** Tool kinds the user granted "always allow this session" — answered
    *  driver-side without another permission-request event. */
@@ -145,6 +163,23 @@ export class ClaudeDriver implements AgentDriver {
   }
 
   private onControlResponse(r: ControlResponse): void {
+    // Mode-switch answers (US-022): success confirms the CLI is now in the
+    // requested mode — surface it so the UI's indicator follows; an error
+    // (e.g. an older claude without set_permission_mode) is surfaced honestly
+    // and the mode simply stays.
+    if (r.requestId && this.pendingModeSwitches.has(r.requestId)) {
+      const mode = this.pendingModeSwitches.get(r.requestId)!;
+      this.pendingModeSwitches.delete(r.requestId);
+      if (r.ok) {
+        this.emit({ kind: "permission-mode", mode });
+      } else {
+        this.emit({
+          kind: "error",
+          message: `Permission-mode switch failed (${r.error ?? "unsupported by the installed claude"}) — still in the previous mode.`,
+        });
+      }
+      return;
+    }
     if (!this.pendingInterrupt || (r.requestId && r.requestId !== this.pendingInterrupt.id))
       return;
     clearTimeout(this.pendingInterrupt.timer);
@@ -182,6 +217,7 @@ export class ClaudeDriver implements AgentDriver {
       toolUseId: r.toolUseId,
       input: r.input,
       toolKind,
+      toolName,
     });
     this.emit({
       kind: "permission-request",
@@ -190,7 +226,21 @@ export class ClaudeDriver implements AgentDriver {
       summary: permissionSummary(toolName, r.input, r.description),
       detail: permissionDetail(toolName, r.input),
       toolName,
+      toolUseId: r.toolUseId,
     });
+  }
+
+  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void {
+    if (!this.child) return; // pre-launch: the composer chip still owns the mode
+    const id = `spm-${++this.modeSwitchSeq}`;
+    this.pendingModeSwitches.set(id, mode);
+    this.child.stdin.write(
+      JSON.stringify({
+        type: "control_request",
+        request_id: id,
+        request: { subtype: "set_permission_mode", mode },
+      }) + "\n",
+    );
   }
 
   respondPermission(id: string, decision: PermissionDecision): void {
@@ -206,6 +256,12 @@ export class ClaudeDriver implements AgentDriver {
         updatedInput: pending.input ?? {},
         ...toolUseID,
       });
+      // Approving ExitPlanMode exits plan mode CLI-side and the turn continues
+      // under `default` rules (verified live on 2.1.218: the very next tool
+      // call prompted). No init frame confirms it mid-turn, so surface the
+      // switch here for the UI's mode indicator.
+      if (pending.toolName === "ExitPlanMode")
+        this.emit({ kind: "permission-mode", mode: "default" });
     } else if (decision === "decline") {
       // The CLI feeds `message` to the model as an error tool_result and the
       // turn continues without the tool (verified live).
@@ -297,11 +353,17 @@ export class ClaudeDriver implements AgentDriver {
       args.push("--permission-mode", this.opts.permissionMode);
     // Supervised (`default`, or no mode — the CLI's default IS default) routes
     // permission prompts onto the control channel instead of headless
-    // auto-deny. acceptEdits/bypassPermissions/plan never prompt, so the flag
-    // stays off there (criteria: those modes must not emit permission
-    // requests). Tools the user's own permission rules already allow are
-    // settled CLI-side and never reach us.
-    if (!this.opts.permissionMode || this.opts.permissionMode === "default")
+    // auto-deny. Plan mode wires it too (US-022): without it the CLI never
+    // even offers ExitPlanMode headlessly; with it the plan approval — and
+    // the post-plan build, which continues under `default` rules — round-trip
+    // like any Supervised prompt. acceptEdits/bypassPermissions never prompt,
+    // so the flag stays off there (US-004 criteria). Tools the user's own
+    // permission rules already allow are settled CLI-side and never reach us.
+    if (
+      !this.opts.permissionMode ||
+      this.opts.permissionMode === "default" ||
+      this.opts.permissionMode === "plan"
+    )
       args.push("--permission-prompt-tool", "stdio");
 
     let child: ChildProcessWithoutNullStreams;
@@ -528,6 +590,9 @@ export class ClaudeStreamParser {
           tools: Array.isArray(msg.tools)
             ? msg.tools.filter((t): t is string => typeof t === "string")
             : [],
+          // Re-emitted after a set_permission_mode switch, so this tracks the
+          // LIVE mode (field name captured live, claude 2.1.218).
+          permissionMode: str(msg.permissionMode),
         },
       ];
     }

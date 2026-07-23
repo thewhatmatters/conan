@@ -160,8 +160,19 @@ export default function ChatPane({
   lastSkillFired?: SkillFiredEvent | null;
   onState?: (s: ThreadUiState) => void;
 }) {
-  const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
-    useAgentChat(token);
+  const {
+    items,
+    busy,
+    status,
+    sessionId,
+    pendingApproval,
+    pendingApprovals,
+    respondToApproval,
+    send,
+    interrupt,
+    permissionMode: liveMode,
+    setPermissionMode,
+  } = useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
   const [permission, setPermission] =
@@ -401,7 +412,22 @@ export default function ChatPane({
   const modelLabel = resume
     ? resume.model ?? "Default model"
     : MODELS.find((m) => m.value === model)?.label ?? "Default model";
-  const perm = PERMISSIONS.find((p) => p.value === permission) ?? PERMISSIONS[1]!;
+  // The indicator follows the LIVE mode once the session reports one — a
+  // mid-session switch (the plan card's "Proceed in build", US-022) moves the
+  // locked chip off Plan so it never lies about what the agent may do.
+  const effectiveMode = liveMode ?? permission;
+  const perm = PERMISSIONS.find((p) => p.value === effectiveMode) ?? PERMISSIONS[1]!;
+
+  // Plan-card context (US-022): lets a plan card answer the approval gating
+  // it (proceed = build continues THIS turn) or, once settled, switch the
+  // session off plan for the next turn.
+  const planCtx: PlanCtx = {
+    approvalFor: (toolUseId) => pendingApprovals.find((p) => p.toolUseId === toolUseId),
+    respond: respondToApproval,
+    proceed: () => setPermissionMode("default"),
+    inPlanMode: effectiveMode === "plan",
+    busy,
+  };
 
   // Activity-spine turns (US-016/US-017): one group per user prompt across
   // the restored history + the live transcript, with the tools that ran
@@ -495,7 +521,7 @@ export default function ChatPane({
             </div>
           )}
           {history.map((it) => (
-            <Anchored key={it.id} item={it} />
+            <Anchored key={it.id} item={it} planCtx={planCtx} />
           ))}
           {historyState === "found" && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -511,7 +537,7 @@ export default function ChatPane({
           {items.length === 0 && historyState === null ? (
             <EmptyState status={status} />
           ) : (
-            items.map((it) => <Anchored key={it.id} item={it} />)
+            items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} />)
           )}
           {busy && <WorkingIndicator items={items} />}
         </div>
@@ -806,19 +832,30 @@ function EmptyState({ status }: { status: string }) {
   );
 }
 
+/** What a plan card needs from its pane (US-022): the approval gating it (if
+ *  still pending), the responder, and the settled-card fallback that switches
+ *  the live session off plan for the next turn. */
+interface PlanCtx {
+  approvalFor: (toolUseId: string) => PendingApproval | undefined;
+  respond: (id: string, decision: PermissionDecision) => void;
+  proceed: () => void;
+  inPlanMode: boolean;
+  busy: boolean;
+}
+
 /** A transcript item, wrapped in a `data-turn` anchor when it's a user
  *  prompt so the activity spine (US-016) can scroll to it. */
-function Anchored({ item }: { item: ChatItem }) {
-  if (item.role !== "user") return <Item item={item} />;
+function Anchored({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
+  if (item.role !== "user") return <Item item={item} planCtx={planCtx} />;
   return (
     <div data-turn={item.id} className="scroll-mt-4">
-      <Item item={item} />
+      <Item item={item} planCtx={planCtx} />
     </div>
   );
 }
 
 /** Render one transcript item by role. */
-function Item({ item }: { item: ChatItem }) {
+function Item({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
   switch (item.role) {
     case "user":
       return (
@@ -832,8 +869,14 @@ function Item({ item }: { item: ChatItem }) {
       return <Markdown text={item.text} />;
     case "reasoning":
       return <ReasoningEntry text={item.text} />;
-    case "tool":
-      return <ToolCard item={item} />;
+    case "tool": {
+      const plan = planMarkdown(item);
+      return plan != null ? (
+        <PlanCard item={item} plan={plan} ctx={planCtx} />
+      ) : (
+        <ToolCard item={item} />
+      );
+    }
     case "approval":
       return <ApprovalEntry item={item} />;
     case "system":
@@ -843,6 +886,15 @@ function Item({ item }: { item: ChatItem }) {
           {item.cwd ? ` · ${item.cwd}` : ""}
         </div>
       );
+    case "mode": {
+      const m = PERMISSIONS.find((p) => p.value === item.mode);
+      return (
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          {m && <m.icon className="size-3 shrink-0" />}
+          <span>Permission mode → {m?.label ?? item.mode}</span>
+        </div>
+      );
+    }
     case "result":
       return (
         <div className="flex items-center gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
@@ -952,6 +1004,85 @@ function toolSummary(input: unknown): string | null {
     if (typeof v === "string" && v.trim()) return v;
   }
   return null;
+}
+
+/** The plan markdown carried by a plan-mode ExitPlanMode call — the signal a
+ *  tool item should render as a plan card instead of a generic tool card.
+ *  (Headless plan turns also Write a copy to ~/.claude/plans/; that stays a
+ *  normal Write card — rendering both as plan cards would duplicate the plan.) */
+function planMarkdown(item: Extract<ChatItem, { role: "tool" }>): string | null {
+  if (item.name !== "ExitPlanMode") return null;
+  const o =
+    item.input && typeof item.input === "object"
+      ? (item.input as Record<string, unknown>)
+      : null;
+  return o && typeof o.plan === "string" && o.plan.trim() ? o.plan : null;
+}
+
+/** Proposed-plan card (US-022): a plan-mode turn ends with ExitPlanMode whose
+ *  input carries the full plan — the turn's real artifact, so it renders as a
+ *  distinct bordered card, not a tool row or assistant bubble. While the plan
+ *  approval is pending, the card's Proceed/Keep-planning answer it (approving
+ *  exits plan mode CLI-side and the SAME turn continues into build); on a
+ *  settled card still in plan mode, Proceed switches the session to
+ *  Supervised for the next turn via the control channel. */
+function PlanCard({
+  item,
+  plan,
+  ctx,
+}: {
+  item: Extract<ChatItem, { role: "tool" }>;
+  plan: string;
+  ctx?: PlanCtx;
+}) {
+  const approval = ctx?.approvalFor(item.id);
+  const proceedNextTurn = !approval && ctx?.inPlanMode === true && !ctx.busy;
+  return (
+    <div className="overflow-hidden rounded-lg border border-primary/40 bg-card">
+      <div className="flex items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-2">
+        <ClipboardList className="size-3.5 shrink-0 text-primary" />
+        <span className="text-xs font-medium text-foreground">Proposed plan</span>
+        {approval && (
+          <span className="ml-auto shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+            Awaiting review
+          </span>
+        )}
+      </div>
+      <div className="max-h-96 overflow-y-auto px-3.5 py-2.5">
+        <Markdown text={plan} />
+      </div>
+      {(approval || proceedNextTurn) && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2">
+          {approval ? (
+            <>
+              <Button size="sm" onClick={() => ctx!.respond(approval.id, "accept")}>
+                Proceed in build
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => ctx!.respond(approval.id, "decline")}
+              >
+                Keep planning
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                Proceeding switches to Supervised and starts building now
+              </span>
+            </>
+          ) : (
+            <>
+              <Button size="sm" onClick={() => ctx!.proceed()}>
+                Proceed in build
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                Switches this chat to Supervised for the next turn
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
@@ -1141,6 +1272,45 @@ function ApprovalPanel({
 }) {
   const meta = APPROVAL_KINDS[approval.toolKind] ?? APPROVAL_KINDS.other;
   const decide = (decision: PermissionDecision) => respond(approval.id, decision);
+  if (approval.toolName === "ExitPlanMode") {
+    // Plan approval (US-022): the plan itself renders as the card in the
+    // transcript, so the panel is just the decision — no mono detail dump,
+    // and no "always allow" (widening `other` over one plan gate is wrong).
+    return (
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="size-4 shrink-0 text-primary" />
+          <span className="text-sm font-medium text-foreground">Plan ready</span>
+          {count > 1 && (
+            <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+              1 of {count}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The agent proposed a plan — review the plan card above. Proceeding
+          switches this chat to Supervised and starts building now.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => decide("accept")}>
+            Proceed in build
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => decide("decline")}>
+            Keep planning
+          </Button>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => decide("cancel")}
+          >
+            Cancel turn
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
@@ -1190,13 +1360,33 @@ function ApprovalEntry({ item }: { item: Extract<ChatItem, { role: "approval" }>
   const meta = APPROVAL_KINDS[item.toolKind] ?? APPROVAL_KINDS.other;
   const pending = item.resolution === "pending";
   const approved = item.resolution === "accept" || item.resolution === "acceptForSession";
+  // The plan gate reads in plan language (US-022) — "Use tool · ExitPlanMode
+  // · Approved" would bury what actually happened.
+  const isPlan = item.toolName === "ExitPlanMode";
+  const Icon = isPlan ? ClipboardList : ShieldCheck;
+  const resolutionLabel =
+    item.resolution === "pending"
+      ? isPlan
+        ? "Awaiting review"
+        : "Awaiting approval"
+      : isPlan && item.resolution === "accept"
+        ? "Proceeding in build"
+        : isPlan && item.resolution === "decline"
+          ? "Kept planning"
+          : RESOLUTION_LABELS[item.resolution];
   return (
     <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-      <ShieldCheck className={cn("size-3.5 shrink-0", pending && "text-primary")} />
+      <Icon className={cn("size-3.5 shrink-0", pending && "text-primary")} />
       <span className="shrink-0">
-        {meta.label} · <span className="font-medium text-foreground">{item.toolName}</span>
+        {isPlan ? (
+          <span className="font-medium text-foreground">Proposed plan</span>
+        ) : (
+          <>
+            {meta.label} · <span className="font-medium text-foreground">{item.toolName}</span>
+          </>
+        )}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono">{item.summary}</span>
+      <span className="min-w-0 flex-1 truncate font-mono">{isPlan ? "" : item.summary}</span>
       <span
         className={cn(
           "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
@@ -1207,7 +1397,7 @@ function ApprovalEntry({ item }: { item: Extract<ChatItem, { role: "approval" }>
               : "bg-destructive/15 text-destructive",
         )}
       >
-        {item.resolution === "pending" ? "Awaiting approval" : RESOLUTION_LABELS[item.resolution]}
+        {resolutionLabel}
       </span>
     </div>
   );

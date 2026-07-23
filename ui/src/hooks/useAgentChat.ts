@@ -35,23 +35,27 @@ export type ToolPermissionKind = "command" | "file-read" | "file-change" | "othe
 /** The user's answer to a pending approval (mirrors PermissionDecision). */
 export type PermissionDecision = "accept" | "acceptForSession" | "decline" | "cancel";
 
-/** A Supervised-mode permission request awaiting the user's decision. */
+/** A Supervised-mode permission request awaiting the user's decision.
+ *  `toolUseId` pins the request to its transcript tool card — the plan card's
+ *  proceed buttons (US-022) act on the approval gating that very card. */
 export interface PendingApproval {
   id: string;
   toolKind: ToolPermissionKind;
   summary: string;
   detail: string;
   toolName: string;
+  toolUseId: string | null;
 }
 
 /** Normalized agent event mirrored from src/agent/driver.ts. */
 type AgentEvent =
-  | { kind: "system"; sessionId: string | null; model: string | null; cwd: string | null; tools: string[] }
+  | { kind: "system"; sessionId: string | null; model: string | null; cwd: string | null; tools: string[]; permissionMode: string | null }
   | { kind: "assistant-text"; text: string; delta?: boolean }
   | { kind: "reasoning"; text: string; delta?: boolean }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; id: string; content: string; isError: boolean }
-  | { kind: "permission-request"; id: string; toolKind: ToolPermissionKind; summary: string; detail: string; toolName: string }
+  | { kind: "permission-request"; id: string; toolKind: ToolPermissionKind; summary: string; detail: string; toolName: string; toolUseId: string | null }
+  | { kind: "permission-mode"; mode: string }
   | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null }
   | { kind: "exit"; code: number | null }
   | { kind: "error"; message: string };
@@ -69,6 +73,7 @@ export type ChatItem =
   | { id: string; role: "approval"; requestId: string; toolKind: ToolPermissionKind; toolName: string; summary: string; resolution: ApprovalResolution }
   | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null }
   | { id: string; role: "system"; model: string | null; cwd: string | null }
+  | { id: string; role: "mode"; mode: string }
   | { id: string; role: "error"; message: string };
 
 export type ChatStatus = "connecting" | "open" | "closed";
@@ -94,6 +99,14 @@ export interface AgentChat {
   send: (text: string, opts: AgentOpts) => void;
   /** Stop the in-flight turn (graceful interrupt — the session survives). */
   interrupt: () => void;
+  /** The session's LIVE permission mode — the launch mode from the init
+   *  event, updated by mid-session switches (US-022). Null before launch:
+   *  the composer chip's selection still owns the mode then. */
+  permissionMode: string | null;
+  /** Switch the live session's permission mode (the plan card's "Proceed in
+   *  build"). Confirmation comes back as a permission-mode event; failure
+   *  surfaces as an error item and the mode stays. */
+  setPermissionMode: (mode: NonNullable<AgentOpts["permissionMode"]>) => void;
 }
 
 export function useAgentChat(token: string | null): AgentChat {
@@ -101,10 +114,15 @@ export function useAgentChat(token: string | null): AgentChat {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("connecting");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [permissionMode, setPermissionModeState] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const seq = useRef(0);
   const nextId = () => `i${++seq.current}`;
+  // Last session id an init frame reported — a repeat init with the SAME id
+  // is a mid-session permission-mode re-init (US-022), not a new session, so
+  // the transcript skips a second "Session started" line for it.
+  const lastInitSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -147,10 +165,13 @@ export function useAgentChat(token: string | null): AgentChat {
     // Session-level state rides alongside the transcript fold.
     if (e.kind === "system") {
       setSessionId(e.sessionId);
+      if (e.permissionMode) setPermissionModeState(e.permissionMode);
+    } else if (e.kind === "permission-mode") {
+      setPermissionModeState(e.mode);
     } else if (e.kind === "permission-request") {
       setPendingApprovals((prev) => [
         ...prev,
-        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, toolName: e.toolName },
+        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, toolName: e.toolName, toolUseId: e.toolUseId },
       ]);
     } else if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
       // The turn is over — any unanswered request was settled driver-side.
@@ -195,8 +216,16 @@ export function useAgentChat(token: string | null): AgentChat {
             ];
           return [...settled, { id: nextId(), role: "error", message: e.message }];
         }
-        case "system":
+        case "system": {
+          // A re-init with the same session id follows a mid-session mode
+          // switch — the mode line already told the story; a NEW id is a real
+          // (re)start and keeps its "Session started" line.
+          if (e.sessionId && e.sessionId === lastInitSessionRef.current) return prev;
+          lastInitSessionRef.current = e.sessionId;
           return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd }];
+        }
+        case "permission-mode":
+          return [...prev, { id: nextId(), role: "mode", mode: e.mode }];
         case "assistant-text":
         case "reasoning": {
           // Deltas append to the open item of the same role in place; a
@@ -247,6 +276,17 @@ export function useAgentChat(token: string | null): AgentChat {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "interrupt" }));
   }, []);
 
+  const setPermissionMode = useCallback(
+    (mode: NonNullable<AgentOpts["permissionMode"]>) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== ws.OPEN) return;
+      // No optimistic update — the driver confirms with a permission-mode
+      // event (or surfaces an error), so the indicator never lies.
+      ws.send(JSON.stringify({ type: "set-permission-mode", mode }));
+    },
+    [],
+  );
+
   const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return;
@@ -274,5 +314,7 @@ export function useAgentChat(token: string | null): AgentChat {
     respondToApproval,
     send,
     interrupt,
+    permissionMode,
+    setPermissionMode,
   };
 }
