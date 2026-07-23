@@ -78,7 +78,7 @@
         "cd ui && npm run build passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Frontend hook; the contract every core-UI story consumes. Suggested skills: none (no standalone visual surface yet)."
     },
     {

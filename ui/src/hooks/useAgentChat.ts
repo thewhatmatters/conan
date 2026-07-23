@@ -20,6 +20,21 @@ export interface AgentOpts {
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions";
 }
 
+/** Coarse tool classification mirrored from src/agent/driver.ts. */
+export type ToolPermissionKind = "command" | "file-read" | "file-change" | "other";
+
+/** The user's answer to a pending approval (mirrors PermissionDecision). */
+export type PermissionDecision = "accept" | "acceptForSession" | "decline" | "cancel";
+
+/** A Supervised-mode permission request awaiting the user's decision. */
+export interface PendingApproval {
+  id: string;
+  toolKind: ToolPermissionKind;
+  summary: string;
+  detail: string;
+  toolName: string;
+}
+
 /** Normalized agent event mirrored from src/agent/driver.ts. */
 type AgentEvent =
   | { kind: "system"; sessionId: string | null; model: string | null; cwd: string | null; tools: string[] }
@@ -27,6 +42,7 @@ type AgentEvent =
   | { kind: "reasoning"; text: string; delta?: boolean }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; id: string; content: string; isError: boolean }
+  | { kind: "permission-request"; id: string; toolKind: ToolPermissionKind; summary: string; detail: string; toolName: string }
   | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null }
   | { kind: "exit"; code: number | null }
   | { kind: "error"; message: string };
@@ -47,9 +63,18 @@ export interface AgentChat {
   items: ChatItem[];
   busy: boolean;
   status: ChatStatus;
+  /** The real Claude session id, from the system init event. Survives across
+   *  turns (the process is long-lived); updates if the session respawns. */
+  sessionId: string | null;
+  /** The latest unanswered Supervised-mode permission request, or null. The
+   *  driver blocks the turn on it, so at most one is pending at a time.
+   *  Cleared by respondToApproval or by the turn ending (result/exit/error). */
+  pendingApproval: PendingApproval | null;
+  /** Answer a pending permission request. */
+  respondToApproval: (id: string, decision: PermissionDecision) => void;
   /** Submit a user turn (no-op while busy or disconnected). */
   send: (text: string, opts: AgentOpts) => void;
-  /** Stop the in-flight turn (kills the underlying process for the spike). */
+  /** Stop the in-flight turn (graceful interrupt — the session survives). */
   interrupt: () => void;
 }
 
@@ -57,6 +82,8 @@ export function useAgentChat(token: string | null): AgentChat {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("connecting");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const seq = useRef(0);
   const nextId = () => `i${++seq.current}`;
@@ -66,7 +93,11 @@ export function useAgentChat(token: string | null): AgentChat {
     const ws = new WebSocket(wsUrl(`/ws/agent?token=${token}`));
     wsRef.current = ws;
     ws.onopen = () => setStatus("open");
-    ws.onclose = () => setStatus("closed");
+    ws.onclose = () => {
+      setStatus("closed");
+      // Nobody is listening for an answer anymore.
+      setPendingApproval(null);
+    };
     ws.onerror = () => setStatus("closed");
     ws.onmessage = (ev) => {
       let msg: Record<string, unknown>;
@@ -95,6 +126,21 @@ export function useAgentChat(token: string | null): AgentChat {
 
   /** Fold one normalized event into the flat transcript. */
   const applyEvent = useCallback((e: AgentEvent) => {
+    // Session-level state rides alongside the transcript fold.
+    if (e.kind === "system") {
+      setSessionId(e.sessionId);
+    } else if (e.kind === "permission-request") {
+      setPendingApproval({
+        id: e.id,
+        toolKind: e.toolKind,
+        summary: e.summary,
+        detail: e.detail,
+        toolName: e.toolName,
+      });
+    } else if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
+      // The turn is over — any unanswered request was settled driver-side.
+      setPendingApproval(null);
+    }
     setItems((prev) => {
       switch (e.kind) {
         case "system":
@@ -161,5 +207,14 @@ export function useAgentChat(token: string | null): AgentChat {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "interrupt" }));
   }, []);
 
-  return { items, busy, status, send, interrupt };
+  const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== ws.OPEN) return;
+    ws.send(JSON.stringify({ type: "permission-response", id, decision }));
+    // Clear optimistically — the driver ignores unknown/settled ids, and a
+    // fresh request would arrive as its own permission-request event.
+    setPendingApproval((prev) => (prev && prev.id === id ? null : prev));
+  }, []);
+
+  return { items, busy, status, sessionId, pendingApproval, respondToApproval, send, interrupt };
 }
