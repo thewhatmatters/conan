@@ -87,6 +87,16 @@ CREATE TABLE IF NOT EXISTS chat_thread (
 
 CREATE INDEX IF NOT EXISTS idx_chat_thread_project ON chat_thread (project_id, last_activity);
 
+-- Per-project custom toolbar actions (loop/conan-thread-toolbar US-004).
+CREATE TABLE IF NOT EXISTS project_action (
+  id         TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  command    TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_action_project ON project_action (project_id, created_at);
+
 -- US-003 (v4.5): the "skills considered but didn't fire" heuristic. One row per
 -- (UserPromptSubmit event, candidate skill) — the top N scoring skills from
 -- src/skills/match.ts. Reconciled at Stop time: any skill whose name shows up

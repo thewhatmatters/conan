@@ -73,6 +73,14 @@ import {
   getChatThread,
 } from "../agent/threads.js";
 import { readChatHistory } from "../agent/history.js";
+import { detectEditors, openInEditor } from "../editor/index.js";
+import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
+import {
+  addProjectAction,
+  deleteProjectAction,
+  listProjectActions,
+  runProjectAction,
+} from "../actions/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // US-007: optional runtime override for the Buy Premium checkout URL the
@@ -203,6 +211,43 @@ function authed(req: express.Request, res: express.Response): boolean {
   return true;
 }
 
+// ── External editor launch ─────────────────────────────────────────────────
+// Detection uses the user's interactive-login-shell PATH, since a packaged
+// macOS app inherits a stripped PATH. Both routes sit behind the shared token
+// check and the global CORS reflector above.
+app.get("/api/editor/detect", async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    res.json({ editors: await detectEditors() });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/editor/open", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { path?: unknown; editor?: unknown };
+  if (typeof body.path !== "string" || !body.path.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  if (body.editor !== undefined && typeof body.editor !== "string") {
+    res.status(400).json({ error: "editor must be a string" });
+    return;
+  }
+  try {
+    const result = await openInEditor(
+      body.path.trim(),
+      typeof body.editor === "string" ? body.editor : undefined,
+    );
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    const message = (error as Error).message;
+    const status = message.startsWith("no such path") ? 404 : 400;
+    res.status(status).json({ ok: false, error: message });
+  }
+});
+
 // ── File Explorer (per-tab) ────────────────────────────────────────────────
 // Read-only filesystem surface for the File Explorer panel. Token-gated; the
 // CORS reflector + loopback bind apply globally. These let the panel browse the
@@ -287,6 +332,57 @@ app.post("/api/fs/reveal", (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Git toolbar actions ───────────────────────────────────────────────────
+// Mutating git operations for the chat toolbar. Status stays on GET
+// /api/fs/git; these routes only perform commit/push/PR side effects.
+app.post("/api/agent/git/commit", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { cwd?: unknown; message?: unknown };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  if (typeof body.message !== "string" || !body.message.trim()) {
+    res.status(400).json({ ok: false, error: "message required" });
+    return;
+  }
+  res.json(await commitAll(body.cwd.trim(), body.message));
+});
+
+app.post("/api/agent/git/push", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { cwd?: unknown };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  res.json(await pushCurrentBranch(body.cwd.trim()));
+});
+
+app.post("/api/agent/git/pr", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as {
+    cwd?: unknown;
+    title?: unknown;
+    body?: unknown;
+  };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  if (typeof body.title !== "string" || !body.title.trim()) {
+    res.status(400).json({ ok: false, error: "title required" });
+    return;
+  }
+  res.json(
+    await createPullRequest(
+      body.cwd.trim(),
+      body.title,
+      typeof body.body === "string" ? body.body : "",
+    ),
+  );
+});
+
 // ── Chat persistence (US-014) ──────────────────────────────────────────────
 // The sidebar's projects + threads, backed by the US-013 tables. Token-gated;
 // the global CORS reflector + loopback bind cover WKWebView like every route.
@@ -313,6 +409,36 @@ app.post("/api/agent/projects", (req, res) => {
     return;
   }
   res.json(upsertChatProject(dir, typeof b.name === "string" ? b.name : undefined));
+});
+
+app.get("/api/agent/projects/:id/actions", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ actions: listProjectActions(req.params.id) });
+});
+
+app.post("/api/agent/projects/:id/actions", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown };
+  const result = addProjectAction({
+    projectId: req.params.id,
+    name: typeof body.name === "string" ? body.name : "",
+    command: typeof body.command === "string" ? body.command : "",
+  });
+  if ("error" in result) {
+    res.status(400).json({ ok: false, error: result.error });
+    return;
+  }
+  res.json({ ok: true, action: result });
+});
+
+app.delete("/api/agent/actions/:actionId", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ deleted: deleteProjectAction(req.params.actionId) });
+});
+
+app.post("/api/agent/actions/:actionId/run", async (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(await runProjectAction(req.params.actionId));
 });
 
 // Close-X on a thread row: the row goes away; its project persists.

@@ -83,6 +83,22 @@ function migrate(handle: Database.Database): void {
       handle.exec("ALTER TABLE chat_thread ADD COLUMN last_message TEXT");
     }
   }
+
+  // loop/conan-thread-toolbar US-004: per-project custom toolbar actions.
+  // Kept here as well as schema.sql so existing databases pick up the table
+  // even though CREATE TABLE IF NOT EXISTS is otherwise only additive for
+  // fresh schemas.
+  handle.exec(`
+    CREATE TABLE IF NOT EXISTS project_action (
+      id         TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      command    TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_action_project
+      ON project_action (project_id, created_at);
+  `);
 }
 
 /** Close the database handle (used on shutdown / in tests). */

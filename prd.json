@@ -17,7 +17,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Backend only. t3 evidence: t3code/packages/contracts/src/editor.ts, apps/server/src/process/externalLauncher.ts, apps/web/src/components/chat/OpenInPicker.tsx. Suggested skills: none."
     },
     {
@@ -32,7 +32,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Backend. t3 evidence: t3code/apps/server/src/git/GitManager.ts, apps/web/src/components/GitActionsControl.tsx. Suggested skills: none."
     },
     {
@@ -46,7 +46,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Backend. GitHub-only via gh CLI (multi-provider is out of scope). t3 evidence: t3code/apps/web/src/components/PullRequestThreadDialog.tsx, apps/server/src/sourceControl/GitHubSourceControlProvider.ts. Suggested skills: none."
     },
     {
@@ -61,7 +61,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Backend + schema. t3 evidence: t3code/apps/web/src/components/ProjectScriptsControl.tsx, apps/web/src/projectScripts.ts. Suggested skills: none."
     },
     {
