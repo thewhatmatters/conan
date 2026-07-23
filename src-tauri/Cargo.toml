@@ -25,6 +25,8 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
+# US-011 (chat v1): native folder-picker dialog for the per-thread cwd chip.
+tauri-plugin-dialog = "2"
 # Self-update: the UI calls check()/downloadAndInstall() via the JS plugin,
 # which round-trips through this Rust plugin. tauri-plugin-process supplies
 # the relaunch() the UI calls after applying an update.

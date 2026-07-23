@@ -180,7 +180,7 @@
         "Verify in browser using automate-browser skill: create a thread, pick a directory, confirm the `Session started` line shows that cwd"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Reuses /api/fs/list. Depends on US-001 + US-006. Suggested skills: automate-browser."
     },
     {

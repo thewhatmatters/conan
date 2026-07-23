@@ -6,6 +6,8 @@ import {
   X,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
+import StatusBar from "./StatusBar.tsx";
+import { useDirGit } from "../hooks/useDirGit.ts";
 import { cn } from "../lib/utils.ts";
 
 /**
@@ -84,6 +86,12 @@ export default function ChatSurface({
     setActiveId(id);
   }, []);
 
+  // US-011: the composer's cwd chip reports a picked directory up so the
+  // sidebar's project grouping + the StatusBar follow the choice.
+  const setThreadCwd = useCallback((id: string, cwd: string) => {
+    setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, cwd } : t)));
+  }, []);
+
   // One draft thread on first render so the surface is immediately usable.
   const booted = useRef(false);
   useEffect(() => {
@@ -133,8 +141,16 @@ export default function ChatSurface({
     else groups.set(name, [t]);
   }
 
+  // US-011: the StatusBar follows the ACTIVE thread's effective cwd, with the
+  // git branch polled for that directory (chat threads have no correlated
+  // session to derive git from).
+  const activeThread = threads.find((t) => t.id === activeId) ?? null;
+  const activeCwd = activeThread ? activeThread.cwd ?? defaultCwd : defaultCwd;
+  const activeGit = useDirGit(token, activeCwd);
+
   return (
-    <section className="flex min-h-0 min-w-0 flex-1">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1">
       {collapsed ? (
         <div className="flex w-9 shrink-0 flex-col items-center border-r border-border bg-card">
           <div className="flex h-9 shrink-0 items-center">
@@ -210,12 +226,16 @@ export default function ChatSurface({
           >
             <ChatPane
               token={token}
-              cwd={t.cwd ?? defaultCwd}
+              cwd={t.cwd}
+              defaultCwd={defaultCwd}
+              onCwdChange={(c) => setThreadCwd(t.id, c)}
               onState={(s) => reportState(t.id, s)}
             />
           </div>
         ))}
+        </div>
       </div>
+      <StatusBar cwd={activeCwd} git={activeGit} />
     </section>
   );
 }

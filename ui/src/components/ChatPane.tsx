@@ -44,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
+import CwdPicker, { recordRecentCwd } from "./CwdPicker.tsx";
 
 /**
  * Level-2 chat spike — the programmatic peer of the terminal surface.
@@ -95,12 +96,19 @@ export interface ThreadUiState {
 export default function ChatPane({
   token,
   cwd,
+  defaultCwd,
+  onCwdChange,
   onState,
 }: {
   token: string | null;
-  /** Working directory for this thread's session (US-001/US-006); sent with
-   *  every prompt frame — the gateway pins the first one. Null → gateway cwd. */
+  /** Working directory explicitly chosen for this thread (US-011 picker);
+   *  null → falls back to `defaultCwd`. The effective cwd is sent with every
+   *  prompt frame — the gateway pins the first one (US-001). */
   cwd?: string | null;
+  /** The app's active cwd from /api/config — the default for new threads. */
+  defaultCwd?: string | null;
+  /** Reports a picker selection up so the sidebar's project grouping follows. */
+  onCwdChange?: (cwd: string) => void;
   onState?: (s: ThreadUiState) => void;
 }) {
   const { items, busy, status, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
@@ -133,15 +141,20 @@ export default function ChatPane({
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [items, busy]);
 
-  const submit = () => {
-    if (!text.trim() || busy) return;
-    send(text, { model, permissionMode: permission, cwd: cwd ?? undefined });
-    setText("");
-  };
+  const effectiveCwd = cwd ?? defaultCwd ?? null;
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.
   const locked = firstUser != null;
+
+  const submit = () => {
+    if (!text.trim() || busy) return;
+    // The first prompt fixes the session's cwd — record it as a recent so the
+    // picker offers it for future threads (US-011).
+    if (!locked && effectiveCwd) recordRecentCwd(effectiveCwd);
+    send(text, { model, permissionMode: permission, cwd: effectiveCwd ?? undefined });
+    setText("");
+  };
 
   const selectPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
     if (value === "bypassPermissions" && !fullAccessConfirmed.current) {
@@ -207,6 +220,14 @@ export default function ChatPane({
                 className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
               <div className="mt-2 flex items-center gap-2">
+                <CwdPicker
+                  token={token}
+                  value={cwd ?? null}
+                  defaultCwd={defaultCwd ?? null}
+                  locked={locked}
+                  onChange={(c) => onCwdChange?.(c)}
+                />
+                <span className="text-border">|</span>
                 <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
                   {MODELS.map((m) => (
                     <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>

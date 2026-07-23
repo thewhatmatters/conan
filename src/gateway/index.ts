@@ -21,7 +21,7 @@ import {
 import { isCorrelationDegraded } from "../terminal/health.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
-import { readWidgets } from "../widgets/index.js";
+import { readWidgets, gitStatus } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import {
   getCachedPlanUtilization,
@@ -209,6 +209,19 @@ app.get("/api/fs/list", (req, res) => {
     return;
   }
   res.json(listEntries(p));
+});
+
+// Git branch + dirty count for an arbitrary directory (US-011) — powers the
+// chat surface's StatusBar, which follows the active thread's cwd rather than
+// a correlated session. Degrades to {available:false} for non-repo paths.
+app.get("/api/fs/git", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  gitStatus(p).then((g) => res.json(g));
 });
 
 // The files Claude Edited/Wrote/Read in a session, parsed from the persisted
