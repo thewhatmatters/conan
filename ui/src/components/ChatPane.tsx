@@ -91,6 +91,10 @@ export interface ThreadUiState {
   awaitingApproval: boolean;
   /** First user prompt (sidebar label). Null until the first turn is sent. */
   title: string | null;
+  /** The real Claude session id (system init event) — the shell binds
+   *  session-scoped concerns (native notifications) to the ACTIVE thread's
+   *  session now that no pty correlation exists (US-012). */
+  sessionId: string | null;
 }
 
 export default function ChatPane({
@@ -111,7 +115,7 @@ export default function ChatPane({
   onCwdChange?: (cwd: string) => void;
   onState?: (s: ThreadUiState) => void;
 }) {
-  const { items, busy, status, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
+  const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
     useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
@@ -132,8 +136,14 @@ export default function ChatPane({
   const firstUser = items.find((it) => it.role === "user");
   const title = firstUser && firstUser.role === "user" ? firstUser.text : null;
   useEffect(() => {
-    onState?.({ status, busy, awaitingApproval: pendingApproval != null, title });
-  }, [status, busy, pendingApproval, title, onState]);
+    onState?.({
+      status,
+      busy,
+      awaitingApproval: pendingApproval != null,
+      title,
+      sessionId,
+    });
+  }, [status, busy, pendingApproval, title, sessionId, onState]);
 
   // Stick to the bottom as the transcript grows — unless the user scrolled up.
   useEffect(() => {

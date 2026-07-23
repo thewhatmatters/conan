@@ -68,11 +68,16 @@ function projectOf(cwd: string | null): string {
 export default function ChatSurface({
   token,
   defaultCwd,
+  onActiveSessionChange,
 }: {
   token: string | null;
   /** The app's active cwd (from /api/config) — the default project for new
    *  threads until the US-011 picker lands. */
   defaultCwd: string | null;
+  /** Reports the ACTIVE thread's Claude session id up to the shell (US-012)
+   *  so session-scoped concerns (native notifications) follow the thread the
+   *  user is looking at — the chat-era replacement for pty correlation. */
+  onActiveSessionChange?: (sessionId: string | null) => void;
 }) {
   const seq = useRef(0);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -110,7 +115,8 @@ export default function ChatSurface({
         cur.status === s.status &&
         cur.busy === s.busy &&
         cur.awaitingApproval === s.awaitingApproval &&
-        cur.title === s.title
+        cur.title === s.title &&
+        cur.sessionId === s.sessionId
       ) {
         return prev;
       }
@@ -131,6 +137,29 @@ export default function ChatSurface({
       return rest;
     });
   };
+
+  // US-012: File ▸ New Chat / Close Chat menu items dispatch window events —
+  // the same decoupled bridge the File menu used for terminals. No dep array:
+  // closeThread closes over threads/activeId, so re-subscribing per render
+  // keeps the handlers current.
+  useEffect(() => {
+    const onNew = () => newThread();
+    const onClose = () => {
+      if (activeId) closeThread(activeId);
+    };
+    window.addEventListener("conan:new-chat", onNew);
+    window.addEventListener("conan:close-chat", onClose);
+    return () => {
+      window.removeEventListener("conan:new-chat", onNew);
+      window.removeEventListener("conan:close-chat", onClose);
+    };
+  });
+
+  // US-012: surface the active thread's Claude session id to the shell.
+  const activeSessionId = activeId ? states[activeId]?.sessionId ?? null : null;
+  useEffect(() => {
+    onActiveSessionChange?.(activeSessionId);
+  }, [activeSessionId, onActiveSessionChange]);
 
   // Group threads by project (cwd basename), preserving creation order.
   const groups = new Map<string, Thread[]>();

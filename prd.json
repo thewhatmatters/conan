@@ -198,7 +198,7 @@
         "Verify in browser using automate-browser skill: app opens directly into the chat + sidebar with no terminal surface and no surface switch"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "*** V1-CORE CHECKPOINT: after this story the app is a usable chat-primary cockpit — dogfood here before running the richness stories (US-013+). *** Irreversible-feeling; done after core UI + approval already work. Suggested skills: automate-browser."
     },
     {
