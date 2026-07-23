@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  SquareSlash,
   Terminal,
   Wrench,
   type LucideIcon,
@@ -54,6 +55,14 @@ import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
+
+/** One slash command from GET /api/claude/commands (src/commands/index.ts). */
+interface CommandEntry {
+  name: string;
+  description: string | null;
+  source: "user" | "project" | "built-in";
+  argumentHint?: string;
+}
 import {
   AutocompleteOverlay,
   useComposerAutocomplete,
@@ -303,7 +312,61 @@ export default function ChatPane({
     }),
     [token],
   );
-  const ac = useComposerAutocomplete([fileSource, skillSource], setText, textareaRef);
+  // `/` slash-commands autocomplete (US-020) — custom command files (user +
+  // project, scoped to THIS thread's cwd) plus the gateway's empirically
+  // verified headless-safe built-in subset (most built-ins are TUI-only and
+  // never offered — see src/commands/index.ts). Fetched lazily on the first
+  // `/` and cached for the pane's lifetime, like skills.
+  const commandsRef = useRef<CommandEntry[] | null>(null);
+  const commandSource = useMemo<AutocompleteSource>(
+    () => ({
+      trigger: "/",
+      empty: "No matching commands",
+      fetch: async (q) => {
+        if (!token) return [];
+        if (!commandsRef.current) {
+          const url = effectiveCwd
+            ? `/api/claude/commands?cwd=${encodeURIComponent(effectiveCwd)}`
+            : "/api/claude/commands";
+          const r = await fetch(apiBase() + url, {
+            headers: { "x-conan-token": token },
+          });
+          if (!r.ok) return [];
+          commandsRef.current = (await r.json()) as CommandEntry[];
+        }
+        const query = q.toLowerCase();
+        return commandsRef.current
+          .map((c) => {
+            const name = c.name.toLowerCase();
+            const rank = name.startsWith(query)
+              ? 0
+              : name.includes(query)
+                ? 1
+                : (c.description ?? "").toLowerCase().includes(query)
+                  ? 2
+                  : -1;
+            return { c, rank };
+          })
+          .filter((x) => x.rank >= 0)
+          .sort((a, b) => a.rank - b.rank || a.c.name.localeCompare(b.c.name))
+          .slice(0, 25)
+          .map(({ c }) => ({
+            insert: `/${c.name}`,
+            label: `/${c.name}${c.argumentHint ? ` ${c.argumentHint}` : ""}`,
+            // The source label matters here: a project command and a built-in
+            // can look alike, but only one is this repo's own workflow.
+            hint: c.description ? `${c.source} · ${c.description}` : c.source,
+            icon: SquareSlash,
+          }));
+      },
+    }),
+    [token, effectiveCwd],
+  );
+  const ac = useComposerAutocomplete(
+    [fileSource, skillSource, commandSource],
+    setText,
+    textareaRef,
+  );
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.

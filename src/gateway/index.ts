@@ -35,6 +35,7 @@ import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/inde
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { readCommands } from "../commands/index.js";
 import { readAgents } from "../agents/index.js";
 import { scoreSkills, topMatches, CONSIDERATION_TOP_N } from "../skills/match.js";
 import {
@@ -752,6 +753,17 @@ app.get("/api/claude/skills", (req, res) => {
     lastFiredAt: fired.get(s.name) ?? null,
   }));
   res.json(enriched);
+});
+
+// Slash commands for the composer's `/` autocomplete (US-020): custom command
+// files (user ~/.claude/commands + project <cwd>/.claude/commands, cwd from the
+// query so each thread scopes to ITS project) plus the empirically-verified
+// headless-safe built-in subset (see src/commands/index.ts — most built-ins are
+// TUI-only and excluded). Token-gated, read-only.
+app.get("/api/claude/commands", (req, res) => {
+  if (!authed(req, res)) return;
+  const cwd = req.query.cwd;
+  res.json(readCommands(typeof cwd === "string" && cwd.trim() ? cwd : getActiveCwd()));
 });
 
 // Installed agents for the Agents HUD tab: user + project + plugin subagent
