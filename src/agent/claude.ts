@@ -486,13 +486,29 @@ function inputTarget(input: unknown): string | null {
  * Stateful NDJSON-line → `AgentEvent[]` parser, split out of the driver so the
  * streaming/dedup logic is unit-testable without spawning a real `claude`.
  *
- * State: the set of message ids seen as `stream_event` message_starts. A whole
- * `assistant` frame whose id is in the set already streamed its text/thinking
- * as deltas, so those blocks are suppressed (tool_use always passes through).
- * Cleared at each `result` — every frame of a turn precedes its result.
+ * State: per-message-id, which MODALITIES actually streamed as deltas. A whole
+ * `assistant` frame's block is suppressed only if that modality already streamed
+ * (tool_use always passes through). Per-modality — not per-message — because the
+ * model can stream text as `text_delta`s while emitting its thinking ONLY as a
+ * whole-frame block (few/zero `thinking_delta`s): suppressing the whole frame on
+ * message_start alone then dropped reasoning entirely (the D2 bug). Cleared at
+ * each `result` — every frame of a turn precedes its result.
  */
 export class ClaudeStreamParser {
-  private streamedMessageIds = new Set<string>();
+  private streamed = new Map<string, { text: boolean; thinking: boolean }>();
+  private currentMessageId: string | null = null;
+
+  /** Record that a modality streamed a delta for the in-flight message. */
+  private markStreamed(kind: "text" | "thinking"): void {
+    const id = this.currentMessageId;
+    if (!id) return;
+    let s = this.streamed.get(id);
+    if (!s) {
+      s = { text: false, thinking: false };
+      this.streamed.set(id, s);
+    }
+    s[kind] = true;
+  }
 
   constructor(
     private readonly onControlResponse?: (r: ControlResponse) => void,
@@ -557,7 +573,9 @@ export class ClaudeStreamParser {
           event.message && typeof event.message === "object"
             ? str((event.message as Record<string, unknown>).id)
             : null;
-        if (id) this.streamedMessageIds.add(id);
+        this.currentMessageId = id;
+        if (id && !this.streamed.has(id))
+          this.streamed.set(id, { text: false, thinking: false });
         return [];
       }
       if (event.type === "content_block_delta") {
@@ -566,6 +584,7 @@ export class ClaudeStreamParser {
             ? (event.delta as Record<string, unknown>)
             : null;
         if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
+          this.markStreamed("text");
           return [{ kind: "assistant-text", text: delta.text, delta: true }];
         }
         if (
@@ -573,6 +592,7 @@ export class ClaudeStreamParser {
           typeof delta.thinking === "string" &&
           delta.thinking
         ) {
+          this.markStreamed("thinking");
           return [{ kind: "reasoning", text: delta.thinking, delta: true }];
         }
         return []; // input_json_delta / signature_delta — not rendered
@@ -605,14 +625,17 @@ export class ClaudeStreamParser {
         msg.message && typeof msg.message === "object"
           ? str((msg.message as Record<string, unknown>).id)
           : null;
-      const alreadyStreamed = id != null && this.streamedMessageIds.has(id);
+      // Per-modality suppression: a whole-frame block is a duplicate ONLY if
+      // that modality actually streamed deltas. Thinking that never streamed
+      // (whole-frame only) must still emit — that was the D2 bug.
+      const streamed = id != null ? this.streamed.get(id) : undefined;
       const out: AgentEvent[] = [];
       for (const block of messageContent(msg.message)) {
         if (block.type === "text" && typeof block.text === "string") {
-          if (!alreadyStreamed && block.text.trim())
+          if (!streamed?.text && block.text.trim())
             out.push({ kind: "assistant-text", text: block.text });
         } else if (block.type === "thinking" && typeof block.thinking === "string") {
-          if (!alreadyStreamed && block.thinking.trim())
+          if (!streamed?.thinking && block.thinking.trim())
             out.push({ kind: "reasoning", text: block.thinking });
         } else if (block.type === "tool_use") {
           out.push({
@@ -643,7 +666,8 @@ export class ClaudeStreamParser {
     }
 
     if (type === "result") {
-      this.streamedMessageIds.clear();
+      this.streamed.clear();
+      this.currentMessageId = null;
       return [
         {
           kind: "result",

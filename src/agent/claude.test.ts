@@ -69,6 +69,28 @@ test("thinking deltas emit as reasoning and the whole thinking frame is suppress
   );
 });
 
+test("MIXED: text streams as deltas but thinking arrives whole-frame only — reasoning must still emit (D2 regression)", () => {
+  // The real bug: the model streams its TEXT as text_deltas (so message_start
+  // fires and the id is 'seen'), but emits its THINKING only as a whole-frame
+  // block with zero thinking_deltas. Suppressing on message_start alone dropped
+  // the reasoning entirely. Per-modality suppression must let thinking through.
+  const p = new ClaudeStreamParser();
+  p.push(messageStart("msg_1"));
+  assert.deepEqual(p.push(textDelta("Yes.")), [
+    { kind: "assistant-text", text: "Yes.", delta: true },
+  ]);
+  // Whole-frame thinking (no thinking_delta ever streamed) → MUST emit.
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_1", [{ type: "thinking", thinking: "17 is only divisible by 1 and 17." }])),
+    [{ kind: "reasoning", text: "17 is only divisible by 1 and 17." }],
+  );
+  // Whole-frame text (already streamed as a delta) → still suppressed.
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_1", [{ type: "text", text: "Yes." }])),
+    [],
+  );
+});
+
 test("whole-message fallback still emits text + reasoning when nothing streamed", () => {
   const p = new ClaudeStreamParser();
   assert.deepEqual(
