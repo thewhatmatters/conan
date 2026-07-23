@@ -318,7 +318,7 @@
         "Verify in browser using automate-browser skill: type @ and part of a filename, confirm matches appear and selecting inserts the path"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "Builds the overlay framework reused by US-019/US-020. Suggested skills: automate-browser."
     },
     {

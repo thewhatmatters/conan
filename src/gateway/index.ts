@@ -31,7 +31,7 @@ import {
   getLastProbeError,
 } from "../usage/probe.js";
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
-import { getActiveCwd, onCwdChange, listEntries } from "../cwd/index.js";
+import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -216,6 +216,22 @@ app.get("/api/fs/list", (req, res) => {
     return;
   }
   res.json(listEntries(p));
+});
+
+// Bounded recursive file/folder search under a root (US-018) — powers the
+// composer's `@` autocomplete, scoped to the thread's cwd. /api/fs/list is
+// single-level; this walks breadth-first with hard depth/dir/result caps so
+// a huge tree can't hang the request. Empty `q` returns the shallowest
+// entries (the browse-from-@ case).
+app.get("/api/fs/search", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  const q = req.query.q;
+  res.json(searchFiles(p, typeof q === "string" ? q : ""));
 });
 
 // Git branch + dirty count for an arbitrary directory (US-011) — powers the

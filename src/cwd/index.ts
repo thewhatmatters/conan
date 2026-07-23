@@ -170,6 +170,126 @@ export function listDirs(input?: string): DirListing {
   return { path: target, parent, entries };
 }
 
+export interface SearchHit {
+  /** Path relative to the search root — what the composer inserts. */
+  rel: string;
+  name: string;
+  isDir: boolean;
+}
+
+export interface SearchResult {
+  /** The root that was searched (resolved absolute path). */
+  root: string;
+  hits: SearchHit[];
+  /** True when a bound (depth/dirs/results) cut the walk short. */
+  truncated: boolean;
+  error?: string;
+}
+
+const SEARCH_MAX_RESULTS = 50;
+const SEARCH_MAX_DEPTH = 6;
+const SEARCH_MAX_DIRS = 2000;
+/** Dependency/build trees that would drown real matches (and the dir budget). */
+const SEARCH_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "target",
+  ".next",
+  ".cache",
+  "__pycache__",
+  ".venv",
+  "venv",
+]);
+
+/**
+ * Bounded recursive file/folder search under `rootInput` for the composer's
+ * `@` autocomplete (US-018). Breadth-first so shallow entries rank ahead of
+ * deep ones, with hard caps on depth, directories visited, and results —
+ * /api/fs/list is single-level, and an unbounded walk over a monorepo would
+ * hang the request. Case-insensitive substring match on the entry name; a
+ * query containing `/` matches against the root-relative path instead, and a
+ * leading `.` opts hidden entries in (they're skipped otherwise, like
+ * listDirs). Name-prefix matches sort first; BFS order breaks ties.
+ */
+export function searchFiles(rootInput: string, query: string): SearchResult {
+  const root = path.resolve(expandHome(rootInput.trim()));
+  if (!isUsableDir(root)) {
+    return { root, hits: [], truncated: false, error: `cannot read: ${root}` };
+  }
+  const q = query.trim().toLowerCase();
+  const includeHidden = q.startsWith(".");
+  const matchRel = q.includes("/");
+
+  const hits: SearchHit[] = [];
+  const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
+  let visited = 0;
+  let truncated = false;
+
+  while (queue.length > 0 && hits.length < SEARCH_MAX_RESULTS) {
+    if (visited >= SEARCH_MAX_DIRS) {
+      truncated = true;
+      break;
+    }
+    const { dir, depth } = queue.shift()!;
+    visited++;
+
+    let dirents: fs.Dirent[];
+    try {
+      dirents = fs
+        .readdirSync(dir, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      continue; // unreadable subdir — skip, never fail the whole search
+    }
+
+    for (const d of dirents) {
+      const hidden = d.name.startsWith(".");
+      if (hidden && !includeHidden) continue;
+      const full = path.join(dir, d.name);
+      let isDir = d.isDirectory();
+      if (d.isSymbolicLink()) {
+        try {
+          isDir = fs.statSync(full).isDirectory();
+        } catch {
+          isDir = false; // broken symlink — keep it as a file-ish hit
+        }
+      }
+      const rel = path.relative(root, full);
+      const target = (matchRel ? rel : d.name).toLowerCase();
+      if (q === "" || target.includes(q)) {
+        if (hits.length >= SEARCH_MAX_RESULTS) {
+          truncated = true;
+          break;
+        }
+        hits.push({ rel, name: d.name, isDir });
+      }
+      if (
+        isDir &&
+        !hidden &&
+        depth + 1 <= SEARCH_MAX_DEPTH &&
+        !SEARCH_SKIP_DIRS.has(d.name)
+      ) {
+        queue.push({ dir: full, depth: depth + 1 });
+      }
+    }
+  }
+  if (queue.length > 0 && hits.length >= SEARCH_MAX_RESULTS) truncated = true;
+
+  // Prefix matches on the entry name lead; the sort is stable, so BFS
+  // (shallow-first) order holds within each band.
+  if (q !== "") {
+    hits.sort((a, b) => {
+      const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      return ap - bp;
+    });
+  }
+
+  return { root, hits, truncated };
+}
+
 export interface FileEntry {
   name: string;
   /** Absolute path of the entry. */

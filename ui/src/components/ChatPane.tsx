@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
   ClipboardList,
   FilePenLine,
   FileText,
+  Folder,
   FolderOpen,
   GitBranch,
   Globe,
@@ -52,6 +53,11 @@ import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
+import {
+  AutocompleteOverlay,
+  useComposerAutocomplete,
+  type AutocompleteSource,
+} from "./ComposerAutocomplete.tsx";
 
 /**
  * Level-2 chat spike — the programmatic peer of the terminal surface.
@@ -224,6 +230,36 @@ export default function ChatPane({
   // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
   // on another repo never shows the active thread's branch.
   const git = useDirGit(token, effectiveCwd);
+
+  // `@` files/folders autocomplete (US-018) — bounded recursive search under
+  // THIS thread's cwd. The inserted `@path` is a reference only; the agent
+  // reads the file itself (no content pinning).
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileSource = useMemo<AutocompleteSource>(
+    () => ({
+      trigger: "@",
+      empty: "No matching files",
+      fetch: async (q) => {
+        if (!token || !effectiveCwd) return [];
+        const r = await fetch(
+          apiBase() +
+            `/api/fs/search?path=${encodeURIComponent(effectiveCwd)}&q=${encodeURIComponent(q)}`,
+          { headers: { "x-conan-token": token } },
+        );
+        if (!r.ok) return [];
+        const data = (await r.json()) as {
+          hits: { rel: string; name: string; isDir: boolean }[];
+        };
+        return data.hits.map((h) => ({
+          insert: `@${h.rel}${h.isDir ? "/" : ""}`,
+          label: `${h.rel}${h.isDir ? "/" : ""}`,
+          icon: h.isDir ? Folder : FileText,
+        }));
+      },
+    }),
+    [token, effectiveCwd],
+  );
+  const ac = useComposerAutocomplete([fileSource], setText, textareaRef);
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.
@@ -422,7 +458,8 @@ export default function ChatPane({
             </span>
           )}
         </div>
-        <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
+        <div className="relative mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
+          {!pendingApproval && <AutocompleteOverlay ac={ac} />}
           {pendingApproval ? (
             /* Supervised mode: the input area becomes the approval prompt —
                the turn is blocked on this decision, so typing can wait. */
@@ -434,9 +471,21 @@ export default function ChatPane({
           ) : (
             <>
               <textarea
+                ref={textareaRef}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  ac.sync();
+                }}
+                onSelect={ac.sync}
+                onBlur={ac.dismiss}
                 onKeyDown={(e) => {
+                  // The autocomplete overlay gets first refusal on keys
+                  // (↑/↓/Enter/Tab/Esc while open).
+                  if (ac.onKeyDown(e)) {
+                    e.preventDefault();
+                    return;
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     submit();
