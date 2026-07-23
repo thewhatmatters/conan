@@ -37,7 +37,7 @@
         "Verify in browser using automate-browser skill: with a saved thread present, reload the app and confirm it opens automatically showing restored history (not the empty state)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Frontend in ChatSurface.tsx boot logic; reuses the US-015 reopen path. Suggested skills: automate-browser."
     },
     {

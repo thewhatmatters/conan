@@ -146,10 +146,13 @@ export default function ChatSurface({
     return () => clearInterval(t);
   }, []);
 
-  /** Pull the persisted projects + threads (US-014). Returns the project
-   *  count, or null when the gateway was unreachable. Local-only fallback
-   *  projects (a failed POST) are kept, appended after the server's order. */
-  const refresh = useCallback(async (): Promise<number | null> => {
+  /** Pull the persisted projects + threads (US-014). Returns the fetched
+   *  projects (with their saved threads — the boot auto-open needs them), or
+   *  null when the gateway was unreachable. Local-only fallback projects (a
+   *  failed POST) are kept, appended after the server's order. */
+  const refresh = useCallback(async (): Promise<
+    Array<Project & { threads: SavedThread[] }> | null
+  > => {
     if (!token) return null;
     try {
       const r = await fetch(apiBase() + "/api/agent/projects", {
@@ -165,7 +168,7 @@ export default function ChatSurface({
         return [...server, ...extras];
       });
       setSaved(Object.fromEntries(data.projects.map((p) => [p.id, p.threads])));
-      return data.projects.length;
+      return data.projects;
     } catch {
       return null;
     }
@@ -268,16 +271,33 @@ export default function ChatSurface({
   // Boot: load the persisted projects + threads first (US-014). Only when the
   // store is empty (first run / fresh DB) auto-create a project from the
   // app's active cwd with one draft thread, so a brand-new install is
-  // immediately usable; a returning user sees their saved sidebar instead.
+  // immediately usable. A returning user's most-recent saved thread reopens
+  // automatically (US-002) — persistence should look like persistence, not an
+  // empty "No open chats" pane. Boot-only: explicitly closing every thread
+  // later does NOT re-trigger this (booted guards it), so the empty state
+  // still honors a deliberate close-all.
   const booted = useRef(false);
   const projectCount = useRef(0);
   projectCount.current = projects.length;
+  const threadCount = useRef(0);
+  threadCount.current = threads.length;
   useEffect(() => {
     if (booted.current || !defaultCwd || !token) return;
     booted.current = true;
     void (async () => {
-      const n = await refreshRef.current();
-      if (!n && projectCount.current === 0) await addProjectAndChat(defaultCwd);
+      const loaded = await refreshRef.current();
+      if (!loaded?.length) {
+        if (projectCount.current === 0) await addProjectAndChat(defaultCwd);
+        return;
+      }
+      const newest = loaded
+        .flatMap((p) => p.threads.map((s) => ({ projectId: p.id, thread: s })))
+        .sort((a, b) => b.thread.lastActivity - a.thread.lastActivity)[0];
+      // Skip if the user already opened something while the fetch was in
+      // flight — auto-open must never steal focus from an explicit action.
+      if (newest && threadCount.current === 0) {
+        openSavedThread(newest.projectId, newest.thread);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCwd, token]);
