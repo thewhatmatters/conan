@@ -3,7 +3,9 @@ import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import { ClaudeDriver } from "./claude.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
-import { adoptChatThread, touchChatThread, upsertChatThread } from "./threads.js";
+import { adoptChatThread, touchChatThread, upsertChatThread,
+  setChatThreadLastMessage,
+} from "./threads.js";
 
 /**
  * WS handler for the Level-2 chat spike (`/ws/terminal`'s peer at `/ws/agent`).
@@ -49,6 +51,11 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   let projectId: string | null = null;
   let firstPrompt: string | null = null;
   let sessionId: string | null = null;
+  // PD-1: build the sidebar row's description. Accumulate the turn's assistant
+  // text; at result store it (or the user's prompt as a fallback) as the
+  // thread's last_message preview.
+  let lastPrompt: string | null = null;
+  let turnText = "";
   /** Session id this connection resumes (US-015) — the saved row to re-key. */
   let resumeFrom: string | null = null;
 
@@ -81,12 +88,18 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         }
       }
     }
+    if (e.kind === "assistant-text") turnText += e.text;
     if (e.kind === "result" && sessionId) {
       try {
         touchChatThread(sessionId);
+        // Prefer the assistant's answer as the row description; fall back to
+        // the user's prompt for a turn that produced no text (e.g. tool-only).
+        const preview = turnText.trim() || lastPrompt;
+        if (preview) setChatThreadLastMessage(sessionId, preview);
       } catch {
         /* best-effort */
       }
+      turnText = "";
     }
     // The turn is over (or the session died) — re-enable the composer.
     if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
@@ -107,6 +120,8 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         projectId = msg.projectId;
       }
       if (!firstPrompt) firstPrompt = msg.text.trim();
+      lastPrompt = msg.text.trim();
+      turnText = ""; // new turn — reset the assistant-text accumulator (PD-1)
       const opts: AgentLaunchOpts = {};
       if (typeof msg.model === "string") opts.model = msg.model;
       if (typeof msg.cwd === "string" && msg.cwd.trim()) {

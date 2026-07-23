@@ -63,6 +63,26 @@ function migrate(handle: Database.Database): void {
       handle.exec(`ALTER TABLE session ADD COLUMN ${name} ${type}`);
     }
   }
+
+  // PD-1: last_message preview on chat_thread (added after US-013's schema).
+  // Guard on the table existing so a fresh DB (schema.sql already has the
+  // column) and a pre-PD-1 DB both migrate cleanly.
+  const hasChatThread = handle
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_thread'",
+    )
+    .get();
+  if (hasChatThread) {
+    const cols = new Set(
+      handle
+        .prepare("PRAGMA table_info(chat_thread)")
+        .all()
+        .map((c) => (c as { name: string }).name),
+    );
+    if (!cols.has("last_message")) {
+      handle.exec("ALTER TABLE chat_thread ADD COLUMN last_message TEXT");
+    }
+  }
 }
 
 /** Close the database handle (used on shutdown / in tests). */

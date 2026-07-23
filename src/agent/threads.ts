@@ -24,6 +24,9 @@ export interface ThreadRow {
   cwd: string;
   model: string | null;
   title: string | null;
+  /** PD-1: preview of the last assistant response (or prompt) for the sidebar
+   *  row's description line. Null for pre-PD-1 rows / threads with no turn yet. */
+  lastMessage: string | null;
   createdAt: number;
   lastActivity: number;
 }
@@ -93,7 +96,7 @@ export function listChatProjects(): ProjectWithThreads[] {
     .all() as { id: string; path: string; name: string; created_at: number }[];
   const threads = db
     .prepare(
-      `SELECT session_id, project_id, cwd, model, title, created_at, last_activity
+      `SELECT session_id, project_id, cwd, model, title, last_message, created_at, last_activity
          FROM chat_thread ORDER BY last_activity DESC`,
     )
     .all() as {
@@ -102,6 +105,7 @@ export function listChatProjects(): ProjectWithThreads[] {
     cwd: string;
     model: string | null;
     title: string | null;
+    last_message: string | null;
     created_at: number;
     last_activity: number;
   }[];
@@ -114,6 +118,7 @@ export function listChatProjects(): ProjectWithThreads[] {
       cwd: t.cwd,
       model: t.model,
       title: t.title,
+      lastMessage: t.last_message,
       createdAt: t.created_at,
       lastActivity: t.last_activity,
     });
@@ -163,7 +168,7 @@ export function upsertChatThread(t: {
 export function getChatThread(sessionId: string): ThreadRow | null {
   const row = getDb()
     .prepare(
-      `SELECT session_id, project_id, cwd, model, title, created_at, last_activity
+      `SELECT session_id, project_id, cwd, model, title, last_message, created_at, last_activity
          FROM chat_thread WHERE session_id = ?`,
     )
     .get(sessionId) as
@@ -173,6 +178,7 @@ export function getChatThread(sessionId: string): ThreadRow | null {
         cwd: string;
         model: string | null;
         title: string | null;
+        last_message: string | null;
         created_at: number;
         last_activity: number;
       }
@@ -184,6 +190,7 @@ export function getChatThread(sessionId: string): ThreadRow | null {
     cwd: row.cwd,
     model: row.model,
     title: row.title,
+    lastMessage: row.last_message,
     createdAt: row.created_at,
     lastActivity: row.last_activity,
   };
@@ -215,6 +222,16 @@ export function touchChatThread(sessionId: string): void {
   getDb()
     .prepare("UPDATE chat_thread SET last_activity = ? WHERE session_id = ?")
     .run(Date.now(), sessionId);
+}
+
+/** PD-1: set the thread's last_message preview (sidebar row description).
+ *  Whitespace-collapsed + capped; unknown ids are a no-op. Best-effort. */
+export function setChatThreadLastMessage(sessionId: string, text: string): void {
+  const preview = text.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!preview) return;
+  getDb()
+    .prepare("UPDATE chat_thread SET last_message = ? WHERE session_id = ?")
+    .run(preview, sessionId);
 }
 
 /** Delete a thread row (the sidebar's close-X). The project persists. */

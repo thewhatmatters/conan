@@ -14,6 +14,11 @@ import {
   Plus,
   Settings,
   X,
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Loader2,
+  type LucideIcon,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
@@ -88,6 +93,8 @@ interface SavedThread {
   cwd: string;
   model: string | null;
   title: string | null;
+  /** PD-1: last assistant response / prompt preview — the row's description. */
+  lastMessage: string | null;
   createdAt: number;
   lastActivity: number;
 }
@@ -643,7 +650,12 @@ export default function ChatSurface({
                     const title = t.resume
                       ? row?.title ?? t.resume.title ?? states[t.id]?.title ?? null
                       : states[t.id]?.title ?? row?.title ?? null;
-                    return { t, title, activity: row?.lastActivity ?? t.createdAt };
+                    return {
+                      t,
+                      title,
+                      activity: row?.lastActivity ?? t.createdAt,
+                      desc: row?.lastMessage ?? t.resume?.lastMessage ?? null,
+                    };
                   })
                   .sort((a, b) =>
                     view.threadSort === "created"
@@ -717,10 +729,11 @@ export default function ChatSurface({
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {liveRows.map(({ t, title, activity }) => (
+                          {liveRows.map(({ t, title, activity, desc }) => (
                             <ThreadRow
                               key={t.id}
                               title={title}
+                              desc={desc}
                               when={timeAgo(activity)}
                               pill={pillOf(states[t.id])}
                               active={t.id === activeId}
@@ -732,6 +745,7 @@ export default function ChatSurface({
                             <ThreadRow
                               key={s.sessionId}
                               title={s.title}
+                              desc={s.lastMessage}
                               when={timeAgo(s.lastActivity)}
                               pill="idle"
                               active={false}
@@ -966,8 +980,18 @@ function IconButton({
   );
 }
 
+/** PD-1: status icon (left) per thread state, theme-token coloured. Ready/idle
+ *  read as a check/dot; working spins; awaiting-approval alerts. */
+const STATUS_ICON: Record<Pill, { Icon: LucideIcon; cls: string; spin?: boolean }> = {
+  working: { Icon: Loader2, cls: "text-primary", spin: true },
+  awaiting: { Icon: AlertTriangle, cls: "text-amber-500 dark:text-amber-400" },
+  ready: { Icon: CheckCircle2, cls: "text-chart-2" },
+  idle: { Icon: Circle, cls: "text-muted-foreground/40" },
+};
+
 function ThreadRow({
   title,
+  desc,
   when,
   pill,
   active,
@@ -975,6 +999,8 @@ function ThreadRow({
   onClose,
 }: {
   title: string | null;
+  /** PD-1: description line — last assistant response / prompt preview. */
+  desc: string | null;
   /** Relative activity time, e.g. "just now" / "15h ago". */
   when: string;
   pill: Pill;
@@ -983,6 +1009,10 @@ function ThreadRow({
   onClose: () => void;
 }) {
   const p = PILL[pill];
+  const s = STATUS_ICON[pill];
+  // Attention states (Working / Awaiting) show a badge; settled states show
+  // the timestamp — mirrors the reference (badge on warn/action, time on ok).
+  const attention = pill === "working" || pill === "awaiting";
   return (
     <div
       role="button"
@@ -992,42 +1022,57 @@ function ThreadRow({
         if (e.key === "Enter" || e.key === " ") onSelect();
       }}
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-muted text-foreground"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
       )}
     >
+      <s.Icon className={cn("mt-0.5 size-3.5 shrink-0", s.cls, s.spin && "animate-spin")} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs" title={title ?? "New chat"}>
+        <span
+          className="block truncate text-xs font-medium text-foreground"
+          title={title ?? "New chat"}
+        >
           {title ?? "New chat"}
         </span>
-        <span className="block text-[10px] text-muted-foreground/70">{when}</span>
+        <span
+          className="block truncate text-[10px] text-muted-foreground/70"
+          title={desc ?? undefined}
+        >
+          {desc ?? "No messages yet"}
+        </span>
       </span>
-      <span
-        className={cn(
-          "flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium",
-          p.cls,
+      {/* Right slot: close-X on hover, else badge (attention) / timestamp. */}
+      <span className="relative flex shrink-0 items-center">
+        {attention ? (
+          <span
+            className={cn(
+              "flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium group-hover:opacity-0",
+              p.cls,
+            )}
+          >
+            <span className={cn("size-1.5 rounded-full", p.dot)} />
+            {p.label}
+          </span>
+        ) : (
+          <span className="whitespace-nowrap text-[10px] text-muted-foreground/60 group-hover:opacity-0">
+            {when}
+          </span>
         )}
-      >
-        <span className={cn("size-1.5 rounded-full", p.dot)} />
-        {p.label}
+        <button
+          type="button"
+          title="Close chat"
+          aria-label="Close chat"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute right-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+        >
+          <X className="size-3" />
+        </button>
       </span>
-      <button
-        type="button"
-        title="Close chat"
-        aria-label="Close chat"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        className={cn(
-          "shrink-0 rounded p-0.5 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100",
-          active ? "opacity-60" : "opacity-0",
-        )}
-      >
-        <X className="size-3" />
-      </button>
     </div>
   );
 }
