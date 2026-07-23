@@ -1,18 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronDown,
   ChevronRight,
   Folder,
   FolderPlus,
   MessageSquarePlus,
+  Minus,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Settings,
   X,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import DirBrowser, { basename } from "./DirBrowser.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu.tsx";
 import { apiBase, isTauri } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 
@@ -48,6 +62,11 @@ interface Project {
   path: string;
   /** Display name: the folder basename. */
   name: string;
+  /** Creation time — the "Created" project sort key (US-005). */
+  createdAt: number;
+  /** Git repo root containing the folder (gateway-computed) — the
+   *  group-by-repository key. Null/absent = not in a repo (groups by path). */
+  repoRoot?: string | null;
 }
 
 /** A live (this-run) thread hosting a mounted ChatPane. */
@@ -109,6 +128,67 @@ function timeAgo(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// ── Sidebar sort / group preferences (US-005) ──────────────────────────────
+
+type ProjectSort = "activity" | "created" | "manual";
+type ThreadSort = "activity" | "created";
+type ProjectGroup = "repo" | "path" | "separate";
+
+/** The ↑↓ menu's selections, persisted to localStorage across reloads. */
+interface SidebarView {
+  projectSort: ProjectSort;
+  threadSort: ThreadSort;
+  /** Max thread rows shown per project before a "Show more" affordance.
+   *  Open (live) chats always show — the cap only trims saved history. */
+  visibleThreads: number;
+  group: ProjectGroup;
+  /** Explicit project order for projectSort="manual" (ids; projects not yet
+   *  placed append in activity order). Reordered via the row ↑/↓ buttons. */
+  manualOrder: string[];
+}
+
+const VIEW_KEY = "conan-sidebar-view";
+const VISIBLE_MIN = 1;
+const VISIBLE_MAX = 20;
+const DEFAULT_VIEW: SidebarView = {
+  projectSort: "activity",
+  threadSort: "activity",
+  visibleThreads: 5,
+  group: "repo",
+  manualOrder: [],
+};
+
+function loadView(): SidebarView {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY);
+    if (!raw) return DEFAULT_VIEW;
+    const v = JSON.parse(raw) as Partial<SidebarView>;
+    return {
+      projectSort:
+        v.projectSort === "created" || v.projectSort === "manual"
+          ? v.projectSort
+          : "activity",
+      threadSort: v.threadSort === "created" ? "created" : "activity",
+      visibleThreads: Math.min(
+        VISIBLE_MAX,
+        Math.max(VISIBLE_MIN, Math.round(Number(v.visibleThreads)) || DEFAULT_VIEW.visibleThreads),
+      ),
+      group: v.group === "path" || v.group === "separate" ? v.group : "repo",
+      manualOrder: Array.isArray(v.manualOrder)
+        ? v.manualOrder.filter((x): x is string => typeof x === "string")
+        : [],
+    };
+  } catch {
+    return DEFAULT_VIEW;
+  }
+}
+
+/** Parent directory of an absolute path — the group-by-path key. */
+function parentDir(p: string): string {
+  const i = p.lastIndexOf("/");
+  return i > 0 ? p.slice(0, i) : "/";
+}
+
 export default function ChatSurface({
   token,
   defaultCwd,
@@ -139,6 +219,21 @@ export default function ChatSurface({
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
   /** In-app folder browser open (the non-Tauri Browse fallback). */
   const [pickingFolder, setPickingFolder] = useState(false);
+  /** Sort/group prefs (US-005) — localStorage-backed so they survive reloads. */
+  const [view, setView] = useState<SidebarView>(loadView);
+  /** Projects whose saved-thread list is expanded past the visible cap.
+   *  Session-only — a reload re-collapses to the cap. */
+  const [expandedThreads, setExpandedThreads] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch {
+      /* private-mode storage failures just lose persistence, not the UI */
+    }
+  }, [view]);
+
+  const patchView = (p: Partial<SidebarView>) => setView((v) => ({ ...v, ...p }));
 
   // Tick every 30s so the relative timestamps stay honest while idle.
   const [, setClock] = useState(0);
@@ -164,7 +259,9 @@ export default function ChatSurface({
         projects: Array<Project & { threads: SavedThread[] }>;
       };
       setProjects((prev) => {
-        const server: Project[] = data.projects.map(({ id, path, name }) => ({ id, path, name }));
+        const server: Project[] = data.projects.map(
+          ({ id, path, name, createdAt, repoRoot }) => ({ id, path, name, createdAt, repoRoot }),
+        );
         const extras = prev.filter((p) => !server.some((s) => s.path === p.path));
         return [...server, ...extras];
       });
@@ -193,7 +290,14 @@ export default function ChatSurface({
         });
         if (r.ok) {
           const row = (await r.json()) as Project;
-          const proj: Project = { id: row.id, path: row.path, name: row.name };
+          // repoRoot arrives on the next list refresh; until then the project
+          // groups by its own path.
+          const proj: Project = {
+            id: row.id,
+            path: row.path,
+            name: row.name,
+            createdAt: row.createdAt ?? Date.now(),
+          };
           setProjects((prev) =>
             prev.some((p) => p.id === proj.id) ? prev : [...prev, proj],
           );
@@ -203,7 +307,12 @@ export default function ChatSurface({
         /* fall through to the local fallback */
       }
     }
-    const proj: Project = { id: `local-${++seq.current}`, path: clean, name: basename(clean) };
+    const proj: Project = {
+      id: `local-${++seq.current}`,
+      path: clean,
+      name: basename(clean),
+      createdAt: Date.now(),
+    };
     setProjects((prev) => [...prev, proj]);
     return proj;
   };
@@ -393,6 +502,77 @@ export default function ChatSurface({
   const openSettings = () =>
     window.dispatchEvent(new CustomEvent("conan:open-settings"));
 
+  // ── US-005: sort + group the sidebar per the ↑↓ menu ─────────────────────
+
+  /** Newest activity a project has seen: saved-thread activity, live drafts
+   *  opened this run, else its creation time. */
+  const projActivity = (p: Project): number =>
+    Math.max(
+      p.createdAt,
+      ...(saved[p.id] ?? []).map((s) => s.lastActivity),
+      ...threads.filter((t) => t.projectId === p.id).map((t) => t.createdAt),
+    );
+
+  const orderedProjects = (() => {
+    const base = [...projects];
+    if (view.projectSort === "created") {
+      base.sort((a, b) => b.createdAt - a.createdAt);
+      return base;
+    }
+    base.sort((a, b) => projActivity(b) - projActivity(a));
+    if (view.projectSort !== "manual") return base;
+    // Manual: explicit placements first, unplaced projects trail in activity
+    // order (they slot into manualOrder on the first ↑/↓ press).
+    const rank = new Map(view.manualOrder.map((id, i) => [id, i]));
+    return [
+      ...base
+        .filter((p) => rank.has(p.id))
+        .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!),
+      ...base.filter((p) => !rank.has(p.id)),
+    ];
+  })();
+
+  /** Swap a project with its display neighbor (manual sort's ↑/↓ buttons) and
+   *  persist the WHOLE displayed order, so every project gets a stable slot. */
+  const moveProject = (id: string, dir: -1 | 1) => {
+    const order = orderedProjects.map((p) => p.id);
+    const i = order.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    const a = order[i]!;
+    order[i] = order[j]!;
+    order[j] = a;
+    patchView({ manualOrder: order });
+  };
+
+  /** Cluster key per the Group-projects mode. "Keep separate" makes every
+   *  project its own cluster (today's flat rendering). */
+  const groupKeyOf = (p: Project): string =>
+    view.group === "separate"
+      ? p.id
+      : view.group === "path"
+        ? parentDir(p.path)
+        : p.repoRoot ?? p.path;
+
+  // Clusters keep the sorted order (a cluster sits where its first member
+  // ranks); a header label only renders when ≥2 projects actually share the
+  // key, so the common one-repo-per-project case looks exactly like today.
+  const projectGroups = (() => {
+    const groups: { key: string; members: Project[] }[] = [];
+    const at = new Map<string, number>();
+    for (const p of orderedProjects) {
+      const k = groupKeyOf(p);
+      const idx = at.get(k);
+      if (idx == null) {
+        at.set(k, groups.length);
+        groups.push({ key: k, members: [p] });
+      } else {
+        groups[idx]!.members.push(p);
+      }
+    }
+    return groups;
+  })();
+
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -418,6 +598,7 @@ export default function ChatSurface({
             <span className="flex-1 text-[11px] font-medium text-muted-foreground">
               Projects
             </span>
+            <SortGroupMenu view={view} onPatch={patchView} />
             <IconButton title="Add project" onClick={() => void pickProjectFolder()}>
               <FolderPlus className="size-4" />
             </IconButton>
@@ -431,7 +612,19 @@ export default function ChatSurface({
                 No projects yet — add a folder to start chatting.
               </p>
             ) : (
-              projects.map((proj) => {
+              projectGroups.map((g) => (
+                <div key={g.key}>
+                  {/* US-005: a cluster label only when ≥2 projects share the
+                      repo/parent — the common case renders exactly as before. */}
+                  {g.members.length > 1 && (
+                    <div
+                      className="truncate px-1 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
+                      title={g.key}
+                    >
+                      {basename(g.key)}
+                    </div>
+                  )}
+                  {g.members.map((proj) => {
                 const list = threads.filter((t) => t.projectId === proj.id);
                 const savedAll = saved[proj.id] ?? [];
                 const bySession = new Map(savedAll.map((s) => [s.sessionId, s]));
@@ -444,6 +637,36 @@ export default function ChatSurface({
                   ),
                 );
                 const savedOnly = savedAll.filter((s) => !liveSessions.has(s.sessionId));
+                // US-005: thread sort + the visible cap. Live (open) rows
+                // always show — the cap only trims saved history, since
+                // hiding an open chat would hide a running agent process.
+                const liveRows = list
+                  .map((t) => {
+                    const sid = states[t.id]?.sessionId;
+                    const row =
+                      (sid ? bySession.get(sid) : undefined) ??
+                      (t.resume ? bySession.get(t.resume.sessionId) : undefined);
+                    // A reopened thread keeps its saved title until a fresh
+                    // live one exists (DB titles are sticky).
+                    const title = t.resume
+                      ? row?.title ?? t.resume.title ?? states[t.id]?.title ?? null
+                      : states[t.id]?.title ?? row?.title ?? null;
+                    return { t, title, activity: row?.lastActivity ?? t.createdAt };
+                  })
+                  .sort((a, b) =>
+                    view.threadSort === "created"
+                      ? b.t.createdAt - a.t.createdAt
+                      : b.activity - a.activity,
+                  );
+                const sortedSaved = [...savedOnly].sort((a, b) =>
+                  view.threadSort === "created"
+                    ? b.createdAt - a.createdAt
+                    : b.lastActivity - a.lastActivity,
+                );
+                const savedCap = Math.max(0, view.visibleThreads - liveRows.length);
+                const expanded = expandedThreads[proj.id] === true;
+                const visibleSaved = expanded ? sortedSaved : sortedSaved.slice(0, savedCap);
+                const hiddenCount = sortedSaved.length - visibleSaved.length;
                 const closed = closedGroups[proj.id] === true;
                 return (
                   <div key={proj.id} className="mb-1">
@@ -468,7 +691,25 @@ export default function ChatSurface({
                       </button>
                       {/* Reveal on project-row hover (or keyboard focus within
                           the row), matching t3-code — not always shown. */}
-                      <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <span className="flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                        {/* US-005: manual sort exposes ↑/↓ on hover — the
+                            explicit reorder gesture behind "Manual". */}
+                        {view.projectSort === "manual" && (
+                          <>
+                            <IconButton
+                              title={`Move ${proj.name} up`}
+                              onClick={() => moveProject(proj.id, -1)}
+                            >
+                              <ArrowUp className="size-3" />
+                            </IconButton>
+                            <IconButton
+                              title={`Move ${proj.name} down`}
+                              onClick={() => moveProject(proj.id, 1)}
+                            >
+                              <ArrowDown className="size-3" />
+                            </IconButton>
+                          </>
+                        )}
                         <IconButton
                           title={`New chat in ${proj.name}`}
                           onClick={() => newThreadIn(proj.id)}
@@ -484,29 +725,18 @@ export default function ChatSurface({
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {list.map((t) => {
-                            const sid = states[t.id]?.sessionId;
-                            const row =
-                              (sid ? bySession.get(sid) : undefined) ??
-                              (t.resume ? bySession.get(t.resume.sessionId) : undefined);
-                            // A reopened thread keeps its saved title until a
-                            // fresh live one exists (DB titles are sticky).
-                            const title = t.resume
-                              ? row?.title ?? t.resume.title ?? states[t.id]?.title ?? null
-                              : states[t.id]?.title ?? row?.title ?? null;
-                            return (
-                              <ThreadRow
-                                key={t.id}
-                                title={title}
-                                when={timeAgo(row?.lastActivity ?? t.createdAt)}
-                                pill={pillOf(states[t.id])}
-                                active={t.id === activeId}
-                                onSelect={() => setActiveId(t.id)}
-                                onClose={() => closeThread(t.id)}
-                              />
-                            );
-                          })}
-                          {savedOnly.map((s) => (
+                          {liveRows.map(({ t, title, activity }) => (
+                            <ThreadRow
+                              key={t.id}
+                              title={title}
+                              when={timeAgo(activity)}
+                              pill={pillOf(states[t.id])}
+                              active={t.id === activeId}
+                              onSelect={() => setActiveId(t.id)}
+                              onClose={() => closeThread(t.id)}
+                            />
+                          ))}
+                          {visibleSaved.map((s) => (
                             <ThreadRow
                               key={s.sessionId}
                               title={s.title}
@@ -517,11 +747,35 @@ export default function ChatSurface({
                               onClose={() => void deleteSavedRow(s.sessionId)}
                             />
                           ))}
+                          {hiddenCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedThreads((prev) => ({ ...prev, [proj.id]: true }))
+                              }
+                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              Show {hiddenCount} more…
+                            </button>
+                          )}
+                          {expanded && sortedSaved.length > savedCap && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedThreads((prev) => ({ ...prev, [proj.id]: false }))
+                              }
+                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              Show less
+                            </button>
+                          )}
                         </div>
                       ))}
                   </div>
                 );
-              })
+                  })}
+                </div>
+              ))
             )}
           </div>
           {/* US-003: standard chat-app Settings placement — bottom of the rail.
@@ -590,6 +844,112 @@ export default function ChatSurface({
         />
       )}
     </section>
+  );
+}
+
+/** The sidebar header's ↑↓ menu (US-005): sort projects / sort threads /
+ *  visible-thread cap / group projects. Radio picks keep the menu open so a
+ *  user can adjust several axes in one visit; every change applies live and
+ *  persists via the caller's localStorage-backed view state. */
+function SortGroupMenu({
+  view,
+  onPatch,
+}: {
+  view: SidebarView;
+  onPatch: (p: Partial<SidebarView>) => void;
+}) {
+  const stepVisible = (d: number) =>
+    onPatch({
+      visibleThreads: Math.min(VISIBLE_MAX, Math.max(VISIBLE_MIN, view.visibleThreads + d)),
+    });
+  const keepOpen = (e: Event) => e.preventDefault();
+  const labelCls = "px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
+  const itemCls = "py-1 text-xs";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title="Sort & group"
+          aria-label="Sort & group"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ArrowUpDown className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuLabel className={labelCls}>Sort projects</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={view.projectSort}
+          onValueChange={(v) => onPatch({ projectSort: v as ProjectSort })}
+        >
+          <DropdownMenuRadioItem value="activity" onSelect={keepOpen} className={itemCls}>
+            Last activity
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="created" onSelect={keepOpen} className={itemCls}>
+            Created
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="manual" onSelect={keepOpen} className={itemCls}>
+            Manual
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className={labelCls}>Sort threads</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={view.threadSort}
+          onValueChange={(v) => onPatch({ threadSort: v as ThreadSort })}
+        >
+          <DropdownMenuRadioItem value="activity" onSelect={keepOpen} className={itemCls}>
+            Last activity
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="created" onSelect={keepOpen} className={itemCls}>
+            Created
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className={labelCls}>Visible threads</DropdownMenuLabel>
+        <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5">
+          <span className="text-xs text-muted-foreground">Per project</span>
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Fewer visible threads"
+              disabled={view.visibleThreads <= VISIBLE_MIN}
+              onClick={() => stepVisible(-1)}
+              className="flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Minus className="size-3" />
+            </button>
+            <span className="w-6 text-center text-xs tabular-nums">{view.visibleThreads}</span>
+            <button
+              type="button"
+              aria-label="More visible threads"
+              disabled={view.visibleThreads >= VISIBLE_MAX}
+              onClick={() => stepVisible(1)}
+              className="flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus className="size-3" />
+            </button>
+          </span>
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className={labelCls}>Group projects</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={view.group}
+          onValueChange={(v) => onPatch({ group: v as ProjectGroup })}
+        >
+          <DropdownMenuRadioItem value="repo" onSelect={keepOpen} className={itemCls}>
+            By repository
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="path" onSelect={keepOpen} className={itemCls}>
+            By path
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="separate" onSelect={keepOpen} className={itemCls}>
+            Keep separate
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

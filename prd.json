@@ -88,7 +88,7 @@
         "Verify in browser using automate-browser skill: change the project sort and confirm the order updates and survives a reload"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Frontend in ChatSurface.tsx (sidebar header + grouping/sort logic). Medium. Suggested skills: automate-browser."
     },
     {

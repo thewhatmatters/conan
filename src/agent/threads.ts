@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { getDb } from "../db/index.js";
 
@@ -28,8 +29,28 @@ export interface ThreadRow {
 }
 
 export interface ProjectWithThreads extends ProjectRow {
+  /** Git repository root containing the project folder (null when the folder
+   *  isn't inside a repo, or no longer exists) — the sidebar's group-by-
+   *  repository key (US-005). */
+  repoRoot: string | null;
   /** Newest activity first. */
   threads: ThreadRow[];
+}
+
+/** Nearest ancestor (or the folder itself) containing a `.git` entry. Pure
+ *  stat-walk — no git exec — so listing projects stays cheap. */
+function findRepoRoot(dir: string): string | null {
+  try {
+    let cur = dir;
+    for (;;) {
+      if (fs.existsSync(path.join(cur, ".git"))) return cur;
+      const parent = path.dirname(cur);
+      if (parent === cur) return null;
+      cur = parent;
+    }
+  } catch {
+    return null;
+  }
 }
 
 /** Upsert a project by path — an existing row for the same folder is returned
@@ -103,6 +124,7 @@ export function listChatProjects(): ProjectWithThreads[] {
     path: p.path,
     name: p.name,
     createdAt: p.created_at,
+    repoRoot: findRepoRoot(p.path),
     threads: byProject.get(p.id) ?? [],
   }));
   // Newest activity first; a thread-less project sorts by its creation time.
