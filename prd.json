@@ -71,7 +71,7 @@
         "Verify in browser using automate-browser skill: a turn that fires a skill shows a clearly distinct skill tick alongside faint tool ticks"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Small, self-contained in ActivitySpine.tsx. Respect F7 (don't reintroduce clutter). Suggested skills: automate-browser."
     },
     {

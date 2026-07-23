@@ -10,9 +10,10 @@ import { cn } from "../lib/utils.ts";
  * Activity spine (US-016/US-017) — a thin vertical rail beside the transcript
  * that fuses navigation with observability. One prominent tick per user turn
  * (hover previews the prompt, click jumps the transcript there), with that
- * turn's activity clustered beneath it: accent ticks for skills fired
- * (session-scoped `{type:'skill-fired'}` WS rows), faint short ticks for tool
- * calls. Ticks are evenly spaced rhythm marks, NOT pixel-proportional to
+ * turn's activity clustered beneath it: filled accent dots with a soft halo
+ * ring for skills fired (session-scoped `{type:'skill-fired'}` WS rows —
+ * distinct in both shape and fill from the bars around them), faint short
+ * ticks for tool calls. Ticks are evenly spaced rhythm marks, NOT pixel-proportional to
  * scroll position — the rail reads as the conversation's beat, not a minimap.
  */
 
@@ -83,7 +84,7 @@ export default function ActivitySpine({
                       className={cn(
                         "shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         tick.kind === "skill"
-                          ? "h-1 w-3 bg-primary/60 hover:bg-primary"
+                          ? "size-2 bg-primary ring-2 ring-primary/25 hover:ring-primary/50 focus-visible:ring-ring"
                           : "h-0.5 w-2 bg-muted-foreground/25 hover:bg-muted-foreground/60",
                       )}
                     />
