@@ -50,6 +50,7 @@ import { cn } from "../lib/utils.ts";
 import { apiBase } from "../lib/gateway.ts";
 import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
+import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 
 /**
  * Level-2 chat spike — the programmatic peer of the terminal surface.
@@ -252,8 +253,22 @@ export default function ChatPane({
     : MODELS.find((m) => m.value === model)?.label ?? "Default model";
   const perm = PERMISSIONS.find((p) => p.value === permission) ?? PERMISSIONS[1]!;
 
+  // Activity-spine turns (US-016): one entry per user prompt across the
+  // restored history + the live transcript, in render order.
+  const turns: SpineTurn[] = [...history, ...items].flatMap((it) =>
+    it.role === "user" ? [{ id: it.id, text: it.text }] : [],
+  );
+  const jumpToTurn = (id: string) => {
+    // Scoped to THIS pane's scroller — item ids repeat across the
+    // mounted-but-hidden threads, so a global lookup could hit another pane.
+    scrollRef.current
+      ?.querySelector(`[data-turn="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <div className="flex min-h-0 flex-1">
       {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
       <aside
         ref={scrollRef}
@@ -261,7 +276,7 @@ export default function ChatPane({
           const el = scrollRef.current;
           if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto"
       >
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
           {historyState === "loading" && (
@@ -277,7 +292,7 @@ export default function ChatPane({
             </div>
           )}
           {history.map((it) => (
-            <Item key={it.id} item={it} />
+            <Anchored key={it.id} item={it} />
           ))}
           {historyState === "found" && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -293,11 +308,15 @@ export default function ChatPane({
           {items.length === 0 && historyState === null ? (
             <EmptyState status={status} />
           ) : (
-            items.map((it) => <Item key={it.id} item={it} />)
+            items.map((it) => <Anchored key={it.id} item={it} />)
           )}
           {busy && <WorkingIndicator items={items} />}
         </div>
       </aside>
+      {/* Activity spine (US-016) — outside the scroller so it stays put
+          while the transcript scrolls; bound to this thread's turns. */}
+      <ActivitySpine turns={turns} onJump={jumpToTurn} />
+      </div>
 
       {/* Composer — textarea with a chip row + send button. */}
       <div className="shrink-0 px-4 pb-4">
@@ -567,6 +586,17 @@ function EmptyState({ status }: { status: string }) {
         headlessly in the active directory and renders the conversation here —
         no terminal required. {status === "open" ? "Ready." : "Connecting…"}
       </p>
+    </div>
+  );
+}
+
+/** A transcript item, wrapped in a `data-turn` anchor when it's a user
+ *  prompt so the activity spine (US-016) can scroll to it. */
+function Anchored({ item }: { item: ChatItem }) {
+  if (item.role !== "user") return <Item item={item} />;
+  return (
+    <div data-turn={item.id} className="scroll-mt-4">
+      <Item item={item} />
     </div>
   );
 }

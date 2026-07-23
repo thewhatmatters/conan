@@ -285,7 +285,7 @@
         "Verify in browser using automate-browser skill: run several prompts, hover a tick to preview, click to scroll to that turn"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "The fused Timeline+prompt-nav surface (skills+tools added next). Suggested skills: automate-browser."
     },
     {
