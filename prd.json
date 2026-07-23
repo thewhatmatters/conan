@@ -106,7 +106,7 @@
         "Verify in browser using automate-browser skill: open the picker, keyboard-navigate to Local folder, browse and select a directory, confirm the project is added"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Frontend; reuses DirBrowser/CwdPicker + overlay patterns. Local-folder only (A1-b remote sources deferred). Suggested skills: automate-browser."
     }
   ]

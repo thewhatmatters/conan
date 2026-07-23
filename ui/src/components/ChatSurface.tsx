@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
-import DirBrowser, { basename } from "./DirBrowser.tsx";
+import { basename } from "./DirBrowser.tsx";
+import ProjectPicker, { recordRecentProject } from "./ProjectPicker.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
-import { apiBase, isTauri } from "../lib/gateway.ts";
+import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 
 /**
@@ -217,7 +218,7 @@ export default function ChatSurface({
   const [collapsed, setCollapsed] = useState(false);
   /** Per-project group collapse (chevron). Absent/false = expanded. */
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
-  /** In-app folder browser open (the non-Tauri Browse fallback). */
+  /** Add-project Sources palette open (US-006). */
   const [pickingFolder, setPickingFolder] = useState(false);
   /** Sort/group prefs (US-005) — localStorage-backed so they survive reloads. */
   const [view, setView] = useState<SidebarView>(loadView);
@@ -279,6 +280,7 @@ export default function ChatSurface({
    *  project when the gateway can't be reached, so chatting still works. */
   const addProject = async (path: string): Promise<Project> => {
     const clean = path.replace(/\/+$/, "") || "/";
+    recordRecentProject(clean);
     const existing = projects.find((p) => p.path === clean);
     if (existing) return existing;
     if (token) {
@@ -348,21 +350,11 @@ export default function ChatSurface({
     newThreadIn((await addProject(path)).id);
   };
 
-  /** Folder picker: native dialog under Tauri, in-app DirBrowser fallback
-   *  (browser dev has no native dialogs) — same split the US-011 cwd picker
-   *  used. */
+  /** Add-project flow (US-006): the keyboard-navigable Sources palette —
+   *  Local folder browse + recent projects — replacing the raw OS folder
+   *  dialog (and the old DirBrowser fallback) on every platform. */
   const pickProjectFolder = async () => {
-    if (isTauri()) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const dir = await open({
-        directory: true,
-        defaultPath: defaultCwd ?? undefined,
-        title: "Choose a project folder",
-      });
-      if (typeof dir === "string" && dir) await addProjectAndChat(dir);
-    } else {
-      setPickingFolder(true);
-    }
+    setPickingFolder(true);
   };
 
   /** New chat with no explicit project (File ▸ New Chat, empty states): the
@@ -832,10 +824,9 @@ export default function ChatSurface({
       </div>
 
       {pickingFolder && (
-        <DirBrowser
+        <ProjectPicker
           token={token}
           start={defaultCwd}
-          title="Choose a project folder"
           onSelect={(p) => {
             void addProjectAndChat(p);
             setPickingFolder(false);
