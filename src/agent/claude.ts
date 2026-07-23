@@ -351,20 +351,21 @@ export class ClaudeDriver implements AgentDriver {
     if (this.opts.resume) args.push("--resume", this.opts.resume);
     if (this.opts.permissionMode)
       args.push("--permission-mode", this.opts.permissionMode);
-    // Supervised (`default`, or no mode — the CLI's default IS default) routes
-    // permission prompts onto the control channel instead of headless
-    // auto-deny. Plan mode wires it too (US-022): without it the CLI never
-    // even offers ExitPlanMode headlessly; with it the plan approval — and
-    // the post-plan build, which continues under `default` rules — round-trip
-    // like any Supervised prompt. acceptEdits/bypassPermissions never prompt,
-    // so the flag stays off there (US-004 criteria). Tools the user's own
-    // permission rules already allow are settled CLI-side and never reach us.
-    if (
-      !this.opts.permissionMode ||
-      this.opts.permissionMode === "default" ||
-      this.opts.permissionMode === "plan"
-    )
-      args.push("--permission-prompt-tool", "stdio");
+    // Permission prompts ride the control channel instead of headless
+    // auto-deny (US-004); plan mode needs it too or the CLI never offers
+    // ExitPlanMode headlessly (US-022). Wired unconditionally: modes are
+    // live-switchable mid-session (chat-v1 polish US-001), so a session
+    // launched acceptEdits/bypassPermissions can move into Supervised/Plan
+    // later — those modes just never prompt while active. Tools the user's
+    // own permission rules already allow are settled CLI-side and never
+    // reach us.
+    args.push("--permission-prompt-tool", "stdio");
+    // Enables bypassPermissions as a mid-session TARGET without enabling it
+    // now: the CLI rejects set_permission_mode → bypassPermissions unless
+    // launched with the option. The switch itself only ever comes from our
+    // control channel behind the UI's one-time Full-access confirm — the
+    // model has no tool that can invoke it.
+    args.push("--allow-dangerously-skip-permissions");
 
     let child: ChildProcessWithoutNullStreams;
     try {

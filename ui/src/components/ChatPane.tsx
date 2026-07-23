@@ -380,10 +380,11 @@ export default function ChatPane({
     textareaRef,
   );
 
-  // The launch config is fixed at the first prompt (stream-json keeps one
-  // model/permission-mode per process) — lock the chips once a turn is sent.
-  // A reopened thread is locked from the start: its config came from the
-  // saved session it resumes.
+  // The launch config is fixed at the first prompt (one model/cwd per
+  // process) — the model chip + directory pill lock once a turn is sent, and
+  // a reopened thread is locked from the start: its config came from the
+  // saved session it resumes. The PERMISSION chip is the exception: the
+  // control channel can switch mode mid-session (US-022), so it stays live.
   const locked = firstUser != null || resume != null;
 
   const submit = () => {
@@ -406,7 +407,16 @@ export default function ChatPane({
       setConfirmingFullAccess(true);
       return;
     }
-    setPermission(value);
+    applyPermission(value);
+  };
+
+  // Pre-launch the chip sets the local launch config; once the session exists
+  // the switch rides the control channel (the US-022 path). No optimistic
+  // update on the live path — the chip follows the confirmed `permissionMode`
+  // event, and a failed switch (error item) leaves it on the prior mode.
+  const applyPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
+    if (sessionId != null) setPermissionMode(value);
+    else setPermission(value);
   };
 
   const modelLabel = resume
@@ -653,7 +663,6 @@ export default function ChatPane({
                 <Chip
                   icon={<perm.icon className="size-3.5" />}
                   label={perm.label}
-                  locked={locked}
                   className={cn(
                     perm.value === "bypassPermissions" && "text-destructive hover:text-destructive",
                   )}
@@ -719,7 +728,7 @@ export default function ChatPane({
               size="sm"
               onClick={() => {
                 fullAccessConfirmed.current = true;
-                setPermission("bypassPermissions");
+                applyPermission("bypassPermissions");
                 setConfirmingFullAccess(false);
               }}
             >

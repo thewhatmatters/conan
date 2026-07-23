@@ -20,7 +20,7 @@
         "Verify in browser using automate-browser skill: send a turn, then switch the mode via the chip and confirm the change takes effect (e.g. Supervised→Full access: a subsequent tool no longer raises the approval panel)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Backend already supports it (setPermissionMode, US-022) — this is UI wiring in ChatPane.tsx. Suggested skills: automate-browser."
     },
     {
