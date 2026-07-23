@@ -147,7 +147,7 @@
         "Verify in browser using automate-browser skill: confirm Supervised is default, the Full-access confirm appears, and Stop cancels a turn"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Extends the spike's composer chips. Suggested skills: automate-browser."
     },
     {

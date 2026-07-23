@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
+  ClipboardList,
   FilePenLine,
   FileText,
   Globe,
   Loader2,
   Lock,
   Plug,
+  ShieldAlert,
+  ShieldCheck,
   Sparkles,
+  Square,
   Terminal,
   Wrench,
   type LucideIcon,
@@ -16,6 +20,15 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAgentChat, type ChatItem, type AgentOpts } from "../hooks/useAgentChat.ts";
+import { Button } from "./ui/button.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,15 +58,20 @@ const MODELS: { label: string; value: string | undefined }[] = [
   { label: "Haiku", value: "haiku" },
 ];
 
-/** `--permission-mode` chip options. Default is Full access so the spike drives
- *  any prompt to completion headlessly (a stricter mode stalls on the tool
- *  prompts print-mode can't answer). This is the one knob to revisit for
- *  production — a `--permission-prompt-tool` round-trip would let the UI
- *  approve tools interactively instead of blanket-bypassing. */
-const PERMISSIONS: { label: string; value: NonNullable<AgentOpts["permissionMode"]> }[] = [
-  { label: "Full access", value: "bypassPermissions" },
-  { label: "Accept edits", value: "acceptEdits" },
-  { label: "Plan", value: "plan" },
+/** `--permission-mode` chip options. Supervised (`default`) is the default —
+ *  the driver's control-channel approval round-trip (US-004) answers the tool
+ *  prompts interactively, so a terminal-less surface never needs to blanket-
+ *  bypass. Full access runs every tool unprompted and gets a one-time confirm. */
+const PERMISSIONS: {
+  label: string;
+  value: NonNullable<AgentOpts["permissionMode"]>;
+  icon: LucideIcon;
+  hint: string;
+}[] = [
+  { label: "Plan", value: "plan", icon: ClipboardList, hint: "Read-only — ends with a proposed plan" },
+  { label: "Supervised", value: "default", icon: ShieldCheck, hint: "Asks before running tools" },
+  { label: "Accept edits", value: "acceptEdits", icon: FilePenLine, hint: "Auto-approves file edits" },
+  { label: "Full access", value: "bypassPermissions", icon: ShieldAlert, hint: "Runs every tool without prompting" },
 ];
 
 /** Render-facing thread state, reported up to the sidebar (US-006) so the
@@ -81,7 +99,11 @@ export default function ChatPane({
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
   const [permission, setPermission] =
-    useState<NonNullable<AgentOpts["permissionMode"]>>("bypassPermissions");
+    useState<NonNullable<AgentOpts["permissionMode"]>>("default");
+  // Full-access one-time confirm: selecting bypassPermissions opens the dialog
+  // until it has been accepted once in this thread; declining reverts.
+  const [confirmingFullAccess, setConfirmingFullAccess] = useState(false);
+  const fullAccessConfirmed = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the view is pinned to the bottom. Scrolling up releases the pin
   // (so streaming doesn't yank the user back down); scrolling back near the
@@ -108,8 +130,20 @@ export default function ChatPane({
     setText("");
   };
 
+  // The launch config is fixed at the first prompt (stream-json keeps one
+  // model/permission-mode per process) — lock the chips once a turn is sent.
+  const locked = firstUser != null;
+
+  const selectPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
+    if (value === "bypassPermissions" && !fullAccessConfirmed.current) {
+      setConfirmingFullAccess(true);
+      return;
+    }
+    setPermission(value);
+  };
+
   const modelLabel = MODELS.find((m) => m.value === model)?.label ?? "Default model";
-  const permLabel = PERMISSIONS.find((p) => p.value === permission)?.label ?? "Full access";
+  const perm = PERMISSIONS.find((p) => p.value === permission) ?? PERMISSIONS[1]!;
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -132,12 +166,6 @@ export default function ChatPane({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               Working…
-              <button
-                onClick={interrupt}
-                className="ml-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                Stop
-              </button>
             </div>
           )}
         </div>
@@ -160,7 +188,7 @@ export default function ChatPane({
             className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="mt-2 flex items-center gap-2">
-            <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel}>
+            <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
               {MODELS.map((m) => (
                 <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
                   {m.label}
@@ -168,26 +196,46 @@ export default function ChatPane({
               ))}
             </Chip>
             <span className="text-border">|</span>
-            <Chip icon={<Lock className="size-3.5" />} label={permLabel}>
+            {/* The active permission mode stays visible here whether or not the
+                dropdown is ever opened — the persistent indicator. */}
+            <Chip
+              icon={<perm.icon className="size-3.5" />}
+              label={perm.label}
+              locked={locked}
+              className={cn(
+                perm.value === "bypassPermissions" && "text-destructive hover:text-destructive",
+              )}
+            >
               {PERMISSIONS.map((p) => (
-                <DropdownMenuItem key={p.value} onClick={() => setPermission(p.value)}>
-                  {p.label}
+                <DropdownMenuItem key={p.value} onClick={() => selectPermission(p.value)}>
+                  <p.icon className="size-3.5 text-muted-foreground" />
+                  <div className="flex flex-col">
+                    <span>{p.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{p.hint}</span>
+                  </div>
                 </DropdownMenuItem>
               ))}
             </Chip>
             <div className="flex-1" />
-            <button
-              onClick={submit}
-              disabled={!text.trim() || busy}
-              aria-label="Send"
-              className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-            >
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
+            {busy ? (
+              <button
+                onClick={interrupt}
+                aria-label="Stop"
+                title="Stop — cancel this turn (the conversation survives)"
+                className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
+              >
+                <Square className="size-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={submit}
+                disabled={!text.trim()}
+                aria-label="Send"
+                className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+              >
                 <ArrowUp className="size-4" />
-              )}
-            </button>
+              </button>
+            )}
           </div>
         </div>
         {status !== "open" && (
@@ -196,23 +244,84 @@ export default function ChatPane({
           </p>
         )}
       </div>
+
+      {/* One-time Full-access confirm — declining (or dismissing) reverts to
+          the previously selected mode; confirming skips the dialog next time. */}
+      <Dialog open={confirmingFullAccess} onOpenChange={(open) => !open && setConfirmingFullAccess(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="size-4 text-destructive" />
+              Switch to Full access?
+            </DialogTitle>
+            <DialogDescription>
+              Full access runs <strong>every</strong> tool the agent asks for —
+              shell commands, file edits, network access — without asking you
+              first. There is no approval step and no terminal to catch it.
+              Only use it in a directory you trust the agent to change freely.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmingFullAccess(false)}>
+              Keep {perm.label}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                fullAccessConfirmed.current = true;
+                setPermission("bypassPermissions");
+                setConfirmingFullAccess(false);
+              }}
+            >
+              Enable Full access
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
 
-/** A composer chip: an icon + label that opens a dropdown of options. */
+/** A composer chip: an icon + label that opens a dropdown of options. Locked
+ *  chips (launch config fixed after the first turn) render as a static
+ *  indicator — still visible, no longer changeable. */
 function Chip({
   icon,
   label,
+  locked,
+  className,
   children,
 }: {
   icon: React.ReactNode;
   label: string;
+  locked?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
+  if (locked) {
+    return (
+      <span
+        title="Locked for this thread — a new chat starts a fresh config"
+        className={cn(
+          "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground",
+          className,
+        )}
+      >
+        {icon}
+        {label}
+        <Lock className="size-3 opacity-60" />
+      </span>
+    );
+  }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none">
+      <DropdownMenuTrigger
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none",
+          className,
+        )}
+      >
         {icon}
         {label}
         <ChevronDown className="size-3 opacity-60" />

@@ -26,7 +26,8 @@ export interface AgentLaunchOpts {
    *   - `plan`              — read-only exploration; ends with a proposed plan.
    *   - `acceptEdits`       — auto-approve file edits (Bash etc. may still stall).
    *   - `bypassPermissions` — run every tool without prompting ("Full access").
-   *   - `default`           — normal prompting (stalls headless; unused here). */
+   *   - `default`           — Supervised: tool calls round-trip through the
+   *                           control-channel approval flow (US-004). */
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions";
   /** Working directory the agent process launches in — the project this chat
    *  operates on. Like the rest of the launch config, fixed at the first
