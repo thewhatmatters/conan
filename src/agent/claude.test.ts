@@ -1,0 +1,132 @@
+// ClaudeStreamParser turns claude's stream-json NDJSON into normalized
+// AgentEvents. The tricky part under test is streaming dedup: with
+// `--include-partial-messages` the CLI emits text/thinking as incremental
+// stream_event deltas AND still emits the aggregate `assistant` frame after
+// (one frame PER content block, all sharing the message id) — the parser must
+// stream the deltas and suppress the already-streamed whole blocks, while the
+// whole-block fallback still works when no partial events arrive. Line shapes
+// below mirror a captured real session (claude 2.1.218). Run with `npm test`.
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { ClaudeStreamParser } from "./claude.js";
+
+const j = (o: unknown): string => JSON.stringify(o);
+
+const messageStart = (id: string) =>
+  j({ type: "stream_event", event: { type: "message_start", message: { id, role: "assistant" } } });
+const textDelta = (text: string) =>
+  j({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } });
+const thinkingDelta = (thinking: string) =>
+  j({
+    type: "stream_event",
+    event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking, estimated_tokens: null } },
+  });
+const wholeAssistant = (id: string, content: unknown[]) =>
+  j({ type: "assistant", message: { id, role: "assistant", content } });
+const resultLine = () =>
+  j({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.01, duration_ms: 1200, num_turns: 1, result: "done" });
+
+test("text deltas stream incrementally and the whole frame is suppressed", () => {
+  const p = new ClaudeStreamParser();
+  assert.deepEqual(p.push(messageStart("msg_1")), []);
+  assert.deepEqual(p.push(textDelta("Hello, ")), [
+    { kind: "assistant-text", text: "Hello, ", delta: true },
+  ]);
+  assert.deepEqual(p.push(textDelta("world.")), [
+    { kind: "assistant-text", text: "world.", delta: true },
+  ]);
+  // The aggregate frame for the same message must NOT re-emit the text.
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_1", [{ type: "text", text: "Hello, world." }])),
+    [],
+  );
+});
+
+test("thinking deltas emit as reasoning and the whole thinking frame is suppressed", () => {
+  const p = new ClaudeStreamParser();
+  p.push(messageStart("msg_1"));
+  assert.deepEqual(p.push(thinkingDelta("Let me count")), [
+    { kind: "reasoning", text: "Let me count", delta: true },
+  ]);
+  // Real sessions emit the whole `thinking` block frame BEFORE the text
+  // block frame, both under the same message id.
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_1", [{ type: "thinking", thinking: "Let me count", signature: "sig" }])),
+    [],
+  );
+  assert.deepEqual(p.push(textDelta("Five.")), [
+    { kind: "assistant-text", text: "Five.", delta: true },
+  ]);
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_1", [{ type: "text", text: "Five." }])),
+    [],
+  );
+});
+
+test("whole-message fallback still emits text + reasoning when nothing streamed", () => {
+  const p = new ClaudeStreamParser();
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_9", [
+      { type: "thinking", thinking: "hmm" },
+      { type: "text", text: "Answer." },
+    ])),
+    [
+      { kind: "reasoning", text: "hmm" },
+      { kind: "assistant-text", text: "Answer." },
+    ],
+  );
+});
+
+test("tool_use always passes through, even on a streamed message", () => {
+  const p = new ClaudeStreamParser();
+  p.push(messageStart("msg_1"));
+  p.push(textDelta("Running it."));
+  const events = p.push(
+    wholeAssistant("msg_1", [
+      { type: "text", text: "Running it." },
+      { type: "tool_use", id: "tu_1", name: "Bash", input: { command: "ls" } },
+    ]),
+  );
+  assert.deepEqual(events, [
+    { kind: "tool-use", id: "tu_1", name: "Bash", input: { command: "ls" } },
+  ]);
+});
+
+test("signature/input_json deltas and block/message lifecycle events are ignored", () => {
+  const p = new ClaudeStreamParser();
+  p.push(messageStart("msg_1"));
+  for (const line of [
+    j({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text" } } }),
+    j({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "abc" } } }),
+    j({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"co' } } }),
+    j({ type: "stream_event", event: { type: "content_block_stop", index: 0 } }),
+    j({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "end_turn" } } }),
+    j({ type: "stream_event", event: { type: "message_stop" } }),
+  ]) {
+    assert.deepEqual(p.push(line), []);
+  }
+});
+
+test("result clears streamed state; a later un-streamed message falls back whole", () => {
+  const p = new ClaudeStreamParser();
+  p.push(messageStart("msg_1"));
+  p.push(textDelta("First turn."));
+  const events = p.push(resultLine());
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, "result");
+  // Next turn without partial events (e.g. flag unsupported mid-flight) —
+  // its whole frame must emit normally.
+  assert.deepEqual(
+    p.push(wholeAssistant("msg_2", [{ type: "text", text: "Second turn." }])),
+    [{ kind: "assistant-text", text: "Second turn." }],
+  );
+});
+
+test("non-JSON noise, blank lines, and unknown types produce nothing", () => {
+  const p = new ClaudeStreamParser();
+  assert.deepEqual(p.push(""), []);
+  assert.deepEqual(p.push("not json"), []);
+  assert.deepEqual(p.push(j({ type: "system", subtype: "hook_started" })), []);
+  assert.deepEqual(p.push(j({ type: "rate_limit_event" })), []);
+});

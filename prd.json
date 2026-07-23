@@ -33,7 +33,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Backend + shared type. The de-dup between streamed deltas and the final message block is the tricky part. Suggested skills: none."
     },
     {

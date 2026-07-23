@@ -206,6 +206,8 @@ function Item({ item }: { item: ChatItem }) {
           {item.text}
         </div>
       );
+    case "reasoning":
+      return <ReasoningEntry text={item.text} />;
     case "tool":
       return <ToolCard item={item} />;
     case "system":
@@ -233,6 +235,30 @@ function Item({ item }: { item: ChatItem }) {
     default:
       return null;
   }
+}
+
+/** Thinking/reasoning entry — muted and collapsed by default so the
+ *  transcript reads as prose; expand to see the agent's deliberation. */
+function ReasoningEntry({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="text-xs text-muted-foreground">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+      >
+        <ChevronDown
+          className={cn("size-3 transition-transform", !open && "-rotate-90")}
+        />
+        <span className="italic">Thinking</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 whitespace-pre-wrap border-l-2 border-border pl-3 leading-relaxed">
+          {text}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {

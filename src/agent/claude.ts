@@ -16,9 +16,16 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
  * conversation. stdout is NDJSON lifecycle events (system/assistant/user/
  * result) which we parse into the normalized `AgentEvent` union.
  *
- * Spike scope: message-level streaming (whole assistant blocks, not partial
- * tokens — `--include-partial-messages` is the follow-up), interrupt = kill,
- * and launch config is fixed at the first prompt.
+ * Streaming: `--include-partial-messages` adds `stream_event` frames (the raw
+ * Anthropic SSE events) between the whole-message frames — text_delta /
+ * thinking_delta become incremental `assistant-text` / `reasoning` deltas.
+ * The CLI still emits the aggregate `assistant` frame afterwards (one frame
+ * PER content block, all sharing the message id), so the parser tracks which
+ * message ids streamed and suppresses their text/thinking blocks to avoid
+ * double-render; tool_use blocks only ever ride the whole frames.
+ *
+ * Spike scope remaining: interrupt = kill, launch config fixed at the first
+ * prompt.
  */
 export class ClaudeDriver implements AgentDriver {
   readonly provider = "claude";
@@ -26,6 +33,7 @@ export class ClaudeDriver implements AgentDriver {
   private starting: Promise<void> | null = null;
   private disposed = false;
   private opts: AgentLaunchOpts = {};
+  private readonly parser = new ClaudeStreamParser();
 
   constructor(
     private readonly emit: (e: AgentEvent) => void,
@@ -91,6 +99,7 @@ export class ClaudeDriver implements AgentDriver {
       "--input-format",
       "stream-json",
       "--verbose",
+      "--include-partial-messages",
     ];
     if (this.opts.model) args.push("--model", this.opts.model);
     if (this.opts.permissionMode)
@@ -112,7 +121,9 @@ export class ClaudeDriver implements AgentDriver {
     this.starting = null;
 
     const rl = readline.createInterface({ input: child.stdout });
-    rl.on("line", (line) => this.handleLine(line));
+    rl.on("line", (line) => {
+      for (const e of this.parser.push(line)) this.emit(e);
+    });
     // stderr is diagnostics only (job-control notices, model warnings); log a
     // bounded slice rather than parse it.
     child.stderr.on("data", (d: Buffer) => {
@@ -128,39 +139,98 @@ export class ClaudeDriver implements AgentDriver {
     });
   }
 
-  /** Parse one NDJSON line from claude's stdout into normalized event(s). */
-  private handleLine(line: string): void {
+}
+
+/**
+ * Stateful NDJSON-line → `AgentEvent[]` parser, split out of the driver so the
+ * streaming/dedup logic is unit-testable without spawning a real `claude`.
+ *
+ * State: the set of message ids seen as `stream_event` message_starts. A whole
+ * `assistant` frame whose id is in the set already streamed its text/thinking
+ * as deltas, so those blocks are suppressed (tool_use always passes through).
+ * Cleared at each `result` — every frame of a turn precedes its result.
+ */
+export class ClaudeStreamParser {
+  private streamedMessageIds = new Set<string>();
+
+  push(line: string): AgentEvent[] {
     const trimmed = line.trim();
-    if (!trimmed) return;
+    if (!trimmed) return [];
     let msg: Record<string, unknown>;
     try {
       msg = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
-      return; // ignore non-JSON noise
+      return []; // ignore non-JSON noise
     }
     const type = msg.type;
 
+    if (type === "stream_event") {
+      const event =
+        msg.event && typeof msg.event === "object"
+          ? (msg.event as Record<string, unknown>)
+          : null;
+      if (!event) return [];
+      if (event.type === "message_start") {
+        const id =
+          event.message && typeof event.message === "object"
+            ? str((event.message as Record<string, unknown>).id)
+            : null;
+        if (id) this.streamedMessageIds.add(id);
+        return [];
+      }
+      if (event.type === "content_block_delta") {
+        const delta =
+          event.delta && typeof event.delta === "object"
+            ? (event.delta as Record<string, unknown>)
+            : null;
+        if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
+          return [{ kind: "assistant-text", text: delta.text, delta: true }];
+        }
+        if (
+          delta?.type === "thinking_delta" &&
+          typeof delta.thinking === "string" &&
+          delta.thinking
+        ) {
+          return [{ kind: "reasoning", text: delta.thinking, delta: true }];
+        }
+        return []; // input_json_delta / signature_delta — not rendered
+      }
+      return []; // content_block_start/stop, message_delta/stop
+    }
+
     if (type === "system" && msg.subtype === "init") {
-      this.emit({
-        kind: "system",
-        sessionId: str(msg.session_id),
-        model: str(msg.model),
-        cwd: str(msg.cwd),
-        tools: Array.isArray(msg.tools)
-          ? msg.tools.filter((t): t is string => typeof t === "string")
-          : [],
-      });
-      return;
+      return [
+        {
+          kind: "system",
+          sessionId: str(msg.session_id),
+          model: str(msg.model),
+          cwd: str(msg.cwd),
+          tools: Array.isArray(msg.tools)
+            ? msg.tools.filter((t): t is string => typeof t === "string")
+            : [],
+        },
+      ];
     }
 
     if (type === "assistant") {
-      const content = messageContent(msg.message);
-      for (const block of content) {
+      // The CLI emits one whole `assistant` frame PER content block, all
+      // sharing the message id — so the streamed-id check must hold across
+      // multiple frames of the same message.
+      const id =
+        msg.message && typeof msg.message === "object"
+          ? str((msg.message as Record<string, unknown>).id)
+          : null;
+      const alreadyStreamed = id != null && this.streamedMessageIds.has(id);
+      const out: AgentEvent[] = [];
+      for (const block of messageContent(msg.message)) {
         if (block.type === "text" && typeof block.text === "string") {
-          if (block.text.trim())
-            this.emit({ kind: "assistant-text", text: block.text });
+          if (!alreadyStreamed && block.text.trim())
+            out.push({ kind: "assistant-text", text: block.text });
+        } else if (block.type === "thinking" && typeof block.thinking === "string") {
+          if (!alreadyStreamed && block.thinking.trim())
+            out.push({ kind: "reasoning", text: block.thinking });
         } else if (block.type === "tool_use") {
-          this.emit({
+          out.push({
             kind: "tool-use",
             id: str(block.id) ?? "",
             name: str(block.name) ?? "tool",
@@ -168,15 +238,15 @@ export class ClaudeDriver implements AgentDriver {
           });
         }
       }
-      return;
+      return out;
     }
 
     if (type === "user") {
       // Tool results come back as a user message carrying tool_result blocks.
-      const content = messageContent(msg.message);
-      for (const block of content) {
+      const out: AgentEvent[] = [];
+      for (const block of messageContent(msg.message)) {
         if (block.type === "tool_result") {
-          this.emit({
+          out.push({
             kind: "tool-result",
             id: str(block.tool_use_id) ?? "",
             content: toolResultText(block.content),
@@ -184,20 +254,24 @@ export class ClaudeDriver implements AgentDriver {
           });
         }
       }
-      return;
+      return out;
     }
 
     if (type === "result") {
-      this.emit({
-        kind: "result",
-        isError: msg.is_error === true || str(msg.subtype) !== "success",
-        costUsd: num(msg.total_cost_usd),
-        durationMs: num(msg.duration_ms),
-        numTurns: num(msg.num_turns),
-        text: str(msg.result),
-      });
-      return;
+      this.streamedMessageIds.clear();
+      return [
+        {
+          kind: "result",
+          isError: msg.is_error === true || str(msg.subtype) !== "success",
+          costUsd: num(msg.total_cost_usd),
+          durationMs: num(msg.duration_ms),
+          numTurns: num(msg.num_turns),
+          text: str(msg.result),
+        },
+      ];
     }
+
+    return [];
   }
 }
 

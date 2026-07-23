@@ -23,7 +23,8 @@ export interface AgentOpts {
 /** Normalized agent event mirrored from src/agent/driver.ts. */
 type AgentEvent =
   | { kind: "system"; sessionId: string | null; model: string | null; cwd: string | null; tools: string[] }
-  | { kind: "assistant-text"; text: string }
+  | { kind: "assistant-text"; text: string; delta?: boolean }
+  | { kind: "reasoning"; text: string; delta?: boolean }
   | { kind: "tool-use"; id: string; name: string; input: unknown }
   | { kind: "tool-result"; id: string; content: string; isError: boolean }
   | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null }
@@ -34,6 +35,7 @@ type AgentEvent =
 export type ChatItem =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
+  | { id: string; role: "reasoning"; text: string }
   | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
   | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null }
   | { id: string; role: "system"; model: string | null; cwd: string | null }
@@ -98,7 +100,20 @@ export function useAgentChat(token: string | null): AgentChat {
         case "system":
           return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd }];
         case "assistant-text":
-          return [...prev, { id: nextId(), role: "assistant", text: e.text }];
+        case "reasoning": {
+          // Deltas append to the open item of the same role in place; a
+          // whole block (or a delta after a different item) starts a new one.
+          // The driver never emits both for the same content, so appending
+          // whenever the last item matches is safe.
+          const role = e.kind === "reasoning" ? "reasoning" : "assistant";
+          const last = prev[prev.length - 1];
+          if (e.delta && last && last.role === role) {
+            const next = prev.slice();
+            next[next.length - 1] = { ...last, text: last.text + e.text };
+            return next;
+          }
+          return [...prev, { id: nextId(), role, text: e.text }];
+        }
         case "tool-use":
           return [
             ...prev,

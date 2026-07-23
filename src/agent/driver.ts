@@ -49,10 +49,21 @@ export type AgentEvent =
       tools: string[];
     }
   | {
-      /** A block of assistant prose. Message-level (not token-level) for the
-       *  spike — one bubble per completed assistant text block. */
+      /** Assistant prose. With `--include-partial-messages` these arrive as
+       *  incremental deltas (`delta: true`) to append to the open block; a
+       *  whole completed block (no `delta`) is the fallback when the CLI
+       *  emits no partial events. Never both for the same content — the
+       *  driver suppresses whole blocks it already streamed. */
       kind: "assistant-text";
       text: string;
+      delta?: boolean;
+    }
+  | {
+      /** Thinking/reasoning content, distinct from assistant-text so the UI
+       *  can render it collapsed. Same delta/whole-block semantics. */
+      kind: "reasoning";
+      text: string;
+      delta?: boolean;
     }
   | {
       /** The agent invoked a tool. `input` is the raw tool arguments object. */
