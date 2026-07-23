@@ -416,7 +416,7 @@ export default function ChatSurface({
                 const closed = closedGroups[proj.id] === true;
                 return (
                   <div key={proj.id} className="mb-1">
-                    <div className="flex items-center gap-0.5">
+                    <div className="group flex items-center gap-0.5">
                       <button
                         type="button"
                         title={proj.path}
@@ -435,12 +435,16 @@ export default function ChatSurface({
                           {proj.name}
                         </span>
                       </button>
-                      <IconButton
-                        title={`New chat in ${proj.name}`}
-                        onClick={() => newThreadIn(proj.id)}
-                      >
-                        <MessageSquarePlus className="size-3.5" />
-                      </IconButton>
+                      {/* Reveal on project-row hover (or keyboard focus within
+                          the row), matching t3-code — not always shown. */}
+                      <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                        <IconButton
+                          title={`New chat in ${proj.name}`}
+                          onClick={() => newThreadIn(proj.id)}
+                        >
+                          <MessageSquarePlus className="size-3.5" />
+                        </IconButton>
+                      </span>
                     </div>
                     {!closed &&
                       (list.length === 0 && savedOnly.length === 0 ? (

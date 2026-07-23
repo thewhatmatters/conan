@@ -674,7 +674,7 @@ export default function ChatPane({
                     onClick={interrupt}
                     aria-label="Stop"
                     title="Stop — cancel this turn (the conversation survives)"
-                    className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     <Square className="size-3.5 fill-current" />
                   </button>
@@ -683,7 +683,7 @@ export default function ChatPane({
                     onClick={submit}
                     disabled={!text.trim() || status !== "open" || historyState === "loading"}
                     aria-label="Send"
-                    className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-40"
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-default disabled:opacity-40"
                   >
                     <ArrowUp className="size-4" />
                   </button>
@@ -1014,7 +1014,9 @@ function toolSummary(input: unknown): string | null {
   if (typeof input === "string") return input || null;
   if (input == null || typeof input !== "object") return null;
   const o = input as Record<string, unknown>;
-  for (const key of ["command", "file_path", "pattern", "url", "query", "path", "description", "prompt"]) {
+  // `skill`/`name` surface the Skill tool's target (its input has no command/
+  // path), so a Skill card reads "Skill · polish-copy" instead of a bare "Skill".
+  for (const key of ["command", "file_path", "pattern", "url", "query", "path", "skill", "name", "description", "prompt"]) {
     const v = o[key];
     if (typeof v === "string" && v.trim()) return v;
   }
