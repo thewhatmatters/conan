@@ -5,6 +5,7 @@ import {
   GitCommitHorizontal,
   GitPullRequestArrow,
   Loader2,
+  MessageSquare,
   Pencil,
   Play,
   Plus,
@@ -49,10 +50,12 @@ interface DirGit {
   branch: string | null;
   dirty: number;
 }
+type ActionKind = "shell" | "prompt";
 interface ProjectAction {
   id: string;
   projectId: string;
   name: string;
+  kind: ActionKind;
   command: string;
 }
 interface RunResult {
@@ -77,6 +80,7 @@ export default function ThreadToolbar({
   cwd,
   projectId,
   title,
+  onSendPrompt,
 }: {
   token: string | null;
   /** The thread's working directory (its project's path). */
@@ -85,6 +89,9 @@ export default function ThreadToolbar({
   projectId: string | null;
   /** The thread's title (null → "New chat"). */
   title: string | null;
+  /** Send a prompt into this thread's chat (for prompt-kind actions). Returns
+   *  false when the thread can't accept it right now (busy / not ready). */
+  onSendPrompt: (text: string) => boolean;
 }) {
   const auth = useMemo(
     () => ({ "x-conan-token": token ?? "", "content-type": "application/json" }),
@@ -139,6 +146,7 @@ export default function ThreadToolbar({
   const [editingId, setEditingId] = useState<string | null>(null); // null = add, else edit
   const [actName, setActName] = useState("");
   const [actCmd, setActCmd] = useState("");
+  const [actKind, setActKind] = useState<ActionKind>("shell");
   const [runningId, setRunningId] = useState<string | null>(null);
 
   const prefEditor = useRef<string | null>(
@@ -225,6 +233,7 @@ export default function ThreadToolbar({
     setEditingId(null);
     setActName("");
     setActCmd("");
+    setActKind("shell");
     setAddOpen(true);
   };
 
@@ -232,22 +241,20 @@ export default function ThreadToolbar({
     setEditingId(a.id);
     setActName(a.name);
     setActCmd(a.command);
+    setActKind(a.kind);
     setAddOpen(true);
   };
 
-  // Add (POST) or edit (PUT) depending on editingId.
+  // Add (POST) or edit (PUT) depending on editingId. Both are project-scoped.
   const submitAction = async () => {
-    if (!actName.trim() || !actCmd.trim()) return;
-    if (!editingId && !projectId) return;
+    if (!actName.trim() || !actCmd.trim() || !projectId) return;
     setBusy("add");
     try {
-      const url = editingId
-        ? apiBase() + `/api/agent/actions/${editingId}`
-        : apiBase() + `/api/agent/projects/${projectId}/actions`;
-      await fetch(url, {
+      const base = apiBase() + `/api/agent/projects/${projectId}/actions`;
+      await fetch(editingId ? `${base}/${editingId}` : base, {
         method: editingId ? "PUT" : "POST",
         headers: auth,
-        body: JSON.stringify({ name: actName.trim(), command: actCmd.trim() }),
+        body: JSON.stringify({ name: actName.trim(), command: actCmd.trim(), kind: actKind }),
       });
       setActName("");
       setActCmd("");
@@ -259,14 +266,26 @@ export default function ThreadToolbar({
     }
   };
 
+  // Shell actions run in the gateway (output → modal); prompt actions are sent
+  // straight into this thread's chat.
   const runAction = async (a: ProjectAction) => {
+    if (a.kind === "prompt") {
+      if (!onSendPrompt(a.command)) {
+        setOutput({
+          title: a.name,
+          ok: false,
+          text: "Can't send right now — the chat is busy or still loading. Try again in a moment.",
+        });
+      }
+      return;
+    }
+    if (!projectId) return;
     setRunningId(a.id);
     try {
-      const r = await fetch(apiBase() + `/api/agent/actions/${a.id}/run`, {
-        method: "POST",
-        headers: auth,
-        body: "{}",
-      });
+      const r = await fetch(
+        apiBase() + `/api/agent/projects/${projectId}/actions/${a.id}/run`,
+        { method: "POST", headers: auth, body: "{}" },
+      );
       const d = (await r.json()) as RunResult;
       const body = [d.stdout, d.stderr && `[stderr]\n${d.stderr}`, d.error]
         .filter(Boolean)
@@ -283,7 +302,8 @@ export default function ThreadToolbar({
   };
 
   const deleteAction = async (id: string) => {
-    await fetch(apiBase() + `/api/agent/actions/${id}`, {
+    if (!projectId) return;
+    await fetch(apiBase() + `/api/agent/projects/${projectId}/actions/${id}`, {
       method: "DELETE",
       headers: { "x-conan-token": token ?? "" },
     }).catch(() => {});
@@ -307,11 +327,13 @@ export default function ThreadToolbar({
               type="button"
               onClick={() => void runAction(a)}
               disabled={runningId === a.id}
-              title={a.command}
+              title={`${a.kind === "prompt" ? "Send to chat" : "Run"}: ${a.command}`}
               className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
               {runningId === a.id ? (
                 <Loader2 className="size-3 animate-spin" />
+              ) : a.kind === "prompt" ? (
+                <MessageSquare className="size-3" />
               ) : (
                 <Play className="size-3" />
               )}
@@ -485,23 +507,69 @@ export default function ThreadToolbar({
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit action" : "Add a custom action"}</DialogTitle>
             <DialogDescription>
-              A named command run in a shell in this project's directory (no prefix
-              needed — e.g. <code>pwd</code>, not <code>! pwd</code>), shown as a toolbar button.
+              A named toolbar button, saved to{" "}
+              <code>.conan/actions.md</code> in this project (git-shareable).
             </DialogDescription>
           </DialogHeader>
+
+          {/* Kind toggle — shell command vs chat prompt. */}
+          <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1">
+            {(
+              [
+                { k: "shell", Icon: Terminal, label: "Shell command", hint: "Runs in a shell" },
+                { k: "prompt", Icon: MessageSquare, label: "Chat prompt", hint: "Sent to the agent" },
+              ] as const
+            ).map(({ k, Icon, label, hint }) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setActKind(k)}
+                className={cn(
+                  "flex cursor-pointer flex-col items-center gap-0.5 rounded px-2 py-1.5 text-center transition-colors",
+                  actKind === k
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-xs font-medium">
+                  <Icon className="size-3.5" />
+                  {label}
+                </span>
+                <span
+                  className={cn(
+                    "text-[10px]",
+                    actKind === k ? "text-primary-foreground/80" : "text-muted-foreground/70",
+                  )}
+                >
+                  {hint}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <input
             autoFocus
             value={actName}
             onChange={(e) => setActName(e.target.value)}
-            placeholder="Name (e.g. Typecheck)"
+            placeholder={actKind === "prompt" ? "Name (e.g. Design pass)" : "Name (e.g. Typecheck)"}
             className="w-full rounded-md border border-border bg-background p-2 text-sm text-foreground outline-none focus-visible:border-primary/60"
           />
-          <input
-            value={actCmd}
-            onChange={(e) => setActCmd(e.target.value)}
-            placeholder="Command (e.g. npm run typecheck)"
-            className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs text-foreground outline-none focus-visible:border-primary/60"
-          />
+          {actKind === "prompt" ? (
+            <textarea
+              value={actCmd}
+              onChange={(e) => setActCmd(e.target.value)}
+              rows={3}
+              placeholder="Prompt (e.g. Run the /codebase-design skill on this repo)"
+              className="w-full resize-none rounded-md border border-border bg-background p-2 text-sm text-foreground outline-none focus-visible:border-primary/60"
+            />
+          ) : (
+            <input
+              value={actCmd}
+              onChange={(e) => setActCmd(e.target.value)}
+              placeholder="Command (e.g. npm run typecheck) — no prefix, e.g. pwd not ! pwd"
+              className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs text-foreground outline-none focus-visible:border-primary/60"
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>
               Cancel

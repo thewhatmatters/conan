@@ -419,11 +419,12 @@ app.get("/api/agent/projects/:id/actions", (req, res) => {
 
 app.post("/api/agent/projects/:id/actions", (req, res) => {
   if (!authed(req, res)) return;
-  const body = (req.body ?? {}) as { name?: unknown; command?: unknown };
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown; kind?: unknown };
   const result = addProjectAction({
     projectId: req.params.id,
     name: typeof body.name === "string" ? body.name : "",
     command: typeof body.command === "string" ? body.command : "",
+    kind: body.kind === "prompt" ? "prompt" : "shell",
   });
   if ("error" in result) {
     res.status(400).json({ ok: false, error: result.error });
@@ -432,12 +433,13 @@ app.post("/api/agent/projects/:id/actions", (req, res) => {
   res.json({ ok: true, action: result });
 });
 
-app.put("/api/agent/actions/:actionId", (req, res) => {
+app.put("/api/agent/projects/:id/actions/:actionId", (req, res) => {
   if (!authed(req, res)) return;
-  const body = (req.body ?? {}) as { name?: unknown; command?: unknown };
-  const result = updateProjectAction(req.params.actionId, {
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown; kind?: unknown };
+  const result = updateProjectAction(req.params.id, req.params.actionId, {
     name: typeof body.name === "string" ? body.name : "",
     command: typeof body.command === "string" ? body.command : "",
+    kind: body.kind === "prompt" ? "prompt" : body.kind === "shell" ? "shell" : undefined,
   });
   if ("error" in result) {
     res.status(400).json({ ok: false, error: result.error });
@@ -446,14 +448,14 @@ app.put("/api/agent/actions/:actionId", (req, res) => {
   res.json({ ok: true, action: result });
 });
 
-app.delete("/api/agent/actions/:actionId", (req, res) => {
+app.delete("/api/agent/projects/:id/actions/:actionId", (req, res) => {
   if (!authed(req, res)) return;
-  res.json({ deleted: deleteProjectAction(req.params.actionId) });
+  res.json({ deleted: deleteProjectAction(req.params.id, req.params.actionId) });
 });
 
-app.post("/api/agent/actions/:actionId/run", async (req, res) => {
+app.post("/api/agent/projects/:id/actions/:actionId/run", async (req, res) => {
   if (!authed(req, res)) return;
-  res.json(await runProjectAction(req.params.actionId));
+  res.json(await runProjectAction(req.params.id, req.params.actionId));
 });
 
 // Close-X on a thread row: the row goes away; its project persists.

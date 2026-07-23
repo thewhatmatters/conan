@@ -393,19 +393,25 @@ export default function ChatPane({
   // control channel can switch mode mid-session (US-022), so it stays live.
   const locked = firstUser != null || resume != null;
 
-  const submit = () => {
-    if (!text.trim() || busy || status !== "open") return;
-    // A resumed first prompt must know whether the JSONL exists (missing →
-    // fresh session, no --resume) — hold sends until the history fetch lands.
-    if (historyState === "loading") return;
-    send(text, {
+  // Send an arbitrary prompt through the same launch config as the composer.
+  // Returns false when a send can't happen (busy / not open / history loading)
+  // so the caller can decide whether to clear its input. Used by the composer
+  // submit and by prompt-kind toolbar actions.
+  const sendPrompt = (promptText: string): boolean => {
+    const t = promptText.trim();
+    if (!t || busy || status !== "open" || historyState === "loading") return false;
+    send(t, {
       model: resume ? resume.model ?? undefined : model,
       permissionMode: permission,
       cwd: effectiveCwd ?? undefined,
       projectId: projectId ?? undefined,
       resume: resume && historyState === "found" ? resume.sessionId : undefined,
     });
-    setText("");
+    return true;
+  };
+
+  const submit = () => {
+    if (sendPrompt(text)) setText("");
   };
 
   const selectPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
@@ -518,6 +524,7 @@ export default function ChatPane({
         cwd={effectiveCwd}
         projectId={projectId ?? null}
         title={title}
+        onSendPrompt={sendPrompt}
       />
       <div className="flex min-h-0 flex-1">
       {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
