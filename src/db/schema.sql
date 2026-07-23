@@ -62,6 +62,30 @@ CREATE TABLE IF NOT EXISTS terminal_session (
   created_at  INTEGER NOT NULL
 );
 
+-- Chat V1 (US-013): projects + lightweight thread metadata so the sidebar's
+-- project grouping and thread resume survive restarts. The project OWNS the
+-- path (US-025 model) — threads reference it by id, never re-derived from a
+-- basename. No message/turn columns: transcripts are reconstructed from
+-- Claude's own JSONL (+ claude --resume), not stored here.
+CREATE TABLE IF NOT EXISTS project (
+  id         TEXT PRIMARY KEY,                  -- UI-generated project id
+  path       TEXT NOT NULL UNIQUE,              -- absolute working directory
+  name       TEXT NOT NULL,                     -- display name (defaults to basename)
+  created_at INTEGER NOT NULL                   -- epoch ms
+);
+
+CREATE TABLE IF NOT EXISTS chat_thread (
+  session_id    TEXT PRIMARY KEY,               -- Claude Code session_id (resume key)
+  project_id    TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+  cwd           TEXT NOT NULL,                  -- launch cwd (the project path at creation)
+  model         TEXT,                           -- --model alias; null = default
+  title         TEXT,                           -- first-prompt-derived display title
+  created_at    INTEGER NOT NULL,               -- epoch ms
+  last_activity INTEGER NOT NULL                -- epoch ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_thread_project ON chat_thread (project_id, last_activity);
+
 -- US-003 (v4.5): the "skills considered but didn't fire" heuristic. One row per
 -- (UserPromptSubmit event, candidate skill) — the top N scoring skills from
 -- src/skills/match.ts. Reconciled at Stop time: any skill whose name shows up
