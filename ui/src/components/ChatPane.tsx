@@ -52,6 +52,7 @@ import { apiBase } from "../lib/gateway.ts";
 import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
+import type { SkillEntry } from "../hooks/useSkills.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 import {
   AutocompleteOverlay,
@@ -259,7 +260,50 @@ export default function ChatPane({
     }),
     [token, effectiveCwd],
   );
-  const ac = useComposerAutocomplete([fileSource], setText, textareaRef);
+  // `$` installed-skills autocomplete (US-019) — user+project+plugin skills
+  // from GET /api/claude/skills, fetched lazily on the first `$` and cached
+  // for the pane's lifetime (SKILL.md frontmatter is static for a session).
+  const skillsRef = useRef<SkillEntry[] | null>(null);
+  const skillSource = useMemo<AutocompleteSource>(
+    () => ({
+      trigger: "$",
+      empty: "No matching skills",
+      fetch: async (q) => {
+        if (!token) return [];
+        if (!skillsRef.current) {
+          const r = await fetch(apiBase() + "/api/claude/skills", {
+            headers: { "x-conan-token": token },
+          });
+          if (!r.ok) return [];
+          skillsRef.current = (await r.json()) as SkillEntry[];
+        }
+        const query = q.toLowerCase();
+        return skillsRef.current
+          .map((s) => {
+            const name = s.name.toLowerCase();
+            const rank = name.startsWith(query)
+              ? 0
+              : name.includes(query)
+                ? 1
+                : (s.description ?? "").toLowerCase().includes(query)
+                  ? 2
+                  : -1;
+            return { s, rank };
+          })
+          .filter((x) => x.rank >= 0)
+          .sort((a, b) => a.rank - b.rank || a.s.name.localeCompare(b.s.name))
+          .slice(0, 25)
+          .map(({ s }) => ({
+            insert: `$${s.name}`,
+            label: s.name,
+            hint: s.description ?? s.source,
+            icon: Sparkles,
+          }));
+      },
+    }),
+    [token],
+  );
+  const ac = useComposerAutocomplete([fileSource, skillSource], setText, textareaRef);
 
   // The launch config is fixed at the first prompt (stream-json keeps one
   // model/permission-mode per process) — lock the chips once a turn is sent.

@@ -334,7 +334,7 @@
         "Verify in browser using automate-browser skill: type $ and confirm installed skills list and insert"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-018. Reuses existing /api/claude/skills. Suggested skills: automate-browser."
     },
     {

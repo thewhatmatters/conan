@@ -190,9 +190,9 @@ export function AutocompleteOverlay({
               )}
             >
               <it.icon className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate font-mono">{it.label}</span>
+              <span className="min-w-0 truncate font-mono">{it.label}</span>
               {it.hint && (
-                <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                <span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground/70">
                   {it.hint}
                 </span>
               )}
