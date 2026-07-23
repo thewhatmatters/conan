@@ -19,7 +19,15 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useAgentChat, type ChatItem, type AgentOpts } from "../hooks/useAgentChat.ts";
+import {
+  useAgentChat,
+  type AgentOpts,
+  type ApprovalResolution,
+  type ChatItem,
+  type PendingApproval,
+  type PermissionDecision,
+  type ToolPermissionKind,
+} from "../hooks/useAgentChat.ts";
 import { Button } from "./ui/button.tsx";
 import {
   Dialog,
@@ -95,7 +103,8 @@ export default function ChatPane({
   cwd?: string | null;
   onState?: (s: ThreadUiState) => void;
 }) {
-  const { items, busy, status, pendingApproval, send, interrupt } = useAgentChat(token);
+  const { items, busy, status, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
+    useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
   const [permission, setPermission] =
@@ -174,69 +183,81 @@ export default function ChatPane({
       {/* Composer — mirrors the mock: textarea with a chip row + send button. */}
       <div className="shrink-0 px-4 pb-4">
         <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            rows={2}
-            placeholder="Message the agent…  (Enter to send, Shift+Enter for newline)"
-            className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
-              {MODELS.map((m) => (
-                <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
-                  {m.label}
-                </DropdownMenuItem>
-              ))}
-            </Chip>
-            <span className="text-border">|</span>
-            {/* The active permission mode stays visible here whether or not the
-                dropdown is ever opened — the persistent indicator. */}
-            <Chip
-              icon={<perm.icon className="size-3.5" />}
-              label={perm.label}
-              locked={locked}
-              className={cn(
-                perm.value === "bypassPermissions" && "text-destructive hover:text-destructive",
-              )}
-            >
-              {PERMISSIONS.map((p) => (
-                <DropdownMenuItem key={p.value} onClick={() => selectPermission(p.value)}>
-                  <p.icon className="size-3.5 text-muted-foreground" />
-                  <div className="flex flex-col">
-                    <span>{p.label}</span>
-                    <span className="text-[11px] text-muted-foreground">{p.hint}</span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </Chip>
-            <div className="flex-1" />
-            {busy ? (
-              <button
-                onClick={interrupt}
-                aria-label="Stop"
-                title="Stop — cancel this turn (the conversation survives)"
-                className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
-              >
-                <Square className="size-3.5 fill-current" />
-              </button>
-            ) : (
-              <button
-                onClick={submit}
-                disabled={!text.trim()}
-                aria-label="Send"
-                className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-              >
-                <ArrowUp className="size-4" />
-              </button>
-            )}
-          </div>
+          {pendingApproval ? (
+            /* Supervised mode: the input area becomes the approval prompt —
+               the turn is blocked on this decision, so typing can wait. */
+            <ApprovalPanel
+              approval={pendingApproval}
+              count={pendingApprovals.length}
+              respond={respondToApproval}
+            />
+          ) : (
+            <>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={2}
+                placeholder="Message the agent…  (Enter to send, Shift+Enter for newline)"
+                className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
+                  {MODELS.map((m) => (
+                    <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
+                      {m.label}
+                    </DropdownMenuItem>
+                  ))}
+                </Chip>
+                <span className="text-border">|</span>
+                {/* The active permission mode stays visible here whether or not the
+                    dropdown is ever opened — the persistent indicator. */}
+                <Chip
+                  icon={<perm.icon className="size-3.5" />}
+                  label={perm.label}
+                  locked={locked}
+                  className={cn(
+                    perm.value === "bypassPermissions" && "text-destructive hover:text-destructive",
+                  )}
+                >
+                  {PERMISSIONS.map((p) => (
+                    <DropdownMenuItem key={p.value} onClick={() => selectPermission(p.value)}>
+                      <p.icon className="size-3.5 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span>{p.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{p.hint}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </Chip>
+                <div className="flex-1" />
+                {busy ? (
+                  <button
+                    onClick={interrupt}
+                    aria-label="Stop"
+                    title="Stop — cancel this turn (the conversation survives)"
+                    className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
+                  >
+                    <Square className="size-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={submit}
+                    disabled={!text.trim()}
+                    aria-label="Send"
+                    className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+                  >
+                    <ArrowUp className="size-4" />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
         {status !== "open" && (
           <p className="mx-auto mt-1 w-full max-w-3xl text-[11px] text-muted-foreground">
@@ -362,6 +383,8 @@ function Item({ item }: { item: ChatItem }) {
       return <ReasoningEntry text={item.text} />;
     case "tool":
       return <ToolCard item={item} />;
+    case "approval":
+      return <ApprovalEntry item={item} />;
     case "system":
       return (
         <div className="text-[11px] text-muted-foreground">
@@ -539,6 +562,109 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Human labels + icons for the driver's coarse permission tool kinds. */
+const APPROVAL_KINDS: Record<ToolPermissionKind, { label: string; icon: LucideIcon }> = {
+  command: { label: "Run command", icon: Terminal },
+  "file-read": { label: "Read file", icon: FileText },
+  "file-change": { label: "Change file", icon: FilePenLine },
+  other: { label: "Use tool", icon: Wrench },
+};
+
+/** How a resolved approval reads in the transcript. */
+const RESOLUTION_LABELS: Record<Exclude<ApprovalResolution, "pending">, string> = {
+  accept: "Approved",
+  acceptForSession: "Always allowed this session",
+  decline: "Declined",
+  cancel: "Turn cancelled",
+  dismissed: "Dismissed",
+};
+
+/** Supervised-mode approval prompt — swapped in for the composer's input
+ *  while a permission request is pending (US-010). The four actions map 1:1
+ *  to the driver's PermissionDecision; answering restores the composer. */
+function ApprovalPanel({
+  approval,
+  count,
+  respond,
+}: {
+  approval: PendingApproval;
+  count: number;
+  respond: (id: string, decision: PermissionDecision) => void;
+}) {
+  const meta = APPROVAL_KINDS[approval.toolKind] ?? APPROVAL_KINDS.other;
+  const decide = (decision: PermissionDecision) => respond(approval.id, decision);
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="size-4 shrink-0 text-primary" />
+        <span className="text-sm font-medium text-foreground">Permission needed</span>
+        <span className="flex items-center gap-1.5 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          <meta.icon className="size-3" />
+          {meta.label} · {approval.toolName}
+        </span>
+        {count > 1 && (
+          <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+            1 of {count}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{approval.summary}</p>
+      <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/50 px-2.5 py-2 font-mono text-[11px] text-foreground">
+        {approval.detail}
+      </pre>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => decide("accept")}>
+          Approve once
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => decide("acceptForSession")}>
+          Always allow this session
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => decide("decline")}>
+          Decline
+        </Button>
+        <div className="flex-1" />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          onClick={() => decide("cancel")}
+        >
+          Cancel turn
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Approval events in the transcript — a compact work entry that shows the
+ *  request and, once settled, how it resolved. */
+function ApprovalEntry({ item }: { item: Extract<ChatItem, { role: "approval" }> }) {
+  const meta = APPROVAL_KINDS[item.toolKind] ?? APPROVAL_KINDS.other;
+  const pending = item.resolution === "pending";
+  const approved = item.resolution === "accept" || item.resolution === "acceptForSession";
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <ShieldCheck className={cn("size-3.5 shrink-0", pending && "text-primary")} />
+      <span className="shrink-0">
+        {meta.label} · <span className="font-medium text-foreground">{item.toolName}</span>
+      </span>
+      <span className="min-w-0 flex-1 truncate font-mono">{item.summary}</span>
+      <span
+        className={cn(
+          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+          pending
+            ? "bg-primary/10 text-primary"
+            : approved
+              ? "bg-muted text-muted-foreground"
+              : "bg-destructive/15 text-destructive",
+        )}
+      >
+        {item.resolution === "pending" ? "Awaiting approval" : RESOLUTION_LABELS[item.resolution]}
+      </span>
     </div>
   );
 }

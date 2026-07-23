@@ -50,12 +50,17 @@ type AgentEvent =
   | { kind: "exit"; code: number | null }
   | { kind: "error"; message: string };
 
+/** How an approval transcript entry ended: still pending, the user's
+ *  decision, or dismissed (the turn ended before anyone answered). */
+export type ApprovalResolution = "pending" | PermissionDecision | "dismissed";
+
 /** A rendered transcript item. */
 export type ChatItem =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "reasoning"; text: string }
   | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
+  | { id: string; role: "approval"; requestId: string; toolKind: ToolPermissionKind; toolName: string; summary: string; resolution: ApprovalResolution }
   | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null }
   | { id: string; role: "system"; model: string | null; cwd: string | null }
   | { id: string; role: "error"; message: string };
@@ -69,10 +74,14 @@ export interface AgentChat {
   /** The real Claude session id, from the system init event. Survives across
    *  turns (the process is long-lived); updates if the session respawns. */
   sessionId: string | null;
-  /** The latest unanswered Supervised-mode permission request, or null. The
-   *  driver blocks the turn on it, so at most one is pending at a time.
-   *  Cleared by respondToApproval or by the turn ending (result/exit/error). */
+  /** The oldest unanswered Supervised-mode permission request, or null —
+   *  the one the composer's approval panel shows. Cleared by
+   *  respondToApproval or by the turn ending (result/exit/error). */
   pendingApproval: PendingApproval | null;
+  /** All unanswered requests, oldest first (the panel's 1/N counter). The
+   *  driver blocks the turn per request, so this rarely exceeds one — but
+   *  the queue keeps the UI honest if it ever pipelines. */
+  pendingApprovals: PendingApproval[];
   /** Answer a pending permission request. */
   respondToApproval: (id: string, decision: PermissionDecision) => void;
   /** Submit a user turn (no-op while busy or disconnected). */
@@ -86,7 +95,7 @@ export function useAgentChat(token: string | null): AgentChat {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("connecting");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const seq = useRef(0);
   const nextId = () => `i${++seq.current}`;
@@ -99,7 +108,7 @@ export function useAgentChat(token: string | null): AgentChat {
     ws.onclose = () => {
       setStatus("closed");
       // Nobody is listening for an answer anymore.
-      setPendingApproval(null);
+      setPendingApprovals([]);
     };
     ws.onerror = () => setStatus("closed");
     ws.onmessage = (ev) => {
@@ -133,19 +142,53 @@ export function useAgentChat(token: string | null): AgentChat {
     if (e.kind === "system") {
       setSessionId(e.sessionId);
     } else if (e.kind === "permission-request") {
-      setPendingApproval({
-        id: e.id,
-        toolKind: e.toolKind,
-        summary: e.summary,
-        detail: e.detail,
-        toolName: e.toolName,
-      });
+      setPendingApprovals((prev) => [
+        ...prev,
+        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, toolName: e.toolName },
+      ]);
     } else if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
       // The turn is over — any unanswered request was settled driver-side.
-      setPendingApproval(null);
+      setPendingApprovals([]);
     }
     setItems((prev) => {
       switch (e.kind) {
+        case "permission-request":
+          // The request also reads in the transcript — appended pending,
+          // resolved in place by respondToApproval or dismissed at turn end.
+          return [
+            ...prev,
+            {
+              id: `ap-${e.id}`,
+              role: "approval",
+              requestId: e.id,
+              toolKind: e.toolKind,
+              toolName: e.toolName,
+              summary: e.summary,
+              resolution: "pending",
+            },
+          ];
+        case "result":
+        case "exit":
+        case "error": {
+          // Turn over — mark any still-pending approval entries dismissed
+          // before appending the terminal item below.
+          const settled = prev.map((it) =>
+            it.role === "approval" && it.resolution === "pending"
+              ? { ...it, resolution: "dismissed" as const }
+              : it,
+          );
+          if (e.kind === "result")
+            return [
+              ...settled,
+              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns },
+            ];
+          if (e.kind === "exit")
+            return [
+              ...settled,
+              { id: nextId(), role: "error", message: `Session ended${e.code != null ? ` (exit ${e.code})` : ""}.` },
+            ];
+          return [...settled, { id: nextId(), role: "error", message: e.message }];
+        }
         case "system":
           return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd }];
         case "assistant-text":
@@ -177,18 +220,6 @@ export function useAgentChat(token: string | null): AgentChat {
           next[idx] = { ...card, result: e.content, isError: e.isError };
           return next;
         }
-        case "result":
-          return [
-            ...prev,
-            { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns },
-          ];
-        case "exit":
-          return [
-            ...prev,
-            { id: nextId(), role: "error", message: `Session ended${e.code != null ? ` (exit ${e.code})` : ""}.` },
-          ];
-        case "error":
-          return [...prev, { id: nextId(), role: "error", message: e.message }];
         default:
           return prev;
       }
@@ -216,8 +247,26 @@ export function useAgentChat(token: string | null): AgentChat {
     ws.send(JSON.stringify({ type: "permission-response", id, decision }));
     // Clear optimistically — the driver ignores unknown/settled ids, and a
     // fresh request would arrive as its own permission-request event.
-    setPendingApproval((prev) => (prev && prev.id === id ? null : prev));
+    setPendingApprovals((prev) => prev.filter((p) => p.id !== id));
+    // Resolve the transcript entry with the decision taken.
+    setItems((prev) =>
+      prev.map((it) =>
+        it.role === "approval" && it.requestId === id && it.resolution === "pending"
+          ? { ...it, resolution: decision }
+          : it,
+      ),
+    );
   }, []);
 
-  return { items, busy, status, sessionId, pendingApproval, respondToApproval, send, interrupt };
+  return {
+    items,
+    busy,
+    status,
+    sessionId,
+    pendingApproval: pendingApprovals[0] ?? null,
+    pendingApprovals,
+    respondToApproval,
+    send,
+    interrupt,
+  };
 }

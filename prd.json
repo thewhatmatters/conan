@@ -163,7 +163,7 @@
         "Verify in browser using automate-browser skill: in Supervised mode run a prompt that triggers a tool, confirm the approval panel appears and Approve/Decline behave correctly"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "The safety mechanism for a terminal-less surface. Depends on US-004/US-005. Suggested skills: automate-browser."
     },
     {
