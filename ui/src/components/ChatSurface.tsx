@@ -7,6 +7,7 @@ import {
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
   X,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
@@ -387,6 +388,11 @@ export default function ChatSurface({
   const projectPath = (projectId: string): string | null =>
     projects.find((p) => p.id === projectId)?.path ?? null;
 
+  // US-003: the sidebar gear opens Settings via the same window-event bridge
+  // the native menu (⌘,) and the Upgrade CTAs use — App owns the dialog state.
+  const openSettings = () =>
+    window.dispatchEvent(new CustomEvent("conan:open-settings"));
+
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -400,6 +406,11 @@ export default function ChatSurface({
           {/* No new-chat/add-project buttons while collapsed: creating either
               here lands in a hidden list, which reads as "nothing happened"
               and silently stacks up processes. Expand first — one click. */}
+          <div className="mt-auto flex h-9 shrink-0 items-center">
+            <IconButton title="Settings" onClick={openSettings}>
+              <Settings className="size-4" />
+            </IconButton>
+          </div>
         </div>
       ) : (
         <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card">
@@ -512,6 +523,14 @@ export default function ChatSurface({
                 );
               })
             )}
+          </div>
+          {/* US-003: standard chat-app Settings placement — bottom of the rail.
+              Same window-event bridge the native menu uses, so it works in the
+              browser too (where the Tauri menu doesn't exist). */}
+          <div className="flex h-9 shrink-0 items-center border-t border-border px-2">
+            <IconButton title="Settings" onClick={openSettings}>
+              <Settings className="size-4" />
+            </IconButton>
           </div>
         </aside>
       )}

@@ -151,6 +151,23 @@ export default function App() {
     return () => window.removeEventListener("conan:open-settings", open);
   }, []);
 
+  // US-003: direct ⌘, / Ctrl+, handler so Settings is reachable without the
+  // Tauri native menu (browser dev builds have no menu bar). The modifier
+  // requirement means a bare "," typed in the composer/inputs never triggers
+  // it. In the packaged app the native menu accelerator may also fire — both
+  // paths converge on setSettingsOpen(true), so a double is harmless.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "," && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        setSettingsInitialTab(undefined);
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     // <UpdateBanner /> is a fixed bottom-left toast — it floats over the
     // shell and renders null when there's no pending update, so it's free

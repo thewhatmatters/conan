@@ -54,7 +54,7 @@
         "Verify in browser using automate-browser skill: click the gear → Settings opens → switch to Dark → the app goes dark"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "SettingsView + useThemes already exist; this adds the missing entry points. The native menu path stays. Suggested skills: automate-browser."
     },
     {
