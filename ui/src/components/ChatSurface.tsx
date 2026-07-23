@@ -423,7 +423,7 @@ export default function ChatSurface({
                         onClick={() =>
                           setClosedGroups((prev) => ({ ...prev, [proj.id]: !closed }))
                         }
-                        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {closed ? (
                           <ChevronRight className="size-3 shrink-0" />
@@ -503,7 +503,7 @@ export default function ChatSurface({
               onClick={() =>
                 projects.length === 0 ? void pickProjectFolder() : newThreadSomewhere()
               }
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {projects.length === 0 ? "Add project" : "New chat"}
             </button>
@@ -565,7 +565,7 @@ function IconButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}
     </button>
@@ -598,7 +598,7 @@ function ThreadRow({
         if (e.key === "Enter" || e.key === " ") onSelect();
       }}
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left",
+        "group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-muted text-foreground"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -628,7 +628,7 @@ function ThreadRow({
           onClose();
         }}
         className={cn(
-          "shrink-0 rounded p-0.5 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100",
+          "shrink-0 rounded p-0.5 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100",
           active ? "opacity-60" : "opacity-0",
         )}
       >

@@ -94,7 +94,7 @@ export default function ActivitySpine({
                   <Tooltip>
                     <TooltipTrigger
                       onClick={() => onJump(t.id)}
-                      className="text-[9px] font-medium tabular-nums leading-none text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none"
+                      className="rounded text-[9px] font-medium tabular-nums leading-none text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       +{hidden}
                     </TooltipTrigger>

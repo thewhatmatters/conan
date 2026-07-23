@@ -130,9 +130,21 @@ export function useAgentChat(token: string | null): AgentChat {
     wsRef.current = ws;
     ws.onopen = () => setStatus("open");
     ws.onclose = () => {
+      // A remote close (gateway restart, network drop) ends the session for
+      // good — there's deliberately no auto-reconnect. Reset the turn state
+      // (a mid-turn drop would otherwise leave `busy` stuck forever) and say
+      // so in the transcript. Local closes (unmount) null this handler first.
       setStatus("closed");
-      // Nobody is listening for an answer anymore.
+      setBusy(false);
       setPendingApprovals([]);
+      setItems((prev) => [
+        ...prev,
+        {
+          id: nextId(),
+          role: "error",
+          message: "Connection to the agent lost — this chat can't continue. Start a new chat.",
+        },
+      ]);
     };
     ws.onerror = () => setStatus("closed");
     ws.onmessage = (ev) => {
@@ -154,7 +166,12 @@ export function useAgentChat(token: string | null): AgentChat {
       }
     };
     return () => {
+      // Null the handlers before closing: this is a LOCAL teardown (unmount /
+      // token change), not a lost connection — the onclose transcript notice
+      // must not fire for it.
       ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
       ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

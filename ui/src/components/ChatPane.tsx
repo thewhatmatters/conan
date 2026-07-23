@@ -387,7 +387,7 @@ export default function ChatPane({
   const locked = firstUser != null || resume != null;
 
   const submit = () => {
-    if (!text.trim() || busy) return;
+    if (!text.trim() || busy || status !== "open") return;
     // A resumed first prompt must know whether the JSONL exists (missing →
     // fresh session, no --resume) — hold sends until the history fetch lands.
     if (historyState === "loading") return;
@@ -587,7 +587,12 @@ export default function ChatPane({
           )}
           <div className="flex-1" />
           {status !== "open" && (
-            <span className="text-[11px] text-muted-foreground">
+            <span
+              className={cn(
+                "text-[11px]",
+                status === "connecting" ? "text-muted-foreground" : "text-destructive",
+              )}
+            >
               {status === "connecting" ? "connecting to agent…" : "agent disconnected"}
             </span>
           )}
@@ -626,8 +631,13 @@ export default function ChatPane({
                   }
                 }}
                 rows={2}
-                placeholder="Message the agent…  (Enter to send, Shift+Enter for newline)"
-                className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                disabled={status === "closed"}
+                placeholder={
+                  status === "closed"
+                    ? "Agent disconnected — start a new chat to continue"
+                    : "Message the agent…  (Enter to send, Shift+Enter for newline)"
+                }
+                className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="mt-2 flex items-center gap-2">
                 <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
@@ -664,16 +674,16 @@ export default function ChatPane({
                     onClick={interrupt}
                     aria-label="Stop"
                     title="Stop — cancel this turn (the conversation survives)"
-                    className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
+                    className="flex size-8 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     <Square className="size-3.5 fill-current" />
                   </button>
                 ) : (
                   <button
                     onClick={submit}
-                    disabled={!text.trim()}
+                    disabled={!text.trim() || status !== "open" || historyState === "loading"}
                     aria-label="Send"
-                    className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+                    className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-40"
                   >
                     <ArrowUp className="size-4" />
                   </button>
@@ -805,7 +815,7 @@ function Chip({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none",
+          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           className,
         )}
       >
@@ -826,7 +836,12 @@ function EmptyState({ status }: { status: string }) {
       <p className="max-w-sm text-xs">
         Drives <code className="rounded bg-muted px-1 py-px font-mono text-[11px]">claude</code>{" "}
         headlessly in the active directory and renders the conversation here —
-        no terminal required. {status === "open" ? "Ready." : "Connecting…"}
+        no terminal required.{" "}
+        {status === "open"
+          ? "Ready."
+          : status === "connecting"
+            ? "Connecting…"
+            : "Disconnected — start a new chat."}
       </p>
     </div>
   );
