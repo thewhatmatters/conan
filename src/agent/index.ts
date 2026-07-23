@@ -15,7 +15,9 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
  *   {type:"prompt", text, model?, permissionMode?, cwd?}  submit a turn — the
  *     FIRST prompt's cwd fixes the session's working directory (no cwd → the
  *     gateway's active cwd); later prompts can't move a live process
- *   {type:"interrupt"}                              stop the in-flight turn
+ *   {type:"interrupt"}   cancel the in-flight turn (graceful — the session
+ *     survives and takes the next prompt; falls back to ending the session,
+ *     surfaced as an `exit` event, if the CLI has no control channel)
  * Server → client frames:
  *   {type:"event", event: AgentEvent}   one normalized agent event
  *   {type:"busy",  busy: boolean}       composer enable/disable

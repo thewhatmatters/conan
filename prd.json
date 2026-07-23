@@ -47,7 +47,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Backend. Verify what the installed claude's stream-json control protocol supports; document the finding in the commit. Suggested skills: none."
     },
     {

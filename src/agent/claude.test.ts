@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ClaudeStreamParser } from "./claude.js";
+import { ClaudeStreamParser, type ControlResponse } from "./claude.js";
 
 const j = (o: unknown): string => JSON.stringify(o);
 
@@ -129,4 +129,44 @@ test("non-JSON noise, blank lines, and unknown types produce nothing", () => {
   assert.deepEqual(p.push("not json"), []);
   assert.deepEqual(p.push(j({ type: "system", subtype: "hook_started" })), []);
   assert.deepEqual(p.push(j({ type: "rate_limit_event" })), []);
+});
+
+// control_response is Claude-internal plumbing (the answer to a stdin
+// control_request like an interrupt): it must never leak into the AgentEvent
+// stream, only into the driver's callback. Success shape captured live from
+// claude 2.1.218.
+test("control_response routes to the callback, not the event stream", () => {
+  const got: ControlResponse[] = [];
+  const p = new ClaudeStreamParser((r) => got.push(r));
+  assert.deepEqual(
+    p.push(
+      j({
+        type: "control_response",
+        response: { subtype: "success", request_id: "intr-1", response: { still_queued: [] } },
+      }),
+    ),
+    [],
+  );
+  assert.deepEqual(got, [{ requestId: "intr-1", ok: true, error: null }]);
+});
+
+test("control_response error surfaces ok:false with the message", () => {
+  const got: ControlResponse[] = [];
+  const p = new ClaudeStreamParser((r) => got.push(r));
+  p.push(
+    j({
+      type: "control_response",
+      response: { subtype: "error", request_id: "intr-2", error: "not supported" },
+    }),
+  );
+  assert.deepEqual(got, [{ requestId: "intr-2", ok: false, error: "not supported" }]);
+});
+
+test("control_response without a callback (and malformed) is ignored safely", () => {
+  const p = new ClaudeStreamParser();
+  assert.deepEqual(
+    p.push(j({ type: "control_response", response: { subtype: "success", request_id: "x" } })),
+    [],
+  );
+  assert.deepEqual(p.push(j({ type: "control_response" })), []);
 });

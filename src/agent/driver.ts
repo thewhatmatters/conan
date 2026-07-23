@@ -109,7 +109,11 @@ export interface AgentDriver {
   readonly provider: string;
   /** Submit a user turn. Spawns the process on first call using `opts`. */
   send(text: string, opts: AgentLaunchOpts): Promise<void>;
-  /** Stop the in-flight turn / end the session (spike: kills the process). */
+  /** Cancel the in-flight turn, keeping the session alive — the provider's
+   *  control channel aborts the turn and the process stays ready for the next
+   *  `send()`. When the provider can't cancel gracefully the driver falls back
+   *  to killing the process, surfaced honestly as an `exit` event (never a
+   *  silent pretend-survival). No-op while idle. */
   interrupt(): void;
   /** Tear down the process and release resources (WS close / shutdown). */
   dispose(): void;

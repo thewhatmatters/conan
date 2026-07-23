@@ -24,16 +24,35 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
  * message ids streamed and suppresses their text/thinking blocks to avoid
  * double-render; tool_use blocks only ever ride the whole frames.
  *
- * Spike scope remaining: interrupt = kill, launch config fixed at the first
- * prompt.
+ * Interrupt: a `control_request {subtype:"interrupt"}` line on stdin cancels
+ * the in-flight turn while the process (and its conversation context)
+ * survives — the CLI answers with a `control_response` and closes the turn
+ * with a `result {subtype:"error_during_execution"}` frame (verified live on
+ * claude 2.1.218; an idle-session interrupt is answered success and does
+ * nothing). If no response arrives the driver falls back to killing the
+ * process, surfaced honestly as an `exit` event.
+ *
+ * Spike scope remaining: launch config fixed at the first prompt.
  */
+/** How long to wait for a `control_response` before concluding the installed
+ *  claude has no control channel and falling back to killing the process. */
+const INTERRUPT_FALLBACK_MS = 3000;
+
 export class ClaudeDriver implements AgentDriver {
   readonly provider = "claude";
   private child: ChildProcessWithoutNullStreams | null = null;
   private starting: Promise<void> | null = null;
   private disposed = false;
   private opts: AgentLaunchOpts = {};
-  private readonly parser = new ClaudeStreamParser();
+  /** A turn is in flight: a prompt was sent and no result/exit/error yet.
+   *  Gates interrupt() so Stop on an idle session never touches the process. */
+  private turnActive = false;
+  /** The one in-flight interrupt request, armed with its fallback timer. */
+  private pendingInterrupt: { id: string; timer: NodeJS.Timeout } | null = null;
+  private interruptSeq = 0;
+  private readonly parser = new ClaudeStreamParser((r) =>
+    this.onControlResponse(r),
+  );
 
   constructor(
     private readonly emit: (e: AgentEvent) => void,
@@ -57,16 +76,66 @@ export class ClaudeDriver implements AgentDriver {
       message: { role: "user", content: [{ type: "text", text }] },
     });
     this.child.stdin.write(msg + "\n");
+    this.turnActive = true;
   }
 
   interrupt(): void {
-    // Spike: no in-band interrupt control frame yet — killing the process ends
-    // the session. The UI treats the resulting `exit` as "chat ended".
-    this.child?.kill("SIGINT");
+    // Graceful cancel: a control_request on stdin aborts the turn while the
+    // process — and the conversation context — survives. The CLI closes the
+    // turn with a `result` frame, which flows to the UI like any other.
+    if (!this.child || !this.turnActive || this.pendingInterrupt) return;
+    const id = `intr-${++this.interruptSeq}`;
+    const timer = setTimeout(() => {
+      this.pendingInterrupt = null;
+      // Only reachable while the turn is still running (a finished turn
+      // clears the pending interrupt) — this claude has no working control
+      // channel, so surface the downgrade honestly and end the session.
+      this.emit({
+        kind: "error",
+        message:
+          "Graceful interrupt unsupported by the installed claude — ending the session.",
+      });
+      this.child?.kill("SIGTERM");
+    }, INTERRUPT_FALLBACK_MS);
+    this.pendingInterrupt = { id, timer };
+    this.child.stdin.write(
+      JSON.stringify({
+        type: "control_request",
+        request_id: id,
+        request: { subtype: "interrupt" },
+      }) + "\n",
+    );
+  }
+
+  private onControlResponse(r: ControlResponse): void {
+    if (!this.pendingInterrupt || (r.requestId && r.requestId !== this.pendingInterrupt.id))
+      return;
+    clearTimeout(this.pendingInterrupt.timer);
+    this.pendingInterrupt = null;
+    if (!r.ok) {
+      // The CLI answered but refused the interrupt — same honest downgrade.
+      this.emit({
+        kind: "error",
+        message: `Interrupt failed (${r.error ?? "unknown error"}) — ending the session.`,
+      });
+      this.child?.kill("SIGTERM");
+    }
+    // Success: the CLI aborts the turn and emits its closing `result` frame.
+  }
+
+  /** A turn ended (result) or the session died (exit/error) — an interrupt
+   *  still pending has nothing left to cancel, so disarm its kill fallback. */
+  private turnSettled(): void {
+    this.turnActive = false;
+    if (this.pendingInterrupt) {
+      clearTimeout(this.pendingInterrupt.timer);
+      this.pendingInterrupt = null;
+    }
   }
 
   dispose(): void {
     this.disposed = true;
+    this.turnSettled();
     if (this.child) {
       try {
         this.child.stdin.end();
@@ -122,7 +191,10 @@ export class ClaudeDriver implements AgentDriver {
 
     const rl = readline.createInterface({ input: child.stdout });
     rl.on("line", (line) => {
-      for (const e of this.parser.push(line)) this.emit(e);
+      for (const e of this.parser.push(line)) {
+        if (e.kind === "result") this.turnSettled();
+        this.emit(e);
+      }
     });
     // stderr is diagnostics only (job-control notices, model warnings); log a
     // bounded slice rather than parse it.
@@ -130,15 +202,26 @@ export class ClaudeDriver implements AgentDriver {
       const s = d.toString().trim();
       if (s) console.warn(`[agent] claude stderr: ${s.slice(0, 400)}`);
     });
-    child.on("error", (err) =>
-      this.emit({ kind: "error", message: err.message }),
-    );
+    child.on("error", (err) => {
+      this.turnSettled();
+      this.emit({ kind: "error", message: err.message });
+    });
     child.on("exit", (code) => {
       this.child = null;
+      this.turnSettled();
       if (!this.disposed) this.emit({ kind: "exit", code });
     });
   }
 
+}
+
+/** The CLI's answer to a stdin `control_request` (e.g. an interrupt) —
+ *  Claude-internal plumbing, not part of the cross-provider AgentEvent seam,
+ *  so the parser routes it to the driver via a callback instead. */
+export interface ControlResponse {
+  requestId: string | null;
+  ok: boolean;
+  error: string | null;
 }
 
 /**
@@ -153,6 +236,10 @@ export class ClaudeDriver implements AgentDriver {
 export class ClaudeStreamParser {
   private streamedMessageIds = new Set<string>();
 
+  constructor(
+    private readonly onControlResponse?: (r: ControlResponse) => void,
+  ) {}
+
   push(line: string): AgentEvent[] {
     const trimmed = line.trim();
     if (!trimmed) return [];
@@ -163,6 +250,22 @@ export class ClaudeStreamParser {
       return []; // ignore non-JSON noise
     }
     const type = msg.type;
+
+    if (type === "control_response") {
+      // Shape (captured live, claude 2.1.218):
+      //   {type:"control_response", response:{subtype:"success"|"error",
+      //    request_id, response?/error?}}
+      const resp =
+        msg.response && typeof msg.response === "object"
+          ? (msg.response as Record<string, unknown>)
+          : null;
+      this.onControlResponse?.({
+        requestId: resp ? str(resp.request_id) : null,
+        ok: resp?.subtype === "success",
+        error: resp ? str(resp.error) : null,
+      });
+      return [];
+    }
 
     if (type === "stream_event") {
       const event =
