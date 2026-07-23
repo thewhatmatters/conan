@@ -29,26 +29,29 @@ chat architecture + the dormant subsystems.
 
 ## Current state (branch / git)
 
-- **Branch: `loop/conan-chat-v1`** (git). `main` is clean at `f23bc7c` — the
-  chat rebuild is NOT merged yet.
+- **Branch: `loop/conan-chat-v1`** (git), **pushed to `origin`**. `main` is clean
+  at `f23bc7c` — the chat rebuild is NOT merged yet (feature branch only).
 - **`prd.json` branchName label:** rotates per loop (`loop/conan-chat-v1` for the
   25-story chat-v1 build, `loop/conan-chat-v1-polish` for the polish loop).
 - **chat-v1: DONE** — 25 stories, archived at
   `archive/2026-07-23-conan-chat-v1-complete/`.
-- **Polish loop: in progress** at time of writing — check `prd.json` `passes`
-  flags for live status (6 stories: permission-unlock, auto-open, settings
-  entry, skill ticks, sort/group menu, command-palette picker).
+- **Polish loop: DONE** — all 6 stories pass (permission-unlock, auto-open,
+  settings entry, skill ticks, sort/group menu, command-palette picker).
+- **PD-1 richer thread rows: DONE** — status icon + title + description +
+  badge/timestamp; a `last_message` column on `chat_thread` feeds the
+  description.
 - **QA:** the whole build was walked A–G; findings + status live in
-  `docs/chat-v1-qa-backlog.md` (the running backlog / task source).
+  `docs/chat-v1-qa-backlog.md` (the running backlog / task source). The **polish
+  loop's 6 stories are NOT yet QA-dogfooded** — that's the next verify pass.
 
 ## What's next (the roadmap, ordered)
 
-1. **QA the polish loop** — dogfood the 6 polish stories; log findings to
-   `docs/chat-v1-qa-backlog.md`.
-2. **PD-1** — richer thread rows (title + description + status icon/badge). Spec
-   in the backlog. Needs a `last_message` preview data source.
-3. **t3 feature ports** — see `docs/t3-port-backlog.md` (the wishlist). This is
-   the main "keep building" track; not yet decomposed into stories.
+1. **QA the polish loop** — dogfood the 6 polish stories (US-001..006); log
+   findings to `docs/chat-v1-qa-backlog.md`. (PD-1 is DONE — no longer pending.)
+2. **t3 feature ports** — see `docs/t3-port-backlog.md` (the wishlist). This is
+   the main "keep building" track; not yet decomposed into stories. **T3-1
+   multi-provider is the highest-leverage** (adds Codex etc. behind the existing
+   `AgentDriver` seam — also the credit-failover story).
 4. **Ship-gates (before any release / merge to `main`):**
    - **H1 — native build unverified.** EVERYTHING so far ran only in a browser
      dev stack. **No Rust toolchain is installed** on this machine, so
