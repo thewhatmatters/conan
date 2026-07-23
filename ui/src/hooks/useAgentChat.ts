@@ -21,6 +21,9 @@ export interface AgentOpts {
   /** Working directory for the session — the FIRST prompt's cwd fixes it
    *  (US-001); omitted → the gateway's active cwd. */
   cwd?: string;
+  /** Sidebar project this thread belongs to (US-014). Consumed by the WS
+   *  handler to persist the chat_thread row — never reaches the driver. */
+  projectId?: string;
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */

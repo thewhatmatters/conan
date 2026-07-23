@@ -64,6 +64,11 @@ import { detectClaude } from "../doctor/claude.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 import { attachAgent, closeAllAgents } from "../agent/index.js";
+import {
+  listChatProjects,
+  upsertChatProject,
+  deleteChatThread,
+} from "../agent/threads.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // US-007: optional runtime override for the Buy Premium checkout URL the
@@ -260,6 +265,40 @@ app.post("/api/fs/reveal", (req, res) => {
     if (err) console.warn(`[fs] reveal failed for ${p}: ${err.message}`);
   });
   res.json({ ok: true });
+});
+
+// ── Chat persistence (US-014) ──────────────────────────────────────────────
+// The sidebar's projects + threads, backed by the US-013 tables. Token-gated;
+// the global CORS reflector + loopback bind cover WKWebView like every route.
+
+// Projects with their threads, newest activity first — the sidebar's source of
+// truth across reloads and gateway restarts.
+app.get("/api/agent/projects", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ projects: listChatProjects() });
+});
+
+// Upsert a project by path (US-025's add-project flow). The same folder twice
+// returns the one existing row, so ids stay stable for the sidebar.
+app.post("/api/agent/projects", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as { path?: unknown; name?: unknown };
+  if (typeof b.path !== "string" || !b.path.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  const dir = b.path.trim();
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    res.status(400).json({ error: `not a directory: ${dir}` });
+    return;
+  }
+  res.json(upsertChatProject(dir, typeof b.name === "string" ? b.name : undefined));
+});
+
+// Close-X on a thread row: the row goes away; its project persists.
+app.delete("/api/agent/threads/:sessionId", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ deleted: deleteChatThread(req.params.sessionId) });
 });
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */

@@ -103,6 +103,7 @@ export interface ThreadUiState {
 export default function ChatPane({
   token,
   cwd,
+  projectId,
   onState,
 }: {
   token: string | null;
@@ -110,6 +111,9 @@ export default function ChatPane({
    *  owns the path; threads never diverge from it). Sent with every prompt
    *  frame — the gateway pins the first one (US-001). */
   cwd?: string | null;
+  /** Persisted project id (US-014) — rides the prompt frame so the gateway
+   *  can upsert this thread's chat_thread row at session init. */
+  projectId?: string | null;
   onState?: (s: ThreadUiState) => void;
 }) {
   const { items, busy, status, sessionId, pendingApproval, pendingApprovals, respondToApproval, send, interrupt } =
@@ -159,7 +163,12 @@ export default function ChatPane({
 
   const submit = () => {
     if (!text.trim() || busy) return;
-    send(text, { model, permissionMode: permission, cwd: effectiveCwd ?? undefined });
+    send(text, {
+      model,
+      permissionMode: permission,
+      cwd: effectiveCwd ?? undefined,
+      projectId: projectId ?? undefined,
+    });
     setText("");
   };
 

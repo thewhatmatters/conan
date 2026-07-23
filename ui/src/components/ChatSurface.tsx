@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  History,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -11,28 +12,35 @@ import {
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
 import DirBrowser, { basename } from "./DirBrowser.tsx";
-import { isTauri } from "../lib/gateway.ts";
+import { apiBase, isTauri } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 
 /**
- * Project-organized chat surface (US-006 sidebar shell, US-025 projects): a
- * collapsible left sidebar of Projects — each a first-class {id, path, name}
- * created from a folder picker — with their chat threads nested beneath,
- * beside the active thread's ChatPane.
+ * Project-organized chat surface (US-006 sidebar shell, US-025 projects,
+ * US-014 persistence): a collapsible left sidebar of Projects — each a
+ * first-class {id, path, name} created from a folder picker — with their chat
+ * threads nested beneath, beside the active thread's ChatPane.
  *
  * A Thread BELONGS to a project and inherits the project's path as its cwd;
  * there is no per-thread directory divergence (that would make the grouping
- * lie). Each thread owns its own ChatPane — and therefore its own useAgentChat
- * WS + headless `claude` process. Threads stay MOUNTED when inactive (hidden
- * via visibility/z-index, the same pattern App.tsx used for the terminal-era
- * surfaces) so switching never tears down a running turn. Closing a thread
- * unmounts its pane, which closes the WS and ends the gateway session.
+ * lie). Each live thread owns its own ChatPane — and therefore its own
+ * useAgentChat WS + headless `claude` process. Live threads stay MOUNTED when
+ * inactive (hidden via visibility/z-index, the same pattern App.tsx used for
+ * the terminal-era surfaces) so switching never tears down a running turn.
  *
- * Ephemeral by design for this story: projects + threads live in memory only,
- * a reload starts empty (persistence lands in US-013/US-014).
+ * Persistence (US-014): projects and thread metadata live in the gateway's
+ * SQLite (`GET/POST /api/agent/projects`, thread rows upserted at session
+ * init) and survive reloads + gateway restarts. The sidebar renders the
+ * persisted list merged with live threads — a live thread whose session is
+ * already persisted renders once, with the DB's title/last-activity. A saved
+ * thread from a previous run lists with its title + relative activity time;
+ * reopening it with full history is US-015 (selecting one shows a metadata
+ * placeholder for now). Closing any thread deletes its row; a project with no
+ * threads persists.
  */
 
-/** First-class project: a chosen folder that chats live inside (US-025). */
+/** First-class project: a chosen folder that chats live inside (US-025).
+ *  Ids come from the gateway's project table (stable across reloads). */
 interface Project {
   id: string;
   /** Absolute path of the project folder — every thread's cwd. */
@@ -41,11 +49,23 @@ interface Project {
   name: string;
 }
 
+/** A live (this-run) thread hosting a mounted ChatPane. */
 interface Thread {
   id: string;
   projectId: string;
-  /** Creation time, for the sidebar's relative timestamp. */
+  /** Creation time, for the sidebar's relative timestamp until the thread's
+   *  persisted row (keyed by session id) supplies last_activity. */
   createdAt: number;
+}
+
+/** A persisted chat_thread row from GET /api/agent/projects (US-014). */
+interface SavedThread {
+  sessionId: string;
+  cwd: string;
+  model: string | null;
+  title: string | null;
+  createdAt: number;
+  lastActivity: number;
 }
 
 /** Sidebar status pill, derived from the thread's reported state. */
@@ -101,8 +121,12 @@ export default function ChatSurface({
 }) {
   const seq = useRef(0);
   const [projects, setProjects] = useState<Project[]>([]);
+  /** Persisted threads by project id, newest activity first (US-014). */
+  const [saved, setSaved] = useState<Record<string, SavedThread[]>>({});
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  /** A selected SAVED thread (no live pane yet — US-015 reopens it). */
+  const [activeSaved, setActiveSaved] = useState<SavedThread | null>(null);
   const [states, setStates] = useState<Record<string, ThreadUiState>>({});
   const [collapsed, setCollapsed] = useState(false);
   /** Per-project group collapse (chevron). Absent/false = expanded. */
@@ -117,12 +141,60 @@ export default function ChatSurface({
     return () => clearInterval(t);
   }, []);
 
-  /** Add (or reuse — same path twice is one project) a project for a folder. */
-  const addProject = (path: string): Project => {
+  /** Pull the persisted projects + threads (US-014). Returns the project
+   *  count, or null when the gateway was unreachable. Local-only fallback
+   *  projects (a failed POST) are kept, appended after the server's order. */
+  const refresh = useCallback(async (): Promise<number | null> => {
+    if (!token) return null;
+    try {
+      const r = await fetch(apiBase() + "/api/agent/projects", {
+        headers: { "x-conan-token": token },
+      });
+      if (!r.ok) return null;
+      const data = (await r.json()) as {
+        projects: Array<Project & { threads: SavedThread[] }>;
+      };
+      setProjects((prev) => {
+        const server: Project[] = data.projects.map(({ id, path, name }) => ({ id, path, name }));
+        const extras = prev.filter((p) => !server.some((s) => s.path === p.path));
+        return [...server, ...extras];
+      });
+      setSaved(Object.fromEntries(data.projects.map((p) => [p.id, p.threads])));
+      return data.projects.length;
+    } catch {
+      return null;
+    }
+  }, [token]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  /** Add (or reuse — same path twice is one project) a project for a folder.
+   *  Persists via POST /api/agent/projects; degrades to an ephemeral local
+   *  project when the gateway can't be reached, so chatting still works. */
+  const addProject = async (path: string): Promise<Project> => {
     const clean = path.replace(/\/+$/, "") || "/";
     const existing = projects.find((p) => p.path === clean);
     if (existing) return existing;
-    const proj: Project = { id: `p${++seq.current}`, path: clean, name: basename(clean) };
+    if (token) {
+      try {
+        const r = await fetch(apiBase() + "/api/agent/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-conan-token": token },
+          body: JSON.stringify({ path: clean }),
+        });
+        if (r.ok) {
+          const row = (await r.json()) as Project;
+          const proj: Project = { id: row.id, path: row.path, name: row.name };
+          setProjects((prev) =>
+            prev.some((p) => p.id === proj.id) ? prev : [...prev, proj],
+          );
+          return proj;
+        }
+      } catch {
+        /* fall through to the local fallback */
+      }
+    }
+    const proj: Project = { id: `local-${++seq.current}`, path: clean, name: basename(clean) };
     setProjects((prev) => [...prev, proj]);
     return proj;
   };
@@ -131,6 +203,7 @@ export default function ChatSurface({
     const id = `t${++seq.current}`;
     setThreads((prev) => [...prev, { id, projectId, createdAt: Date.now() }]);
     setActiveId(id);
+    setActiveSaved(null);
     // Make the new thread visible: a chat landing in a collapsed group (or a
     // collapsed sidebar) reads as "nothing happened" while a real agent
     // session quietly spawns.
@@ -140,8 +213,8 @@ export default function ChatSurface({
 
   /** Add a project and open its first chat — the add-project flows land here
    *  so a project never appears without a visible, usable thread. */
-  const addProjectAndChat = (path: string) => {
-    newThreadIn(addProject(path).id);
+  const addProjectAndChat = async (path: string) => {
+    newThreadIn((await addProject(path)).id);
   };
 
   /** Folder picker: native dialog under Tauri, in-app DirBrowser fallback
@@ -155,7 +228,7 @@ export default function ChatSurface({
         defaultPath: defaultCwd ?? undefined,
         title: "Choose a project folder",
       });
-      if (typeof dir === "string" && dir) addProjectAndChat(dir);
+      if (typeof dir === "string" && dir) await addProjectAndChat(dir);
     } else {
       setPickingFolder(true);
     }
@@ -170,25 +243,35 @@ export default function ChatSurface({
       : undefined;
     const target = activeProject ?? projects[0]?.id;
     if (target) newThreadIn(target);
-    else if (defaultCwd) addProjectAndChat(defaultCwd);
+    else if (defaultCwd) void addProjectAndChat(defaultCwd);
     else void pickProjectFolder();
   };
 
-  // Boot: auto-create a project from the app's active cwd with one draft
-  // thread, so the surface is immediately usable. Waits for /api/config to
-  // deliver the cwd (it loads async); skipped if the user beat it to the
-  // add-project button.
+  // Boot: load the persisted projects + threads first (US-014). Only when the
+  // store is empty (first run / fresh DB) auto-create a project from the
+  // app's active cwd with one draft thread, so a brand-new install is
+  // immediately usable; a returning user sees their saved sidebar instead.
   const booted = useRef(false);
+  const projectCount = useRef(0);
+  projectCount.current = projects.length;
   useEffect(() => {
-    if (booted.current || !defaultCwd) return;
+    if (booted.current || !defaultCwd || !token) return;
     booted.current = true;
-    if (projects.length === 0) addProjectAndChat(defaultCwd);
+    void (async () => {
+      const n = await refreshRef.current();
+      if (!n && projectCount.current === 0) await addProjectAndChat(defaultCwd);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultCwd]);
+  }, [defaultCwd, token]);
 
   // Per-thread state reports from hidden panes drive the pills. Bail when
-  // nothing changed so re-reports from parent re-renders can't loop.
+  // nothing changed so re-reports from parent re-renders can't loop. A
+  // busy→idle transition means a turn just completed — re-pull the persisted
+  // list so titles + last_activity stay fresh (US-014).
+  const statesRef = useRef(states);
+  statesRef.current = states;
   const reportState = useCallback((id: string, s: ThreadUiState) => {
+    if (statesRef.current[id]?.busy === true && !s.busy) void refreshRef.current();
     setStates((prev) => {
       const cur = prev[id];
       if (
@@ -205,7 +288,27 @@ export default function ChatSurface({
     });
   }, []);
 
+  /** Delete a thread's persisted row (close-X on any thread — US-014). */
+  const deleteSavedRow = async (sessionId: string) => {
+    setActiveSaved((cur) => (cur?.sessionId === sessionId ? null : cur));
+    if (token) {
+      try {
+        await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(sessionId)}`, {
+          method: "DELETE",
+          headers: { "x-conan-token": token },
+        });
+      } catch {
+        /* best-effort — the row will resurface on the next refresh if not */
+      }
+    }
+    void refreshRef.current();
+  };
+
   const closeThread = (id: string) => {
+    // Closing a live chat also deletes its persisted row (US-014) — closing
+    // IS the delete gesture; a reload (no close) keeps threads listed.
+    const sid = states[id]?.sessionId;
+    if (sid) void deleteSavedRow(sid);
     const idx = threads.findIndex((t) => t.id === id);
     const next = threads.filter((t) => t.id !== id);
     setThreads(next);
@@ -280,6 +383,14 @@ export default function ChatSurface({
             ) : (
               projects.map((proj) => {
                 const list = threads.filter((t) => t.projectId === proj.id);
+                const savedAll = saved[proj.id] ?? [];
+                const bySession = new Map(savedAll.map((s) => [s.sessionId, s]));
+                // A live thread whose session is persisted renders ONCE, as
+                // the live row (with the DB's fresher activity time).
+                const liveSessions = new Set(
+                  list.map((t) => states[t.id]?.sessionId).filter(Boolean),
+                );
+                const savedOnly = savedAll.filter((s) => !liveSessions.has(s.sessionId));
                 const closed = closedGroups[proj.id] === true;
                 return (
                   <div key={proj.id} className="mb-1">
@@ -310,21 +421,39 @@ export default function ChatSurface({
                       </IconButton>
                     </div>
                     {!closed &&
-                      (list.length === 0 ? (
+                      (list.length === 0 && savedOnly.length === 0 ? (
                         <p className="py-1 pl-5 pr-2 text-[11px] text-muted-foreground/70">
                           No chats yet.
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {list.map((t) => (
+                          {list.map((t) => {
+                            const sid = states[t.id]?.sessionId;
+                            const row = sid ? bySession.get(sid) : undefined;
+                            return (
+                              <ThreadRow
+                                key={t.id}
+                                title={states[t.id]?.title ?? row?.title ?? null}
+                                when={timeAgo(row?.lastActivity ?? t.createdAt)}
+                                pill={pillOf(states[t.id])}
+                                active={t.id === activeId && !activeSaved}
+                                onSelect={() => {
+                                  setActiveId(t.id);
+                                  setActiveSaved(null);
+                                }}
+                                onClose={() => closeThread(t.id)}
+                              />
+                            );
+                          })}
+                          {savedOnly.map((s) => (
                             <ThreadRow
-                              key={t.id}
-                              title={states[t.id]?.title ?? null}
-                              when={timeAgo(t.createdAt)}
-                              pill={pillOf(states[t.id])}
-                              active={t.id === activeId}
-                              onSelect={() => setActiveId(t.id)}
-                              onClose={() => closeThread(t.id)}
+                              key={s.sessionId}
+                              title={s.title}
+                              when={timeAgo(s.lastActivity)}
+                              pill="idle"
+                              active={activeSaved?.sessionId === s.sessionId}
+                              onSelect={() => setActiveSaved(s)}
+                              onClose={() => void deleteSavedRow(s.sessionId)}
                             />
                           ))}
                         </div>
@@ -339,7 +468,7 @@ export default function ChatSurface({
 
       {/* Thread panes — all mounted, only the active one visible/interactive. */}
       <div className="relative min-h-0 min-w-0 flex-1">
-        {threads.length === 0 && (
+        {threads.length === 0 && !activeSaved && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
             <p className="text-sm">
               {projects.length === 0 ? "Add a project to start chatting." : "No open chats."}
@@ -359,16 +488,36 @@ export default function ChatSurface({
             key={t.id}
             className={cn(
               "absolute inset-0 flex",
-              t.id === activeId ? "z-10" : "invisible z-0",
+              t.id === activeId && !activeSaved ? "z-10" : "invisible z-0",
             )}
           >
             <ChatPane
               token={token}
               cwd={projectPath(t.projectId) ?? defaultCwd}
+              projectId={t.projectId}
               onState={(s) => reportState(t.id, s)}
             />
           </div>
         ))}
+        {/* Saved-thread placeholder (US-014): metadata only until US-015
+            reconstructs the transcript + resumes the session. */}
+        {activeSaved && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background px-8 text-center">
+            <History className="size-6 text-muted-foreground/60" />
+            <p className="max-w-md truncate text-sm font-medium text-foreground">
+              {activeSaved.title ?? "Saved chat"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {activeSaved.cwd}
+              {activeSaved.model ? ` · ${activeSaved.model}` : ""}
+              {` · last active ${timeAgo(activeSaved.lastActivity)}`}
+            </p>
+            <p className="max-w-sm text-xs text-muted-foreground/80">
+              Saved conversation — reopening with full history and resume is
+              coming in an upcoming update.
+            </p>
+          </div>
+        )}
         </div>
       </div>
 
@@ -378,7 +527,7 @@ export default function ChatSurface({
           start={defaultCwd}
           title="Choose a project folder"
           onSelect={(p) => {
-            addProjectAndChat(p);
+            void addProjectAndChat(p);
             setPickingFolder(false);
           }}
           onClose={() => setPickingFolder(false)}
@@ -419,7 +568,7 @@ function ThreadRow({
   onClose,
 }: {
   title: string | null;
-  /** Relative creation time, e.g. "just now" / "15h ago". */
+  /** Relative activity time, e.g. "just now" / "15h ago". */
   when: string;
   pill: Pill;
   active: boolean;
