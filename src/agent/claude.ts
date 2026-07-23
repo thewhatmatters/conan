@@ -1,7 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import { detectClaude, loginShellPath } from "../doctor/claude.js";
-import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
+import type {
+  AgentDriver,
+  AgentEvent,
+  AgentLaunchOpts,
+  PermissionDecision,
+  ToolPermissionKind,
+} from "./driver.js";
 
 /**
  * Claude Code headless driver (Level-2 chat spike).
@@ -32,6 +38,18 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
  * nothing). If no response arrives the driver falls back to killing the
  * process, surfaced honestly as an `exit` event.
  *
+ * Permissions (Supervised mode): spawning with `--permission-prompt-tool
+ * stdio` (the Agent SDK's own transport — subscription auth untouched, no
+ * ANTHROPIC_API_KEY) makes the CLI route each tool call that permission rules
+ * don't already settle to stdout as a `control_request {subtype:
+ * "can_use_tool"}` and block the turn until we answer with a
+ * `control_response` carrying `{behavior:"allow"}` or `{behavior:"deny",
+ * message, interrupt?}`. Deny continues the turn without the tool (the model
+ * sees `message` as an error tool_result); `interrupt:true` aborts the whole
+ * turn while the session survives — all three verified live on claude
+ * 2.1.218. Only Supervised (`default`/unset) wires the flag: acceptEdits /
+ * bypassPermissions / plan keep today's no-prompt behavior.
+ *
  * Spike scope remaining: launch config fixed at the first prompt.
  */
 /** How long to wait for a `control_response` before concluding the installed
@@ -50,8 +68,18 @@ export class ClaudeDriver implements AgentDriver {
   /** The one in-flight interrupt request, armed with its fallback timer. */
   private pendingInterrupt: { id: string; timer: NodeJS.Timeout } | null = null;
   private interruptSeq = 0;
-  private readonly parser = new ClaudeStreamParser((r) =>
-    this.onControlResponse(r),
+  /** Permission requests awaiting the user's decision, by CLI request_id.
+   *  The CLI blocks the turn on each until we write a control_response. */
+  private readonly pendingPermissions = new Map<
+    string,
+    { toolUseId: string | null; input: unknown; toolKind: ToolPermissionKind }
+  >();
+  /** Tool kinds the user granted "always allow this session" — answered
+   *  driver-side without another permission-request event. */
+  private readonly sessionApprovedKinds = new Set<ToolPermissionKind>();
+  private readonly parser = new ClaudeStreamParser(
+    (r) => this.onControlResponse(r),
+    (r) => this.onControlRequest(r),
   );
 
   constructor(
@@ -84,6 +112,15 @@ export class ClaudeDriver implements AgentDriver {
     // process — and the conversation context — survives. The CLI closes the
     // turn with a `result` frame, which flows to the UI like any other.
     if (!this.child || !this.turnActive || this.pendingInterrupt) return;
+    if (this.pendingPermissions.size > 0) {
+      // The CLI is blocked awaiting our permission answer, not running the
+      // turn — a deny with `interrupt:true` IS the graceful cancel there
+      // (the CLI closes the turn with its usual `result` frame).
+      for (const id of [...this.pendingPermissions.keys()]) {
+        this.respondPermission(id, "cancel");
+      }
+      return;
+    }
     const id = `intr-${++this.interruptSeq}`;
     const timer = setTimeout(() => {
       this.pendingInterrupt = null;
@@ -123,10 +160,94 @@ export class ClaudeDriver implements AgentDriver {
     // Success: the CLI aborts the turn and emits its closing `result` frame.
   }
 
+  /** A `control_request` FROM the CLI — permission prompts routed to stdio.
+   *  Anything else gets an error response so the CLI never hangs on us. */
+  private onControlRequest(r: ControlRequest): void {
+    if (!r.requestId) return;
+    if (r.subtype !== "can_use_tool") {
+      this.writeControlResponse(r.requestId, null, `unsupported control request: ${r.subtype ?? "?"}`);
+      return;
+    }
+    const toolName = r.toolName ?? "tool";
+    const toolKind = classifyTool(toolName);
+    if (this.sessionApprovedKinds.has(toolKind)) {
+      this.writeControlResponse(r.requestId, {
+        behavior: "allow",
+        updatedInput: r.input ?? {},
+        ...(r.toolUseId ? { toolUseID: r.toolUseId } : {}),
+      });
+      return;
+    }
+    this.pendingPermissions.set(r.requestId, {
+      toolUseId: r.toolUseId,
+      input: r.input,
+      toolKind,
+    });
+    this.emit({
+      kind: "permission-request",
+      id: r.requestId,
+      toolKind,
+      summary: permissionSummary(toolName, r.input, r.description),
+      detail: permissionDetail(toolName, r.input),
+      toolName,
+    });
+  }
+
+  respondPermission(id: string, decision: PermissionDecision): void {
+    const pending = this.pendingPermissions.get(id);
+    if (!pending) return; // already settled, or cleared by a turn ending
+    this.pendingPermissions.delete(id);
+    const toolUseID = pending.toolUseId ? { toolUseID: pending.toolUseId } : {};
+    if (decision === "acceptForSession")
+      this.sessionApprovedKinds.add(pending.toolKind);
+    if (decision === "accept" || decision === "acceptForSession") {
+      this.writeControlResponse(id, {
+        behavior: "allow",
+        updatedInput: pending.input ?? {},
+        ...toolUseID,
+      });
+    } else if (decision === "decline") {
+      // The CLI feeds `message` to the model as an error tool_result and the
+      // turn continues without the tool (verified live).
+      this.writeControlResponse(id, {
+        behavior: "deny",
+        message: "User declined this tool use.",
+        ...toolUseID,
+      });
+    } else {
+      // cancel: interrupt:true aborts the turn; the session survives and the
+      // CLI closes with a result frame (verified live).
+      this.writeControlResponse(id, {
+        behavior: "deny",
+        message: "User cancelled the turn.",
+        interrupt: true,
+        ...toolUseID,
+      });
+    }
+  }
+
+  /** Answer a CLI `control_request` — success with a payload, or an error. */
+  private writeControlResponse(
+    requestId: string,
+    response: Record<string, unknown> | null,
+    error?: string,
+  ): void {
+    if (!this.child) return;
+    const envelope = error
+      ? { subtype: "error", request_id: requestId, error }
+      : { subtype: "success", request_id: requestId, response };
+    this.child.stdin.write(
+      JSON.stringify({ type: "control_response", response: envelope }) + "\n",
+    );
+  }
+
   /** A turn ended (result) or the session died (exit/error) — an interrupt
-   *  still pending has nothing left to cancel, so disarm its kill fallback. */
+   *  still pending has nothing left to cancel, so disarm its kill fallback;
+   *  permission requests still pending belong to that dead turn, so drop
+   *  them (the UI clears its panel on the same result/exit event). */
   private turnSettled(): void {
     this.turnActive = false;
+    this.pendingPermissions.clear();
     if (this.pendingInterrupt) {
       clearTimeout(this.pendingInterrupt.timer);
       this.pendingInterrupt = null;
@@ -173,6 +294,14 @@ export class ClaudeDriver implements AgentDriver {
     if (this.opts.model) args.push("--model", this.opts.model);
     if (this.opts.permissionMode)
       args.push("--permission-mode", this.opts.permissionMode);
+    // Supervised (`default`, or no mode — the CLI's default IS default) routes
+    // permission prompts onto the control channel instead of headless
+    // auto-deny. acceptEdits/bypassPermissions/plan never prompt, so the flag
+    // stays off there (criteria: those modes must not emit permission
+    // requests). Tools the user's own permission rules already allow are
+    // settled CLI-side and never reach us.
+    if (!this.opts.permissionMode || this.opts.permissionMode === "default")
+      args.push("--permission-prompt-tool", "stdio");
 
     let child: ChildProcessWithoutNullStreams;
     try {
@@ -224,6 +353,72 @@ export interface ControlResponse {
   error: string | null;
 }
 
+/** A `control_request` FROM the CLI — with `--permission-prompt-tool stdio`
+ *  that's a `can_use_tool` permission prompt (shape captured live, claude
+ *  2.1.218). Same Claude-internal plumbing: routed to the driver via a
+ *  callback, never into the AgentEvent stream. */
+export interface ControlRequest {
+  requestId: string | null;
+  subtype: string | null;
+  toolName: string | null;
+  input: unknown;
+  toolUseId: string | null;
+  /** The model's own one-liner for the call (e.g. Bash description). */
+  description: string | null;
+}
+
+/** Coarse permission grouping for the approval UI + acceptForSession. */
+export function classifyTool(name: string): ToolPermissionKind {
+  switch (name) {
+    case "Bash":
+    case "BashOutput":
+    case "KillShell":
+      return "command";
+    case "Read":
+    case "Glob":
+    case "Grep":
+    case "NotebookRead":
+      return "file-read";
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return "file-change";
+    default:
+      return "other";
+  }
+}
+
+/** One-line human summary for the approval panel header. */
+function permissionSummary(
+  toolName: string,
+  input: unknown,
+  description: string | null,
+): string {
+  if (description) return description;
+  const target = inputTarget(input);
+  return target ? `${toolName}: ${target}` : `Run ${toolName}`;
+}
+
+/** The thing being approved — command / path / raw input — for the panel's
+ *  mono block. */
+function permissionDetail(toolName: string, input: unknown): string {
+  const target = inputTarget(input);
+  if (target) return target;
+  try {
+    return JSON.stringify(input ?? {}, null, 2).slice(0, 2000);
+  } catch {
+    return String(input);
+  }
+}
+
+/** The primary target inside a tool input: a Bash command or a file path. */
+function inputTarget(input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as Record<string, unknown>;
+  return str(o.command) ?? str(o.file_path) ?? str(o.path) ?? str(o.pattern);
+}
+
 /**
  * Stateful NDJSON-line → `AgentEvent[]` parser, split out of the driver so the
  * streaming/dedup logic is unit-testable without spawning a real `claude`.
@@ -238,6 +433,7 @@ export class ClaudeStreamParser {
 
   constructor(
     private readonly onControlResponse?: (r: ControlResponse) => void,
+    private readonly onControlRequest?: (r: ControlRequest) => void,
   ) {}
 
   push(line: string): AgentEvent[] {
@@ -263,6 +459,26 @@ export class ClaudeStreamParser {
         requestId: resp ? str(resp.request_id) : null,
         ok: resp?.subtype === "success",
         error: resp ? str(resp.error) : null,
+      });
+      return [];
+    }
+
+    if (type === "control_request") {
+      // Shape (captured live, claude 2.1.218, --permission-prompt-tool stdio):
+      //   {type:"control_request", request_id, request:{subtype:"can_use_tool",
+      //    tool_name, display_name, input, description?,
+      //    permission_suggestions?, tool_use_id}}
+      const req =
+        msg.request && typeof msg.request === "object"
+          ? (msg.request as Record<string, unknown>)
+          : null;
+      this.onControlRequest?.({
+        requestId: str(msg.request_id),
+        subtype: req ? str(req.subtype) : null,
+        toolName: req ? str(req.tool_name) : null,
+        input: req ? (req.input ?? null) : null,
+        toolUseId: req ? str(req.tool_use_id) : null,
+        description: req ? str(req.description) : null,
       });
       return [];
     }

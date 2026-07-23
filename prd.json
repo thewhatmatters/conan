@@ -63,7 +63,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Backend — the riskiest story; sequenced early on purpose (foundational for Supervised default). Suggested skills: none."
     },
     {

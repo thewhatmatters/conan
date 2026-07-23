@@ -18,6 +18,9 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
  *   {type:"interrupt"}   cancel the in-flight turn (graceful — the session
  *     survives and takes the next prompt; falls back to ending the session,
  *     surfaced as an `exit` event, if the CLI has no control channel)
+ *   {type:"permission-response", id, decision}   answer a `permission-request`
+ *     event (Supervised mode); decision is accept | acceptForSession |
+ *     decline | cancel
  * Server → client frames:
  *   {type:"event", event: AgentEvent}   one normalized agent event
  *   {type:"busy",  busy: boolean}       composer enable/disable
@@ -68,6 +71,15 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       });
     } else if (msg.type === "interrupt") {
       driver.interrupt();
+    } else if (
+      msg.type === "permission-response" &&
+      typeof msg.id === "string" &&
+      (msg.decision === "accept" ||
+        msg.decision === "acceptForSession" ||
+        msg.decision === "decline" ||
+        msg.decision === "cancel")
+    ) {
+      driver.respondPermission(msg.id, msg.decision);
     }
   });
 

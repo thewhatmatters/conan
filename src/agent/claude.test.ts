@@ -9,7 +9,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ClaudeStreamParser, type ControlResponse } from "./claude.js";
+import {
+  ClaudeStreamParser,
+  classifyTool,
+  type ControlRequest,
+  type ControlResponse,
+} from "./claude.js";
 
 const j = (o: unknown): string => JSON.stringify(o);
 
@@ -169,4 +174,61 @@ test("control_response without a callback (and malformed) is ignored safely", ()
     [],
   );
   assert.deepEqual(p.push(j({ type: "control_response" })), []);
+});
+
+// can_use_tool control_requests (--permission-prompt-tool stdio) are the
+// Supervised-mode permission prompts. Like control_response they are
+// Claude-internal plumbing: routed to a driver callback, never into the
+// AgentEvent stream. Shape captured live from claude 2.1.218.
+test("can_use_tool control_request routes to the callback, not the event stream", () => {
+  const got: ControlRequest[] = [];
+  const p = new ClaudeStreamParser(undefined, (r) => got.push(r));
+  assert.deepEqual(
+    p.push(
+      j({
+        type: "control_request",
+        request_id: "b430414f",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Bash",
+          display_name: "Bash",
+          input: { command: "rm -f /tmp/x.txt", description: "Remove temp file" },
+          description: "Remove temp file",
+          permission_suggestions: [{ type: "addRules", rules: [] }],
+          tool_use_id: "toolu_015D",
+        },
+      }),
+    ),
+    [],
+  );
+  assert.deepEqual(got, [
+    {
+      requestId: "b430414f",
+      subtype: "can_use_tool",
+      toolName: "Bash",
+      input: { command: "rm -f /tmp/x.txt", description: "Remove temp file" },
+      toolUseId: "toolu_015D",
+      description: "Remove temp file",
+    },
+  ]);
+});
+
+test("control_request without a callback (and malformed) is ignored safely", () => {
+  const p = new ClaudeStreamParser();
+  assert.deepEqual(
+    p.push(j({ type: "control_request", request_id: "x", request: { subtype: "can_use_tool" } })),
+    [],
+  );
+  assert.deepEqual(p.push(j({ type: "control_request" })), []);
+});
+
+test("classifyTool groups tools into the approval kinds", () => {
+  assert.equal(classifyTool("Bash"), "command");
+  assert.equal(classifyTool("Read"), "file-read");
+  assert.equal(classifyTool("Glob"), "file-read");
+  assert.equal(classifyTool("Edit"), "file-change");
+  assert.equal(classifyTool("Write"), "file-change");
+  assert.equal(classifyTool("NotebookEdit"), "file-change");
+  assert.equal(classifyTool("WebFetch"), "other");
+  assert.equal(classifyTool("mcp__figma__get_screenshot"), "other");
 });

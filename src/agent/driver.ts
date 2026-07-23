@@ -80,6 +80,21 @@ export type AgentEvent =
       isError: boolean;
     }
   | {
+      /** Supervised mode: a tool call needs the user's approval before it
+       *  runs. The turn is blocked until `respondPermission(id, …)` answers.
+       *  `toolKind` is the coarse classification the approval UI groups by —
+       *  and the unit `acceptForSession` widens to. */
+      kind: "permission-request";
+      id: string;
+      toolKind: ToolPermissionKind;
+      /** One-line human description (e.g. the model's command description). */
+      summary: string;
+      /** The thing itself — the command / file path / raw input — for the
+       *  approval panel's mono block. */
+      detail: string;
+      toolName: string;
+    }
+  | {
       /** Turn complete — the agent is idle and ready for the next prompt. */
       kind: "result";
       isError: boolean;
@@ -99,6 +114,22 @@ export type AgentEvent =
       message: string;
     };
 
+/** Coarse tool classification for permission requests — what the approval UI
+ *  shows and what "always allow this session" widens to. */
+export type ToolPermissionKind = "command" | "file-read" | "file-change" | "other";
+
+/** The user's answer to a `permission-request`.
+ *   - `accept`           — run this one tool call.
+ *   - `acceptForSession` — run it, and auto-approve this `toolKind` for the
+ *                          rest of the session.
+ *   - `decline`          — skip the tool; the turn continues without it.
+ *   - `cancel`           — abort the whole turn (the session survives). */
+export type PermissionDecision =
+  | "accept"
+  | "acceptForSession"
+  | "decline"
+  | "cancel";
+
 /**
  * A headless coding-agent session. Lazily spawns its process on the first
  * `send()` (so the composer's launch config applies), then keeps that process
@@ -115,6 +146,9 @@ export interface AgentDriver {
    *  to killing the process, surfaced honestly as an `exit` event (never a
    *  silent pretend-survival). No-op while idle. */
   interrupt(): void;
+  /** Answer a pending `permission-request` by its id. Unknown/already-settled
+   *  ids are ignored (the request may have been cleared by a turn ending). */
+  respondPermission(id: string, decision: PermissionDecision): void;
   /** Tear down the process and release resources (WS close / shutdown). */
   dispose(): void;
 }
