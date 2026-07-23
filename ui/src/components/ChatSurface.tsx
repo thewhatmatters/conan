@@ -655,6 +655,7 @@ export default function ChatSurface({
                       title,
                       activity: row?.lastActivity ?? t.createdAt,
                       desc: row?.lastMessage ?? t.resume?.lastMessage ?? null,
+                      model: row?.model ?? t.resume?.model ?? null,
                     };
                   })
                   .sort((a, b) =>
@@ -729,13 +730,14 @@ export default function ChatSurface({
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {liveRows.map(({ t, title, activity, desc }) => (
+                          {liveRows.map(({ t, title, activity, desc, model }) => (
                             <ThreadRow
                               key={t.id}
                               title={title}
                               desc={desc}
                               when={timeAgo(activity)}
                               pill={pillOf(states[t.id])}
+                              model={model}
                               active={t.id === activeId}
                               onSelect={() => setActiveId(t.id)}
                               onClose={() => closeThread(t.id)}
@@ -748,6 +750,7 @@ export default function ChatSurface({
                               desc={s.lastMessage}
                               when={timeAgo(s.lastActivity)}
                               pill="idle"
+                              model={s.model}
                               active={false}
                               onSelect={() => openSavedThread(proj.id, s)}
                               onClose={() => void deleteSavedRow(s.sessionId)}
@@ -989,11 +992,47 @@ const STATUS_ICON: Record<Pill, { Icon: LucideIcon; cls: string; spin?: boolean 
   idle: { Icon: Circle, cls: "text-muted-foreground/40" },
 };
 
+/** The coding agent behind a thread. Only Claude ships today; derived from the
+ *  model so multi-provider (T3-1) can extend this without touching callers. */
+function agentOf(model: string | null | undefined): { letter: string; label: string } {
+  const m = (model ?? "").toLowerCase();
+  if (m.startsWith("codex") || m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3"))
+    return { letter: "X", label: "Codex" };
+  return { letter: "C", label: "Claude" };
+}
+
+/** Sidebar row leading glyph: an avatar for which agent drove the thread ("C"
+ *  for Claude) with the live status as a small corner badge — the
+ *  verified-avatar pattern (identity + a status dot punched out with a ring). */
+function AgentAvatar({ pill, model }: { pill: Pill; model: string | null | undefined }) {
+  const agent = agentOf(model);
+  const s = STATUS_ICON[pill];
+  return (
+    <span
+      className="relative mt-0.5 shrink-0"
+      title={`${agent.label} · ${PILL[pill].label}`}
+      aria-label={`${agent.label}, ${PILL[pill].label}`}
+    >
+      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground ring-1 ring-border">
+        {agent.letter}
+      </span>
+      <s.Icon
+        className={cn(
+          "absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-card ring-2 ring-card",
+          s.cls,
+          s.spin && "animate-spin",
+        )}
+      />
+    </span>
+  );
+}
+
 function ThreadRow({
   title,
   desc,
   when,
   pill,
+  model,
   active,
   onSelect,
   onClose,
@@ -1004,12 +1043,13 @@ function ThreadRow({
   /** Relative activity time, e.g. "just now" / "15h ago". */
   when: string;
   pill: Pill;
+  /** Launch model — picks the agent avatar (Claude today; T3-1 multi-provider). */
+  model: string | null | undefined;
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
   const p = PILL[pill];
-  const s = STATUS_ICON[pill];
   // Attention states (Working / Awaiting) show a badge; settled states show
   // the timestamp — mirrors the reference (badge on warn/action, time on ok).
   const attention = pill === "working" || pill === "awaiting";
@@ -1028,7 +1068,7 @@ function ThreadRow({
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
       )}
     >
-      <s.Icon className={cn("mt-0.5 size-3.5 shrink-0", s.cls, s.spin && "animate-spin")} />
+      <AgentAvatar pill={pill} model={model} />
       <span className="min-w-0 flex-1">
         <span
           className="block truncate text-xs font-medium text-foreground"
