@@ -367,7 +367,7 @@
         "Verify in browser using automate-browser skill: have the agent edit a file, confirm the card shows +N -M and expands to a colored inline diff"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-008. Suggested skills: automate-browser."
     },
     {

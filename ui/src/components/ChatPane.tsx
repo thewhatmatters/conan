@@ -55,6 +55,7 @@ import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
+import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
 
 /** One slash command from GET /api/claude/commands (src/commands/index.ts). */
 interface CommandEntry {
@@ -963,6 +964,13 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
   const summary = toolSummary(item.input);
   const inputStr =
     typeof item.input === "string" ? item.input : JSON.stringify(item.input, null, 2);
+  // File edits carry their before/after right in the input — derive the
+  // inline patch (US-021). Memoized: LCS on a big Write isn't free, and the
+  // card re-renders on every streamed delta while the turn continues.
+  const fileDiff = useMemo(
+    () => (kind === "edit" ? buildFileDiff(item.name, item.input) : null),
+    [kind, item.name, item.input],
+  );
   return (
     <div className="rounded-lg border border-border bg-card text-xs">
       <button
@@ -976,6 +984,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
             {summary}
           </span>
         )}
+        {fileDiff && <DiffStat added={fileDiff.added} removed={fileDiff.removed} />}
         <span
           className={cn(
             "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
@@ -992,14 +1001,31 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
       </button>
       {open && (
         <div className="space-y-2 border-t border-border px-3 py-2">
-          <div>
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-              Input
+          {fileDiff ? (
+            fileDiff.lines ? (
+              <DiffView diff={fileDiff} />
+            ) : (
+              /* Binary / huge writes degrade to a one-line summary. */
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="min-w-0 truncate font-mono">{fileDiff.path}</span>
+                <DiffStat added={fileDiff.added} removed={fileDiff.removed} />
+                <span>
+                  {fileDiff.degraded === "binary"
+                    ? "binary content — diff not shown"
+                    : "diff too large to render"}
+                </span>
+              </div>
+            )
+          ) : (
+            <div>
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                Input
+              </div>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
+                {inputStr}
+              </pre>
             </div>
-            <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
-              {inputStr}
-            </pre>
-          </div>
+          )}
           {item.result != null && (
             <div className="border-t border-border/60 pt-2">
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
@@ -1012,6 +1038,74 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** `+N −M` line counts for a file-edit card (collapsed header + degraded
+ *  summary). Additions ride the emerald status green (the Onboarding/MCP
+ *  precedent — there's no semantic "success" token); removals the
+ *  destructive token. */
+function DiffStat({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="shrink-0 font-mono text-[11px] tabular-nums">
+      <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>{" "}
+      <span className="text-destructive">−{removed}</span>
+    </span>
+  );
+}
+
+/** Cap on rendered patch rows — a Write of a whole large file stays scrollable
+ *  without mounting thousands of DOM nodes. */
+const MAX_DIFF_ROWS = 600;
+
+/** The inline patch inside an expanded file-edit card (US-021): red/green
+ *  +/− rows in a bounded scroller, MultiEdit hunks separated by a ⋯ row.
+ *  No modal, no side panel — the diff lives in the transcript. */
+function DiffView({ diff }: { diff: FileDiff }) {
+  const lines = diff.lines ?? [];
+  const shown = lines.slice(0, MAX_DIFF_ROWS);
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+          Diff
+        </span>
+        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground/70">
+          {diff.path}
+        </span>
+        <DiffStat added={diff.added} removed={diff.removed} />
+      </div>
+      <div className="max-h-64 overflow-auto rounded-md border border-border/60 bg-muted/20 py-0.5 font-mono text-[11px] leading-5">
+        {shown.map((l, i) =>
+          l.type === "hunk" ? (
+            <div key={i} className="border-y border-border/60 bg-muted/50 px-2 text-center text-muted-foreground/60">
+              ⋯
+            </div>
+          ) : (
+            <div
+              key={i}
+              className={cn(
+                "whitespace-pre px-2",
+                l.type === "add" &&
+                  "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+                l.type === "del" && "bg-destructive/10 text-destructive",
+                l.type === "ctx" && "text-muted-foreground",
+              )}
+            >
+              <span className="select-none opacity-60">
+                {l.type === "add" ? "+ " : l.type === "del" ? "− " : "  "}
+              </span>
+              {l.text}
+            </div>
+          ),
+        )}
+        {lines.length > MAX_DIFF_ROWS && (
+          <div className="px-2 py-1 text-muted-foreground">
+            … {lines.length - MAX_DIFF_ROWS} more lines
+          </div>
+        )}
+      </div>
     </div>
   );
 }
