@@ -45,10 +45,14 @@ export default function ActivitySpine({
   return (
     <div
       aria-label="Conversation activity"
-      className="flex w-8 shrink-0 flex-col items-center gap-3 overflow-y-auto py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex w-8 shrink-0 flex-col overflow-y-auto py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {turns.length > 0 && (
         <TooltipProvider delayDuration={150}>
+          {/* m-auto centers the tick cluster vertically in the rail (t3-code
+              style) yet still scrolls without clipping when a long conversation
+              overflows the available height. */}
+          <div className="m-auto flex flex-col items-center gap-3">
           {turns.map((t, i) => {
             const visible = t.ticks.slice(0, MAX_CLUSTER_TICKS);
             const hidden = t.ticks.length - visible.length;
@@ -106,6 +110,7 @@ export default function ActivitySpine({
               </div>
             );
           })}
+          </div>
         </TooltipProvider>
       )}
     </div>
