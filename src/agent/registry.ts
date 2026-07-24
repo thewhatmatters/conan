@@ -192,6 +192,33 @@ export function clearProviderDetection(): void {
   inFlight.clear();
 }
 
+/**
+ * Resolve the provider a FRESH session explicitly asked for (US-007: the
+ * launch frame's `provider` field). Unlike the resume path — where a stored
+ * id the registry doesn't know falls back to claude so an old DB can't brick
+ * a thread — an explicit request must be honored or refused loudly: an
+ * unknown or uninstalled provider throws a human-readable error the WS
+ * handler surfaces to the client, never a silent fallback to claude.
+ * `run` is injectable for tests only.
+ */
+export async function resolveRequestedProvider(
+  requested: string,
+  run?: ShellRun,
+): Promise<ProviderEntry> {
+  const entry = getProvider(requested);
+  if (!entry) {
+    const known = PROVIDERS.map((p) => p.id).join(", ");
+    throw new Error(`Unknown provider "${requested}" (available: ${known}).`);
+  }
+  const d = await detectProvider(entry.id, run);
+  if (!d.installed) {
+    throw new Error(
+      `${entry.name} is not installed — "${entry.binary}" was not found on the login-shell PATH.`,
+    );
+  }
+  return entry;
+}
+
 /** The `GET /api/agent/providers` payload: every registered provider with its
  *  install state and capabilities, probed in parallel. */
 export async function listProviderStatuses(): Promise<ProviderStatus[]> {

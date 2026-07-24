@@ -2,7 +2,11 @@ import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
-import { getProvider, type ProviderEntry } from "./registry.js";
+import {
+  getProvider,
+  resolveRequestedProvider,
+  type ProviderEntry,
+} from "./registry.js";
 import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
   setChatThreadLastMessage,
 } from "./threads.js";
@@ -15,7 +19,8 @@ import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
  * `server.on("upgrade")`), same as `/ws/terminal`.
  *
  * Client → server frames:
- *   {type:"prompt", text, model?, permissionMode?, cwd?, projectId?, resume?}
+ *   {type:"prompt", text, model?, permissionMode?, cwd?, projectId?, resume?,
+ *    provider?}
  *     submit a turn — the FIRST prompt's cwd fixes the session's working
  *     directory (no cwd → the gateway's active cwd); later prompts can't move
  *     a live process. projectId (US-014) links the session to its sidebar
@@ -24,6 +29,11 @@ import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
  *     `--resume` and the saved chat_thread row is re-keyed to the forked
  *     session id claude reports at init. The saved row's PROVIDER picks the
  *     driver (T3-1 US-006): a codex thread reopens on codex, never claude.
+ *     provider (T3-1 US-007) picks the agent a FRESH session launches on
+ *     ('claude' | 'codex' | 'grok', from the composer's provider chip);
+ *     absent → claude, so old clients are unaffected. Unknown or uninstalled
+ *     → an {type:"error"} frame, never a silent fallback. Ignored on resume —
+ *     the saved thread's own provider always wins there.
  *   {type:"interrupt"}   cancel the in-flight turn (graceful — the session
  *     survives and takes the next prompt; falls back to ending the session,
  *     surfaced as an `exit` event, if the CLI has no control channel)
@@ -37,6 +47,9 @@ import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
  *   {type:"event", event: AgentEvent}   one normalized agent event
  *   {type:"busy",  busy: boolean}       composer enable/disable
  *   {type:"error", message}             handler-level failure
+ *   {type:"capabilities", provider, capabilities: AgentCapabilities}   sent
+ *     once when the session's driver is built (first prompt) so the UI adapts
+ *     to what this provider can actually do (US-007) — never re-sent.
  */
 
 const active = new Set<AgentDriver>();
@@ -109,28 +122,56 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
     }
   };
 
-  // T3-1 US-006: the driver is built lazily at the first prompt so a resumed
-  // thread can relaunch on the provider that CREATED it (a Codex thread id
-  // means nothing to claude). Fresh threads stay on claude until US-007 lets
-  // the launch frame pick a provider explicitly.
+  // T3-1 US-006/US-007: the driver is built lazily at the first prompt. A
+  // resumed thread relaunches on the provider that CREATED it (a Codex thread
+  // id means nothing to claude); a fresh thread launches on the frame's
+  // requested provider — refused loudly when unknown/uninstalled — defaulting
+  // to claude when absent so old clients are unaffected.
   let provider: ProviderEntry = getProvider("claude")!;
   let driver: AgentDriver | null = null;
+  /** In-flight build — resolving the requested provider is async (install
+   *  probe), so a second prompt racing the first must await the same build
+   *  instead of spawning a duplicate driver. */
+  let building: Promise<AgentDriver> | null = null;
 
-  const ensureDriver = (resume: string | null): AgentDriver => {
-    if (driver) return driver;
-    if (resume) {
-      try {
-        const saved = getChatThread(resume)?.provider;
-        // A stored id the registry doesn't know (a downgrade / hand-edited DB)
-        // falls back to claude rather than crashing the socket.
-        if (saved) provider = getProvider(saved) ?? provider;
-      } catch (err) {
-        console.warn(`[agent] provider lookup failed: ${(err as Error).message}`);
-      }
+  const ensureDriver = (
+    requested: string | null,
+    resume: string | null,
+  ): Promise<AgentDriver> => {
+    if (driver) return Promise.resolve(driver);
+    if (!building) {
+      building = (async () => {
+        if (resume) {
+          try {
+            const saved = getChatThread(resume)?.provider;
+            // A stored id the registry doesn't know (a downgrade / hand-edited
+            // DB) falls back to claude rather than crashing the socket.
+            if (saved) provider = getProvider(saved) ?? provider;
+          } catch (err) {
+            console.warn(`[agent] provider lookup failed: ${(err as Error).message}`);
+          }
+        } else if (requested) {
+          // Throws on unknown/uninstalled — surfaced to the client as an
+          // error frame by the prompt handler's catch, never a silent
+          // fallback to claude.
+          provider = await resolveRequestedProvider(requested);
+        }
+        driver = provider.createDriver(onEvent, getActiveCwd);
+        active.add(driver);
+        send({
+          type: "capabilities",
+          provider: provider.id,
+          capabilities: driver.capabilities,
+        });
+        return driver;
+      })();
+      // A refused build (unknown/uninstalled provider) must not poison the
+      // socket — clear it so the user can retry with another provider.
+      building.catch(() => {
+        building = null;
+      });
     }
-    driver = provider.createDriver(onEvent, getActiveCwd);
-    active.add(driver);
-    return driver;
+    return building;
   };
 
   socket.on("message", (raw) => {
@@ -164,9 +205,14 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       ) {
         opts.permissionMode = msg.permissionMode;
       }
+      const requested =
+        typeof msg.provider === "string" && msg.provider.trim()
+          ? msg.provider.trim()
+          : null;
+      const text = msg.text;
       send({ type: "busy", busy: true });
-      void ensureDriver(opts.resume ?? null)
-        .send(msg.text, opts)
+      void ensureDriver(requested, opts.resume ?? null)
+        .then((d) => d.send(text, opts))
         .catch((err: unknown) => {
           send({ type: "error", message: (err as Error).message });
           send({ type: "busy", busy: false });

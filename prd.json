@@ -117,7 +117,7 @@
         "Tests pass"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-002..006. This is the story that makes multi-provider real end-to-end. Suggested skills: none."
     },
     {

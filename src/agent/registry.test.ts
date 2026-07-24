@@ -13,6 +13,7 @@ import {
   detectProvider,
   clearProviderDetection,
   listProviderStatuses,
+  resolveRequestedProvider,
   CODEX_CAPABILITIES,
   GROK_CAPABILITIES,
 } from "./registry.js";
@@ -125,6 +126,31 @@ test("detectProvider caches within the TTL", async () => {
   assert.equal(second, first);
   assert.equal(first.installed, true);
   assert.equal(first.version, "0.2.111");
+});
+
+// US-007: an explicit launch-frame provider is honored or refused loudly —
+// never a silent fallback to claude.
+test("resolveRequestedProvider: unknown id throws a readable error", async () => {
+  await assert.rejects(
+    resolveRequestedProvider("cursor"),
+    /Unknown provider "cursor" \(available: claude, codex, grok\)/,
+  );
+});
+
+test("resolveRequestedProvider: uninstalled provider throws, names the binary", async () => {
+  await assert.rejects(
+    resolveRequestedProvider("codex", async () => {
+      throw new Error("command -v exited 1");
+    }),
+    /Codex is not installed — "codex" was not found on the login-shell PATH/,
+  );
+});
+
+test("resolveRequestedProvider: installed provider resolves to its entry", async () => {
+  const entry = await resolveRequestedProvider("grok", async (cmd) =>
+    cmd.startsWith("command -v") ? "/Users/x/.local/bin/grok" : "0.2.111",
+  );
+  assert.equal(entry, getProvider("grok"));
 });
 
 test("listProviderStatuses carries identity + capabilities per provider", async () => {
