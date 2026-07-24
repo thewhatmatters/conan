@@ -131,6 +131,7 @@ const DANGER_MODE_IDS = new Set(["bypassPermissions", "danger-full-access"]);
  *  the session's own capabilities frame lands, the chip needs a non-blank
  *  shape for the default provider. Live capabilities always win. */
 const FALLBACK_CAPABILITIES: AgentCapabilities = {
+  imageInput: true,
   streamingDeltas: true,
   interactiveApproval: true,
   livePermissionSwitch: true,

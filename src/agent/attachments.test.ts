@@ -8,7 +8,21 @@ import {
 
 test("plain prompts and unpinned @ paths are unchanged", () => {
   const text = "Review @src/agent/driver.ts";
-  assert.equal(serializeTurnPrompt({ text, attachments: [] }), text);
+  assert.equal(serializeTurnPrompt({ text, attachments: [], images: [] }), text);
+});
+
+test("image turns carry both inline bytes and a staged path without changing prompt text", () => {
+  const image = {
+    type: "image" as const,
+    mediaType: "image/png",
+    data: "iVBORw0KGgo=",
+    bytes: 8,
+    stagedPath: "/tmp/conan-images/example.png",
+  };
+  assert.equal(
+    serializeTurnPrompt({ text: "Describe it", attachments: [], images: [image] }),
+    "Describe it",
+  );
 });
 
 test("a structured pin serializes path and exact content in a delimited block", () => {

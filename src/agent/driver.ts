@@ -72,6 +72,9 @@ export interface AgentEffortMode {
  * its UI removed or explained, not left inert.
  */
 export interface AgentCapabilities {
+  /** The provider accepts image content on user turns through its verified
+   * native mechanism. */
+  imageInput: boolean;
   /** Token-by-token text deltas while a turn runs. False → the transcript
    *  shows a working indicator, then the completed message. */
   streamingDeltas: boolean;

@@ -56,6 +56,7 @@ import type {
  *  no live mode switch (no stdin control channel; per-turn `--permission-mode`
  *  on resume verified instead — open question (b)). */
 export const GROK_CAPABILITIES: AgentCapabilities = {
+  imageInput: true,
   streamingDeltas: true,
   interactiveApproval: false,
   livePermissionSwitch: false,

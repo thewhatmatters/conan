@@ -58,6 +58,7 @@ import type {
  *  but never USD, reasoning counted but never streamed as text. Resume
  *  verified via the `codex exec … resume <thread_id>` subcommand. */
 export const CODEX_CAPABILITIES: AgentCapabilities = {
+  imageInput: true,
   streamingDeltas: false,
   interactiveApproval: false,
   livePermissionSwitch: false,

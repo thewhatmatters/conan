@@ -50,7 +50,7 @@
         "Tests pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser). Same capability-descriptor pattern as effortModes/permissionModes. Suggested skills: none."
     },
     {

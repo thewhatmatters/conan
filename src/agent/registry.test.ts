@@ -83,6 +83,7 @@ test("reported-model resolution replaces the provisional launch denominator", ()
 test("capabilities pin the US-001 verified matrix", () => {
   // codex: no deltas, no approval, no live switch, no USD, no reasoning text.
   assert.equal(CODEX_CAPABILITIES.streamingDeltas, false);
+  assert.equal(CODEX_CAPABILITIES.imageInput, true);
   assert.equal(CODEX_CAPABILITIES.interactiveApproval, false);
   assert.equal(CODEX_CAPABILITIES.livePermissionSwitch, false);
   assert.equal(CODEX_CAPABILITIES.costUsd, false);
@@ -98,6 +99,7 @@ test("capabilities pin the US-001 verified matrix", () => {
   // grok: deltas + REAL reasoning text + USD, but no approval channel and no
   // live switch (open questions (a)/(b), both answered NO).
   assert.equal(GROK_CAPABILITIES.streamingDeltas, true);
+  assert.equal(GROK_CAPABILITIES.imageInput, true);
   assert.equal(GROK_CAPABILITIES.reasoningText, true);
   assert.equal(GROK_CAPABILITIES.costUsd, true);
   assert.equal(GROK_CAPABILITIES.interactiveApproval, false);
@@ -107,6 +109,7 @@ test("capabilities pin the US-001 verified matrix", () => {
   // claude: reasoningText stays FALSE (D2 — headless redaction).
   assert.equal(getProvider("claude")?.capabilities, CLAUDE_CAPABILITIES);
   assert.equal(CLAUDE_CAPABILITIES.reasoningText, false);
+  assert.equal(CLAUDE_CAPABILITIES.imageInput, true);
 });
 
 test("every provider's factory builds a driver tagged with its own id", () => {

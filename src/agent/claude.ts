@@ -77,6 +77,7 @@ const INTERRUPT_FALLBACK_MS = 3000;
  *  D2), so the reasoning UI must stay hidden even though `reasoning` events
  *  exist on the wire. */
 export const CLAUDE_CAPABILITIES: AgentCapabilities = {
+  imageInput: true,
   streamingDeltas: true,
   interactiveApproval: true,
   livePermissionSwitch: true,

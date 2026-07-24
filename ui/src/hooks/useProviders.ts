@@ -23,6 +23,7 @@ export type {
   AgentPermissionMode,
   AgentEffortMode,
 } from "../../../src/agent/driver.ts";
+export type { AgentImageAttachment } from "../../../src/agent/attachments.ts";
 import type { AgentCapabilities } from "../../../src/agent/driver.ts";
 
 /** One row of `GET /api/agent/providers` (registry.ts ProviderStatus). */

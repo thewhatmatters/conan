@@ -9,9 +9,26 @@ export interface AgentFileAttachment {
   keep?: boolean;
 }
 
+/** One browser-supplied image, normalized at the gateway boundary.
+ *
+ * `data` is the original bounded base64 payload used by providers with an
+ * inline image wire shape. `stagedPath` points at the same bytes in Conan's
+ * managed temporary directory for CLIs that accept filesystem paths.
+ */
+export interface AgentImageAttachment {
+  type: "image";
+  mediaType: string;
+  data: string;
+  bytes: number;
+  stagedPath: string;
+}
+
 export interface AgentTurn {
   text: string;
   attachments: AgentFileAttachment[];
+  /** Additive so callers that only send text/files retain their exact wire
+   * shape. The gateway always supplies this once image staging is enabled. */
+  images?: AgentImageAttachment[];
 }
 
 export const MAX_PIN_BYTES = 32 * 1024;
