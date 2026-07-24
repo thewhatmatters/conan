@@ -18,7 +18,7 @@
       ],
       "priority": 1,
       "passes": false,
-      "notes": "Facts-first story; everything downstream depends on it. Keep probe prompts trivial ('Reply with exactly: ok') and run in a temp dir, never the conan repo. Suggested skills: none."
+      "notes": "Owner: CODEX (no browser verification required). Facts-first story; everything downstream depends on it. Keep probe prompts trivial ('Reply with exactly: ok') and run in a temp dir, never the conan repo. Suggested skills: none."
     },
     {
       "id": "US-002",
@@ -34,7 +34,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Touches all three working drivers - keep it additive so no existing behaviour regresses. Suggested skills: none."
+      "notes": "Owner: CODEX (no browser verification required). Touches all three working drivers - keep it additive so no existing behaviour regresses. Suggested skills: none."
     },
     {
       "id": "US-003",
@@ -49,7 +49,7 @@
       ],
       "priority": 3,
       "passes": false,
-      "notes": "Depends on US-001. Keep the table small and data-shaped, like the rest of the registry. Suggested skills: none."
+      "notes": "Owner: CODEX (no browser verification required). Depends on US-001. Keep the table small and data-shaped, like the rest of the registry. Suggested skills: none."
     },
     {
       "id": "US-004",
@@ -68,24 +68,27 @@
       ],
       "priority": 4,
       "passes": false,
-      "notes": "First UI story; depends on US-002 + US-003. Browser-verify on a throwaway port stack. Suggested skills: automate-browser, audit-ui."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). First UI story; depends on US-002 + US-003. Browser-verify on a throwaway port stack. Suggested skills: automate-browser, audit-ui."
     },
     {
       "id": "US-005",
-      "title": "Local draft threads — no DB row until first send",
+      "title": "Local draft threads \u2014 no DB row until first send",
       "description": "As a user, I want a new chat to be a local draft so abandoning it doesn't litter my sidebar.",
       "acceptanceCriteria": [
         "'New chat' creates a LOCAL draft only - no `chat_thread` row is written and no sidebar row is persisted until the first message is sent",
         "The draft holds its own launch config (provider, model, permission mode, cwd) so every composer chip works before a thread exists - this is the hidden dependency, not an afterthought",
         "An abandoned draft leaves NOTHING behind: no DB row, no orphaned sidebar entry, nothing after a reload",
         "Existing saved threads still open, resume, and render exactly as before - draft state must not touch the persistence path",
+        "Regression coverage in `src/agent/threads.test.ts` (same throwaway-SQLite pattern the file already uses): a thread created through the draft-promotion path persists with its launch config intact (provider, model, cwd), provider stickiness still holds on a conflicting upsert, and `adoptChatThread` still re-keys correctly on resume - these are the invariants a draft refactor can silently break, and nothing else guards them",
+        "Be honest about the split: 'no DB row exists before the first send' is UI state and is NOT unit-testable here - it stays a browser check. Do not claim unit coverage for it",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: open a new chat, abandon it, reload, confirm nothing persisted"
+        "Verify in browser using automate-browser skill: open a new chat, abandon it, reload, confirm nothing persisted",
+        "Tests pass"
       ],
       "priority": 5,
       "passes": false,
-      "notes": "The riskiest change in this round - it sits on the thread-persistence path. Verify resume/reopen explicitly. Suggested skills: automate-browser."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). The riskiest change in this round - it sits on the thread-persistence path, which has real test coverage beneath it (threads.test.ts). Verify resume/reopen explicitly and extend that file rather than trusting the browser alone. Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
@@ -96,13 +99,15 @@
         "Clicking 'New chat' while an empty draft already exists for that project REUSES the existing draft instead of creating a second one",
         "The promoted thread behaves identically to one created the old way - resume, reopen, transcript restore, provider avatar",
         "The auto-open-most-recent behaviour (polish US-002) still works and never auto-opens a draft over a real thread",
+        "Persistence-level assertion that promotion creates EXACTLY ONE chat_thread row - repeated 'New chat' clicks followed by a single send must not produce duplicates. Assert the row count in `src/agent/threads.test.ts`, not just visually in the browser",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: click New chat twice (one draft), send, confirm promotion + reload persistence"
+        "Verify in browser using automate-browser skill: click New chat twice (one draft), send, confirm promotion + reload persistence",
+        "Tests pass"
       ],
       "priority": 6,
       "passes": false,
-      "notes": "Depends on US-005. Suggested skills: automate-browser."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-005. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
@@ -118,7 +123,7 @@
       ],
       "priority": 7,
       "passes": false,
-      "notes": "Depends on US-001's verified mechanisms. Same capability-descriptor pattern as permissionModes. Suggested skills: codebase-design."
+      "notes": "Owner: CODEX (no browser verification required). Depends on US-001's verified mechanisms. Same capability-descriptor pattern as permissionModes. Suggested skills: codebase-design."
     },
     {
       "id": "US-008",
@@ -136,7 +141,7 @@
       ],
       "priority": 8,
       "passes": false,
-      "notes": "Depends on US-007. Suggested skills: automate-browser."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-007. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
@@ -153,7 +158,7 @@
       ],
       "priority": 9,
       "passes": false,
-      "notes": "Port as REAL context attachments, not prettier chips. File pins only - terminal/element/preview channels are out of scope. Suggested skills: none."
+      "notes": "Owner: CODEX (no browser verification required). Port as REAL context attachments, not prettier chips. File pins only - terminal/element/preview channels are out of scope. Suggested skills: none."
     },
     {
       "id": "US-010",
@@ -170,7 +175,7 @@
       ],
       "priority": 10,
       "passes": false,
-      "notes": "Depends on US-009. Suggested skills: automate-browser, audit-ui."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-009. Suggested skills: automate-browser, audit-ui."
     },
     {
       "id": "US-011",
@@ -187,7 +192,7 @@
       ],
       "priority": 11,
       "passes": false,
-      "notes": "Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
+      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
     }
   ]
 }

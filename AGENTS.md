@@ -9,8 +9,19 @@ Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
    **chat-primary** (the long "Architecture (DORMANT…)" body describes the
    removed terminal/HUD era — history only). `HANDOFF.md` is retired; live
    working state lives in Claude's project memory (checkpoint entry).
-2. Task lists: `docs/chat-v1-qa-backlog.md` (QA findings + PD-1) and
+2. **`prd.json`** — the round currently being built. Its `description` carries
+   the run/QA rules inline, and every story's `acceptanceCriteria` are the
+   contract. The matching `prd-*.md` beside it is the source PRD with the
+   reasoning and the verified probe results behind each decision.
+3. Task lists: `docs/chat-v1-qa-backlog.md` (QA findings + PD-1) and
    `docs/t3-port-backlog.md` (feature wishlist).
+
+**If you are NOT Claude Code:** the checkpoint entry named above lives in
+Claude's project memory (`~/.claude/projects/…`), outside this repo — you
+cannot read it. Everything you need is in the repo instead: `CLAUDE.md` for
+architecture, `prd.json` + its `prd-*.md` for the current round, `docs/` for
+backlogs and QA state, and `git log` for what just changed. Treat those as the
+source of truth and don't assume there's hidden context you're missing.
 
 ## The one-line orientation
 Conan is a **chat-primary desktop app that drives Claude Code, Codex, and Grok
@@ -40,3 +51,17 @@ the UI but still in the repo (dormant).
 Provider-agnostic via `AGENT_CMD` (e.g. `AGENT_CMD="codex exec" ./run-tasks.sh`).
 Run detached; each story commits on pass. Decompose backlogs into a new
 `prd.json` with the `decompose-prd` skill (schema example in `archive/`).
+
+### ⚠️ Browser-verification stories need a sandbox that can bind ports
+Many UI stories require driving the app in a real browser (they say so in their
+`acceptanceCriteria`). **A sandboxed agent that cannot bind localhost ports
+cannot satisfy those** — this is a real limit hit before, not a hypothetical.
+If that's you:
+
+- **Take only the stories you can actually finish** (backend / seam / parser
+  work) rather than running the whole loop top-to-bottom. Story `notes` carry
+  an `Owner:` hint when a round has been split.
+- **Never mark a browser-verification story `passes: true` without doing the
+  browser check.** Typecheck + build passing is NOT the same as verified —
+  this repo has essentially no UI component tests, so that check is the only
+  thing catching rendering bugs. Leave it `false` and say why.
