@@ -9,8 +9,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   ClaudeStreamParser,
+  buildClaudeUserMessage,
   claudePromptFor,
   claudeModeFor,
   classifyTool,
@@ -41,6 +43,55 @@ test("claude effort applies prompt-level phrasing and ignores unknown ids", () =
     "Ultrathink before answering.\n\nDo it",
   );
   assert.equal(claudePromptFor("Do it", "bogus"), "Do it");
+});
+
+test("claude image user message matches the verified fixture; text-only stays additive", () => {
+  const expected = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/claude-image-user-message.json", import.meta.url),
+      "utf8",
+    ),
+  ) as unknown;
+  const source = (
+    expected as {
+      message: {
+        content: Array<{
+          type: string;
+          source?: { media_type: string; data: string };
+        }>;
+      };
+    }
+  ).message.content[0]?.source;
+  assert.ok(source);
+  assert.deepEqual(
+    buildClaudeUserMessage(
+      {
+        text: "Reply with exactly: ok",
+        attachments: [],
+        images: [
+          {
+            type: "image",
+            mediaType: source.media_type,
+            data: source.data,
+            bytes: Buffer.from(source.data, "base64").byteLength,
+            stagedPath: "/tmp/conan-images/pixel.png",
+          },
+        ],
+      },
+      undefined,
+    ),
+    expected,
+  );
+  assert.deepEqual(
+    buildClaudeUserMessage({ text: "plain", attachments: [] }, undefined),
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "plain" }],
+      },
+    },
+  );
 });
 
 test("text deltas stream incrementally and the whole frame is suppressed", () => {

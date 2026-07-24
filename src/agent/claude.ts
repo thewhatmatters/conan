@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import type { AgentTurn } from "./attachments.js";
+import { cleanupStagedImages } from "./imageStaging.js";
 import { detectClaude, loginShellPath } from "../doctor/claude.js";
 import type {
   AgentCapabilities,
@@ -124,6 +125,38 @@ export function claudePromptFor(text: string, effort: string | undefined): strin
   return text;
 }
 
+/** Exact stream-json user envelope verified against Claude Code 2.1.219. */
+export function buildClaudeUserMessage(
+  turn: AgentTurn,
+  effort: string | undefined,
+): {
+  type: "user";
+  message: {
+    role: "user";
+    content: Array<
+      | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+      | { type: "text"; text: string }
+    >;
+  };
+} {
+  const content: Array<
+    | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+    | { type: "text"; text: string }
+  > = [];
+  for (const image of turn.images ?? []) {
+    content.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mediaType,
+        data: image.data,
+      },
+    });
+  }
+  content.push({ type: "text", text: claudePromptFor(turn.text, effort) });
+  return { type: "user", message: { role: "user", content } };
+}
+
 export class ClaudeDriver implements AgentDriver {
   readonly provider = "claude";
   readonly capabilities = CLAUDE_CAPABILITIES;
@@ -173,14 +206,14 @@ export class ClaudeDriver implements AgentDriver {
     if (!this.child) return; // spawn failed — an `error` event was already emitted
     // stream-json input: one JSON user message per line. The prompt text rides
     // stdin (never an argv), so there is no shell-quoting / injection surface.
-    const msg = JSON.stringify({
-      type: "user",
-      message: {
-        role: "user",
-        content: [{ type: "text", text: claudePromptFor(turn.text, this.opts.effort) }],
-      },
-    });
-    this.child.stdin.write(msg + "\n");
+    const msg = JSON.stringify(buildClaudeUserMessage(turn, this.opts.effort));
+    try {
+      this.child.stdin.write(msg + "\n");
+    } finally {
+      // Claude consumes inline bytes; its staged-path mirror is no longer
+      // needed once the complete JSON line has been copied into stdin.
+      cleanupStagedImages(turn.images ?? []);
+    }
     this.turnActive = true;
   }
 
