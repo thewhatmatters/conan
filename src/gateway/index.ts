@@ -66,6 +66,7 @@ import { globalHooksStatus, installGlobalHooks } from "../hooks/install.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 import { attachAgent, closeAllAgents } from "../agent/index.js";
+import { listProviderStatuses } from "../agent/registry.js";
 import {
   listChatProjects,
   upsertChatProject,
@@ -387,6 +388,14 @@ app.post("/api/agent/git/pr", async (req, res) => {
 // ── Chat persistence (US-014) ──────────────────────────────────────────────
 // The sidebar's projects + threads, backed by the US-013 tables. Token-gated;
 // the global CORS reflector + loopback bind cover WKWebView like every route.
+
+// Which agent CLIs are installed (T3-1 US-003) — the composer's provider chip.
+// Probes the login-shell PATH (packaged-app gotcha), cached with a TTL; an
+// uninstalled provider is a plain installed:false, never an error.
+app.get("/api/agent/providers", async (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ providers: await listProviderStatuses() });
+});
 
 // Projects with their threads, newest activity first — the sidebar's source of
 // truth across reloads and gateway restarts.

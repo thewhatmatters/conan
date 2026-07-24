@@ -20,7 +20,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "release": "node scripts/release.mjs",
-    "test": "node --import tsx --test src/usage/probe.test.ts src/usage/oauthUsage.test.ts src/context/index.test.ts src/cwd/index.test.ts src/agent/claude.test.ts src/agent/history.test.ts src/agent/fixtures/fixtures.test.ts src/skills/index.test.ts src/commands/index.test.ts src/agents/index.test.ts src/timeline/index.test.ts ui/src/data/whatsNew.test.ts"
+    "test": "node --import tsx --test src/usage/probe.test.ts src/usage/oauthUsage.test.ts src/context/index.test.ts src/cwd/index.test.ts src/agent/claude.test.ts src/agent/history.test.ts src/agent/fixtures/fixtures.test.ts src/agent/registry.test.ts src/skills/index.test.ts src/commands/index.test.ts src/agents/index.test.ts src/timeline/index.test.ts ui/src/data/whatsNew.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
