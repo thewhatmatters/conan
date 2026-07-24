@@ -84,7 +84,7 @@
         "Tests pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser). Drivers build argv via args.push (src/agent/codex.ts ~135). Suggested skills: none."
     },
     {

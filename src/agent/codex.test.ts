@@ -139,7 +139,7 @@ test("codex parser: turn.failed closes the turn as an error result", () => {
   assert.equal(result.contextTokens, null);
 });
 
-test("codex args: global flags BEFORE the resume subcommand, prompt as the last argv", () => {
+test("codex args: global flags precede resume and text-only argv stays unchanged", () => {
   // Fresh turn — no resume subcommand.
   assert.deepEqual(
     buildCodexArgs({
@@ -173,6 +173,46 @@ test("codex args: global flags BEFORE the resume subcommand, prompt as the last 
       "tid-1",
       "again",
     ],
+  );
+});
+
+test("codex image argv matches the verified multi-image fixture on fresh and resumed turns", () => {
+  const pinned = JSON.parse(
+    readFileSync(join(here, "fixtures", "codex-image-argv.json"), "utf8"),
+  ) as { args: string[] };
+  const imagePaths = [
+    "/tmp/conan-image-probe/pixel.png",
+    "/tmp/conan-image-probe/pixel-2.png",
+  ];
+  assert.deepEqual(
+    buildCodexArgs({
+      cwd: "/tmp/conan-image-probe",
+      sandbox: "read-only",
+      threadId: null,
+      prompt: "Reply with exactly: ok",
+      imagePaths,
+    }),
+    pinned.args,
+  );
+  assert.deepEqual(
+    buildCodexArgs({
+      cwd: "/w",
+      sandbox: "read-only",
+      threadId: "thread-1",
+      prompt: "again",
+      imagePaths: ["/tmp/conan-images/one.png", null, 42],
+    }).slice(-3),
+    ["again", "-i", "/tmp/conan-images/one.png"],
+  );
+  assert.equal(
+    buildCodexArgs({
+      cwd: "/w",
+      sandbox: "read-only",
+      threadId: null,
+      prompt: "plain",
+      imagePaths: "unsupported",
+    }).includes("-i"),
+    false,
   );
 });
 

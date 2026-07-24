@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import readline from "node:readline";
 import type { AgentTurn } from "./attachments.js";
+import { cleanupStagedImages } from "./imageStaging.js";
 import { loginShellPath } from "../doctor/claude.js";
 import type {
   AgentCapabilities,
@@ -18,7 +19,7 @@ import type {
  * is ONE PROCESS PER TURN:
  *
  *   codex exec --json --skip-git-repo-check -C <cwd> --sandbox <policy> \
- *        [-m <model>] [resume <thread_id>] "<prompt>"
+ *        [-m <model>] [resume <thread_id>] "<prompt>" [-i <image>]...
  *
  * The first turn spawns fresh and `thread.started` reports the `thread_id`
  * that keys the conversation server-side; every later turn spawns
@@ -30,6 +31,9 @@ import type {
  *     argument and the child spawns with stdin `"ignore"`.
  *   - flag order: global flags go BEFORE the `resume` subcommand; `-C` after
  *     `resume` is `error: unexpected argument` (exit 2).
+ *   - images: current 0.144.6 accepts repeated `-i` after the prompt on fresh
+ *     AND resumed spawns. The older PRD's initial-only claim was disproved by
+ *     the real resume probe pinned in `docs/provider-image-input.md`.
  *
  * stdout is JSONL thread events, parsed by `CodexStreamParser` into the
  * normalized union: `thread.started` → system (sessionId = thread_id),
@@ -114,8 +118,8 @@ export function sandboxFor(mode: string | undefined): CodexSandbox {
 }
 
 /** Argv for one turn. Pinned by tests: global flags BEFORE the `resume`
- *  subcommand, the prompt as the LAST argument (never stdin) — both verified
- *  footguns (`fixtures/README.md`). */
+ *  subcommand and prompt in argv (never stdin). Image flags follow the prompt
+ *  because codex's variadic `-i` consumes a trailing prompt. */
 export function buildCodexArgs(turn: {
   cwd: string;
   sandbox: CodexSandbox;
@@ -123,6 +127,7 @@ export function buildCodexArgs(turn: {
   model?: string;
   effort?: string;
   prompt: string;
+  imagePaths?: unknown;
 }): string[] {
   const args = [
     "exec",
@@ -139,6 +144,11 @@ export function buildCodexArgs(turn: {
   }
   if (turn.threadId) args.push("resume", turn.threadId);
   args.push(turn.prompt);
+  if (Array.isArray(turn.imagePaths)) {
+    for (const imagePath of turn.imagePaths) {
+      if (typeof imagePath === "string" && imagePath) args.push("-i", imagePath);
+    }
+  }
   return args;
 }
 
@@ -188,7 +198,7 @@ export class CodexDriver implements AgentDriver {
     } else if (opts.permissionMode) {
       this.mode = opts.permissionMode; // honest per-turn switch (fresh process)
     }
-    await this.spawnTurn(turn.text);
+    await this.spawnTurn(turn);
   }
 
   interrupt(): void {
@@ -223,7 +233,7 @@ export class CodexDriver implements AgentDriver {
     }
   }
 
-  private async spawnTurn(prompt: string): Promise<void> {
+  private async spawnTurn(turn: AgentTurn): Promise<void> {
     // Login-shell PATH, same packaged-app gotcha as ClaudeDriver: a
     // Finder-launched bundle never sources ~/.zshrc, so ~/.local/bin (where
     // codex actually lives) is missing from a naive PATH.
@@ -239,7 +249,8 @@ export class CodexDriver implements AgentDriver {
       threadId: this.threadId,
       model: this.opts.model,
       effort: this.opts.effort,
-      prompt,
+      prompt: turn.text,
+      imagePaths: turn.images?.map((image) => image.stagedPath),
     });
     // Fresh parser per turn — its state (tool ids, last message) is per-turn
     // anyway, and the system event needs this turn's cwd/sandbox.
@@ -252,6 +263,7 @@ export class CodexDriver implements AgentDriver {
       // prompt input, and an open-but-silent pipe hangs the turn (verified).
       child = spawn(bin, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch (err) {
+      cleanupStagedImages(turn.images ?? []);
       this.emit({ kind: "error", message: (err as Error).message });
       return;
     }
@@ -279,6 +291,7 @@ export class CodexDriver implements AgentDriver {
       child.on("error", (err) => {
         // Spawn-level failure (e.g. ENOENT) — "exit" may never fire after this.
         this.child = null;
+        cleanupStagedImages(turn.images ?? []);
         resolve();
         if (this.turnClosed) return;
         this.turnClosed = true;
@@ -286,6 +299,7 @@ export class CodexDriver implements AgentDriver {
       });
       child.on("exit", (code) => {
         this.child = null;
+        cleanupStagedImages(turn.images ?? []);
         resolve();
         if (this.disposed || this.turnClosed) return;
         // The process died without a turn.completed — an interrupt kill or a
