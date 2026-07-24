@@ -18,7 +18,7 @@
         "Tests pass"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Facts-first story - everything downstream depends on it. Probes cost a few cents of real agent usage; keep prompts trivial (e.g. 'Reply with exactly: probe-ok') and run in a temp dir, never the conan repo. Suggested skills: none."
     },
     {

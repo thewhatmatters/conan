@@ -1,0 +1,11 @@
+{"type":"thread.started","thread_id":"019f91f3-72e4-7831-83ba-325334347e7d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll run the command, create the exact file contents, and verify them."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'echo hello-probe'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'echo hello-probe'","aggregated_output":"hello-probe\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"file_change","changes":[{"path":"/tmp/conan-probe/probe.txt","kind":"add"}],"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"file_change","changes":[{"path":"/tmp/conan-probe/probe.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'test \"$(cat probe.txt)\" = fixture && test \"$(wc -l < probe.txt | tr -d '\"' ')\\\" = 1\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'test \"$(cat probe.txt)\" = fixture && test \"$(wc -l < probe.txt | tr -d '\"' ')\\\" = 1\"","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":71409,"cached_input_tokens":64512,"output_tokens":180,"reasoning_output_tokens":0}}

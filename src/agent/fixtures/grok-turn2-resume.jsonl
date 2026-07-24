@@ -1,0 +1,34 @@
+{"type":"thought","data":"The"}
+{"type":"thought","data":" user"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" asking"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" reply"}
+{"type":"thought","data":" with"}
+{"type":"thought","data":" only"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" exact"}
+{"type":"thought","data":" string"}
+{"type":"thought","data":" they"}
+{"type":"thought","data":" asked"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" reply"}
+{"type":"thought","data":" with"}
+{"type":"thought","data":" in"}
+{"type":"thought","data":" their"}
+{"type":"thought","data":" previous"}
+{"type":"thought","data":" message"}
+{"type":"thought","data":"."}
+{"type":"thought","data":" That"}
+{"type":"thought","data":" was"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"probe"}
+{"type":"thought","data":"-"}
+{"type":"thought","data":"ok"}
+{"type":"thought","data":"\"."}
+{"type":"text","data":"probe"}
+{"type":"text","data":"-"}
+{"type":"text","data":"ok"}
+{"type":"end","stopReason":"EndTurn","sessionId":"019f91f3-e06c-7720-9680-1d904e8ba307","requestId":"e0dbb77b-da9f-4fb1-aeef-07a4ac9491f0","usage":{"input_tokens":20288,"cache_read_input_tokens":0,"output_tokens":40,"reasoning_tokens":33,"total_tokens":20328},"num_turns":1,"total_cost_usd":0.040816,"total_cost_usd_ticks":408160000,"modelUsage":{"grok-4.5-build":{"inputTokens":20288,"outputTokens":40,"cacheReadInputTokens":0,"modelCalls":1,"costUSD":0.040816}}}
