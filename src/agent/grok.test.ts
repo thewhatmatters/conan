@@ -12,6 +12,7 @@ import {
   GrokDriver,
   GrokStreamParser,
   buildGrokArgs,
+  buildGrokPromptBlocks,
   grokModeFor,
 } from "./grok.js";
 import type { AgentEvent } from "./driver.js";
@@ -127,6 +128,42 @@ test("grok args: prompt via -p, streaming-json, per-turn mode, resume by session
       "--resume",
       "sid-1",
     ],
+  );
+});
+
+test("grok image turns match the verified ACP fixture while text-only keeps -p", () => {
+  const fixture = JSON.parse(
+    readFileSync(join(here, "fixtures", "grok-image-prompt-json.json"), "utf8"),
+  ) as Array<{ type: string; data?: string; mimeType?: string; text?: string }>;
+  const source = fixture[0];
+  assert.ok(source?.data);
+  assert.ok(source.mimeType);
+  const turn = {
+    text: "Reply with exactly: ok",
+    attachments: [],
+    images: [
+      {
+        type: "image" as const,
+        mediaType: source.mimeType,
+        data: source.data,
+        bytes: Buffer.from(source.data, "base64").byteLength,
+        stagedPath: "/tmp/conan-images/pixel.png",
+      },
+    ],
+  };
+  assert.deepEqual(buildGrokPromptBlocks(turn), fixture);
+  const args = buildGrokArgs({
+    cwd: "/w",
+    mode: "default",
+    sessionId: null,
+    prompt: turn.text,
+    promptJson: buildGrokPromptBlocks(turn),
+  });
+  assert.deepEqual(args.slice(0, 2), ["--prompt-json", JSON.stringify(fixture)]);
+  assert.equal(args.includes("-p"), false);
+  assert.deepEqual(
+    buildGrokPromptBlocks({ text: "plain", attachments: [] }),
+    [{ type: "text", text: "plain" }],
   );
 });
 

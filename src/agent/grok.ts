@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import readline from "node:readline";
 import type { AgentTurn } from "./attachments.js";
+import { cleanupStagedImages } from "./imageStaging.js";
 import { loginShellPath } from "../doctor/claude.js";
 import type {
   AgentCapabilities,
@@ -16,7 +17,8 @@ import type {
  *
  * Like codex, grok is ONE PROCESS PER TURN:
  *
- *   grok -p "<prompt>" --output-format streaming-json --cwd <cwd> \
+ *   grok (-p "<prompt>" | --prompt-json "<ACP blocks>") \
+ *        --output-format streaming-json --cwd <cwd> \
  *        --permission-mode <mode> [-m <model>] [--resume <sessionId>]
  *
  * The stream is minimal — ONLY three event types were ever observed
@@ -114,9 +116,32 @@ export function grokModeFor(mode: string | undefined): string {
   return mode && GROK_MODES.has(mode) ? mode : "default";
 }
 
+/** ACP image/text blocks accepted by Grok 0.2.111's `--prompt-json`. */
+export function buildGrokPromptBlocks(
+  turn: AgentTurn,
+): Array<
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "text"; text: string }
+> {
+  const blocks: Array<
+    | { type: "image"; data: string; mimeType: string }
+    | { type: "text"; text: string }
+  > = [];
+  for (const image of turn.images ?? []) {
+    blocks.push({
+      type: "image",
+      data: image.data,
+      mimeType: image.mediaType,
+    });
+  }
+  blocks.push({ type: "text", text: turn.text });
+  return blocks;
+}
+
 /** Argv for one turn. Pinned by tests: the prompt rides `-p` as an argv
  *  argument (stdin stays ignored), `--resume <sessionId>` carries continuity
- *  (2-turn context retention verified, fixture `grok-turn2-resume.jsonl`). */
+ *  (2-turn context retention verified, fixture `grok-turn2-resume.jsonl`).
+ *  Image turns replace `-p` with the verified ACP `--prompt-json` payload. */
 export function buildGrokArgs(turn: {
   cwd: string;
   mode: string;
@@ -124,17 +149,19 @@ export function buildGrokArgs(turn: {
   model?: string;
   effort?: string;
   prompt: string;
+  promptJson?: unknown;
 }): string[] {
-  const args = [
-    "-p",
-    turn.prompt,
+  const args = Array.isArray(turn.promptJson)
+    ? ["--prompt-json", JSON.stringify(turn.promptJson)]
+    : ["-p", turn.prompt];
+  args.push(
     "--output-format",
     "streaming-json",
     "--cwd",
     turn.cwd,
     "--permission-mode",
     turn.mode,
-  ];
+  );
   if (turn.model) args.push("-m", turn.model);
   if (turn.effort && GROK_EFFORTS.has(turn.effort)) {
     args.push("--reasoning-effort", turn.effort);
@@ -187,7 +214,7 @@ export class GrokDriver implements AgentDriver {
     } else if (opts.permissionMode) {
       this.mode = opts.permissionMode; // honest per-turn switch (fresh process)
     }
-    await this.spawnTurn(turn.text);
+    await this.spawnTurn(turn);
   }
 
   interrupt(): void {
@@ -223,7 +250,7 @@ export class GrokDriver implements AgentDriver {
     }
   }
 
-  private async spawnTurn(prompt: string): Promise<void> {
+  private async spawnTurn(turn: AgentTurn): Promise<void> {
     // Login-shell PATH, same packaged-app gotcha as the other drivers: a
     // Finder-launched bundle never sources ~/.zshrc, so ~/.local/bin (where
     // grok actually lives) is missing from a naive PATH.
@@ -239,7 +266,10 @@ export class GrokDriver implements AgentDriver {
       sessionId: this.sessionId,
       model: this.opts.model,
       effort: this.opts.effort,
-      prompt,
+      prompt: turn.text,
+      ...(turn.images?.length
+        ? { promptJson: buildGrokPromptBlocks(turn) }
+        : {}),
     });
     // Fresh parser per turn — its accumulated text is per-turn anyway, and
     // the system event needs this turn's cwd/mode.
@@ -252,9 +282,13 @@ export class GrokDriver implements AgentDriver {
       // headlessly (US-001 verified — no control channel exists).
       child = spawn(bin, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch (err) {
+      cleanupStagedImages(turn.images ?? []);
       this.emit({ kind: "error", message: (err as Error).message });
       return;
     }
+    // The complete inline ACP payload is now copied into argv; Grok never
+    // reads the staged-path mirror.
+    cleanupStagedImages(turn.images ?? []);
     this.child = child;
     this.turnClosed = false;
 

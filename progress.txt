@@ -9,3 +9,4 @@ US-003: added the shared image turn seam and verified image-input capabilities f
 US-004: added bounded authenticated image staging with managed paths, inline data, validation, and cleanup.
 US-005: passed managed image paths to Codex with repeated -i flags on fresh and resumed turn spawns.
 US-006: serialized Claude image turns as verified inline base64 content blocks alongside text.
+US-007: serialized Grok image turns through the verified ACP --prompt-json shape.
