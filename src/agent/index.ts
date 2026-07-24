@@ -197,13 +197,12 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         opts.resume = msg.resume.trim();
         if (!resumeFrom && !sessionId) resumeFrom = opts.resume;
       }
-      if (
-        msg.permissionMode === "default" ||
-        msg.permissionMode === "plan" ||
-        msg.permissionMode === "acceptEdits" ||
-        msg.permissionMode === "bypassPermissions"
-      ) {
-        opts.permissionMode = msg.permissionMode;
+      // Provider vocabulary, not just Claude's four (US-009): the chip sends
+      // whatever id the driver's capabilities.permissionModes declared (e.g.
+      // codex's `read-only`). Every driver floors an unknown id to its safest
+      // mode, so no allowlist is needed here.
+      if (typeof msg.permissionMode === "string" && msg.permissionMode.trim()) {
+        opts.permissionMode = msg.permissionMode.trim();
       }
       const requested =
         typeof msg.provider === "string" && msg.provider.trim()
@@ -230,12 +229,12 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       driver?.respondPermission(msg.id, msg.decision);
     } else if (
       msg.type === "set-permission-mode" &&
-      (msg.mode === "default" ||
-        msg.mode === "plan" ||
-        msg.mode === "acceptEdits" ||
-        msg.mode === "bypassPermissions")
+      typeof msg.mode === "string" &&
+      msg.mode.trim()
     ) {
-      driver?.setPermissionMode(msg.mode);
+      // Same provider-vocabulary contract as the prompt frame's
+      // permissionMode — the driver floors ids it doesn't recognize.
+      driver?.setPermissionMode(msg.mode.trim());
     }
   });
 

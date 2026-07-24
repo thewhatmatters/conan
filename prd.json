@@ -152,7 +152,7 @@
         "Verify in browser using automate-browser skill: compare the chip on a Claude thread vs a Codex thread"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "The honesty story - the whole point of the capability model. Suggested skills: automate-browser."
     },
     {

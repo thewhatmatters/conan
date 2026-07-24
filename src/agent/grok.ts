@@ -192,7 +192,7 @@ export class GrokDriver implements AgentDriver {
     // swallowed so the seam stays honest.
   }
 
-  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void {
+  setPermissionMode(mode: string): void {
     // No live process to switch (livePermissionSwitch false) — but each turn
     // is a fresh spawn and per-turn --permission-mode on resume is verified,
     // so the change GENUINELY applies from the next turn. Confirm it; the UI

@@ -22,13 +22,13 @@ export interface AgentLaunchOpts {
   /** `--model` value: an alias (`opus`/`sonnet`/`haiku`) or a full model id.
    *  Omitted → the agent's own default model. */
   model?: string;
-  /** `--permission-mode`: how tool calls are authorized in headless mode.
-   *   - `plan`              — read-only exploration; ends with a proposed plan.
-   *   - `acceptEdits`       — auto-approve file edits (Bash etc. may still stall).
-   *   - `bypassPermissions` — run every tool without prompting ("Full access").
-   *   - `default`           — Supervised: tool calls round-trip through the
-   *                           control-channel approval flow (US-004). */
-  permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions";
+  /** How tool calls are authorized in headless mode — one of the driver's
+   *  `capabilities.permissionModes` ids, in the provider's OWN vocabulary
+   *  (Claude's `default`/`plan`/`acceptEdits`/`bypassPermissions`, codex's
+   *  `read-only`/`workspace-write`/`danger-full-access`, …). Every driver
+   *  floors an id it doesn't recognize to its SAFEST mode (never a silent
+   *  bypass), so a stale pick from a provider switch can't crash a CLI. */
+  permissionMode?: string;
   /** Working directory the agent process launches in — the project this chat
    *  operates on. Like the rest of the launch config, fixed at the first
    *  prompt. Omitted → the gateway's active cwd (no pty supplies one here). */
@@ -228,8 +228,10 @@ export interface AgentDriver {
    *  "Proceed in build" moves the thread off plan for the next turn). Rides
    *  the provider's control channel; confirmation arrives as a
    *  `permission-mode` event, failure as an `error` event. No-op before the
-   *  process exists — the launch config still owns the first turn's mode. */
-  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void;
+   *  process exists — the launch config still owns the first turn's mode.
+   *  `mode` is a `capabilities.permissionModes` id (provider vocabulary);
+   *  unknown ids floor to the driver's safest mode, like the launch path. */
+  setPermissionMode(mode: string): void;
   /** Tear down the process and release resources (WS close / shutdown). */
   dispose(): void;
 }

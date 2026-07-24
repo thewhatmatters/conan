@@ -94,6 +94,17 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   ],
 };
 
+/** Claude's own `--permission-mode` vocabulary. A mode id from another
+ *  provider's descriptor (e.g. codex's `read-only` surviving a provider
+ *  switch in the composer) floors to `default` — Supervised, the safest
+ *  behavior — instead of crashing the CLI with a value it doesn't know.
+ *  Mirrors codex's `sandboxFor` / grok's `grokModeFor`. */
+const CLAUDE_MODES = new Set(["default", "plan", "acceptEdits", "bypassPermissions"]);
+
+export function claudeModeFor(mode: string | undefined): string {
+  return mode && CLAUDE_MODES.has(mode) ? mode : "default";
+}
+
 export class ClaudeDriver implements AgentDriver {
   readonly provider = "claude";
   readonly capabilities = CLAUDE_CAPABILITIES;
@@ -256,8 +267,9 @@ export class ClaudeDriver implements AgentDriver {
     });
   }
 
-  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void {
+  setPermissionMode(rawMode: string): void {
     if (!this.child) return; // pre-launch: the composer chip still owns the mode
+    const mode = claudeModeFor(rawMode);
     const id = `spm-${++this.modeSwitchSeq}`;
     this.pendingModeSwitches.set(id, mode);
     this.child.stdin.write(
@@ -376,7 +388,7 @@ export class ClaudeDriver implements AgentDriver {
     if (this.opts.model) args.push("--model", this.opts.model);
     if (this.opts.resume) args.push("--resume", this.opts.resume);
     if (this.opts.permissionMode)
-      args.push("--permission-mode", this.opts.permissionMode);
+      args.push("--permission-mode", claudeModeFor(this.opts.permissionMode));
     // Permission prompts ride the control channel instead of headless
     // auto-deny (US-004); plan mode needs it too or the CLI never offers
     // ExitPlanMode headlessly (US-022). Wired unconditionally: modes are

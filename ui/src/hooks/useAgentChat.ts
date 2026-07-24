@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsUrl } from "../lib/gateway.ts";
+import type { AgentCapabilities } from "./useProviders.ts";
 
 /**
  * Level-2 chat spike — the UI half of the headless-agent driver.
@@ -17,7 +18,11 @@ import { wsUrl } from "../lib/gateway.ts";
 /** Launch config chosen in the composer chips (mirrors AgentLaunchOpts). */
 export interface AgentOpts {
   model?: string;
-  permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions";
+  /** One of the driver's `capabilities.permissionModes` ids, in the
+   *  provider's OWN vocabulary (US-009) — Claude's `default`/`plan`/…,
+   *  codex's `read-only`/`workspace-write`/…. Drivers floor unknown ids to
+   *  their safest mode. */
+  permissionMode?: string;
   /** Working directory for the session — the FIRST prompt's cwd fixes it
    *  (US-001); omitted → the gateway's active cwd. */
   cwd?: string;
@@ -110,7 +115,12 @@ export interface AgentChat {
   /** Switch the live session's permission mode (the plan card's "Proceed in
    *  build"). Confirmation comes back as a permission-mode event; failure
    *  surfaces as an error item and the mode stays. */
-  setPermissionMode: (mode: NonNullable<AgentOpts["permissionMode"]>) => void;
+  setPermissionMode: (mode: string) => void;
+  /** The session driver's verified capability descriptor — the
+   *  `{type:"capabilities"}` frame the gateway sends once when the first
+   *  prompt builds the driver (US-007). Null until then; the pane falls back
+   *  to the registry's per-provider descriptor from `useProviders`. */
+  capabilities: AgentCapabilities | null;
 }
 
 export function useAgentChat(token: string | null): AgentChat {
@@ -119,6 +129,7 @@ export function useAgentChat(token: string | null): AgentChat {
   const [status, setStatus] = useState<ChatStatus>("connecting");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [permissionMode, setPermissionModeState] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const seq = useRef(0);
@@ -160,6 +171,11 @@ export function useAgentChat(token: string | null): AgentChat {
       }
       if (msg.type === "busy") {
         setBusy(msg.busy === true);
+      } else if (msg.type === "capabilities") {
+        // Sent once when the driver is built — what THIS session's provider
+        // can actually do (US-007/US-009). The permission chip and approval
+        // UI adapt to it without ever branching on a provider name.
+        setCapabilities((msg.capabilities as AgentCapabilities) ?? null);
       } else if (msg.type === "error") {
         setItems((prev) => [
           ...prev,
@@ -298,7 +314,7 @@ export function useAgentChat(token: string | null): AgentChat {
   }, []);
 
   const setPermissionMode = useCallback(
-    (mode: NonNullable<AgentOpts["permissionMode"]>) => {
+    (mode: string) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== ws.OPEN) return;
       // No optimistic update — the driver confirms with a permission-mode
@@ -337,5 +353,6 @@ export function useAgentChat(token: string | null): AgentChat {
     interrupt,
     permissionMode,
     setPermissionMode,
+    capabilities,
   };
 }

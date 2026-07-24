@@ -3,6 +3,7 @@ import {
   ArrowUp,
   ChevronDown,
   ClipboardList,
+  Eye,
   FilePenLine,
   FileText,
   Folder,
@@ -26,7 +27,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   useAgentChat,
-  type AgentOpts,
   type ApprovalResolution,
   type ChatItem,
   type PendingApproval,
@@ -54,7 +54,11 @@ import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
-import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
+import {
+  useProviders,
+  type AgentCapabilities,
+  type ProviderStatus,
+} from "../hooks/useProviders.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 import ThreadToolbar from "./ThreadToolbar.tsx";
 import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
@@ -94,21 +98,47 @@ const MODELS: { label: string; value: string | undefined }[] = [
   { label: "Haiku", value: "haiku" },
 ];
 
-/** `--permission-mode` chip options. Supervised (`default`) is the default —
- *  the driver's control-channel approval round-trip (US-004) answers the tool
- *  prompts interactively, so a terminal-less surface never needs to blanket-
- *  bypass. Full access runs every tool unprompted and gets a one-time confirm. */
-const PERMISSIONS: {
-  label: string;
-  value: NonNullable<AgentOpts["permissionMode"]>;
-  icon: LucideIcon;
-  hint: string;
-}[] = [
-  { label: "Plan", value: "plan", icon: ClipboardList, hint: "Read-only — ends with a proposed plan" },
-  { label: "Supervised", value: "default", icon: ShieldCheck, hint: "Asks before running tools" },
-  { label: "Accept edits", value: "acceptEdits", icon: FilePenLine, hint: "Auto-approves file edits" },
-  { label: "Full access", value: "bypassPermissions", icon: ShieldAlert, hint: "Runs every tool without prompting" },
-];
+/** Display metadata per KNOWN permission-mode id (US-009). The chip's
+ *  OPTIONS — which modes exist, their labels and hints — come from the
+ *  provider's `capabilities.permissionModes`, never from a hard-coded list;
+ *  this map only decorates a mode id with an icon (and labels the transcript's
+ *  after-the-fact mode rows). Ids are provider vocabulary, not provider
+ *  branches: an unknown id still renders, with a shield and its raw id. */
+const MODE_META: Record<string, { label: string; icon: LucideIcon }> = {
+  // Claude + grok vocabulary
+  plan: { label: "Plan", icon: ClipboardList },
+  default: { label: "Supervised", icon: ShieldCheck },
+  acceptEdits: { label: "Accept edits", icon: FilePenLine },
+  bypassPermissions: { label: "Full access", icon: ShieldAlert },
+  // Codex sandbox vocabulary
+  "read-only": { label: "Read only", icon: Eye },
+  "workspace-write": { label: "Workspace write", icon: FilePenLine },
+  "danger-full-access": { label: "Full access", icon: ShieldAlert },
+};
+const modeIcon = (id: string): LucideIcon => MODE_META[id]?.icon ?? ShieldCheck;
+
+/** Modes that run everything unguarded — destructive styling + the one-time
+ *  confirm dialog, whatever the provider calls them. */
+const DANGER_MODE_IDS = new Set(["bypassPermissions", "danger-full-access"]);
+
+/** Pre-fetch fallback, mirroring Claude's verified descriptor
+ *  (CLAUDE_CAPABILITIES in src/agent/claude.ts): until the provider list or
+ *  the session's own capabilities frame lands, the chip needs a non-blank
+ *  shape for the default provider. Live capabilities always win. */
+const FALLBACK_CAPABILITIES: AgentCapabilities = {
+  streamingDeltas: true,
+  interactiveApproval: true,
+  livePermissionSwitch: true,
+  costUsd: true,
+  reasoningText: false,
+  resume: true,
+  permissionModes: [
+    { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
+    { id: "default", label: "Supervised", description: "Asks before running tools" },
+    { id: "acceptEdits", label: "Accept edits", description: "Auto-approves file edits" },
+    { id: "bypassPermissions", label: "Full access", description: "Runs every tool without prompting" },
+  ],
+};
 
 /** Render-facing thread state, reported up to the sidebar (US-006) so the
  *  thread list can show status pills for hidden threads. */
@@ -179,17 +209,19 @@ export default function ChatPane({
     interrupt,
     permissionMode: liveMode,
     setPermissionMode,
+    capabilities: sessionCaps,
   } = useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
   // Provider chip selection (US-008) — which agent CLI a FRESH thread
   // launches on. A reopened thread ignores this: its saved provider wins.
   const [provider, setProvider] = useState<string>("claude");
-  const [permission, setPermission] =
-    useState<NonNullable<AgentOpts["permissionMode"]>>("default");
-  // Full-access one-time confirm: selecting bypassPermissions opens the dialog
-  // until it has been accepted once in this thread; declining reverts.
-  const [confirmingFullAccess, setConfirmingFullAccess] = useState(false);
+  // Permission-mode id in the PROVIDER's vocabulary (US-009) — one of the
+  // active capability descriptor's permissionModes ids.
+  const [permission, setPermission] = useState<string>("default");
+  // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
+  // pick here until the dialog confirms it once per thread; declining reverts.
+  const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
   const fullAccessConfirmed = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the view is pinned to the bottom. Scrolling up releases the pin
@@ -425,6 +457,31 @@ export default function ChatPane({
   // Non-Claude providers only offer "Default model" — never a Claude alias.
   const modelOptions = effectiveProviderId === "claude" ? MODELS : [MODELS[0]!];
 
+  // The active capability descriptor (US-009): once the session's driver is
+  // built the gateway's capabilities frame is authoritative; before that, the
+  // registry's descriptor for the chip's provider; a Claude-shaped fallback
+  // covers the pre-fetch window. Everything below adapts to THIS — the
+  // permission chip options, the live-switch honesty note, the approval UI —
+  // never to a provider name.
+  const caps: AgentCapabilities =
+    sessionCaps ??
+    providerList.find((p) => p.id === effectiveProviderId)?.capabilities ??
+    FALLBACK_CAPABILITIES;
+
+  // Keep the mode pick valid for the active provider: switching the chip to
+  // codex must not leave a Claude-vocabulary id (codex has no "default") —
+  // land on the provider's own default, else its FIRST mode (each descriptor
+  // leads with its most restrictive option, so the reset is the safe floor).
+  useEffect(() => {
+    if (!caps.permissionModes.some((m) => m.id === permission)) {
+      setPermission(
+        (caps.permissionModes.find((m) => m.id === "default") ?? caps.permissionModes[0])
+          ?.id ?? "default",
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caps, permission]);
+
   // Send an arbitrary prompt through the same launch config as the composer.
   // Returns false when a send can't happen (busy / not open / history loading)
   // so the caller can decide whether to clear its input. Used by the composer
@@ -434,7 +491,10 @@ export default function ChatPane({
     if (!t || busy || status !== "open" || historyState === "loading") return false;
     send(t, {
       model: resume ? resume.model ?? undefined : model,
-      permissionMode: permission,
+      // The CONFIRMED mode, not just the local pick: for providers without a
+      // live switch (codex/grok) each turn re-sends the mode, and a mid-
+      // session chip change already updated it via the confirmed event path.
+      permissionMode: effectiveMode,
       cwd: effectiveCwd ?? undefined,
       projectId: projectId ?? undefined,
       resume: resume && historyState === "found" ? resume.sessionId : undefined,
@@ -450,19 +510,21 @@ export default function ChatPane({
     if (sendPrompt(text)) setText("");
   };
 
-  const selectPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
-    if (value === "bypassPermissions" && !fullAccessConfirmed.current) {
-      setConfirmingFullAccess(true);
+  const selectPermission = (value: string) => {
+    if (DANGER_MODE_IDS.has(value) && !fullAccessConfirmed.current) {
+      setConfirmingDangerMode(value);
       return;
     }
     applyPermission(value);
   };
 
   // Pre-launch the chip sets the local launch config; once the session exists
-  // the switch rides the control channel (the US-022 path). No optimistic
-  // update on the live path — the chip follows the confirmed `permissionMode`
-  // event, and a failed switch (error item) leaves it on the prior mode.
-  const applyPermission = (value: NonNullable<AgentOpts["permissionMode"]>) => {
+  // the switch rides the driver (the US-022 path) — live for Claude, honestly
+  // next-turn for codex/grok (each turn is a fresh process there, so the
+  // driver confirms the change for its next spawn). No optimistic update on
+  // the live path — the chip follows the confirmed `permission-mode` event,
+  // and a failed switch (error item) leaves it on the prior mode.
+  const applyPermission = (value: string) => {
     if (sessionId != null) setPermissionMode(value);
     else setPermission(value);
   };
@@ -474,7 +536,15 @@ export default function ChatPane({
   // mid-session switch (the plan card's "Proceed in build", US-022) moves the
   // locked chip off Plan so it never lies about what the agent may do.
   const effectiveMode = liveMode ?? permission;
-  const perm = PERMISSIONS.find((p) => p.value === effectiveMode) ?? PERMISSIONS[1]!;
+  // The chip's face: the active mode's descriptor entry. An id the descriptor
+  // doesn't list (shouldn't happen — drivers report their own vocabulary)
+  // still renders honestly via MODE_META/raw-id instead of lying.
+  const perm = caps.permissionModes.find((m) => m.id === effectiveMode) ?? {
+    id: effectiveMode,
+    label: MODE_META[effectiveMode]?.label ?? effectiveMode,
+    description: "",
+  };
+  const PermIcon = modeIcon(perm.id);
 
   // Plan-card context (US-022): lets a plan card answer the approval gating
   // it (proceed = build continues THIS turn) or, once settled, switch the
@@ -664,7 +734,10 @@ export default function ChatPane({
         </div>
         <div className="relative mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
           {!pendingApproval && <AutocompleteOverlay ac={ac} />}
-          {pendingApproval ? (
+          {/* Approval UI only where the provider HAS an approval channel
+              (US-009): codex/grok never emit permission-requests, and the
+              capability gate keeps that contract explicit. */}
+          {pendingApproval && caps.interactiveApproval ? (
             /* Supervised mode: the input area becomes the approval prompt —
                the turn is blocked on this decision, so typing can wait. */
             <ApprovalPanel
@@ -745,23 +818,38 @@ export default function ChatPane({
                 </Chip>
                 <span className="text-border">|</span>
                 {/* The active permission mode stays visible here whether or not the
-                    dropdown is ever opened — the persistent indicator. */}
+                    dropdown is ever opened — the persistent indicator. Options come
+                    from the provider's own capability descriptor (US-009): codex
+                    lists its real sandbox policies and Supervised simply isn't
+                    there — absent, not inert. */}
                 <Chip
-                  icon={<perm.icon className="size-3.5" />}
+                  icon={<PermIcon className="size-3.5" />}
                   label={perm.label}
                   className={cn(
-                    perm.value === "bypassPermissions" && "text-destructive hover:text-destructive",
+                    DANGER_MODE_IDS.has(perm.id) && "text-destructive hover:text-destructive",
                   )}
                 >
-                  {PERMISSIONS.map((p) => (
-                    <DropdownMenuItem key={p.value} onClick={() => selectPermission(p.value)}>
-                      <p.icon className="size-3.5 text-muted-foreground" />
-                      <div className="flex flex-col">
-                        <span>{p.label}</span>
-                        <span className="text-[11px] text-muted-foreground">{p.hint}</span>
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
+                  {caps.permissionModes.map((p) => {
+                    const OptIcon = modeIcon(p.id);
+                    return (
+                      <DropdownMenuItem key={p.id} onClick={() => selectPermission(p.id)}>
+                        <OptIcon className="size-3.5 text-muted-foreground" />
+                        <div className="flex flex-col">
+                          <span>{p.label}</span>
+                          <span className="text-[11px] text-muted-foreground">{p.description}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {!caps.livePermissionSwitch && sessionId != null && (
+                    /* Honesty note (US-009): this provider can't switch a LIVE
+                       turn — every turn is a fresh process, so a change here
+                       genuinely applies from the next turn, and says so. */
+                    <div className="max-w-56 border-t border-border px-2 py-1.5 text-[11px] text-muted-foreground">
+                      Applies from the next turn — {providerMeta.name} can't
+                      change a running session.
+                    </div>
+                  )}
                 </Chip>
                 <div className="flex-1" />
                 {busy ? (
@@ -791,7 +879,7 @@ export default function ChatPane({
 
       {/* One-time Full-access confirm — declining (or dismissing) reverts to
           the previously selected mode; confirming skips the dialog next time. */}
-      <Dialog open={confirmingFullAccess} onOpenChange={(open) => !open && setConfirmingFullAccess(false)}>
+      <Dialog open={confirmingDangerMode != null} onOpenChange={(open) => !open && setConfirmingDangerMode(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -806,7 +894,7 @@ export default function ChatPane({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmingFullAccess(false)}>
+            <Button variant="outline" size="sm" onClick={() => setConfirmingDangerMode(null)}>
               Keep {perm.label}
             </Button>
             <Button
@@ -814,8 +902,8 @@ export default function ChatPane({
               size="sm"
               onClick={() => {
                 fullAccessConfirmed.current = true;
-                applyPermission("bypassPermissions");
-                setConfirmingFullAccess(false);
+                if (confirmingDangerMode) applyPermission(confirmingDangerMode);
+                setConfirmingDangerMode(null);
               }}
             >
               Enable Full access
@@ -1007,11 +1095,11 @@ function Item({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
         </div>
       );
     case "mode": {
-      const m = PERMISSIONS.find((p) => p.value === item.mode);
+      const ModeIcon = modeIcon(item.mode);
       return (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {m && <m.icon className="size-3 shrink-0" />}
-          <span>Permission mode → {m?.label ?? item.mode}</span>
+          <ModeIcon className="size-3 shrink-0" />
+          <span>Permission mode → {MODE_META[item.mode]?.label ?? item.mode}</span>
         </div>
       );
     }

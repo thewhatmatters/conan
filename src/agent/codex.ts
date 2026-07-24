@@ -193,7 +193,7 @@ export class CodexDriver implements AgentDriver {
     // rather than silently swallowed so the seam stays honest.
   }
 
-  setPermissionMode(mode: NonNullable<AgentLaunchOpts["permissionMode"]>): void {
+  setPermissionMode(mode: string): void {
     // No live process to switch (livePermissionSwitch false) — but each turn
     // is a fresh spawn, so the change GENUINELY applies from the next turn.
     // Confirm it; the UI explains the next-turn timing (US-009).

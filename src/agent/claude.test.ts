@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ClaudeStreamParser,
+  claudeModeFor,
   classifyTool,
   type ControlRequest,
   type ControlResponse,
@@ -276,4 +277,17 @@ test("classifyTool groups tools into the approval kinds", () => {
   assert.equal(classifyTool("NotebookEdit"), "file-change");
   assert.equal(classifyTool("WebFetch"), "other");
   assert.equal(classifyTool("mcp__figma__get_screenshot"), "other");
+});
+
+test("claudeModeFor floors unknown mode ids to default (US-009)", () => {
+  // Claude's own vocabulary passes through verbatim…
+  assert.equal(claudeModeFor("default"), "default");
+  assert.equal(claudeModeFor("plan"), "plan");
+  assert.equal(claudeModeFor("acceptEdits"), "acceptEdits");
+  assert.equal(claudeModeFor("bypassPermissions"), "bypassPermissions");
+  // …while another provider's ids (a stale pick after a provider switch)
+  // floor to Supervised instead of crashing the CLI.
+  assert.equal(claudeModeFor("read-only"), "default");
+  assert.equal(claudeModeFor("danger-full-access"), "default");
+  assert.equal(claudeModeFor(undefined), "default");
 });
