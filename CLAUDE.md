@@ -1,16 +1,18 @@
 # Conan — project context for Claude Code
 
-> ⚠️ **CURRENT ARCHITECTURE (2026-07-23): Conan is now CHAT-PRIMARY, not
-> terminal-primary.** On branch `loop/conan-chat-v1` (not yet merged to `main`)
-> Conan drives Claude Code **headlessly** (`claude -p` stream-json over a
-> `/ws/agent` WebSocket) behind a **custom chat UI** — a project-grouped thread
-> sidebar + streaming transcript + interactive tool-approval + a fused
-> prompt/skill/tool activity spine + a sigil composer (`@` files · `$` skills ·
-> `/` commands). The **terminal (`xterm.js`) surface and the DevTools HUD are
-> REMOVED from the mounted UI** (`App.tsx` renders `ChatSurface`); the pty /
-> HUD / Timeline code below remains in the repo but is **DORMANT** (unmounted,
-> kept for reference/possible reuse). **Read `HANDOFF.md` first** for the live
-> state, what's done, what's next, and the run/QA workflow — the sections below
+> ⚠️ **CURRENT ARCHITECTURE (2026-07-24): Conan is CHAT-PRIMARY, not
+> terminal-primary — and MERGED TO `main`.** Conan drives Claude Code, Codex,
+> and Grok **headlessly** (stream-json/JSONL child processes normalized through
+> the `AgentDriver` seam, over a `/ws/agent` WebSocket) behind a **custom chat
+> UI** — a project-grouped thread sidebar + streaming transcript + interactive
+> tool-approval + a fused prompt/skill/tool activity spine + a sigil composer
+> (`@` files · `$` skills · `/` commands). The **terminal (`xterm.js`) surface
+> and the DevTools HUD are REMOVED from the mounted UI** (`App.tsx` renders
+> `ChatSurface`); the pty / HUD / Timeline code below remains in the repo but
+> is **DORMANT** (unmounted, kept for reference/possible reuse). Live working
+> state lives in **project memory** (the checkpoint entry auto-loads each
+> session — `HANDOFF.md` is retired); task lists are
+> `docs/chat-v1-qa-backlog.md` + `docs/t3-port-backlog.md`. The sections below
 > still describe the dormant terminal-era subsystems and are accurate only as
 > history for those. The stack, conventions, and gotchas below remain current.
 
@@ -54,8 +56,22 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   checked.
 
 ## Chat architecture (CURRENT — the mounted app)
-The chat-primary stack, built on branch `loop/conan-chat-v1`. Full narrative +
-run/QA workflow in `HANDOFF.md`.
+The chat-primary stack, built on `loop/conan-chat-v1` → `loop/conan-multi-provider`,
+merged to `main` 2026-07-24.
+
+**Run/QA (chat dev stack):** `npm start` (gateway :3747, NO watch — restart
+manually after any `src/` edit; a stale gateway 404s new routes) +
+`cd ui && npm run dev` (:5173). After ANY gateway restart verify BOTH ports —
+vite drops silently; a stale `ui/node_modules/.vite` cache white-screens
+(rm -rf + restart). Browser QA drives :5173 via the `automate-browser` skill;
+per-story verification uses a throwaway stack (`CONAN_PORT=3799
+CONAN_DATA_DIR=/tmp/x npm start` + `CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run
+dev` + `CONAN_ALLOWED_ORIGINS=http://localhost:5199`) so dev :3747 is never
+touched. Playwright: panes are mounted-but-hidden — use `textarea:visible`.
+Autonomous build loop: `run-tasks.sh` iterates a fresh agent over `prd.json`
+(provider-agnostic via `AGENT_CMD`, e.g. `AGENT_CMD="claude -p
+--permission-mode bypassPermissions" ./run-tasks.sh`; run detached; each story
+commits on pass; decompose backlogs with the `decompose-prd` skill).
 - **Backend `src/agent/` — MULTI-PROVIDER (T3-1, 2026-07-23).** The
   `AgentDriver` seam (`driver.ts`) now carries a `readonly capabilities:
   AgentCapabilities` descriptor (streamingDeltas / interactiveApproval /

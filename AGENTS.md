@@ -4,19 +4,20 @@ Instructions for any coding agent (Codex, etc.) working in this repo. Claude
 Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
 
 ## Read these first, in order
-1. **`HANDOFF.md`** — live state: what Conan is now, what's done, what's next,
-   how to run/QA. START HERE.
-2. **`CLAUDE.md`** — stack, conventions, gotchas. Its top block flags that Conan
-   is now **chat-primary** (the long "Architecture (DORMANT…)" body describes the
-   removed terminal/HUD era — history only).
-3. Task lists: `docs/chat-v1-qa-backlog.md` (QA findings + PD-1) and
+1. **`CLAUDE.md`** — architecture, stack, conventions, gotchas, and the chat
+   dev-stack run/QA workflow. START HERE. Its top block flags that Conan is
+   **chat-primary** (the long "Architecture (DORMANT…)" body describes the
+   removed terminal/HUD era — history only). `HANDOFF.md` is retired; live
+   working state lives in Claude's project memory (checkpoint entry).
+2. Task lists: `docs/chat-v1-qa-backlog.md` (QA findings + PD-1) and
    `docs/t3-port-backlog.md` (feature wishlist).
 
 ## The one-line orientation
-Conan is a **chat-primary desktop app that drives Claude Code headlessly**
-(`claude -p` stream-json over a `/ws/agent` WebSocket) behind a custom React
-chat UI. Branch `loop/conan-chat-v1` (NOT merged to `main`). The terminal/HUD
-surfaces are removed from the UI but still in the repo (dormant).
+Conan is a **chat-primary desktop app that drives Claude Code, Codex, and Grok
+headlessly** (stream-json/JSONL child processes normalized through the
+`AgentDriver` seam, over a `/ws/agent` WebSocket) behind a custom React chat
+UI. Merged to `main` 2026-07-24. The terminal/HUD surfaces are removed from
+the UI but still in the repo (dormant).
 
 ## Non-negotiable rules
 - **Every change:** `npm run typecheck` (gateway) AND `cd ui && npm run build`
@@ -37,4 +38,5 @@ surfaces are removed from the UI but still in the repo (dormant).
 ## The build loop
 `run-tasks.sh` runs a fresh agent over `prd.json` until all stories `passes`.
 Provider-agnostic via `AGENT_CMD` (e.g. `AGENT_CMD="codex exec" ./run-tasks.sh`).
-Run detached; each story commits on pass. See `HANDOFF.md` for details.
+Run detached; each story commits on pass. Decompose backlogs into a new
+`prd.json` with the `decompose-prd` skill (schema example in `archive/`).
