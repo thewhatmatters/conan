@@ -79,6 +79,9 @@ export interface AgentCapabilities {
   reasoningText: boolean;
   /** A past conversation can be resumed by id in a fresh process. */
   resume: boolean;
+  /** Verified context-window denominator for this launch's selected model.
+   *  Null means unknown — consumers must show counts only, never infer one. */
+  contextWindowTokens: number | null;
   /** The user can choose a launch model for this provider, so the model a
    *  thread reports is a valid `--model` id worth re-applying on resume.
    *  False → the reported model is internal telemetry (Grok answers with a

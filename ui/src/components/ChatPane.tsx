@@ -132,6 +132,7 @@ const FALLBACK_CAPABILITIES: AgentCapabilities = {
   costUsd: true,
   reasoningText: false,
   resume: true,
+  contextWindowTokens: null,
   modelSelection: true,
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },

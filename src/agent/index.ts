@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
 import {
+  capabilitiesFor,
   getProvider,
   resolveRequestedProvider,
   type ProviderEntry,
@@ -141,6 +142,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   const ensureDriver = (
     requested: string | null,
     resume: string | null,
+    model: string | undefined,
   ): Promise<AgentDriver> => {
     if (driver) return Promise.resolve(driver);
     if (!building) {
@@ -165,7 +167,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         send({
           type: "capabilities",
           provider: provider.id,
-          capabilities: driver.capabilities,
+          capabilities: capabilitiesFor(provider, model),
         });
         return driver;
       })();
@@ -214,7 +216,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
           : null;
       const text = msg.text;
       send({ type: "busy", busy: true });
-      void ensureDriver(requested, opts.resume ?? null)
+      void ensureDriver(requested, opts.resume ?? null, opts.model)
         .then((d) => d.send(text, opts))
         .catch((err: unknown) => {
           send({ type: "error", message: (err as Error).message });

@@ -90,6 +90,48 @@ export function getProvider(id: string): ProviderEntry | undefined {
   return PROVIDERS.find((p) => p.id === id);
 }
 
+/** Verified sizes from docs/provider-context-effort.md. Missing model ids are
+ *  intentionally unknown rather than inheriting a provider-wide guess. */
+const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, number>>>> = {
+  claude: {
+    default: 200_000,
+    opus: 200_000,
+    sonnet: 200_000,
+    haiku: 200_000,
+    "claude-fable-5": 1_000_000,
+  },
+  codex: {
+    "gpt-5.6-sol": 272_000,
+    "gpt-5.6-terra": 272_000,
+    "gpt-5.6-luna": 272_000,
+    "gpt-5.5": 272_000,
+    "gpt-5.4": 272_000,
+    "gpt-5.4-mini": 272_000,
+    "gpt-5.3-codex-spark": 128_000,
+    "codex-auto-review": 272_000,
+  },
+  grok: {
+    default: 500_000,
+    "grok-4.5": 500_000,
+  },
+};
+
+export function contextWindowFor(provider: ProviderId, model?: string): number | null {
+  return CONTEXT_WINDOWS[provider][model ?? "default"] ?? null;
+}
+
+/** Resolve the launch-specific denominator without mutating the driver's
+ *  shared capability constant. */
+export function capabilitiesFor(
+  provider: ProviderEntry,
+  model?: string,
+): AgentCapabilities {
+  return {
+    ...provider.capabilities,
+    contextWindowTokens: contextWindowFor(provider.id, model),
+  };
+}
+
 // ── Install probe ──────────────────────────────────────────────────────────
 
 /** One probed answer per provider, cached. */

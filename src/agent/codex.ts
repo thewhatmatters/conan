@@ -63,6 +63,7 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
   costUsd: false,
   reasoningText: false,
   resume: true,
+  contextWindowTokens: null,
   // No model picker in Conan; codex reports no model at all.
   modelSelection: false,
   permissionModes: [

@@ -16,6 +16,8 @@ import {
   resolveRequestedProvider,
   CODEX_CAPABILITIES,
   GROK_CAPABILITIES,
+  capabilitiesFor,
+  contextWindowFor,
 } from "./registry.js";
 import { CLAUDE_CAPABILITIES } from "./claude.js";
 
@@ -32,6 +34,27 @@ test("registry lists exactly claude/codex/grok with their avatar letters", () =>
   );
   assert.equal(getProvider("codex")?.name, "Codex");
   assert.equal(getProvider("nope"), undefined);
+});
+
+test("context-window lookup returns only verified model sizes", () => {
+  assert.equal(contextWindowFor("claude"), 200_000);
+  assert.equal(contextWindowFor("claude", "sonnet"), 200_000);
+  assert.equal(contextWindowFor("claude", "claude-fable-5"), 1_000_000);
+  assert.equal(contextWindowFor("codex", "gpt-5.6-sol"), 272_000);
+  assert.equal(contextWindowFor("codex", "gpt-5.3-codex-spark"), 128_000);
+  assert.equal(contextWindowFor("grok"), 500_000);
+  assert.equal(contextWindowFor("grok", "grok-4.5"), 500_000);
+  assert.equal(contextWindowFor("codex"), null);
+  assert.equal(contextWindowFor("codex", "future-model"), null);
+  assert.equal(contextWindowFor("grok", "grok-4.5-build"), null);
+});
+
+test("per-launch capabilities expose the selected model window", () => {
+  const provider = getProvider("codex")!;
+  const resolved = capabilitiesFor(provider, "gpt-5.4-mini");
+  assert.equal(resolved.contextWindowTokens, 272_000);
+  assert.equal(resolved.permissionModes, provider.capabilities.permissionModes);
+  assert.equal(capabilitiesFor(provider, "unknown").contextWindowTokens, null);
 });
 
 test("capabilities pin the US-001 verified matrix", () => {

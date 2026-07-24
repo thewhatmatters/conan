@@ -82,6 +82,7 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   costUsd: true,
   reasoningText: false,
   resume: true,
+  contextWindowTokens: null,
   // Claude reports a real alias (e.g. claude-fable-5) and offers a model picker.
   modelSelection: true,
   permissionModes: [

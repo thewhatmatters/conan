@@ -48,7 +48,7 @@
         "Tests pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser verification required). Depends on US-001. Keep the table small and data-shaped, like the rest of the registry. Suggested skills: none."
     },
     {
