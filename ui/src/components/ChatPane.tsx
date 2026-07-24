@@ -35,6 +35,7 @@ import {
   type PendingApproval,
   type PermissionDecision,
   type ToolPermissionKind,
+  type OutgoingImage,
 } from "../hooks/useAgentChat.ts";
 import { Button } from "./ui/button.tsx";
 import {
@@ -245,6 +246,10 @@ export default function ChatPane({
   // server-side at turn time; `truncated` is set when the read hit its cap so
   // the transcript can say so.
   const [pins, setPins] = useState<PendingPin[]>([]);
+  // Pasted images staged for the NEXT turn (US image-paste). base64 + media
+  // type; the gateway validates/bounds/writes the per-provider temp file. Only
+  // accepted when the active provider's capabilities.imageInput is true.
+  const [images, setImages] = useState<OutgoingImage[]>([]);
   // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
   // pick here until the dialog confirms it once per thread; declining reverts.
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
@@ -547,9 +552,10 @@ export default function ChatPane({
       path: p.path,
       content: p.content,
       truncated: p.truncated,
-    })));
-    // Per-turn by default — drop pins after send unless explicitly kept.
+    })), images);
+    // Per-turn by default — drop pins/images after send unless kept.
     setPins((prev) => prev.filter((p) => p.keep));
+    setImages([]);
     return true;
   };
 
@@ -794,6 +800,29 @@ export default function ChatPane({
             />
           ) : (
             <>
+              {/* Pending pasted images — thumbnails, each removable, staged for
+                  the next turn (gateway bounds them). */}
+              {images.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {images.map((img, i) => (
+                    <span key={i} className="group/img relative">
+                      <img
+                        src={`data:${img.mediaType};base64,${img.data}`}
+                        alt="pasted"
+                        className="size-14 rounded-md border border-border object-cover"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Remove image"
+                        onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                        className="absolute -right-1.5 -top-1.5 hidden size-4 items-center justify-center rounded-full bg-card ring-1 ring-border hover:text-destructive group-hover/img:flex"
+                      >
+                        <X className="size-2.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* Pending pins (US-010) — staged for the next turn, each
                   removable. Truncation is shown here too, before send. */}
               {pins.length > 0 && (
@@ -825,6 +854,30 @@ export default function ChatPane({
               <textarea
                 ref={textareaRef}
                 value={text}
+                onPaste={(e) => {
+                  // Paste-to-attach images (US image-paste), only where the
+                  // provider actually accepts them — never a dead affordance.
+                  if (!caps.imageInput) return;
+                  const files = Array.from(e.clipboardData.files).filter((f) =>
+                    f.type.startsWith("image/"),
+                  );
+                  if (files.length === 0) return;
+                  e.preventDefault();
+                  for (const file of files.slice(0, 4)) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const url = String(reader.result);
+                      const comma = url.indexOf(",");
+                      if (comma < 0) return;
+                      setImages((prev) =>
+                        prev.length >= 4
+                          ? prev
+                          : [...prev, { mediaType: file.type, data: url.slice(comma + 1) }],
+                      );
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
                 onChange={(e) => {
                   setText(e.target.value);
                   ac.sync();
@@ -1450,6 +1503,20 @@ function Item({
           <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
             {item.text}
           </div>
+          {/* Images sent with this turn — so the transcript shows what the
+              agent actually received. */}
+          {item.images && item.images.length > 0 && (
+            <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+              {item.images.map((img, i) => (
+                <img
+                  key={i}
+                  src={img.dataUrl}
+                  alt="sent"
+                  className="size-24 rounded-md border border-border object-cover"
+                />
+              ))}
+            </div>
+          )}
           {/* Pins sent with this turn (US-010) — show WHAT was included so the
               transcript never misrepresents the prompt. `truncated` is marked
               honestly; the content itself lives in the prompt the agent got. */}

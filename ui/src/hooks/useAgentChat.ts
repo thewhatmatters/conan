@@ -49,6 +49,20 @@ export interface OutgoingFileAttachment {
   keep?: boolean;
 }
 
+/** A pasted image headed to the gateway's image-staging (US image-paste). The
+ *  browser sends base64 + media type; the gateway (prepareImageAttachments)
+ *  validates, bounds, and writes the temp file each provider needs. */
+export interface OutgoingImage {
+  mediaType: string;
+  /** Raw base64 (no data: prefix). */
+  data: string;
+}
+
+/** How a sent image renders in the transcript — a data URL for the thumbnail. */
+export interface SentImage {
+  dataUrl: string;
+}
+
 /** A pin as it renders in the transcript — path + size, not the content
  *  (which is in the prompt the agent received). `truncated` when the read hit
  *  its cap, so the transcript never implies the whole file was sent. */
@@ -107,7 +121,7 @@ export interface TurnTokens {
 
 /** A rendered transcript item. */
 export type ChatItem =
-  | { id: string; role: "user"; text: string; pins?: SentPin[] }
+  | { id: string; role: "user"; text: string; pins?: SentPin[]; images?: SentImage[] }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "reasoning"; text: string }
   | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
@@ -142,7 +156,12 @@ export interface AgentChat {
   /** Answer a pending permission request. */
   respondToApproval: (id: string, decision: PermissionDecision) => void;
   /** Submit a user turn (no-op while busy or disconnected). */
-  send: (text: string, opts: AgentOpts, attachments?: OutgoingFileAttachment[]) => void;
+  send: (
+    text: string,
+    opts: AgentOpts,
+    attachments?: OutgoingFileAttachment[],
+    images?: OutgoingImage[],
+  ) => void;
   /** Stop the in-flight turn (graceful interrupt — the session survives). */
   interrupt: () => void;
   /** The session's LIVE permission mode — the launch mode from the init
@@ -345,7 +364,12 @@ export function useAgentChat(token: string | null): AgentChat {
   }, []);
 
   const send = useCallback(
-    (text: string, opts: AgentOpts, attachments: OutgoingFileAttachment[] = []) => {
+    (
+      text: string,
+      opts: AgentOpts,
+      attachments: OutgoingFileAttachment[] = [],
+      images: OutgoingImage[] = [],
+    ) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== ws.OPEN || busy || !text.trim()) return;
       const pins: SentPin[] = attachments.map((a) => ({
@@ -353,11 +377,20 @@ export function useAgentChat(token: string | null): AgentChat {
         bytes: new TextEncoder().encode(a.content).length,
         truncated: a.truncated === true,
       }));
+      const sentImages: SentImage[] = images.map((i) => ({
+        dataUrl: `data:${i.mediaType};base64,${i.data}`,
+      }));
       setItems((prev) => [
         ...prev,
-        { id: nextId(), role: "user", text, ...(pins.length ? { pins } : {}) },
+        {
+          id: nextId(),
+          role: "user",
+          text,
+          ...(pins.length ? { pins } : {}),
+          ...(sentImages.length ? { images: sentImages } : {}),
+        },
       ]);
-      ws.send(JSON.stringify({ type: "prompt", text, attachments, ...opts }));
+      ws.send(JSON.stringify({ type: "prompt", text, attachments, images, ...opts }));
     },
     [busy],
   );
