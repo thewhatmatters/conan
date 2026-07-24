@@ -25,6 +25,9 @@ pub fn run() {
     // back to acknowledge them. The UI fires these over the app WS via
     // @tauri-apps/plugin-notification; permission is requested on first use.
     .plugin(tauri_plugin_notification::init())
+    // US-011 (chat v1): native folder-picker for the per-thread working
+    // directory chip; the browser/dev context falls back to /api/fs/list.
+    .plugin(tauri_plugin_dialog::init())
     // Self-update: the JS-side @tauri-apps/plugin-updater check()s the
     // manifest URL in tauri.conf.json `plugins.updater.endpoints` against
     // the bundled minisign pubkey, downloads the signed .app.tar.gz when

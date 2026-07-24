@@ -1,0 +1,17 @@
+{"type":"thought","data":"The"}
+{"type":"thought","data":" user"}
+{"type":"thought","data":" wants"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" run"}
+{"type":"thought","data":" a"}
+{"type":"thought","data":" simple"}
+{"type":"thought","data":" shell"}
+{"type":"thought","data":" command"}
+{"type":"thought","data":" and"}
+{"type":"thought","data":" then"}
+{"type":"thought","data":" reply"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"done"}
+{"type":"thought","data":"\"."}
+{"type":"end","stopReason":"Cancelled","sessionId":"019f91f6-8de1-7f83-94b8-8194acfb4faf","requestId":"b56d5112-f59d-4a42-acab-3b79d26a8dc9","usage":{"input_tokens":14753,"cache_read_input_tokens":5248,"output_tokens":43,"reasoning_tokens":40,"total_tokens":20044},"num_turns":1,"total_cost_usd":0.0313384,"total_cost_usd_ticks":313384000,"modelUsage":{"grok-4.5-build":{"inputTokens":14753,"outputTokens":43,"cacheReadInputTokens":5248,"modelCalls":1,"costUSD":0.0313384}}}

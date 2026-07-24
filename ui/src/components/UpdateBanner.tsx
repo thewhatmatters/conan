@@ -144,7 +144,10 @@ export default function UpdateBanner() {
     // probes loadProcess() at click time, so the demo banner can drive a
     // real restart of the dev shell.
     if (import.meta.env.DEV) {
-      setState({ kind: "available", version: DEMO_VERSION, notes: null });
+      // Don't auto-surface the demo banner during development — it overlaps the
+      // composer and gets in the way of iteration. Stays idle by default; call
+      // `window.__conanUpdateDemo('available')` from DevTools to show it on
+      // demand for visual testing. Production polling is unchanged below.
       (
         window as unknown as { __conanUpdateDemo?: (k: string) => void }
       ).__conanUpdateDemo = (kind: string) => {

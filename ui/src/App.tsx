@@ -3,27 +3,12 @@ import { useThemes } from "./hooks/useThemes.ts";
 import { useUserThemes } from "./hooks/useUserThemes.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
-import { useUsage } from "./hooks/useUsage.ts";
-import { useTerminals } from "./hooks/useTerminals.ts";
-import TerminalPane from "./components/TerminalPane.tsx";
-import Hud from "./components/Hud.tsx";
-import { usePulse } from "./hooks/usePulse.ts";
-import { useSkills } from "./hooks/useSkills.ts";
-import { useAgents } from "./hooks/useAgents.ts";
+import ChatSurface from "./components/ChatSurface.tsx";
+import InstallBanner from "./components/InstallBanner.tsx";
 import { useConfig } from "./hooks/useConfig.ts";
-import { useRadio } from "./hooks/useRadio.ts";
 import { useDoctor } from "./hooks/useDoctor.ts";
+import { useGlobalHooks } from "./hooks/useGlobalHooks.ts";
 import { useTier } from "./hooks/useTier.ts";
-import { useWindowWidth } from "./hooks/useWindowWidth.ts";
-import { useWindowHeight } from "./hooks/useWindowHeight.ts";
-
-/** Window width at which the HUD reflows from a right dock to a bottom dock
- *  (US-025). Below this the terminal can't share horizontal space with a
- *  320px-min HUD, so instead of hiding it we stack: terminal on top, HUD
- *  docked to the bottom. The View ▸ HUD toggle (`hudOpen`) still hides it at
- *  any width and survives resizes so a wide window restores the user's intent. */
-const HUD_BOTTOM_BREAKPOINT = 900;
-import { useWidgets } from "./hooks/useWidgets.ts";
 import Toaster from "./components/Toaster.tsx";
 import SettingsView from "./components/SettingsView.tsx";
 import UpdateBanner from "./components/UpdateBanner.tsx";
@@ -42,25 +27,20 @@ interface Config {
   buyUrl?: string | null;
 }
 
+/**
+ * Chat-primary shell (US-012): the thread sidebar + chat surface IS Conan's
+ * main surface. The terminal-era shell (TerminalPane, the Terminal|Chat
+ * SurfaceSwitch, the HUD dock and its widget hooks) was removed from the
+ * mount — the pty/gateway terminal code stays in the repo but dormant.
+ * Session-scoped concerns now bind to the ACTIVE chat thread's session id
+ * (reported up by ChatSurface) instead of pty correlation.
+ */
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
-  const [hudOpen, setHudOpen] = useState(true);
-  // Horizontal responsiveness: window-width-driven layout decisions live here
-  // so both the HUD (bottom-docks when narrow) and TerminalPane (Timeline
-  // overlays the terminal at very-narrow widths) agree on the same state.
-  const windowWidth = useWindowWidth();
-  // US-026: live window height feeds the bottom dock's short-window guard so
-  // the terminal keeps a minimum height and the HUD clamps instead of becoming
-  // an unusable sliver.
-  const windowHeight = useWindowHeight();
-  // US-025: below the breakpoint the shell stacks vertically — TerminalPane on
-  // top, the HUD docked to the bottom (dock="bottom") — instead of the HUD
-  // hiding. Wide windows keep the side-by-side right dock.
-  const hudBottomDock = windowWidth < HUD_BOTTOM_BREAKPOINT;
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // US-102: the Timeline's Upgrade button dispatches `conan:open-settings`
-  // with `{ detail: { tab: "license" } }` so the Free user lands directly on
+  // US-102: the Upgrade CTAs dispatch `conan:open-settings` with
+  // `{ detail: { tab: "license" } }` so the Free user lands directly on
   // the paste-your-license surface. Plain ⌘, opens with `undefined` and falls
   // through to the dialog's default tab (Status).
   const [settingsInitialTab, setSettingsInitialTab] = useState<
@@ -69,99 +49,40 @@ export default function App() {
   // US-023: the full theme set (built-ins + user themes from ~/.conan/themes.json)
   // and the active selection. useThemes registers the user themes into the shared
   // apply store, so selecting one — in the Appearance picker or the View ▸ Theme
-  // menu — reskins app + terminal live and persists by id across reload. `theme`
-  // (the resolved light/dark) still drives TerminalPane's xterm theme prop.
+  // menu — reskins the app live and persists by id across reload.
   const userThemes = useUserThemes(config?.token ?? null);
-  const { themes, activeId, activeTheme, setActiveTheme } = useThemes(userThemes);
-  const theme = activeTheme.type;
-  const {
-    tasks,
-    lastEvent,
-    lastSkillFired,
-    lastSkillConsidered,
-    lastPlan,
-    lastRadio,
-    lastUsageCapture,
-    lastCwd,
-    lastTerminalCwd,
-    reconnectSeq,
-  } = useGateway(config?.token ?? null, []);
-  // A trigger that advances on each live event *and* each reconnect, so the
-  // REST-backed hooks re-pull their snapshots after a connection gap. We also
-  // fold in `lastUsageCapture.seq` so a passively-captured /usage frame (no
-  // hook event fires) still kicks useUsage into refetching — the trigger that
-  // makes a user-typed `/usage` populate the HUD without a manual ↻ click.
-  const wsTrigger =
-    (lastEvent?.seq ?? 0) + reconnectSeq + (lastUsageCapture?.seq ?? 0);
-  const { sessions } = useSessions(wsTrigger);
-  // US-006/US-003: the Claude session running inside a live dock pty, correlated
-  // by src/terminal/correlate.ts and surfaced per-terminal over /api/terminals.
-  // This is the session the user is *actually* running — the right binding for
-  // the session-scoped widgets (Context, Plan, Skills) instead of the first of
-  // ~155 historical 'running' rows.
-  const terminals = useTerminals();
-  // US-003: the tid of the terminal tab the user is currently looking at,
-  // reported up from TerminalPane on mount / tab switch / new / close.
-  const [activeTid, setActiveTid] = useState<string | null>(null);
-  // The HUD's session-scoped widgets describe the session correlated to the
-  // ACTIVE tab — `activeTid → sessionId` via useTerminals — so opening a new
-  // terminal repoints them instead of clinging to the previous session. A fresh
-  // tab whose pty hasn't correlated yet has no session id, so activeSession is
-  // null (empty/uncorrelated state) rather than the prior tab's data.
-  const activeSessionId = activeTid
-    ? terminals.get(activeTid)?.sessionId ?? null
-    : null;
-  const activeSession = activeSessionId
-    ? sessions.find((s) => s.id === activeSessionId) ?? null
-    : null;
-  // US-030: usage monitor — cost/tokens today + rate-limit state & reset time.
-  // US-025: also surfaces the real /usage scrape; token-gated probe on open.
-  // US-010: bind the live /usage capture (Session block + 3 windows) to the
-  // active session via the session id.
-  const { usage } = useUsage(
-    wsTrigger,
+  const { themes, activeId, setActiveTheme } = useThemes(userThemes);
+  const { tasks, lastEvent, lastSkillFired, reconnectSeq } = useGateway(
     config?.token ?? null,
-    activeSession?.id ?? null,
+    [],
   );
-  // US-020: time-series throughput across sessions for the Pulse chart.
-  const [pulseMinutes, setPulseMinutes] = useState(60);
-  const pulse = usePulse(wsTrigger, pulseMinutes);
-  // US-004: widgets payload (git + Context/Usage estimate data) for the
-  // active session — feeds the status-bar git branch and the Hud's Usage
-  // tab. `lastCwd.seq` is folded in so each `{type:'cwd'}` broadcast (focus
-  // switch or a `cd` in the focused tab, 1.0.1 US-002) re-pulls the widgets
-  // — the git branch is computed from the live tab cwd, so the footer
-  // branch recomputes from the same notification that flips the footer path.
-  const { data: widgetData } = useWidgets(
-    activeSession?.id ?? null,
-    wsTrigger + (lastCwd?.seq ?? 0),
-    true,
-  );
-  // US-006: installed skills (name + description + source) for the Skills tab.
-  const skills = useSkills(config?.token ?? null);
-  // Installed subagents (name + description + source) for the Agents tab.
-  const agents = useAgents(config?.token ?? null);
+  // A trigger that advances on each live event *and* each reconnect, so the
+  // REST-backed hooks re-pull their snapshots after a connection gap.
+  const wsTrigger = (lastEvent?.seq ?? 0) + reconnectSeq;
+  const { sessions } = useSessions(wsTrigger);
+  // US-012: the Claude session id of the ACTIVE chat thread, reported up by
+  // ChatSurface — the chat-era successor to the pty→session correlation.
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   // US-008: Claude Code's config mirror for the Settings view; refetch re-reads
   // after the Config tab writes a key (US-010) so the saved value sticks.
   const [claudeConfig, refetchConfig] = useConfig(config?.token ?? null);
-  // Claude Radio: current { videoId, title } the bottom-of-HUD player is
-  // pointed at. Drives RadioBar's player + label; live-updated by the
-  // bundled /conan-change-radio skill via {type:'radio'} broadcasts.
-  const radio = useRadio(config?.token ?? null, wsTrigger, lastRadio);
   // Probe whether the user has Claude Code installed (src/doctor/claude.ts).
-  // Drives the install banner above the terminal + the Settings ▸ Status line.
-  // Backend caches 10min so this is cheap.
+  // Drives the install banner above the chat surface + the Settings ▸ Status
+  // line. Backend caches 10min so this is cheap.
   const doctor = useDoctor(config?.token ?? null);
+  // US-023: global-hook install status + one-click installer for the
+  // onboarding hard-gate — the spine/skills need hooks, no terminal fallback.
+  const globalHooks = useGlobalHooks(config?.token ?? null);
   // US-101: Premium tier hook — boots once when the token arrives, then every
   // gated surface reads `useTier()` to flip Free ↔ Premium. Idempotent.
   useTier(config?.token ?? null);
   // US-011: native macOS notifications for Claude's `Notification` hook prompts.
-  // The correlated live-pty session is the one whose terminal is visible, so a
-  // prompt for it while Conan is focused is suppressed (the user sees it live).
+  // A prompt for the visible (active) thread's session while Conan is focused
+  // is suppressed — the user sees it live in the transcript.
   useNativeNotifications({
     lastEvent,
     sessions,
-    visibleSessionId: activeSession?.id ?? null,
+    visibleSessionId: activeSessionId,
     tasks,
   });
 
@@ -190,32 +111,26 @@ export default function App() {
     };
   }, []);
 
-  // Native macOS menu bar (Tauri only) — File/Edit/View/Help. The View controls
-  // (Theme radio submenu, HUD toggle) live here now that the top toolbar is
-  // gone; File items dispatch window events TerminalPane handles. Rebuilt on
-  // theme/HUD change so the Theme checkmark + HUD label stay accurate. No-op in
-  // the browser dev/web view.
+  // Native macOS menu bar (Tauri only) — File/Edit/View/Help. Rebuilt on theme
+  // change so the Theme checkmark stays accurate. File ▸ New/Close Chat
+  // dispatch window events ChatSurface handles (its thread state lives
+  // locally). No-op in the browser dev/web view.
   useEffect(() => {
     installAppMenu({
       themes,
       activeThemeId: activeId,
-      hudOpen,
       onSelectTheme: setActiveTheme,
-      onToggleHud: () => setHudOpen((v) => !v),
-      onNewTerminal: () =>
-        window.dispatchEvent(new CustomEvent("conan:new-terminal")),
-      onCloseTerminal: () =>
-        window.dispatchEvent(new CustomEvent("conan:close-terminal")),
-      onToggleTimeline: () =>
-        window.dispatchEvent(new CustomEvent("conan:toggle-timeline")),
+      onNewChat: () => window.dispatchEvent(new CustomEvent("conan:new-chat")),
+      onCloseChat: () =>
+        window.dispatchEvent(new CustomEvent("conan:close-chat")),
     }).catch(() => {});
-  }, [themes, activeId, hudOpen, setActiveTheme]);
+  }, [themes, activeId, setActiveTheme]);
 
   // US-008: the Conan ▸ Settings menu item (⌘,) dispatches `conan:open-settings`
   // (same window-event bridge the File items use). Listening here keeps the menu
   // decoupled from React state and lets the browser dev build open it too.
-  // US-102: the event may carry a `{ tab }` detail so the Timeline's Upgrade
-  // button opens directly on the License tab.
+  // US-102: the event may carry a `{ tab }` detail so Upgrade CTAs open
+  // directly on the License tab.
   useEffect(() => {
     const open = (e: Event) => {
       const detail = (e as CustomEvent<{ tab?: string }>).detail;
@@ -236,57 +151,35 @@ export default function App() {
     return () => window.removeEventListener("conan:open-settings", open);
   }, []);
 
+  // US-003: direct ⌘, / Ctrl+, handler so Settings is reachable without the
+  // Tauri native menu (browser dev builds have no menu bar). The modifier
+  // requirement means a bare "," typed in the composer/inputs never triggers
+  // it. In the packaged app the native menu accelerator may also fire — both
+  // paths converge on setSettingsOpen(true), so a double is harmless.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "," && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        setSettingsInitialTab(undefined);
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
-    // Terminal-primary shell (US-003): no top toolbar — the Claude Code terminal
-    // fills the main area and the DevTools-style HUD docks to its right
-    // (drag-resizable, width persisted). View/theme/HUD controls live in the
-    // native macOS menu bar (installAppMenu above). The TerminalPane's bottom
-    // status bar shows cwd + branch (the gateway chip was dropped, US-004). The
-    // HUD stays mounted
-    // when hidden so its tab state
-    // survives the toggle; terminals always stay mounted so ptys survive.
-    // US-011: the Claude Radio toolbar lives at the bottom of the HUD panel
-    // (inside Hud.tsx), not the app shell.
-    // US-025: flex-row when wide (HUD right dock), flex-col when narrow (HUD
-    // bottom dock) so the terminal keeps the full width and the HUD stacks below.
     // <UpdateBanner /> is a fixed bottom-left toast — it floats over the
     // shell and renders null when there's no pending update, so it's free
     // to live as a sibling of the layout without reflowing anything.
-    <div
-      className={
-        "flex h-full bg-background text-foreground " +
-        (hudBottomDock ? "flex-col" : "flex-row")
-      }
-    >
+    <div className="flex h-full flex-col bg-background text-foreground">
       <Toaster tasks={tasks} lastEvent={lastEvent} />
-      <TerminalPane
+      <InstallBanner doctor={doctor} />
+      <ChatSurface
         token={config?.token ?? null}
-        theme={theme}
-        cwd={lastCwd?.cwd ?? activeSession?.cwd ?? config?.cwd ?? null}
-        git={widgetData?.git ?? null}
-        onActiveTidChange={setActiveTid}
-        tasks={tasks}
-        lastEvent={lastEvent}
+        defaultCwd={config?.cwd ?? null}
         lastSkillFired={lastSkillFired}
-        lastSkillConsidered={lastSkillConsidered}
-        lastPlan={lastPlan}
-        lastTerminalCwd={lastTerminalCwd}
-        windowWidth={windowWidth}
-        doctor={doctor}
-      />
-      <Hud
-        hidden={!hudOpen}
-        dock={hudBottomDock ? "bottom" : "right"}
-        windowHeight={windowHeight}
-        data={widgetData}
-        token={config?.token ?? null}
-        usage={usage}
-        pulse={pulse}
-        pulseMinutes={pulseMinutes}
-        onPulseRange={setPulseMinutes}
-        skills={skills}
-        agents={agents}
-        radio={radio}
+        onActiveSessionChange={setActiveSessionId}
       />
       <SettingsView
         open={settingsOpen}
@@ -302,7 +195,7 @@ export default function App() {
         buyUrl={config?.buyUrl ?? null}
       />
       <UpdateBanner />
-      <Onboarding doctor={doctor} />
+      <Onboarding doctor={doctor} hooks={globalHooks} />
       <WhatsNew />
     </div>
   );

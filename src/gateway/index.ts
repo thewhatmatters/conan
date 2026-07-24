@@ -21,7 +21,7 @@ import {
 import { isCorrelationDegraded } from "../terminal/health.js";
 import { readTasks, watchTasks } from "../tasks/index.js";
 import { pulseSeries } from "../pulse/index.js";
-import { readWidgets } from "../widgets/index.js";
+import { readWidgets, gitStatus } from "../widgets/index.js";
 import { usageStatus } from "../usage/index.js";
 import {
   getCachedPlanUtilization,
@@ -31,10 +31,11 @@ import {
   getLastProbeError,
 } from "../usage/probe.js";
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
-import { getActiveCwd, onCwdChange, listEntries } from "../cwd/index.js";
+import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
+import { readCommands } from "../commands/index.js";
 import { readAgents } from "../agents/index.js";
 import { scoreSkills, topMatches, CONSIDERATION_TOP_N } from "../skills/match.js";
 import {
@@ -61,8 +62,29 @@ import {
   setRadio,
 } from "../radio/index.js";
 import { detectClaude } from "../doctor/claude.js";
+import { globalHooksStatus, installGlobalHooks } from "../hooks/install.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
+import { attachAgent, closeAllAgents } from "../agent/index.js";
+import { listProviderStatuses } from "../agent/registry.js";
+import {
+  listChatProjects,
+  upsertChatProject,
+  deleteChatThread,
+  getChatThread,
+} from "../agent/threads.js";
+import { readChatHistory } from "../agent/history.js";
+import { readCodexHistory } from "../agent/codexHistory.js";
+import { readGrokHistory } from "../agent/grokHistory.js";
+import { detectEditors, openInEditor } from "../editor/index.js";
+import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
+import {
+  addProjectAction,
+  deleteProjectAction,
+  listProjectActions,
+  runProjectAction,
+  updateProjectAction,
+} from "../actions/index.js";
 
 const PORT = Number(process.env.CONAN_PORT ?? 3747);
 // US-007: optional runtime override for the Buy Premium checkout URL the
@@ -193,6 +215,43 @@ function authed(req: express.Request, res: express.Response): boolean {
   return true;
 }
 
+// ── External editor launch ─────────────────────────────────────────────────
+// Detection uses the user's interactive-login-shell PATH, since a packaged
+// macOS app inherits a stripped PATH. Both routes sit behind the shared token
+// check and the global CORS reflector above.
+app.get("/api/editor/detect", async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    res.json({ editors: await detectEditors() });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/editor/open", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { path?: unknown; editor?: unknown };
+  if (typeof body.path !== "string" || !body.path.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  if (body.editor !== undefined && typeof body.editor !== "string") {
+    res.status(400).json({ error: "editor must be a string" });
+    return;
+  }
+  try {
+    const result = await openInEditor(
+      body.path.trim(),
+      typeof body.editor === "string" ? body.editor : undefined,
+    );
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    const message = (error as Error).message;
+    const status = message.startsWith("no such path") ? 404 : 400;
+    res.status(status).json({ ok: false, error: message });
+  }
+});
+
 // ── File Explorer (per-tab) ────────────────────────────────────────────────
 // Read-only filesystem surface for the File Explorer panel. Token-gated; the
 // CORS reflector + loopback bind apply globally. These let the panel browse the
@@ -208,6 +267,35 @@ app.get("/api/fs/list", (req, res) => {
     return;
   }
   res.json(listEntries(p));
+});
+
+// Bounded recursive file/folder search under a root (US-018) — powers the
+// composer's `@` autocomplete, scoped to the thread's cwd. /api/fs/list is
+// single-level; this walks breadth-first with hard depth/dir/result caps so
+// a huge tree can't hang the request. Empty `q` returns the shallowest
+// entries (the browse-from-@ case).
+app.get("/api/fs/search", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  const q = req.query.q;
+  res.json(searchFiles(p, typeof q === "string" ? q : ""));
+});
+
+// Git branch + dirty count for an arbitrary directory (US-011) — powers the
+// chat surface's StatusBar, which follows the active thread's cwd rather than
+// a correlated session. Degrades to {available:false} for non-repo paths.
+app.get("/api/fs/git", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  gitStatus(p).then((g) => res.json(g));
 });
 
 // The files Claude Edited/Wrote/Read in a session, parsed from the persisted
@@ -246,6 +334,168 @@ app.post("/api/fs/reveal", (req, res) => {
     if (err) console.warn(`[fs] reveal failed for ${p}: ${err.message}`);
   });
   res.json({ ok: true });
+});
+
+// ── Git toolbar actions ───────────────────────────────────────────────────
+// Mutating git operations for the chat toolbar. Status stays on GET
+// /api/fs/git; these routes only perform commit/push/PR side effects.
+app.post("/api/agent/git/commit", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { cwd?: unknown; message?: unknown };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  if (typeof body.message !== "string" || !body.message.trim()) {
+    res.status(400).json({ ok: false, error: "message required" });
+    return;
+  }
+  res.json(await commitAll(body.cwd.trim(), body.message));
+});
+
+app.post("/api/agent/git/push", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { cwd?: unknown };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  res.json(await pushCurrentBranch(body.cwd.trim()));
+});
+
+app.post("/api/agent/git/pr", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as {
+    cwd?: unknown;
+    title?: unknown;
+    body?: unknown;
+  };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ ok: false, error: "cwd required" });
+    return;
+  }
+  if (typeof body.title !== "string" || !body.title.trim()) {
+    res.status(400).json({ ok: false, error: "title required" });
+    return;
+  }
+  res.json(
+    await createPullRequest(
+      body.cwd.trim(),
+      body.title,
+      typeof body.body === "string" ? body.body : "",
+    ),
+  );
+});
+
+// ── Chat persistence (US-014) ──────────────────────────────────────────────
+// The sidebar's projects + threads, backed by the US-013 tables. Token-gated;
+// the global CORS reflector + loopback bind cover WKWebView like every route.
+
+// Which agent CLIs are installed (T3-1 US-003) — the composer's provider chip.
+// Probes the login-shell PATH (packaged-app gotcha), cached with a TTL; an
+// uninstalled provider is a plain installed:false, never an error.
+app.get("/api/agent/providers", async (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ providers: await listProviderStatuses() });
+});
+
+// Projects with their threads, newest activity first — the sidebar's source of
+// truth across reloads and gateway restarts.
+app.get("/api/agent/projects", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ projects: listChatProjects() });
+});
+
+// Upsert a project by path (US-025's add-project flow). The same folder twice
+// returns the one existing row, so ids stay stable for the sidebar.
+app.post("/api/agent/projects", (req, res) => {
+  if (!authed(req, res)) return;
+  const b = (req.body ?? {}) as { path?: unknown; name?: unknown };
+  if (typeof b.path !== "string" || !b.path.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  const dir = b.path.trim();
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    res.status(400).json({ error: `not a directory: ${dir}` });
+    return;
+  }
+  res.json(upsertChatProject(dir, typeof b.name === "string" ? b.name : undefined));
+});
+
+app.get("/api/agent/projects/:id/actions", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ actions: listProjectActions(req.params.id) });
+});
+
+app.post("/api/agent/projects/:id/actions", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown; kind?: unknown };
+  const result = addProjectAction({
+    projectId: req.params.id,
+    name: typeof body.name === "string" ? body.name : "",
+    command: typeof body.command === "string" ? body.command : "",
+    kind: body.kind === "prompt" ? "prompt" : "shell",
+  });
+  if ("error" in result) {
+    res.status(400).json({ ok: false, error: result.error });
+    return;
+  }
+  res.json({ ok: true, action: result });
+});
+
+app.put("/api/agent/projects/:id/actions/:actionId", (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { name?: unknown; command?: unknown; kind?: unknown };
+  const result = updateProjectAction(req.params.id, req.params.actionId, {
+    name: typeof body.name === "string" ? body.name : "",
+    command: typeof body.command === "string" ? body.command : "",
+    kind: body.kind === "prompt" ? "prompt" : body.kind === "shell" ? "shell" : undefined,
+  });
+  if ("error" in result) {
+    res.status(400).json({ ok: false, error: result.error });
+    return;
+  }
+  res.json({ ok: true, action: result });
+});
+
+app.delete("/api/agent/projects/:id/actions/:actionId", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ deleted: deleteProjectAction(req.params.id, req.params.actionId) });
+});
+
+app.post("/api/agent/projects/:id/actions/:actionId/run", async (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(await runProjectAction(req.params.id, req.params.actionId));
+});
+
+// Close-X on a thread row: the row goes away; its project persists.
+app.delete("/api/agent/threads/:sessionId", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json({ deleted: deleteChatThread(req.params.sessionId) });
+});
+
+// Reopen a saved thread (US-015): reconstruct its transcript from Claude
+// Code's own JSONL session record. `found:false` (JSONL gone — trashed, or
+// another machine) degrades the UI to metadata-only; a new turn still works.
+app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
+  if (!authed(req, res)) return;
+  const row = getChatThread(req.params.sessionId);
+  // provider rides along (T3-1 US-006) so a reopened thread resumes on the
+  // agent that created it; a rowless session reads as claude.
+  const provider = row?.provider ?? "claude";
+  // Each provider persists its own transcript format — read the one that
+  // actually wrote this thread. An unknown provider has no reader, so it
+  // degrades to metadata-only rather than reading the wrong store.
+  const history =
+    provider === "codex"
+      ? readCodexHistory(req.params.sessionId)
+      : provider === "grok"
+        ? readGrokHistory(req.params.sessionId, row?.cwd)
+        : provider === "claude"
+          ? readChatHistory(req.params.sessionId, row?.cwd)
+          : { found: false, items: [] };
+  res.json({ ...history, provider });
 });
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */
@@ -674,6 +924,17 @@ app.get("/api/claude/skills", (req, res) => {
   res.json(enriched);
 });
 
+// Slash commands for the composer's `/` autocomplete (US-020): custom command
+// files (user ~/.claude/commands + project <cwd>/.claude/commands, cwd from the
+// query so each thread scopes to ITS project) plus the empirically-verified
+// headless-safe built-in subset (see src/commands/index.ts — most built-ins are
+// TUI-only and excluded). Token-gated, read-only.
+app.get("/api/claude/commands", (req, res) => {
+  if (!authed(req, res)) return;
+  const cwd = req.query.cwd;
+  res.json(readCommands(typeof cwd === "string" && cwd.trim() ? cwd : getActiveCwd()));
+});
+
 // Installed agents for the Agents HUD tab: user + project + plugin subagent
 // `.md` files with their frontmatter descriptions. Token-gated, read-only, no
 // firing enrichment — agent definitions are static files.
@@ -965,6 +1226,30 @@ app.get("/api/claude/doctor", async (req, res) => {
   res.json(await detectClaude());
 });
 
+// Global-hook status (US-023). Reports whether ~/.claude/settings.json (or
+// CONAN_GLOBAL_SETTINGS) forwards every observed lifecycle event to Conan's
+// send-event.mjs — the onboarding hard-gate reads this, since the activity
+// spine/skills need hooks and the chat-primary shell has no terminal fallback.
+// Pure read (dry-run merge), token-gated like the rest of the control plane.
+app.get("/api/claude/hooks", (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(globalHooksStatus());
+});
+
+// One-click "Set up observability" (US-023): idempotently merges Conan's
+// forwarder into the user-level settings via installGlobalHooks (backs up the
+// file once, preserves foreign hooks/keys). Token-gated — it writes to the
+// user's home directory.
+app.post("/api/claude/hooks/install", (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const result = installGlobalHooks();
+    res.json({ ...result, status: globalHooksStatus() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Claude Radio state — read the current { videoId, title } the UI's player is
 // pointed at. Bundled `/conan-change-radio` skill POSTs to the sibling route
 // to swap streams. In-memory, session-only — gateway restart reverts to default.
@@ -1043,6 +1328,10 @@ const server = http.createServer(app);
 // `noServer` lets us run the auth check before accepting the socket.
 const eventsWss = new WebSocketServer({ noServer: true });
 const terminalWss = new WebSocketServer({ noServer: true });
+// Level-2 chat spike: headless agent sessions (`/ws/agent`), the programmatic
+// peer of the pty-backed `/ws/terminal`. One connection = one `claude -p`
+// stream-json process driving a custom transcript. See src/agent/.
+const agentWss = new WebSocketServer({ noServer: true });
 
 eventsWss.on("connection", (socket) => {
   // ws emits 'error' on a malformed frame / abrupt reset; with no listener Node
@@ -1085,6 +1374,10 @@ eventsWss.on("connection", (socket) => {
 terminalWss.on("connection", (socket, req) => {
   socket.on("error", () => {}); // see eventsWss: never let a bad frame crash us
   attachTerminal(socket, req);
+});
+agentWss.on("connection", (socket, req) => {
+  socket.on("error", () => {}); // see eventsWss: never let a bad frame crash us
+  attachAgent(socket, req);
 });
 
 // Broadcast build-loop progress to all app clients whenever prd.json /
@@ -1165,6 +1458,10 @@ server.on("upgrade", (req, socket, head) => {
     terminalWss.handleUpgrade(req, socket, head, (ws) =>
       terminalWss.emit("connection", ws, req),
     );
+  } else if (pathname === "/ws/agent") {
+    agentWss.handleUpgrade(req, socket, head, (ws) =>
+      agentWss.emit("connection", ws, req),
+    );
   } else {
     socket.destroy();
   }
@@ -1191,9 +1488,11 @@ function shutdown(): void {
   stopReaper();
   stopAllSkillFiredWatchers();
   closeAllTerminals();
+  closeAllAgents();
   server.close();
   eventsWss.close();
   terminalWss.close();
+  agentWss.close();
   closeDb();
   process.exit(0);
 }

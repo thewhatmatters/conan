@@ -47,7 +47,7 @@ export function transcriptPath(sessionId: string, cwd?: string | null): string |
 export type TranscriptBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool_use"; name: string; input: unknown }
+  | { type: "tool_use"; id: string | null; name: string; input: unknown }
   | { type: "tool_result"; toolUseId: string | null; isError: boolean; text: string };
 
 /** One message in the normalized transcript, in conversation order. */
@@ -107,6 +107,7 @@ function normalizeBlocks(content: unknown): TranscriptBlock[] {
       case "tool_use":
         out.push({
           type: "tool_use",
+          id: typeof b.id === "string" ? b.id : null,
           name: typeof b.name === "string" ? b.name : "tool",
           input: b.input ?? {},
         });

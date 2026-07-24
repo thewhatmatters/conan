@@ -12,15 +12,11 @@ export interface AppMenuActions {
   themes: Theme[];
   /** The active selection id (a theme id, or "auto") — drives the radio check. */
   activeThemeId: string;
-  hudOpen: boolean;
   /** Select a theme by id (or "auto"); stays in sync with the Appearance picker. */
   onSelectTheme: (id: string) => void;
-  onToggleHud: () => void;
-  onNewTerminal: () => void;
-  onCloseTerminal: () => void;
-  /** US-005: View ▸ Split Timeline (⌘\) — toggles the active tab's
-   *  per-terminal Timeline split panel. */
-  onToggleTimeline: () => void;
+  /** US-012: chat is the only surface — File ▸ New/Close Chat drive threads. */
+  onNewChat: () => void;
+  onCloseChat: () => void;
 }
 
 /** Conan's own version, shown in the About box. Sourced from package.json so
@@ -43,11 +39,10 @@ const ABOUT = {
  * native menu bar, so the menu only exists in the desktop app (this is why the
  * theme + HUD toggles moved here from the old in-window toolbar).
  *
- * Rebuilt whenever theme / HUD state changes so the View ▸ Theme radio
- * checkmark follows the active choice and the HUD label stays accurate
- * ("Hide HUD"⇄"Show HUD"). Menu actions run here in
- * the webview and call straight into React state; the File items dispatch window
- * CustomEvents that TerminalPane listens for (its tab state lives locally).
+ * Rebuilt whenever theme state changes so the View ▸ Theme radio checkmark
+ * follows the active choice. Menu actions run here in the webview and call
+ * straight into React state; the File items dispatch window CustomEvents that
+ * ChatSurface listens for (its thread state lives locally, US-012).
  *
  * Uses `core:menu` (already bundled in `core:default`), so no capability change
  * or Rust recompile is needed — it lands through `tauri dev` HMR. The Edit menu
@@ -87,14 +82,14 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     text: "File",
     items: [
       await MenuItem.new({
-        text: "New Terminal",
+        text: "New Chat",
         accelerator: "CmdOrCtrl+T",
-        action: () => a.onNewTerminal(),
+        action: () => a.onNewChat(),
       }),
       await MenuItem.new({
-        text: "Close Terminal",
+        text: "Close Chat",
         accelerator: "CmdOrCtrl+W",
-        action: () => a.onCloseTerminal(),
+        action: () => a.onCloseChat(),
       }),
     ],
   });
@@ -138,25 +133,12 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
     ],
   });
 
+  // US-012: the HUD + Split Timeline items left with the terminal surface —
+  // View now carries Theme + Reload only.
   const viewMenu = await Submenu.new({
     text: "View",
     items: [
       themeMenu,
-      await sep(),
-      await MenuItem.new({
-        text: a.hudOpen ? "Hide HUD" : "Show HUD",
-        accelerator: "CmdOrCtrl+Shift+H",
-        action: () => a.onToggleHud(),
-      }),
-      // US-005: parity with File ▸ New/Close Terminal — dispatches a window
-      // event TerminalPane listens for so the menu stays decoupled from React
-      // state. The ⌘\ accelerator is mirrored by a webview-level keydown in
-      // TerminalPane for the browser dev build (which has no native menu).
-      await MenuItem.new({
-        text: "Split Timeline",
-        accelerator: "CmdOrCtrl+\\",
-        action: () => a.onToggleTimeline(),
-      }),
       await sep(),
       // Tauri doesn't wire Cmd+R to reload by default — without this, the
       // user has no way to refresh the UI after a code change short of

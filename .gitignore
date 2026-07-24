@@ -34,6 +34,9 @@ progress.txt
 archive/
 
 # Local planning/handoff scratch (read-once, not versioned)
-HANDOFF.md
+# NOTE: HANDOFF.md is now TRACKED — it's the durable cross-agent handoff
+# (read by Claude AND Codex/other agents), so it must travel with the repo.
 .claude/current-task.txt
 .claude/handoff-archive/
+t3code/
+loop.log

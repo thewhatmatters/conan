@@ -68,12 +68,10 @@ export default function WhatsNew() {
   const [entry, setEntry] = useState<WhatsNewEntry | null>(null);
 
   useEffect(() => {
-    // Dev (plain browser or tauri:dev): surface the newest entry immediately so
-    // the splash is visually testable without an update, and expose a DevTools
-    // hook to re-open it. Dead-code-eliminated from the production bundle.
+    // Dev (plain browser or tauri:dev): don't auto-surface the splash — it
+    // blocked the whole app during dogfooding. Expose a DevTools hook to open it
+    // on demand for visual testing instead. Dead-code-eliminated in production.
     if (import.meta.env.DEV) {
-      const demo = whatsNewFor("1.0.6") ?? Object.values(WHATS_NEW)[0] ?? null;
-      setEntry(demo);
       (
         window as unknown as { __conanWhatsNewDemo?: (v?: string) => void }
       ).__conanWhatsNewDemo = (v?: string) =>

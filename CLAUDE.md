@@ -1,10 +1,25 @@
 # Conan — project context for Claude Code
 
-Conan is a **terminal-primary native desktop app (Tauri v2) that wraps and
-observes Claude Code**: an `xterm.js` terminal as the main surface plus a
+> ⚠️ **CURRENT ARCHITECTURE (2026-07-23): Conan is now CHAT-PRIMARY, not
+> terminal-primary.** On branch `loop/conan-chat-v1` (not yet merged to `main`)
+> Conan drives Claude Code **headlessly** (`claude -p` stream-json over a
+> `/ws/agent` WebSocket) behind a **custom chat UI** — a project-grouped thread
+> sidebar + streaming transcript + interactive tool-approval + a fused
+> prompt/skill/tool activity spine + a sigil composer (`@` files · `$` skills ·
+> `/` commands). The **terminal (`xterm.js`) surface and the DevTools HUD are
+> REMOVED from the mounted UI** (`App.tsx` renders `ChatSurface`); the pty /
+> HUD / Timeline code below remains in the repo but is **DORMANT** (unmounted,
+> kept for reference/possible reuse). **Read `HANDOFF.md` first** for the live
+> state, what's done, what's next, and the run/QA workflow — the sections below
+> still describe the dormant terminal-era subsystems and are accurate only as
+> history for those. The stack, conventions, and gotchas below remain current.
+
+Conan **was** a terminal-primary native desktop app (Tauri v2) that wrapped and
+observed Claude Code: an `xterm.js` terminal as the main surface plus a
 DevTools-style widget HUD (Usage · Skills · Agents · MCP) backed by
-one loopback Node gateway packaged as a Tauri sidecar. This file is
-auto-loaded by every Claude Code session in this repo — keep it accurate.
+one loopback Node gateway packaged as a Tauri sidecar. That shell is now
+dormant (see the note above). This file is auto-loaded by every Claude Code
+session in this repo — keep it accurate.
 
 ## Stack
 - **Gateway** (`src/`): TypeScript ESM, Express 4 + `ws` + `better-sqlite3` +
@@ -38,7 +53,72 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
   (screenshots, real interaction) — UI changes aren't done until visually
   checked.
 
-## Architecture
+## Chat architecture (CURRENT — the mounted app)
+The chat-primary stack, built on branch `loop/conan-chat-v1`. Full narrative +
+run/QA workflow in `HANDOFF.md`.
+- **Backend `src/agent/` — MULTI-PROVIDER (T3-1, 2026-07-23).** The
+  `AgentDriver` seam (`driver.ts`) now carries a `readonly capabilities:
+  AgentCapabilities` descriptor (streamingDeltas / interactiveApproval /
+  livePermissionSwitch / costUsd / reasoningText / resume + `permissionModes`
+  in the provider's own vocabulary) and three drivers behind it:
+  - `ClaudeDriver` (`claude.ts`): spawns `claude --print --output-format
+    stream-json --input-format stream-json --verbose
+    --include-partial-messages`, one process per session. Token-streaming,
+    graceful interrupt (stdin `control_request`), **interactive tool-approval**
+    via `--permission-prompt-tool stdio`, live permission-mode switch via
+    `set_permission_mode` — **subscription auth, never `ANTHROPIC_API_KEY`**
+    (the `sk-ant-oat*` gotcha). reasoningText FALSE (D2: headless claude
+    redacts thought text).
+  - `CodexDriver` (`codex.ts`): **one process per turn** — `codex exec --json`
+    fresh, `codex exec resume <thread_id>` for later turns; prompt as argv +
+    `stdin:'ignore'` (codex reads stdin when piped). No deltas, no $, no
+    interactive approval; permission maps to `--sandbox
+    read-only|workspace-write|danger-full-access`.
+  - `GrokDriver` (`grok.ts`): one process per turn — `grok -p … --output-format
+    streaming-json`, `--resume <sessionId>`. Token deltas, REAL reasoning
+    text, `total_cost_usd`; no headless approval (approval-needing tools
+    cancel the turn in `default` mode).
+  `registry.ts` = the provider table (id/name/avatar letter C·X·G/binary/
+  capabilities/factory) + login-shell install probe (10min TTL) behind
+  `GET /api/agent/providers`. `index.ts` is the `/ws/agent` WS handler; the
+  prompt frame carries `provider`, the driver is built from the registry
+  (unknown/uninstalled → readable error event, never a silent claude
+  fallback), and its capabilities are pushed to the client once at session
+  start as `{type:'capabilities'}`.
+- **Persistence (`src/db/`)** — `project` + `chat_thread` tables (thread rows
+  carry a `provider` column, null = 'claude' for pre-migration rows). Threads
+  are metadata-only; transcripts are **reconstructed from Claude's own JSONL**
+  on reopen (`src/agent/history.ts`) and continued with `--resume`. A resumed
+  thread relaunches its OWN provider. ⚠ History reconstruction is
+  **Claude-only**: reopened codex/grok threads show a "history couldn't be
+  found" banner and degrade to a fresh session (context lost) — plus an open
+  grok bug (saved reported model `grok-4.5-build` is not a valid `-m` id →
+  exit 1). Honest per-provider QA matrix: `docs/multi-provider-qa.md`.
+  Routes: `GET/POST /api/agent/projects`, `DELETE
+  /api/agent/threads/:sessionId`, `GET /api/agent/threads/:id/transcript`.
+- **UI (`ui/src/`)** — `App.tsx` mounts `ChatSurface.tsx` (project-grouped thread
+  sidebar; per-thread avatar letter resolves the persisted provider against the
+  registry) → N `ChatPane.tsx` (one per thread, own `useAgentChat.ts` WS +
+  process, mounted-but-hidden). The transcript is **capability-driven — no
+  provider-name branching**: streamed text or an honest Working indicator
+  (`streamingDeltas`), collapsed "Thinking" rows only where `reasoningText` is
+  real (grok; hidden for claude per D2), tool cards w/ inline diffs, plan
+  cards, per-turn footer showing $ (`costUsd`) or token counts. The permission
+  chip renders `capabilities.permissionModes` (Codex shows its sandbox
+  vocabulary; Supervised absent); `!interactiveApproval` hides the approval
+  UI; `!livePermissionSwitch` notes "applies from the next turn".
+  `ActivitySpine.tsx` = the fused prompt/skill/tool tick rail. Composer:
+  provider chip (from `GET /api/agent/providers`, uninstalled = disabled w/
+  tooltip, **locks after turn 1**) + model + permission chips +
+  `ComposerAutocomplete.tsx` (`@` files/folders · `$` skills · `/` commands).
+  `ProjectPicker.tsx`/`DirBrowser.tsx` = per-project folder pick.
+- **Dormant (in repo, unmounted):** `TerminalPane`/`Terminal`, `Hud`/`Widgets`/
+  `Timeline`/`PulseChart`/`*Widget`, `RadioBar`, `StatusBar`, `src/terminal/*`,
+  `correlate.ts`, `terminal_session` table, and their gateway routes. The
+  Architecture section below documents these — accurate for the dormant code,
+  NOT for the mounted app.
+
+## Architecture (DORMANT terminal-era subsystems — history, see note at top)
 - **Glossary — "Session":** one Claude Code *run* (an agent conversation),
   keyed by `session_id`. Conan tracks its events, tool calls, token/cost,
   and status (running/idle/error). Sessions are **observed** — any hooked

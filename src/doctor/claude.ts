@@ -190,3 +190,39 @@ export function clearClaudeDetection(): void {
   cached = null;
   inFlight = null;
 }
+
+let cachedPath: { value: string | null; checkedAt: number } | null = null;
+let pathInFlight: Promise<string | null> | null = null;
+
+/**
+ * PATH as the user's interactive login shell resolves it. A Finder-launched
+ * bundle inherits the stripped GUI env, so a headlessly spawned `claude` (and
+ * every subprocess it forks — node, git, rg) would miss `~/.local/bin` etc.
+ * even when the binary itself was resolved to an absolute path. Callers merge
+ * this over `process.env.PATH` when spawning. The marker line guards against
+ * `.zshrc` banner noise on stdout. Cached like `detectClaude()`; null when the
+ * probe fails (caller keeps the inherited PATH).
+ */
+export async function loginShellPath(): Promise<string | null> {
+  if (cachedPath && Date.now() - cachedPath.checkedAt < CACHE_TTL_MS) {
+    return cachedPath.value;
+  }
+  if (pathInFlight) return pathInFlight;
+
+  pathInFlight = (async () => {
+    let value: string | null = null;
+    try {
+      const out = await probe(`echo "__CONAN_PATH__$PATH"`);
+      const line = out
+        .split("\n")
+        .find((l) => l.startsWith("__CONAN_PATH__"));
+      if (line) value = line.slice("__CONAN_PATH__".length) || null;
+    } catch {
+      // Shell probe failed — fall back to the inherited PATH.
+    }
+    cachedPath = { value, checkedAt: Date.now() };
+    pathInFlight = null;
+    return value;
+  })();
+  return pathInFlight;
+}
