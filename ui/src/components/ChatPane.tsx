@@ -1230,7 +1230,13 @@ function Anchored({
 /** Compact token count for the turn footer — full precision would crowd the
  *  one-line footer at codex's cache sizes (tens of thousands). */
 function fmtTokens(n: number): string {
-  return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString();
+  // Millions collapse to M (1_000_000 → "1M", not "1000.0k"); ≥10k to k; a
+  // whole value drops its ".0" (200_000 → "200k").
+  const compact = (v: number, suffix: string) =>
+    `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}${suffix}`;
+  if (n >= 1_000_000) return compact(n / 1_000_000, "M");
+  if (n >= 10_000) return compact(n / 1000, "k");
+  return n.toLocaleString();
 }
 
 /**
