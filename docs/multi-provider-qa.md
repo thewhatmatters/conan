@@ -21,7 +21,7 @@ and reopen the thread and confirm it resumes on its OWN provider.
 | Turn after interrupt | ✅ context intact ("peridot") | not retestable same-session (one process per turn — next send starts a new process anyway) | ✅ (same one-process-per-turn model) |
 | Reopen → own provider | ✅ relaunches claude | ✅ relaunches codex (verified: `codex exec` spawned, never claude) | ✅ relaunches grok |
 | Reopen → transcript restored | ✅ "Resumed from history", context intact | ❌ history missing (see below) | ❌ history missing (see below) |
-| Reopen → conversation continues | ✅ | ⚠️ fresh session — context LOST | ❌ **broken — every turn exits 1** (see bug below) |
+| Reopen → conversation continues | ✅ | ⚠️ fresh session — context LOST | ⚠️ fresh session — context LOST (exit-1 bug FIXED 2026-07-24) |
 
 ## Known limitations (honest, by design or deferred)
 
@@ -45,7 +45,7 @@ Fix direction (follow-up story): transcript readers for codex rollout files
 (`~/.codex/sessions/…`) and grok's session store, OR pass the resume id anyway
 and render a "context resumed, transcript unavailable" divider.
 
-### 2. BUG — reopened Grok threads cannot send any turn (exit 1)
+### 2. ~~BUG — reopened Grok threads cannot send any turn (exit 1)~~ FIXED 2026-07-24
 
 The thread row persists the model the driver *reports* (`upsertChatThread`
 `model: e.model` in `src/agent/index.ts`). Grok's stream reports its internal
@@ -61,8 +61,19 @@ Claude is unaffected only by luck (it reports a valid alias like
 `claude-fable-5`); codex reports no model (null → no `-m`). Fix direction:
 don't re-apply a saved model the user never picked (non-claude providers have
 no model options — resume should omit `-m` for them), or have GrokDriver stop
-reporting the build name as the launch model. **Must fix before merge to
-main** — until then grok threads are single-app-run only.
+reporting the build name as the launch model.
+
+**Fixed** by separating a *reported* model (telemetry) from a *launch* model
+(user intent), which is what the original code conflated. A new
+`AgentCapabilities.modelSelection` flag says whether a provider's reported
+model is a valid `--model` id worth re-applying: claude true, codex/grok
+false. `src/agent/index.ts` now persists `e.model` only when that flag is set,
+so nothing invalid can be saved for any current or future provider. Because
+the upsert `COALESCE`s the model (a null write keeps the old value), an
+idempotent migration in `src/db/index.ts` also clears already-poisoned rows
+(`provider <> 'claude' AND model IS NOT NULL`) so existing threads recover.
+Verified end-to-end: the previously-broken grok thread now sends a turn and
+replies with no `unknown model id` error.
 
 ### 3. Cosmetics
 

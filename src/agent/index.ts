@@ -93,7 +93,11 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
             sessionId: e.sessionId,
             projectId,
             cwd: e.cwd ?? getActiveCwd(),
-            model: e.model,
+            // Only persist a REPORTED model when it's a valid launch id worth
+            // re-applying on resume. Grok reports an internal build name
+            // (`grok-4.5-build`) that `-m` rejects, so saving it made every
+            // turn in a reopened thread exit 1.
+            model: provider.capabilities.modelSelection ? e.model : null,
             provider: provider.id,
             title: titleFromPrompt(firstPrompt),
           });

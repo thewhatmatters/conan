@@ -79,6 +79,12 @@ export interface AgentCapabilities {
   reasoningText: boolean;
   /** A past conversation can be resumed by id in a fresh process. */
   resume: boolean;
+  /** The user can choose a launch model for this provider, so the model a
+   *  thread reports is a valid `--model` id worth re-applying on resume.
+   *  False → the reported model is internal telemetry (Grok answers with a
+   *  build name like `grok-4.5-build`, which `-m` rejects), so it must NEVER
+   *  be persisted as a launch model or a reopened thread dies on every turn. */
+  modelSelection: boolean;
   /** The permission modes this provider supports, in its own vocabulary. */
   permissionModes: AgentPermissionMode[];
 }

@@ -82,6 +82,8 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   costUsd: true,
   reasoningText: false,
   resume: true,
+  // Claude reports a real alias (e.g. claude-fable-5) and offers a model picker.
+  modelSelection: true,
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
     { id: "default", label: "Supervised", description: "Asks before running tools" },

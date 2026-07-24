@@ -89,6 +89,25 @@ function migrate(handle: Database.Database): void {
     }
   }
 
+  // T3-1 fix: threads on providers without a model picker persisted the model
+  // the driver REPORTED, which for grok is an internal build name
+  // (`grok-4.5-build`) that `-m` rejects — so every turn in a reopened thread
+  // exited 1. New writes are guarded by capabilities.modelSelection; this
+  // clears already-saved values so existing threads recover. Idempotent.
+  if (hasChatThread) {
+    const cols = new Set(
+      handle
+        .prepare("PRAGMA table_info(chat_thread)")
+        .all()
+        .map((c) => (c as { name: string }).name),
+    );
+    if (cols.has("provider")) {
+      handle.exec(
+        "UPDATE chat_thread SET model = NULL WHERE provider IS NOT NULL AND provider <> 'claude' AND model IS NOT NULL",
+      );
+    }
+  }
+
   // loop/conan-thread-toolbar US-004: per-project custom toolbar actions.
   // Kept here as well as schema.sql so existing databases pick up the table
   // even though CREATE TABLE IF NOT EXISTS is otherwise only additive for

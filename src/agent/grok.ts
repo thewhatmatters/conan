@@ -61,6 +61,8 @@ export const GROK_CAPABILITIES: AgentCapabilities = {
   costUsd: true,
   reasoningText: true,
   resume: true,
+  // Grok reports an internal build name (grok-4.5-build) that `-m` rejects.
+  modelSelection: false,
   permissionModes: [
     {
       id: "plan",
