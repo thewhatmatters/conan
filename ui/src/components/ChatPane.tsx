@@ -54,6 +54,7 @@ import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
 import type { SkillEntry } from "../hooks/useSkills.ts";
+import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 import ThreadToolbar from "./ThreadToolbar.tsx";
 import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
@@ -79,9 +80,10 @@ import {
  * interaction model inside Conan's existing Tauri shell: no TUI, no xterm —
  * Conan drives `claude` headlessly and owns the rendering.
  *
- * Spike scope: Claude-only, message-level streaming, launch config fixed at the
- * first prompt. NOT yet wired into the shared event bus, so the Timeline/Usage
- * HUD don't light up from chat turns — that's the next increment.
+ * Multi-provider (T3-1 US-008): the composer's provider chip picks which
+ * agent CLI drives a FRESH thread (claude/codex/grok, from the registry's
+ * install probe); it locks with the rest of the launch config after the first
+ * turn, and a reopened thread shows its saved provider locked from the start.
  */
 
 /** `--model` chip options — aliases resolve to the latest of each family. */
@@ -128,6 +130,10 @@ export interface ThreadUiState {
 export interface ResumeTarget {
   sessionId: string;
   model: string | null;
+  /** The provider that created the thread (US-008) — shown locked in the
+   *  chip; the gateway resumes on it regardless. Null → claude (pre-
+   *  migration rows). */
+  provider: string | null;
 }
 
 /** One reconstructed history entry from GET /api/agent/threads/:id/transcript
@@ -176,6 +182,9 @@ export default function ChatPane({
   } = useAgentChat(token);
   const [text, setText] = useState("");
   const [model, setModel] = useState<string | undefined>(undefined);
+  // Provider chip selection (US-008) — which agent CLI a FRESH thread
+  // launches on. A reopened thread ignores this: its saved provider wins.
+  const [provider, setProvider] = useState<string>("claude");
   const [permission, setPermission] =
     useState<NonNullable<AgentOpts["permissionMode"]>>("default");
   // Full-access one-time confirm: selecting bypassPermissions opens the dialog
@@ -393,6 +402,29 @@ export default function ChatPane({
   // control channel can switch mode mid-session (US-022), so it stays live.
   const locked = firstUser != null || resume != null;
 
+  // Provider chip data (US-008): the registry's install probe, shared across
+  // panes. Until the fetch lands (or if the gateway is unreachable) the chip
+  // falls back to a Claude-only entry so it's never blank.
+  const providerList = useProviders(token);
+  const effectiveProviderId = resume ? resume.provider ?? "claude" : provider;
+  const providerMeta: Pick<ProviderStatus, "id" | "name" | "avatarLetter"> =
+    providerList.find((p) => p.id === effectiveProviderId) ??
+    (effectiveProviderId === "claude"
+      ? { id: "claude", name: "Claude Code", avatarLetter: "C" }
+      : {
+          id: effectiveProviderId,
+          name: effectiveProviderId.charAt(0).toUpperCase() + effectiveProviderId.slice(1),
+          avatarLetter: effectiveProviderId.charAt(0).toUpperCase(),
+        });
+  const selectProvider = (id: string) => {
+    setProvider(id);
+    // The model chip's aliases (opus/sonnet/haiku) are Claude vocabulary — a
+    // non-Claude provider launches on its own default model.
+    if (id !== "claude") setModel(undefined);
+  };
+  // Non-Claude providers only offer "Default model" — never a Claude alias.
+  const modelOptions = effectiveProviderId === "claude" ? MODELS : [MODELS[0]!];
+
   // Send an arbitrary prompt through the same launch config as the composer.
   // Returns false when a send can't happen (busy / not open / history loading)
   // so the caller can decide whether to clear its input. Used by the composer
@@ -406,6 +438,10 @@ export default function ChatPane({
       cwd: effectiveCwd ?? undefined,
       projectId: projectId ?? undefined,
       resume: resume && historyState === "found" ? resume.sessionId : undefined,
+      // US-008: fresh threads launch on the chip's pick; a resumed thread
+      // relaunches its own provider (also honored when the JSONL is missing
+      // and the "resume" degrades to a fresh session on the same agent).
+      provider: effectiveProviderId,
     });
     return true;
   };
@@ -669,8 +705,39 @@ export default function ChatPane({
                 className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="mt-2 flex items-center gap-2">
+                {/* Provider chip (US-008): which agent CLI drives this thread.
+                    Locks with the launch config; uninstalled providers stay
+                    listed but disabled so the option is discoverable. */}
+                <Chip
+                  icon={<ProviderLetter letter={providerMeta.avatarLetter} />}
+                  label={providerMeta.name}
+                  locked={locked}
+                >
+                  {(providerList.length
+                    ? providerList
+                    : [{ id: "claude", name: "Claude Code", avatarLetter: "C", installed: true, version: null }]
+                  ).map((p) => (
+                    <div key={p.id} title={p.installed ? undefined : `${p.id} not found on PATH`}>
+                      <DropdownMenuItem
+                        disabled={!p.installed}
+                        onClick={() => selectProvider(p.id)}
+                      >
+                        <ProviderLetter letter={p.avatarLetter} />
+                        <div className="flex flex-col">
+                          <span>{p.name}</span>
+                          {!p.installed && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {p.id} not found on PATH
+                            </span>
+                          )}
+                        </div>
+                      </DropdownMenuItem>
+                    </div>
+                  ))}
+                </Chip>
+                <span className="text-border">|</span>
                 <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
-                  {MODELS.map((m) => (
+                  {modelOptions.map((m) => (
                     <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
                       {m.label}
                     </DropdownMenuItem>
@@ -805,6 +872,16 @@ function WorkingIndicator({ items }: { items: ChatItem[] }) {
       <span className="text-border">·</span>
       <span className="tabular-nums">{label}</span>
     </div>
+  );
+}
+
+/** Tiny round agent-avatar letter (C/X/G) — the provider chip's icon, sized
+ *  to sit where the other chips put a lucide glyph. */
+function ProviderLetter({ letter }: { letter: string }) {
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-semibold text-foreground ring-1 ring-border">
+      {letter}
+    </span>
   );
 }
 

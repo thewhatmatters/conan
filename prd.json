@@ -135,7 +135,7 @@
         "Verify in browser using automate-browser skill: switch provider, send a turn on Codex, confirm the chip locks and the transcript streams"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "First UI story. Depends on US-003 + US-007. Browser-verify on a throwaway port stack. Suggested skills: automate-browser."
     },
     {

@@ -92,6 +92,9 @@ interface SavedThread {
   sessionId: string;
   cwd: string;
   model: string | null;
+  /** Agent provider that drove the thread (T3-1 US-006/008) — 'claude' |
+   *  'codex' | 'grok'; the gateway coalesces pre-migration nulls to 'claude'. */
+  provider: string | null;
   title: string | null;
   /** PD-1: last assistant response / prompt preview — the row's description. */
   lastMessage: string | null;
@@ -829,7 +832,11 @@ export default function ChatSurface({
               projectId={t.projectId}
               resume={
                 t.resume
-                  ? { sessionId: t.resume.sessionId, model: t.resume.model }
+                  ? {
+                      sessionId: t.resume.sessionId,
+                      model: t.resume.model,
+                      provider: t.resume.provider ?? null,
+                    }
                   : null
               }
               lastSkillFired={lastSkillFired}

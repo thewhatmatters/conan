@@ -27,6 +27,10 @@ export interface AgentOpts {
   /** Past session id to resume (US-015) — the driver launches with
    *  `--resume` so the conversation context is restored server-side. */
   resume?: string;
+  /** Agent provider a FRESH session launches on (T3-1 US-008: the composer's
+   *  provider chip — 'claude' | 'codex' | 'grok'). Absent → claude. On a
+   *  resume the gateway relaunches the thread's SAVED provider regardless. */
+  provider?: string;
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */
