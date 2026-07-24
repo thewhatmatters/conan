@@ -132,6 +132,7 @@ const FALLBACK_CAPABILITIES: AgentCapabilities = {
   costUsd: true,
   reasoningText: false,
   resume: true,
+  modelSelection: true,
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
     { id: "default", label: "Supervised", description: "Asks before running tools" },
@@ -448,23 +449,28 @@ export default function ChatPane({
   // panes. Until the fetch lands (or if the gateway is unreachable) the chip
   // falls back to a Claude-only entry so it's never blank.
   const providerList = useProviders(token);
-  const providerMeta: Pick<ProviderStatus, "id" | "name" | "avatarLetter"> =
+  const providerMeta: Pick<ProviderStatus, "id" | "name" | "avatarLetter" | "binary"> =
     providerList.find((p) => p.id === effectiveProviderId) ??
     (effectiveProviderId === "claude"
-      ? { id: "claude", name: "Claude Code", avatarLetter: "C" }
+      ? { id: "claude", name: "Claude Code", avatarLetter: "C", binary: "claude" }
       : {
           id: effectiveProviderId,
           name: effectiveProviderId.charAt(0).toUpperCase() + effectiveProviderId.slice(1),
           avatarLetter: effectiveProviderId.charAt(0).toUpperCase(),
+          // Pre-fetch fallback only: every shipped provider's id matches its
+          // binary, and the registry's real value wins as soon as it lands.
+          binary: effectiveProviderId,
         });
   const selectProvider = (id: string) => {
     setProvider(id);
-    // The model chip's aliases (opus/sonnet/haiku) are Claude vocabulary — a
-    // non-Claude provider launches on its own default model.
-    if (id !== "claude") setModel(undefined);
+    // The model chip's aliases (opus/sonnet/haiku) are Claude vocabulary, so a
+    // provider without its own model picker must launch on its default. Read
+    // the capability rather than the provider name — the registry is the only
+    // place that should know which providers those are.
+    const next = providerList.find((p) => p.id === id)?.capabilities;
+    if (next && !next.modelSelection) setModel(undefined);
   };
-  // Non-Claude providers only offer "Default model" — never a Claude alias.
-  const modelOptions = effectiveProviderId === "claude" ? MODELS : [MODELS[0]!];
+  const modelOptions = MODELS;
 
   // The active capability descriptor (US-009): once the session's driver is
   // built the gateway's capabilities frame is authoritative; before that, the
@@ -679,7 +685,7 @@ export default function ChatPane({
             </div>
           )}
           {items.length === 0 && historyState === null ? (
-            <EmptyState status={status} />
+            <EmptyState status={status} binary={providerMeta.binary} />
           ) : (
             items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />)
           )}
@@ -817,14 +823,26 @@ export default function ChatPane({
                     </div>
                   ))}
                 </Chip>
-                <span className="text-border">|</span>
-                <Chip icon={<Sparkles className="size-3.5" />} label={modelLabel} locked={locked}>
-                  {modelOptions.map((m) => (
-                    <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
-                      {m.label}
-                    </DropdownMenuItem>
-                  ))}
-                </Chip>
+                {/* Only providers that actually offer a model choice get a model
+                    chip. Codex and Grok don't (`modelSelection: false`), and a
+                    chip whose menu holds one inert "Default model" row is a
+                    control that lies about what the provider can do. */}
+                {caps.modelSelection && (
+                  <>
+                    <span className="text-border">|</span>
+                    <Chip
+                      icon={<Sparkles className="size-3.5" />}
+                      label={modelLabel}
+                      locked={locked}
+                    >
+                      {modelOptions.map((m) => (
+                        <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
+                          {m.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </Chip>
+                  </>
+                )}
                 <span className="text-border">|</span>
                 {/* The active permission mode stays visible here whether or not the
                     dropdown is ever opened — the persistent indicator. Options come
@@ -1043,13 +1061,15 @@ function Chip({
   );
 }
 
-function EmptyState({ status }: { status: string }) {
+/** `binary` names the agent this thread will actually launch — hardcoding
+ *  "claude" here told a Grok or Codex user the wrong thing. */
+function EmptyState({ status, binary }: { status: string; binary: string }) {
   return (
     <div className="mt-16 flex flex-col items-center gap-2 text-center text-muted-foreground">
       <Sparkles className="size-6 opacity-50" />
       <p className="text-sm font-medium text-foreground">Chat with a coding agent</p>
       <p className="max-w-sm text-xs">
-        Drives <code className="rounded bg-muted px-1 py-px font-mono text-[11px]">claude</code>{" "}
+        Drives <code className="rounded bg-muted px-1 py-px font-mono text-[11px]">{binary}</code>{" "}
         headlessly in the active directory and renders the conversation here —
         no terminal required.{" "}
         {status === "open"

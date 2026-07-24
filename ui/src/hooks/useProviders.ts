@@ -27,6 +27,9 @@ export interface AgentCapabilities {
   costUsd: boolean;
   reasoningText: boolean;
   resume: boolean;
+  /** The user can pick a launch model for this provider — false hides the
+   *  model chip entirely rather than offering an inert one. */
+  modelSelection: boolean;
   permissionModes: AgentPermissionMode[];
 }
 
@@ -35,6 +38,9 @@ export interface ProviderStatus {
   id: string;
   name: string;
   avatarLetter: string;
+  /** The CLI this provider launches (e.g. "codex") — lets the UI name the
+   *  real process instead of hardcoding one agent's binary. */
+  binary: string;
   installed: boolean;
   version: string | null;
   capabilities: AgentCapabilities;

@@ -15,8 +15,8 @@ pwd
 
 ## Design Pass
 
-**Kind:** shell
+**Kind:** prompt
 
-```sh
+```text
 Run the /codebase-design skill on this repo
 ```

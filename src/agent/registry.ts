@@ -92,6 +92,9 @@ export interface ProviderStatus {
   id: ProviderId;
   name: string;
   avatarLetter: string;
+  /** The CLI this provider launches — surfaced so the UI can name the real
+   *  process instead of hardcoding one agent's binary. */
+  binary: string;
   installed: boolean;
   version: string | null;
   capabilities: AgentCapabilities;
@@ -229,6 +232,7 @@ export async function listProviderStatuses(): Promise<ProviderStatus[]> {
         id: p.id,
         name: p.name,
         avatarLetter: p.avatarLetter,
+        binary: p.binary,
         installed: d.installed,
         version: d.version,
         capabilities: p.capabilities,
