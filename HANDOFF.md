@@ -1,6 +1,6 @@
 # Conan — HANDOFF (agent-agnostic)
 
-_Updated 2026-07-23. Read this first. Then `CLAUDE.md` for stack/conventions/
+_Updated 2026-07-24. Read this first. Then `CLAUDE.md` for stack/conventions/
 gotchas. This doc is written to be read by ANY coding agent (Claude, Codex, …)
 picking up the Conan build._
 
@@ -34,8 +34,9 @@ chat architecture + the dormant subsystems.
 
 ## Current state (branch / git)
 
-- **Branch: `loop/conan-multi-provider`** (on top of `loop/conan-chat-v1`).
-  `main` is clean at `f23bc7c` — nothing chat-era is merged yet.
+- **Branch: `loop/conan-multi-provider`** (on top of `loop/conan-chat-v1`),
+  **pushed to `origin` and tracking**. `main` is clean at `f23bc7c` — nothing
+  chat-era is merged yet.
 - **chat-v1: DONE** — 25 stories, archived at
   `archive/2026-07-23-conan-chat-v1-complete/`. **Polish loop: DONE** (6
   stories). **PD-1 richer thread rows: DONE.**
@@ -47,31 +48,52 @@ chat architecture + the dormant subsystems.
   column + resume routed to the thread's OWN provider; WS launch frame carries
   provider + capabilities pushed at session start; capability-driven composer
   chip / permission chip / transcript / sidebar avatars. **Read
-  `docs/multi-provider-qa.md`** for the honest per-provider matrix — headline
-  limits: codex/grok threads lose conversation context on close+reopen
-  (Claude-only history reconstruction), and reopened grok threads have an OPEN
-  BUG (saved reported model `grok-4.5-build` re-applied as `-m` → every turn
-  exits 1). Fix before merge.
+  `docs/multi-provider-qa.md`** for the honest per-provider matrix — now fully
+  green: the two reopen gaps the loop shipped with were fixed 2026-07-24 (see
+  below).
+- **Reopen parity across all three providers: DONE (2026-07-24).**
+  - The grok exit-1 blocker is fixed. Root cause was conflating a *reported*
+    model (telemetry) with a *launch* model (user intent): grok reports
+    `grok-4.5-build`, which `-m` rejects. New capability
+    `AgentCapabilities.modelSelection` (claude true, codex/grok false) gates
+    whether a reported model is persisted, so no provider can poison a thread
+    this way. The thread upsert `COALESCE`s model — a null write keeps the old
+    value — so an idempotent migration in `src/db/index.ts` also clears
+    already-saved values for non-claude threads.
+  - Transcript readers now exist per provider: `src/agent/codexHistory.ts`
+    (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<session_id>.jsonl`) and
+    `src/agent/grokHistory.ts`
+    (`$GROK_HOME/sessions/<encodeURIComponent(cwd)>/<session_id>/chat_history.jsonl`).
+    Both CLIs append resumed turns to the SAME file, so one file is the whole
+    conversation. The transcript route dispatches by the thread's provider.
+    Because history is FOUND again, ChatPane keeps the resume id — so reopened
+    codex/grok threads continue the REAL conversation, verified by having each
+    agent quote a question asked before the reopen.
 - **QA:** chat-v1 findings live in `docs/chat-v1-qa-backlog.md`; the polish
   loop's 6 stories are still not QA-dogfooded; multi-provider QA is
   `docs/multi-provider-qa.md`.
 
 ## What's next (the roadmap, ordered)
 
-1. **Fix the two multi-provider reopen gaps** (`docs/multi-provider-qa.md`):
-   the grok saved-model exit-1 bug (small — stop re-applying a never-picked
-   model on resume), then codex/grok transcript readers so reopen isn't lossy.
-2. **QA the polish loop** — dogfood the 6 polish stories (US-001..006); log
-   findings to `docs/chat-v1-qa-backlog.md`.
-3. **t3 feature ports** — see `docs/t3-port-backlog.md`. T3-1 is DONE; **T3-19
+1. **QA the polish loop** — dogfood the 6 polish stories (US-001..006); log
+   findings to `docs/chat-v1-qa-backlog.md`. The oldest unpaid QA debt.
+2. **t3 feature ports** — see `docs/t3-port-backlog.md`. T3-1 is DONE; **T3-19
    provider maintenance UI** is the natural follow-on (registry + probe exist).
-4. **Ship-gates (before any release / merge to `main`):**
-   - **H1 — native build unverified.** EVERYTHING so far ran only in a browser
-     dev stack. **No Rust toolchain is installed** on this machine, so
-     `tauri-plugin-dialog` (added in the cwd picker) has never compiled. Install
-     Rust (`rustup default stable`), `npm run build:sidecar`, then
-     `CI=true npm run tauri:build`. Do this BEFORE investing more — a broken
-     native build blocks everything.
+3. **Ship-gates (before any release / merge to `main`):**
+   - ✅ **H1 — native build VERIFIED (2026-07-24).** Was blocked because
+     `~/.cargo/bin` held rustup *shims with no default toolchain* — `cargo`
+     resolving on PATH did NOT mean Rust worked. After `rustup default stable`
+     (1.97.1): `npm run build:sidecar` clean, then `CI=true npm run tauri:build`
+     compiled in ~43s and bundled `Conan.app` (139M) + `Conan_1.4.0_aarch64.dmg`
+     (45M) — including `tauri-plugin-dialog`, which had never been built. The
+     packaged app launches, its bundled `runtime/node` serves `gateway.cjs`, and
+     **`GET /api/agent/providers` detects all three providers inside the .app**
+     (the login-shell PATH probe survives bundling — the packaged-PATH gotcha
+     is handled). Caveat: a plain `tauri:build` exits 1 at the very end on
+     `TAURI_SIGNING_PRIVATE_KEY` — that's updater-artifact signing, not a
+     compile failure; `npm run release` supplies the key. The native window's UI
+     was NOT visually verified (macOS screen-recording permission blocks
+     terminal screenshots).
    - **H4 — Premium is hollow.** Conan is a shipped $29 product; the Premium-
      gated surfaces (Timeline insight, Pulse, etc.) were DELETED with the HUD.
      Decide what Premium means in a chat-primary Conan (candidates: gate the
@@ -85,14 +107,15 @@ chat architecture + the dormant subsystems.
      `src/terminal/*`, `correlate.ts`, `terminal_session`, orphaned routes.
    - **Merge `loop/conan-multi-provider` (contains `loop/conan-chat-v1`) →
      `main`** — 30+ commits replacing the primary surface; needs a real review
-     pass, and the grok reopen bug fixed first.
-5. **Release** — version bump + `npm run release` (sign/notarize/staple) +
+     pass. (The grok reopen bug that used to block this is fixed.)
+4. **Release** — version bump + `npm run release` (sign/notarize/staple) +
    `gh release create` + announce (see `.claude/skills/release-conan/` and the
    `announce-conan-release` skill).
 
 ## How to run + QA (dev)
 
-Do NOT rely on the native app (won't build yet — H1). Use the browser dev stack:
+The native app now builds and runs (H1 verified 2026-07-24), but the browser
+dev stack is still the fast loop for QA:
 
 ```bash
 # gateway — npm start (NO watch; npm run dev's tsx-watch restarts on src edits)
@@ -118,6 +141,10 @@ cd ui && npm run dev            # vite on :5173  (open http://localhost:5173)
   and restart vite.
 - **Dogfooding:** editing `src/gateway/*` or `src/terminal/*` under `npm run dev`
   (tsx-watch) restarts the gateway and kills ptys. Use `npm start`.
+- **`cargo` on PATH does NOT mean Rust works.** `~/.cargo/bin/*` are rustup
+  SHIMS; with no default toolchain every invocation fails with "rustup could
+  not choose a version of rustc to run". Check `rustc --version`, not `which
+  rustc`. Fix: `rustup default stable`.
 - **`t3code/` is gitignored** — it's the reference t3-code source (an embedded
   repo). Never commit it.
 - **D2 / Claude reasoning is a platform limit**, not a bug: headless
