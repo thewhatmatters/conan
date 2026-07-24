@@ -12,26 +12,17 @@ import { apiBase } from "../lib/gateway.ts";
  * reload picks it up).
  */
 
-/** Mirrors AgentPermissionMode in src/agent/driver.ts. */
-export interface AgentPermissionMode {
-  id: string;
-  label: string;
-  description: string;
-}
-
-/** Mirrors AgentCapabilities in src/agent/driver.ts (US-002). */
-export interface AgentCapabilities {
-  streamingDeltas: boolean;
-  interactiveApproval: boolean;
-  livePermissionSwitch: boolean;
-  costUsd: boolean;
-  reasoningText: boolean;
-  resume: boolean;
-  /** The user can pick a launch model for this provider — false hides the
-   *  model chip entirely rather than offering an inert one. */
-  modelSelection: boolean;
-  permissionModes: AgentPermissionMode[];
-}
+// The gateway's driver seam (src/agent/driver.ts) is the single source of
+// truth for the capability contract. It's an import-free pure-types module, so
+// the UI can reach across the separate tsconfig/build with a type-only
+// re-export — erased at build time, but the compiler now connects the two
+// programs, so adding a capability on one side without the other is a type
+// error instead of silent drift (which shipped once: `modelSelection`).
+export type {
+  AgentCapabilities,
+  AgentPermissionMode,
+} from "../../../src/agent/driver.ts";
+import type { AgentCapabilities } from "../../../src/agent/driver.ts";
 
 /** One row of `GET /api/agent/providers` (registry.ts ProviderStatus). */
 export interface ProviderStatus {

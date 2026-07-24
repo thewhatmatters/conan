@@ -3,6 +3,9 @@ import type { AgentCapabilities, AgentDriver, AgentEvent } from "./driver.js";
 import { CLAUDE_CAPABILITIES, ClaudeDriver } from "./claude.js";
 import { CODEX_CAPABILITIES, CodexDriver } from "./codex.js";
 import { GROK_CAPABILITIES, GrokDriver } from "./grok.js";
+import { readChatHistory, type ChatHistory } from "./history.js";
+import { readCodexHistory } from "./codexHistory.js";
+import { readGrokHistory } from "./grokHistory.js";
 
 // Each provider's capability descriptor lives beside its driver (claude.ts /
 // codex.ts / grok.ts); the registry re-exports them as the one lookup surface.
@@ -43,6 +46,13 @@ export interface ProviderEntry {
     emit: (e: AgentEvent) => void,
     fallbackCwd: () => string | null,
   ) => AgentDriver;
+  /** Reconstruct a saved thread's transcript from this provider's own on-disk
+   *  session record (US-015 reopen). Each provider persists its own format —
+   *  keeping the reader on the entry means the transcript route never branches
+   *  on provider name, and adding a provider stays "one entry + one driver
+   *  module". `cwd` narrows the store lookup where the provider shards by
+   *  working directory; readers that don't need it ignore it. */
+  readHistory: (sessionId: string, cwd: string | null) => ChatHistory;
 }
 
 export const PROVIDERS: readonly ProviderEntry[] = [
@@ -53,6 +63,7 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     binary: "claude",
     capabilities: CLAUDE_CAPABILITIES,
     createDriver: (emit, fallbackCwd) => new ClaudeDriver(emit, fallbackCwd),
+    readHistory: (sessionId, cwd) => readChatHistory(sessionId, cwd),
   },
   {
     id: "codex",
@@ -61,6 +72,8 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     binary: "codex",
     capabilities: CODEX_CAPABILITIES,
     createDriver: (emit, fallbackCwd) => new CodexDriver(emit, fallbackCwd),
+    // Codex rollouts are date-sharded by session id, never by cwd.
+    readHistory: (sessionId) => readCodexHistory(sessionId),
   },
   {
     id: "grok",
@@ -69,6 +82,7 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     binary: "grok",
     capabilities: GROK_CAPABILITIES,
     createDriver: (emit, fallbackCwd) => new GrokDriver(emit, fallbackCwd),
+    readHistory: (sessionId, cwd) => readGrokHistory(sessionId, cwd),
   },
 ];
 
