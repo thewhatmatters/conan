@@ -85,7 +85,7 @@
         "Tests pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "The Claude-like provider - should slot in cheaply if the seam is right. Parser tests run against US-001 fixtures. Suggested skills: none."
     },
     {

@@ -2,10 +2,11 @@ import { execFile } from "node:child_process";
 import type { AgentCapabilities, AgentDriver, AgentEvent } from "./driver.js";
 import { CLAUDE_CAPABILITIES, ClaudeDriver } from "./claude.js";
 import { CODEX_CAPABILITIES, CodexDriver } from "./codex.js";
+import { GROK_CAPABILITIES, GrokDriver } from "./grok.js";
 
 // Each provider's capability descriptor lives beside its driver (claude.ts /
-// codex.ts); the registry re-exports them as the one lookup surface.
-export { CODEX_CAPABILITIES };
+// codex.ts / grok.ts); the registry re-exports them as the one lookup surface.
+export { CODEX_CAPABILITIES, GROK_CAPABILITIES };
 
 /**
  * Provider registry (T3-1 US-003) — the one table mapping a provider id to
@@ -44,43 +45,6 @@ export interface ProviderEntry {
   ) => AgentDriver;
 }
 
-/** Grok's verified headless capabilities (grok 0.2.111, US-001 probe): real
- *  `thought`/`text` deltas (readable reasoning — unlike Claude's D2 redaction)
- *  and `total_cost_usd`, but NO approval channel (a tool needing approval
- *  cancels the turn — open question (a)) and no live mode switch (no stdin
- *  control channel; per-turn `--permission-mode` on resume is US-005's job —
- *  open question (b)). */
-export const GROK_CAPABILITIES: AgentCapabilities = {
-  streamingDeltas: true,
-  interactiveApproval: false,
-  livePermissionSwitch: false,
-  costUsd: true,
-  reasoningText: true,
-  resume: true,
-  permissionModes: [
-    {
-      id: "plan",
-      label: "Plan",
-      description: "Read-only — ends with a proposed plan",
-    },
-    {
-      id: "default",
-      label: "Default",
-      description: "Tools needing approval cancel the turn — grok has no headless approval",
-    },
-    {
-      id: "acceptEdits",
-      label: "Accept edits",
-      description: "Auto-approves file edits",
-    },
-    {
-      id: "bypassPermissions",
-      label: "Full access",
-      description: "Runs every tool without prompting",
-    },
-  ],
-};
-
 export const PROVIDERS: readonly ProviderEntry[] = [
   {
     id: "claude",
@@ -104,10 +68,7 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     avatarLetter: "G",
     binary: "grok",
     capabilities: GROK_CAPABILITIES,
-    createDriver: () => {
-      // US-005 lands GrokDriver; until then the composer can't launch grok.
-      throw new Error("GrokDriver not implemented yet (US-005)");
-    },
+    createDriver: (emit, fallbackCwd) => new GrokDriver(emit, fallbackCwd),
   },
 ];
 

@@ -62,8 +62,8 @@ test("capabilities pin the US-001 verified matrix", () => {
   assert.equal(CLAUDE_CAPABILITIES.reasoningText, false);
 });
 
-test("claude/codex factories build drivers; grok's throws until US-005", () => {
-  for (const id of ["claude", "codex"] as const) {
+test("every provider's factory builds a driver tagged with its own id", () => {
+  for (const id of ["claude", "codex", "grok"] as const) {
     const driver = getProvider(id)!.createDriver(
       () => {},
       () => null,
@@ -71,7 +71,6 @@ test("claude/codex factories build drivers; grok's throws until US-005", () => {
     assert.equal(driver.provider, id);
     driver.dispose();
   }
-  assert.throws(() => getProvider("grok")!.createDriver(() => {}, () => null), /US-005/);
 });
 
 test("parseVersion handles bare and prefixed version output", () => {
