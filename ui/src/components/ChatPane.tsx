@@ -210,6 +210,7 @@ export default function ChatPane({
 }) {
   const {
     items,
+    contextTokens,
     busy,
     status,
     sessionId,
@@ -834,6 +835,18 @@ export default function ChatPane({
                     chip. Codex and Grok don't (`modelSelection: false`), and a
                     chip whose menu holds one inert "Default model" row is a
                     control that lies about what the provider can do. */}
+                {/* Context-window meter (T3-5). The denominator comes from the
+                    session's own capability descriptor, so a percentage shows
+                    only when the window is genuinely known — counts otherwise. */}
+                {contextTokens != null && (
+                  <>
+                    <span className="text-border">|</span>
+                    <ContextMeter
+                      used={contextTokens}
+                      windowTokens={caps.contextWindowTokens}
+                    />
+                  </>
+                )}
                 {caps.modelSelection && (
                   <>
                     <span className="text-border">|</span>
@@ -1126,6 +1139,66 @@ function Anchored({
  *  one-line footer at codex's cache sizes (tens of thousands). */
 function fmtTokens(n: number): string {
   return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString();
+}
+
+/**
+ * Composer context-window meter (T3-5). Shows how much of the window the
+ * conversation is carrying — the question "why did it get dumber?" had no
+ * answer in the UI before this.
+ *
+ * Honesty rules, in order:
+ *   - No position reported yet (fresh thread, or a provider that reports no
+ *     usage) → render NOTHING. A zeroed meter would imply an empty window we
+ *     haven't actually measured.
+ *   - Position known but the window size is null → show the raw count with NO
+ *     percentage and no bar. Codex hits this for real: it has no model picker
+ *     and reports no model, so we genuinely cannot know which model's window
+ *     applies, and inventing a denominator would be a lie.
+ *   - Both known → count, percentage, and a bar that warns as it fills.
+ */
+function ContextMeter({
+  used,
+  windowTokens,
+}: {
+  used: number | null;
+  windowTokens: number | null;
+}) {
+  if (used == null) return null;
+  const pct = windowTokens ? Math.min(100, (used / windowTokens) * 100) : null;
+  const tone =
+    pct == null
+      ? "text-muted-foreground"
+      : pct >= 90
+        ? "text-destructive"
+        : pct >= 75
+          ? "text-amber-500 dark:text-amber-400"
+          : "text-muted-foreground";
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1.5 text-[11px]", tone)}
+      title={
+        windowTokens
+          ? `Context: ${used.toLocaleString()} of ${windowTokens.toLocaleString()} tokens`
+          : `Context: ${used.toLocaleString()} tokens (window size unknown for this provider/model)`
+      }
+    >
+      {pct != null && (
+        <span className="h-1 w-10 overflow-hidden rounded-full bg-muted">
+          <span
+            className={cn(
+              "block h-full rounded-full",
+              pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-chart-2",
+            )}
+            style={{ width: `${Math.max(2, pct)}%` }}
+          />
+        </span>
+      )}
+      <span>
+        {fmtTokens(used)}
+        {pct != null ? ` · ${Math.round(pct)}%` : " ctx"}
+      </span>
+    </span>
+  );
 }
 
 /** Render one transcript item by role. */

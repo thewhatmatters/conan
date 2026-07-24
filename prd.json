@@ -67,7 +67,7 @@
         "Verify in browser using automate-browser skill: send turns on claude and on codex, confirm the meter updates and that the unknown-window case degrades to counts"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). First UI story; depends on US-002 + US-003. Browser-verify on a throwaway port stack. Suggested skills: automate-browser, audit-ui."
     },
     {

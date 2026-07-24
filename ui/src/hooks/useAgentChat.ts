@@ -47,10 +47,22 @@ export interface OutgoingFileAttachment {
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */
-export type ToolPermissionKind = "command" | "file-read" | "file-change" | "other";
+// Re-exported from the gateway's driver seam rather than hand-copied. That
+// seam is an import-free pure-types module, so this crosses the separate
+// tsconfig/build and is erased at build time — but the compiler now connects
+// the two programs, making drift a type error instead of a silent gap. This
+// file previously mirrored the event union by hand and silently dropped
+// `contextTokens` when the drivers started reporting it.
+export type {
+  ToolPermissionKind,
+  PermissionDecision,
+} from "../../../src/agent/driver.ts";
+import type {
+  AgentEvent,
+  ToolPermissionKind,
+  PermissionDecision,
+} from "../../../src/agent/driver.ts";
 
-/** The user's answer to a pending approval (mirrors PermissionDecision). */
-export type PermissionDecision = "accept" | "acceptForSession" | "decline" | "cancel";
 
 /** A Supervised-mode permission request awaiting the user's decision.
  *  `toolUseId` pins the request to its transcript tool card — the plan card's
@@ -64,18 +76,7 @@ export interface PendingApproval {
   toolUseId: string | null;
 }
 
-/** Normalized agent event mirrored from src/agent/driver.ts. */
-type AgentEvent =
-  | { kind: "system"; sessionId: string | null; model: string | null; cwd: string | null; tools: string[]; permissionMode: string | null }
-  | { kind: "assistant-text"; text: string; delta?: boolean }
-  | { kind: "reasoning"; text: string; delta?: boolean }
-  | { kind: "tool-use"; id: string; name: string; input: unknown }
-  | { kind: "tool-result"; id: string; content: string; isError: boolean }
-  | { kind: "permission-request"; id: string; toolKind: ToolPermissionKind; summary: string; detail: string; toolName: string; toolUseId: string | null }
-  | { kind: "permission-mode"; mode: string }
-  | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null; tokens?: TurnTokens }
-  | { kind: "exit"; code: number | null }
-  | { kind: "error"; message: string };
+// AgentEvent is imported from the driver seam above — no local mirror.
 
 /** How an approval transcript entry ended: still pending, the user's
  *  decision, or dismissed (the turn ended before anyone answered). */
@@ -108,6 +109,11 @@ export type ChatStatus = "connecting" | "open" | "closed";
 
 export interface AgentChat {
   items: ChatItem[];
+  /** Latest context-window POSITION (input + cached tokens) the provider
+   *  reported — NOT what the turn cost. Null until a turn reports one, and
+   *  null for providers that report no usage, so the meter stays absent
+   *  rather than showing a fabricated zero. */
+  contextTokens: number | null;
   busy: boolean;
   status: ChatStatus;
   /** The real Claude session id, from the system init event. Survives across
@@ -149,6 +155,12 @@ export function useAgentChat(token: string | null): AgentChat {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [permissionMode, setPermissionModeState] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
+
+  const [contextTokens, setContextTokens] = useState<number | null>(null);
+  // Latest context-window POSITION (input + cached) reported by the provider —
+  // distinct from what a turn COST. Null until a turn reports it, and null for
+  // providers that report no usage, so the meter can stay absent rather than
+  // showing a fabricated zero.
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const seq = useRef(0);
@@ -253,6 +265,9 @@ export function useAgentChat(token: string | null): AgentChat {
         case "result":
         case "exit":
         case "error": {
+          if (e.kind === "result" && e.contextTokens != null) {
+            setContextTokens(e.contextTokens);
+          }
           // Turn over — mark any still-pending approval entries dismissed
           // before appending the terminal item below.
           const settled = prev.map((it) =>
@@ -362,6 +377,7 @@ export function useAgentChat(token: string | null): AgentChat {
 
   return {
     items,
+    contextTokens,
     busy,
     status,
     sessionId,
