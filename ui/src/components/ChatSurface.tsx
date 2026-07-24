@@ -35,6 +35,7 @@ import {
 } from "./ui/dropdown-menu.tsx";
 import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
+import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
 
 /**
  * Project-organized chat surface (US-006 sidebar shell, US-025 projects,
@@ -225,6 +226,9 @@ export default function ChatSurface({
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, ThreadUiState>>({});
+  /** Registry rows (US-011) — resolve each thread's provider id to its
+   *  avatar letter + display name. Shares ChatPane's module-cached fetch. */
+  const providers = useProviders(token);
   const [collapsed, setCollapsed] = useState(false);
   /** Per-project group collapse (chevron). Absent/false = expanded. */
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
@@ -430,7 +434,8 @@ export default function ChatSurface({
         cur.busy === s.busy &&
         cur.awaitingApproval === s.awaitingApproval &&
         cur.title === s.title &&
-        cur.sessionId === s.sessionId
+        cur.sessionId === s.sessionId &&
+        cur.provider === s.provider
       ) {
         return prev;
       }
@@ -658,7 +663,14 @@ export default function ChatSurface({
                       title,
                       activity: row?.lastActivity ?? t.createdAt,
                       desc: row?.lastMessage ?? t.resume?.lastMessage ?? null,
-                      model: row?.model ?? t.resume?.model ?? null,
+                      // US-011: the live pane's report is freshest (a fresh
+                      // thread's chip pick shows before the row persists),
+                      // then the persisted row, then the reopened target.
+                      provider:
+                        states[t.id]?.provider ??
+                        row?.provider ??
+                        t.resume?.provider ??
+                        null,
                     };
                   })
                   .sort((a, b) =>
@@ -733,14 +745,14 @@ export default function ChatSurface({
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {liveRows.map(({ t, title, activity, desc, model }) => (
+                          {liveRows.map(({ t, title, activity, desc, provider }) => (
                             <ThreadRow
                               key={t.id}
                               title={title}
                               desc={desc}
                               when={timeAgo(activity)}
                               pill={pillOf(states[t.id])}
-                              model={model}
+                              agent={agentOf(provider, providers)}
                               active={t.id === activeId}
                               onSelect={() => setActiveId(t.id)}
                               onClose={() => closeThread(t.id)}
@@ -753,7 +765,7 @@ export default function ChatSurface({
                               desc={s.lastMessage}
                               when={timeAgo(s.lastActivity)}
                               pill="idle"
-                              model={s.model}
+                              agent={agentOf(s.provider, providers)}
                               active={false}
                               onSelect={() => openSavedThread(proj.id, s)}
                               onClose={() => void deleteSavedRow(s.sessionId)}
@@ -999,20 +1011,29 @@ const STATUS_ICON: Record<Pill, { Icon: LucideIcon; cls: string; spin?: boolean 
   idle: { Icon: Circle, cls: "text-muted-foreground/40" },
 };
 
-/** The coding agent behind a thread. Only Claude ships today; derived from the
- *  model so multi-provider (T3-1) can extend this without touching callers. */
-function agentOf(model: string | null | undefined): { letter: string; label: string } {
-  const m = (model ?? "").toLowerCase();
-  if (m.startsWith("codex") || m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3"))
-    return { letter: "X", label: "Codex" };
-  return { letter: "C", label: "Claude" };
+/** The coding agent behind a thread (US-011): the persisted provider id
+ *  resolved against the registry (`GET /api/agent/providers`). No stored
+ *  provider (pre-migration rows) → Claude; an id the registry hasn't served
+ *  yet falls back to its capitalized first letter, mirroring ChatPane's
+ *  provider-chip fallback. */
+function agentOf(
+  provider: string | null | undefined,
+  registry: ProviderStatus[],
+): { letter: string; label: string } {
+  const id = provider ?? "claude";
+  const entry = registry.find((p) => p.id === id);
+  if (entry) return { letter: entry.avatarLetter, label: entry.name };
+  if (id === "claude") return { letter: "C", label: "Claude Code" };
+  return {
+    letter: id.charAt(0).toUpperCase(),
+    label: id.charAt(0).toUpperCase() + id.slice(1),
+  };
 }
 
-/** Sidebar row leading glyph: an avatar for which agent drove the thread ("C"
- *  for Claude) with the live status as a small corner badge — the
- *  verified-avatar pattern (identity + a status dot punched out with a ring). */
-function AgentAvatar({ pill, model }: { pill: Pill; model: string | null | undefined }) {
-  const agent = agentOf(model);
+/** Sidebar row leading glyph: an avatar for which agent drove the thread (C /
+ *  X / G) with the live status as a small corner badge — the verified-avatar
+ *  pattern (identity + a status dot punched out with a ring). */
+function AgentAvatar({ pill, agent }: { pill: Pill; agent: { letter: string; label: string } }) {
   const s = STATUS_ICON[pill];
   return (
     <span
@@ -1039,7 +1060,7 @@ function ThreadRow({
   desc,
   when,
   pill,
-  model,
+  agent,
   active,
   onSelect,
   onClose,
@@ -1050,8 +1071,8 @@ function ThreadRow({
   /** Relative activity time, e.g. "just now" / "15h ago". */
   when: string;
   pill: Pill;
-  /** Launch model — picks the agent avatar (Claude today; T3-1 multi-provider). */
-  model: string | null | undefined;
+  /** Registry-resolved agent identity (US-011) — picks the avatar letter. */
+  agent: { letter: string; label: string };
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
@@ -1075,7 +1096,7 @@ function ThreadRow({
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
       )}
     >
-      <AgentAvatar pill={pill} model={model} />
+      <AgentAvatar pill={pill} agent={agent} />
       <span className="min-w-0 flex-1">
         <span
           className="block truncate text-xs font-medium text-foreground"

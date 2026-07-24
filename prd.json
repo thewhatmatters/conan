@@ -186,7 +186,7 @@
         "Verify in browser using automate-browser skill: threads on two providers show different avatars"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Small; the avatar component already exists from the thread-toolbar work - this only changes where the letter comes from. Suggested skills: automate-browser."
     },
     {

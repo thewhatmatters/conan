@@ -152,6 +152,10 @@ export interface ThreadUiState {
    *  session-scoped concerns (native notifications) to the ACTIVE thread's
    *  session now that no pty correlation exists (US-012). */
   sessionId: string | null;
+  /** The agent provider driving this pane (US-011) — the chip's pick on a
+   *  fresh thread, the saved provider on a reopened one. Feeds the sidebar
+   *  avatar so a Codex thread reads X from its very first turn. */
+  provider: string;
 }
 
 /** Reopened-thread context (US-015): the saved session to reconstruct and
@@ -270,6 +274,11 @@ export default function ChatPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resume?.sessionId, token]);
 
+  // The provider this pane is (or will be) driving — a reopened thread's
+  // saved provider always wins over the chip state (US-008). Hoisted above
+  // the state report so the sidebar avatar tracks it live (US-011).
+  const effectiveProviderId = resume ? resume.provider ?? "claude" : provider;
+
   // Report thread state up to the sidebar. The parent's setter bails when
   // nothing changed, so an unstable onState identity can't loop renders.
   const firstUser = items.find((it) => it.role === "user");
@@ -286,8 +295,9 @@ export default function ChatPane({
       awaitingApproval: pendingApproval != null,
       title,
       sessionId,
+      provider: effectiveProviderId,
     });
-  }, [status, busy, pendingApproval, title, sessionId, onState]);
+  }, [status, busy, pendingApproval, title, sessionId, effectiveProviderId, onState]);
 
   // Stick to the bottom as the transcript grows — unless the user scrolled up.
   useEffect(() => {
@@ -438,7 +448,6 @@ export default function ChatPane({
   // panes. Until the fetch lands (or if the gateway is unreachable) the chip
   // falls back to a Claude-only entry so it's never blank.
   const providerList = useProviders(token);
-  const effectiveProviderId = resume ? resume.provider ?? "claude" : provider;
   const providerMeta: Pick<ProviderStatus, "id" | "name" | "avatarLetter"> =
     providerList.find((p) => p.id === effectiveProviderId) ??
     (effectiveProviderId === "claude"
