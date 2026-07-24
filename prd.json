@@ -1,150 +1,210 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-thread-toolbar",
-  "description": "A top toolbar above the chat transcript (t3-code BranchToolbar idea): chat title + Open-in-editor + git Commit/Push/Create-PR + user-definable per-project custom actions. Ports T3-18 + T3-13 + T3-14 from docs/t3-port-backlog.md, scoped to GitHub via gh, macOS editor launch, commit-message dialog, and modal action output. Built on the shipped chat-primary Conan (branch loop/conan-chat-v1). Backend routes are token-gated + CORS-reflected like the existing gateway routes; frontend is a ThreadToolbar above ChatPane's transcript, h-9 + semantic tokens. Source PRD: prd-conan-thread-toolbar.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first \u2014 Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart.",
+  "branchName": "loop/conan-multi-provider",
+  "description": "T3-1 multi-provider: run Claude, Codex, and Grok behind the existing AgentDriver seam (src/agent/driver.ts), with the UI adapting honestly to each provider's real capabilities instead of assuming Claude's. Adds an AgentCapabilities descriptor, a provider registry + install probe, CodexDriver (one process per turn, `codex exec --json`, no interactive approval) and GrokDriver (Claude-like: `-p --output-format streaming-json`, token deltas, real reasoning text, total_cost_usd), a per-thread provider column, a composer provider chip locked after turn 1, and capability-driven permission/transcript/avatar rendering. Manual failover only; no cross-provider context transfer. Source PRD: prd-conan-multi-provider.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first - Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart; browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack with CONAN_ALLOWED_ORIGINS set, never on :3747. Subscription auth only - never introduce ANTHROPIC_API_KEY.",
   "generatedAt": "2026-07-23",
-  "sourcePrd": "prd-conan-thread-toolbar.md",
+  "sourcePrd": "prd-conan-multi-provider.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Backend: editor detection + open-in route",
-      "description": "As a user, I want Conan to detect my installed editors and open a project folder in one, so the toolbar's Open-in works.",
+      "title": "Probe + pin provider capabilities as test fixtures",
+      "description": "As a developer, I need the real headless behavior of codex and grok captured as fixtures, so every driver is built against verified truth rather than --help guesses.",
       "acceptanceCriteria": [
-        "GET /api/editor/detect returns the editors available on PATH \u2014 probe `code` (VS Code), `cursor`, `zed`, `idea` (JetBrains), `subl` (Sublime) via a login-shell PATH (mirror src/doctor/claude.ts) \u2014 plus always include a `finder` entry (Reveal in Finder)",
-        "POST /api/editor/open {path, editor?} launches the given editor at `path` (its CLI if present, else `open -a <App>`); `finder`/omitted-with-no-preference reveals the folder via `open <dir>`; existence-checked; args passed as an array (no shell injection)",
-        "Both routes token-gated (x-conan-token) + covered by the CORS reflector, like the other gateway routes",
-        "Unavailable editor / bad path returns a clear JSON error (never a hang or raw stack)",
-        "Typecheck passes"
+        "Add `src/agent/fixtures/` with the observed NDJSON event streams for codex (`codex exec --json`) and grok (`grok -p --output-format streaming-json`), captured from a real run in a temp dir",
+        "Document the verified capability matrix: codex = no token deltas, no interactive approval, one process per turn, token counts only (no USD); grok = token deltas, readable reasoning text, total_cost_usd, --resume",
+        "Explicitly probe and record two open questions: (a) does grok support interactive tool approval headlessly in `--permission-mode default`, (b) can grok switch permission mode mid-session. Record the ANSWER, and if a capability is unavailable say so plainly",
+        "Note the codex stdin footgun: `codex exec` reads stdin when piped ('Reading additional input from stdin...') - the driver must pass the prompt as an argument and give the child stdin: 'ignore'",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Backend only. t3 evidence: t3code/packages/contracts/src/editor.ts, apps/server/src/process/externalLauncher.ts, apps/web/src/components/chat/OpenInPicker.tsx. Suggested skills: none."
+      "passes": false,
+      "notes": "Facts-first story - everything downstream depends on it. Probes cost a few cents of real agent usage; keep prompts trivial (e.g. 'Reply with exactly: probe-ok') and run in a temp dir, never the conan repo. Suggested skills: none."
     },
     {
       "id": "US-002",
-      "title": "Backend: git commit + push routes",
-      "description": "As a user, I want to commit and push a project's changes from the toolbar.",
+      "title": "Add AgentCapabilities to the driver seam",
+      "description": "As a developer, I want each driver to declare what it can actually do, so the UI can adapt without ever branching on a provider name.",
       "acceptanceCriteria": [
-        "POST /api/agent/git/commit {cwd, message} runs `git add -A` then `git commit -m <message>` in cwd; returns {ok, output} or {ok:false, error} with git stderr surfaced honestly",
-        "POST /api/agent/git/push {cwd} runs `git push` in cwd (sets upstream with -u to origin/<branch> when none exists); returns ok/output or a clear error",
-        "Both reject a cwd that isn't inside a git work tree with a clear error; args passed as arrays via execFile (no shell), message is not interpolated into a shell",
-        "Token-gated + CORS-reflected. Reuse the existing GET /api/fs/git for status (do not duplicate it)",
+        "Add `AgentCapabilities` to src/agent/driver.ts: streamingDeltas, interactiveApproval, livePermissionSwitch, costUsd, reasoningText, resume, and permissionModes (array of {id, label, description} in the provider's own vocabulary)",
+        "Add `readonly capabilities: AgentCapabilities` to the AgentDriver interface",
+        "ClaudeDriver declares its verified descriptor: streamingDeltas true, interactiveApproval true, livePermissionSwitch true, costUsd true, reasoningText FALSE (D2 - headless claude redacts thinking text), resume true, permissionModes = default/plan/acceptEdits/bypassPermissions with their existing labels",
+        "No behavior change: the chat works exactly as before for Claude",
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Backend. t3 evidence: t3code/apps/server/src/git/GitManager.ts, apps/web/src/components/GitActionsControl.tsx. Suggested skills: none."
+      "passes": false,
+      "notes": "Pure seam widening, no runtime change. Depends on US-001's verified matrix. Suggested skills: codebase-design."
     },
     {
       "id": "US-003",
-      "title": "Backend: create-PR route via gh",
-      "description": "As a user, I want to open a pull request for the pushed branch from the toolbar.",
+      "title": "Provider registry + install probe route",
+      "description": "As a user, I want Conan to know which agent CLIs are installed, so the composer can offer the ones I can actually use.",
       "acceptanceCriteria": [
-        "POST /api/agent/git/pr {cwd, title, body} runs `gh pr create --title <title> --body <body>` in cwd; returns {ok, url} parsed from gh output, or {ok:false, error, reason}",
-        "Degrades honestly: when `gh` is not on PATH, not authenticated (`gh auth status` fails), or the remote is not GitHub, return ok:false with a machine-readable `reason` (gh-missing | gh-unauthed | not-github) so the UI can disable + explain \u2014 never hang or fabricate a URL",
-        "Token-gated + CORS-reflected; args as arrays (no shell); title/body never shell-interpolated",
-        "Typecheck passes"
+        "Add `src/agent/registry.ts`: one entry per provider with id ('claude'|'codex'|'grok'), display name, avatar letter (C/X/G), binary name, capabilities, and a driver factory",
+        "Detect installed binaries via a login-shell PATH probe, mirroring src/doctor/claude.ts (packaged app PATH gotcha - use an interactive login shell); cache with a TTL",
+        "GET /api/agent/providers returns [{id, name, avatarLetter, installed, version|null, capabilities}]; token-gated + covered by the CORS reflector like every other gateway route",
+        "An uninstalled provider is reported installed:false with no error - never a hang or a raw stack",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Backend. GitHub-only via gh CLI (multi-provider is out of scope). t3 evidence: t3code/apps/web/src/components/PullRequestThreadDialog.tsx, apps/server/src/sourceControl/GitHubSourceControlProvider.ts. Suggested skills: none."
+      "passes": false,
+      "notes": "The registry is a data table, not a plugin framework - keep it small. Suggested skills: none."
     },
     {
       "id": "US-004",
-      "title": "Backend: per-project custom actions \u2014 schema + CRUD + run",
-      "description": "As a user, I want to define runnable scripts per project and execute them, so the toolbar can host custom actions.",
+      "title": "CodexDriver - spawn, parse, resume, interrupt",
+      "description": "As a user, I want to run a chat on Codex, so I can keep working when Claude credits run out.",
       "acceptanceCriteria": [
-        "Add a `project_action` table (id TEXT PK, project_id TEXT REFERENCES project(id) ON DELETE CASCADE, name TEXT, command TEXT, created_at INTEGER) via the idempotent schema.sql + migrate() path (mirror the chat_thread last_message migration in src/db/index.ts)",
-        "GET /api/agent/projects/:id/actions lists a project's actions; POST adds {name, command}; DELETE /api/agent/actions/:actionId removes one",
-        "POST /api/agent/actions/:actionId/run executes the action's `command` in its project's cwd (via a shell, since commands are user-authored), capturing stdout+stderr (bounded) + exit code; returns them",
-        "All token-gated + CORS-reflected; a run never blocks indefinitely (bounded timeout, killed on overrun with an honest error)",
-        "Typecheck passes"
+        "Add `src/agent/codex.ts` implementing AgentDriver against `codex exec --json --skip-git-repo-check -C <cwd>` with the prompt as an argument and stdin ignored",
+        "Parse the JSONL into normalized AgentEvents: thread.started to system (thread_id is the resume key), item.completed(agent_message) to assistant-text, command/file items to tool-use/tool-result, turn.completed to result (token usage; costUsd null)",
+        "Multi-turn continuity: the first turn spawns fresh, later turns spawn `codex exec resume <thread_id>` - verify a 2-turn conversation actually retains context",
+        "Map permission to `--sandbox read-only|workspace-write|danger-full-access`; capabilities declare interactiveApproval false, streamingDeltas false, costUsd false, livePermissionSwitch false",
+        "respondPermission() is an explicit no-op (documented, not silently swallowed); interrupt() kills the in-flight turn process and surfaces an honest exit event",
+        "Unknown event types are ignored rather than thrown, so a CLI version bump can't crash the parser",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Backend + schema. t3 evidence: t3code/apps/web/src/components/ProjectScriptsControl.tsx, apps/web/src/projectScripts.ts. Suggested skills: none."
+      "passes": false,
+      "notes": "The structurally-alien provider - this story is what proves the seam. Parser tests should run against the US-001 fixtures (no live calls in tests). Suggested skills: none."
     },
     {
       "id": "US-005",
-      "title": "UI: thread toolbar shell (title + branch/cwd)",
-      "description": "As a user, I want a slim toolbar above the transcript showing the chat title and project context.",
+      "title": "GrokDriver - spawn, parse, resume, interrupt",
+      "description": "As a user, I want to run a chat on Grok, including its streamed reasoning.",
       "acceptanceCriteria": [
-        "A new ThreadToolbar.tsx renders pinned above the transcript in ChatPane.tsx, per-thread; h-9 shrink-0, semantic theme tokens only (matches the app's chrome conventions)",
-        "Left: the thread's title (display-only for v1 \u2014 'New chat' placeholder until the first prompt). Also shows the cwd basename + git branch (reuse the per-thread git already used for the composer context row)",
-        "Right: a slot for the action controls (Open-in / git / custom actions land here in US-006..008) \u2014 an empty but laid-out region for now",
-        "Renders correctly in light AND dark; does not shift the transcript/composer layout",
+        "Add `src/agent/grok.ts` implementing AgentDriver against `grok -p <prompt> --output-format streaming-json --cwd <cwd>` with `-m` for model and `--resume <sessionId>` for continuity",
+        "Parse the stream into normalized AgentEvents: {type:'thought'} to reasoning deltas, {type:'text'} to assistant-text deltas, {type:'end'} to result with sessionId, num_turns, and total_cost_usd",
+        "Capabilities declare streamingDeltas true, reasoningText TRUE, costUsd true, resume true; interactiveApproval and livePermissionSwitch set to whatever US-001 actually verified",
+        "Map permission modes onto grok's `--permission-mode` (default/acceptEdits/plan/bypassPermissions)",
+        "Multi-turn continuity verified: a 2-turn conversation retains context via --resume",
+        "Unknown event types are ignored rather than thrown",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: the toolbar appears above the transcript with the title + branch"
+        "Tests pass"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Frontend shell that US-006..008 fill. t3 evidence: t3code/apps/web/src/components/BranchToolbar.tsx. Browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack (never :3747); set CONAN_ALLOWED_ORIGINS for the throwaway UI port. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "The Claude-like provider - should slot in cheaply if the seam is right. Parser tests run against US-001 fixtures. Suggested skills: none."
     },
     {
       "id": "US-006",
-      "title": "UI: Open-in-editor control in the toolbar",
-      "description": "As a user, I want to open the project in my editor from the toolbar.",
+      "title": "Persist provider per thread + route resume by provider",
+      "description": "As a user, I want a reopened thread to resume on the agent that created it, because a Claude session id means nothing to Codex.",
       "acceptanceCriteria": [
-        "An 'Open' dropdown lists the detected editors (GET /api/editor/detect) + 'Reveal in Finder'; selecting one POSTs /api/editor/open for the thread's cwd",
-        "The last-used editor is remembered (localStorage) and offered as the primary click; the dropdown exposes the rest",
-        "Honest empty/disabled state when detection returns only Finder (no editors found)",
+        "Add `chat_thread.provider TEXT` (nullable, existing rows read as 'claude') via schema.sql AND the idempotent migrate() path in src/db/index.ts - mirror the last_message migration exactly",
+        "The thread upsert at session init records the provider that launched it; src/agent/threads.ts row type + selects carry it",
+        "GET /api/agent/projects and the transcript/resume routes expose the thread's provider",
+        "Resuming a thread launches its OWN provider - never the default; a Codex thread reopened must not spawn claude",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: the Open dropdown lists editors and firing it calls the open route"
+        "Tests pass"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Depends on US-001, US-005. t3 evidence: OpenInPicker.tsx. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Schema before the WS wiring that depends on it. Suggested skills: none."
     },
     {
       "id": "US-007",
-      "title": "UI: git actions in the toolbar (Commit / Push / Create PR)",
-      "description": "As a user, I want to commit, push, and open a PR from the toolbar.",
+      "title": "WS launch frame carries provider; build driver from the registry",
+      "description": "As a developer, I want the /ws/agent handler to instantiate whichever provider the chat asked for, so the seam is actually used.",
       "acceptanceCriteria": [
-        "A branch + dirty indicator (from GET /api/fs/git). Commit opens a dialog for a message \u2192 POST /api/agent/git/commit; Push \u2192 POST /api/agent/git/push; Create PR opens a dialog (title, body) \u2192 POST /api/agent/git/pr",
-        "Create PR is disabled with an explanatory tooltip when the backend reports gh-missing / gh-unauthed / not-github; a successful PR surfaces its URL (toast with an open-link)",
-        "Every git error surfaces honestly (toast with the git/gh message); controls disable while a request is in flight; the branch/dirty indicator refreshes after commit/push",
+        "The prompt/launch frame accepts a `provider` field; src/agent/index.ts builds the driver from the registry instead of hard-instantiating ClaudeDriver",
+        "Unknown or uninstalled provider gives a clear error event to the client, never a crashed WS or a silent fallback to claude",
+        "Default remains 'claude' when the field is absent, so existing threads and clients are unaffected",
+        "The driver's capabilities are sent to the client once at session start so the UI can adapt",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: in a real git project, commit + push succeed and update the indicator; PR disabled-state shows when gh is unavailable"
+        "Tests pass"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Depends on US-002, US-003, US-005. Reuse the app's existing toast (Toaster). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-002..006. This is the story that makes multi-provider real end-to-end. Suggested skills: none."
     },
     {
       "id": "US-008",
-      "title": "UI: custom actions in the toolbar (add + run)",
-      "description": "As a user, I want to define per-project scripts and run them from the toolbar.",
+      "title": "Composer provider chip (locked after the first turn)",
+      "description": "As a user, I want to choose which agent drives a chat, from the composer, before I send the first prompt.",
       "acceptanceCriteria": [
-        "The toolbar renders the project's custom actions (GET .../actions) as buttons; a '+' opens an add-action dialog (name + command) \u2192 POST; each action has a delete affordance \u2192 DELETE",
-        "Clicking an action POSTs .../run and shows the captured stdout/stderr + exit code in a modal (bounded, scrollable); a running action shows a spinner and disables re-click",
-        "Actions are scoped to the active thread's project and persist across reloads (from the DB)",
+        "A provider chip sits beside the model chip in ChatPane's composer, listing providers from GET /api/agent/providers with their avatar letter and name",
+        "Uninstalled providers appear disabled with an explanatory tooltip (e.g. 'codex not found on PATH') rather than being hidden",
+        "The chosen provider rides the prompt frame and LOCKS after the first turn, exactly like the model/cwd chips (reuse the existing `locked` treatment)",
+        "A reopened thread shows its saved provider, locked from the start",
+        "Renders correctly in light AND dark using semantic theme tokens only",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: add an action (e.g. `echo hi`), run it, confirm the output modal shows 'hi', reload and confirm the action persists"
+        "Verify in browser using automate-browser skill: switch provider, send a turn on Codex, confirm the chip locks and the transcript streams"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "Depends on US-004, US-005. t3 evidence: ProjectScriptsControl.tsx. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "First UI story. Depends on US-003 + US-007. Browser-verify on a throwaway port stack. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
-      "title": "Design + chrome consistency + states pass",
-      "description": "As a user, I want the toolbar to feel like first-class Conan \u2014 consistent, quiet, correct in light/dark, with sensible empty/error states.",
+      "title": "Capability-driven permission chip",
+      "description": "As a user, I want the permission control to show what my chosen agent can actually enforce, not a Claude control it will ignore.",
       "acceptanceCriteria": [
-        "The toolbar is h-9 shrink-0 matching the app's other secondary bars; semantic tokens only (no neutral-*/hex), checked against an existing toolbar",
-        "All controls render correctly in light AND dark; the toolbar stays quiet (doesn't dominate the thread)",
-        "Sensible states throughout: not-a-git-repo (git actions hidden/disabled), no editors detected (Finder-only), gh unavailable (PR disabled + why), no custom actions (just the + affordance)",
-        "Keyboard reachable; dialogs (commit/PR/add-action) are focus-trapped and Esc-dismissable",
+        "The permission chip renders its options from capabilities.permissionModes - never a hard-coded Claude list and never a branch on provider id",
+        "On Claude it still reads Supervised / Plan / Accept edits / Full access; on Codex it reads its real sandbox options (read-only / workspace-write / full-access) and Supervised is ABSENT, not inert",
+        "When capabilities.livePermissionSwitch is false, the chip explains the change applies to the next turn instead of silently pretending to switch live",
+        "When capabilities.interactiveApproval is false, no approval UI is offered for that thread",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill and audit-ui: screenshot the toolbar in light + dark and confirm chrome consistency + the disabled/empty states"
+        "Verify in browser using automate-browser skill: compare the chip on a Claude thread vs a Codex thread"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Final aggregate polish. Suggested skills: audit-ui, automate-browser."
+      "passes": false,
+      "notes": "The honesty story - the whole point of the capability model. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-010",
+      "title": "Capability-driven transcript (deltas, reasoning, cost)",
+      "description": "As a user, I want the transcript to reflect what my agent actually reports, so nothing looks broken or fabricated.",
+      "acceptanceCriteria": [
+        "When capabilities.streamingDeltas is false (Codex), the transcript shows a working indicator while the turn runs instead of an idle streaming caret, then renders the completed message",
+        "When capabilities.costUsd is false (Codex), the per-turn footer shows token counts instead of a fabricated or blank dollar figure",
+        "When capabilities.reasoningText is true (Grok), the previously-dormant collapsed reasoning UI renders the streamed thought text; it stays hidden for Claude, where the text is redacted (D2)",
+        "No provider-name branching in the components - all three behaviors read from capabilities",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: a Codex turn (no caret, token footer) and a Grok turn (reasoning expands)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Un-shelves the D2 reasoning UI for Grok - a real user-visible win from this PRD. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-011",
+      "title": "Sidebar agent avatar reads from the registry",
+      "description": "As a user, I want each thread's avatar to show which agent drove it.",
+      "acceptanceCriteria": [
+        "agentOf() in ChatSurface.tsx resolves the avatar letter from the thread's persisted provider via the registry, replacing the current model-string sniffing",
+        "Claude threads show C, Codex threads X, Grok threads G, each with the existing status badge overlay",
+        "A thread with no stored provider (pre-migration rows) still renders as Claude rather than blank",
+        "Renders correctly in light AND dark",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: threads on two providers show different avatars"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Small; the avatar component already exists from the thread-toolbar work - this only changes where the letter comes from. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-012",
+      "title": "Cross-provider QA + docs",
+      "description": "As a maintainer, I want proof all three providers work end-to-end and the docs to reflect the new architecture.",
+      "acceptanceCriteria": [
+        "Run a real thread on each of claude, codex, and grok: send 2 turns (verifying context is retained), interrupt a turn, close and reopen the thread to confirm it resumes on its own provider",
+        "Record the honest result per provider - including anything that does NOT work - in docs/ rather than claiming uniform success",
+        "Update CLAUDE.md's chat-architecture section and HANDOFF.md for the provider registry, capabilities model, and the per-thread provider column",
+        "Mark T3-1 done in docs/t3-port-backlog.md and note that T3-19 (provider maintenance UI) is the natural follow-on",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
     }
   ]
 }
