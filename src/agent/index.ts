@@ -2,6 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
+import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
 import {
   capabilitiesFor,
   getProvider,
@@ -225,7 +226,13 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       const text = msg.text;
       send({ type: "busy", busy: true });
       void ensureDriver(requested, opts.resume ?? null, opts.model)
-        .then((d) => d.send(text, opts))
+        .then((d) => {
+          const attachments = prepareFileAttachments(msg.attachments);
+          return d.send(
+            { text: serializeTurnPrompt({ text, attachments }), attachments },
+            opts,
+          );
+        })
         .catch((err: unknown) => {
           send({ type: "error", message: (err as Error).message });
           send({ type: "busy", busy: false });

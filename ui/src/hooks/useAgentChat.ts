@@ -39,6 +39,13 @@ export interface AgentOpts {
   provider?: string;
 }
 
+export interface OutgoingFileAttachment {
+  type: "file";
+  path: string;
+  content: string;
+  keep?: boolean;
+}
+
 /** Coarse tool classification mirrored from src/agent/driver.ts. */
 export type ToolPermissionKind = "command" | "file-read" | "file-change" | "other";
 
@@ -117,7 +124,7 @@ export interface AgentChat {
   /** Answer a pending permission request. */
   respondToApproval: (id: string, decision: PermissionDecision) => void;
   /** Submit a user turn (no-op while busy or disconnected). */
-  send: (text: string, opts: AgentOpts) => void;
+  send: (text: string, opts: AgentOpts, attachments?: OutgoingFileAttachment[]) => void;
   /** Stop the in-flight turn (graceful interrupt — the session survives). */
   interrupt: () => void;
   /** The session's LIVE permission mode — the launch mode from the init
@@ -311,11 +318,11 @@ export function useAgentChat(token: string | null): AgentChat {
   }, []);
 
   const send = useCallback(
-    (text: string, opts: AgentOpts) => {
+    (text: string, opts: AgentOpts, attachments: OutgoingFileAttachment[] = []) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== ws.OPEN || busy || !text.trim()) return;
       setItems((prev) => [...prev, { id: nextId(), role: "user", text }]);
-      ws.send(JSON.stringify({ type: "prompt", text, ...opts }));
+      ws.send(JSON.stringify({ type: "prompt", text, attachments, ...opts }));
     },
     [busy],
   );

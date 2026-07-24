@@ -157,7 +157,7 @@
         "Tests pass"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser verification required). Port as REAL context attachments, not prettier chips. File pins only - terminal/element/preview channels are out of scope. Suggested skills: none."
     },
     {

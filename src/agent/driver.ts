@@ -1,3 +1,5 @@
+import type { AgentTurn } from "./attachments.js";
+
 /**
  * Level-2 chat spike — the agent-driver seam.
  *
@@ -239,7 +241,7 @@ export interface AgentDriver {
    *  UI adapts without ever branching on `provider`. */
   readonly capabilities: AgentCapabilities;
   /** Submit a user turn. Spawns the process on first call using `opts`. */
-  send(text: string, opts: AgentLaunchOpts): Promise<void>;
+  send(turn: AgentTurn, opts: AgentLaunchOpts): Promise<void>;
   /** Cancel the in-flight turn, keeping the session alive — the provider's
    *  control channel aborts the turn and the process stays ready for the next
    *  `send()`. When the provider can't cancel gracefully the driver falls back

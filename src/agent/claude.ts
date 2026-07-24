@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
+import type { AgentTurn } from "./attachments.js";
 import { detectClaude, loginShellPath } from "../doctor/claude.js";
 import type {
   AgentCapabilities,
@@ -161,7 +162,7 @@ export class ClaudeDriver implements AgentDriver {
     private readonly fallbackCwd: () => string | null,
   ) {}
 
-  async send(text: string, opts: AgentLaunchOpts): Promise<void> {
+  async send(turn: AgentTurn, opts: AgentLaunchOpts): Promise<void> {
     if (this.disposed) return;
     if (!this.child && !this.starting) {
       this.opts = opts; // first prompt fixes the launch config
@@ -175,7 +176,7 @@ export class ClaudeDriver implements AgentDriver {
       type: "user",
       message: {
         role: "user",
-        content: [{ type: "text", text: claudePromptFor(text, this.opts.effort) }],
+        content: [{ type: "text", text: claudePromptFor(turn.text, this.opts.effort) }],
       },
     });
     this.child.stdin.write(msg + "\n");

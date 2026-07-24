@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import readline from "node:readline";
+import type { AgentTurn } from "./attachments.js";
 import { loginShellPath } from "../doctor/claude.js";
 import type {
   AgentCapabilities,
@@ -170,7 +171,7 @@ export class CodexDriver implements AgentDriver {
     private readonly fallbackCwd: () => string | null,
   ) {}
 
-  async send(text: string, opts: AgentLaunchOpts): Promise<void> {
+  async send(turn: AgentTurn, opts: AgentLaunchOpts): Promise<void> {
     if (this.disposed) return;
     if (this.child) {
       // A turn's process is still up. Genuinely mid-turn → drop (the composer
@@ -186,7 +187,7 @@ export class CodexDriver implements AgentDriver {
     } else if (opts.permissionMode) {
       this.mode = opts.permissionMode; // honest per-turn switch (fresh process)
     }
-    await this.spawnTurn(text);
+    await this.spawnTurn(turn.text);
   }
 
   interrupt(): void {
