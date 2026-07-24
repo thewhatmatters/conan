@@ -3,6 +3,25 @@
 Deferred UI/UX polish surfaced during dogfooding — not blocking, batched for a
 future "UI round". Newest first.
 
+## Provider icon avatars (replace the C/X/G letters)
+
+**Raised:** 2026-07-24. User has real brand SVGs for the three providers and
+wants them in the sidebar avatar so the driving provider is unmistakable,
+instead of the current letter initial.
+
+- SVGs live in **`ui/src/assets/providers/`**, named by provider id:
+  `claude.svg` / `codex.svg` / `grok.svg` (see the README there).
+- `AgentAvatar` (`ChatSurface.tsx`) currently renders `agentOf(provider)` → a
+  letter (C/X/G). Swap to the SVG per provider id, keeping the status-badge
+  overlay and **falling back to the letter** for any provider without an icon.
+- The future unified provider/model picker (below) should use the same icons in
+  its rail.
+- Author/keep the SVGs color-inheriting (`currentColor`, no hard-coded hex) so
+  they read in light + dark. UI/browser task — Claude round, not the Codex
+  backend round.
+
+**Size:** S.
+
 ## Paste-to-attach (images) + rethink the paperclip (T3-2)
 
 **Raised:** 2026-07-24, during the daily-driver QA walkthrough. User doesn't

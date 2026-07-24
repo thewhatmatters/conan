@@ -1,198 +1,121 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-daily-driver",
-  "description": "Daily-driver polish for the chat-primary, multi-provider Conan: a context-window meter (T3-5), draft-based new-thread flow (T3-11), reasoning-effort control (T3-6), and @-mention content pinning (T3-3). Every feature must work across claude/codex/grok or degrade honestly via AgentCapabilities - NO provider-name branching in the UI, never render a control a provider can't honour, and never fabricate a number (unknown context window => show counts, no percentage). Source PRD: prd-conan-daily-driver.md. NOTE for the executing agent: read CLAUDE.md + AGENTS.md first - Conan is chat-primary; run the gateway with `npm start` (NO watch - restart manually after ANY src/ edit, a stale gateway 404s new routes); verify BOTH :3747 and :5173 after any gateway restart; browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack with CONAN_ALLOWED_ORIGINS set, never on :3747. Subscription auth only - never introduce ANTHROPIC_API_KEY. The paywall is OFF (PAYWALL_ENABLED=false) - no story may add a gate.",
+  "branchName": "loop/conan-image-backend",
+  "description": "Backend-only round, designed for a sandboxed agent (Codex) that CANNOT bind localhost ports for browser QA - every story is verifiable by unit tests / curl / fixtures, NO browser. Two things: (A) fix the context-window meter's denominator to resolve from the model the system-init event REPORTS (claude runs fable-5 = 1M) instead of the launch model (undefined -> 200k); (B) build the image-input BACKEND seam for #1 image paste - an imageInput capability, AgentImageAttachment on the turn seam, server-side base64->per-provider staging, and driver plumbing (codex -i file path, claude stream-json image content block, grok --prompt-json or honest imageInput:false). The composer paste handler, transcript image rendering, retiring the paperclip, and the unified provider/model picker are a SEPARATE Claude follow-up round (they need automate-browser). This branch is cut from loop/conan-daily-driver (NOT yet merged to main) because it builds on that round's contextWindowFor/registry + attachments seam. Constraints: NO provider-name branching (ride AgentCapabilities); never claim a capability a provider lacks; never fabricate a number (unknown window -> null); UI mirror types via the type-only re-export from src/agent/driver.ts (import-free) so drift is a compile error; subscription auth only, never ANTHROPIC_API_KEY; paywall stays off, no gates. Source PRD: prd-conan-image-backend.md. NOTE: read CLAUDE.md + AGENTS.md first. Run the gateway with `npm start` (NO watch - restart after ANY src/ edit). Gates: `npm run typecheck` AND `npm test` AND `cd ui && npm run build`. Keep probe prompts trivial and run in a temp dir, never the conan repo.",
   "generatedAt": "2026-07-24",
-  "sourcePrd": "prd-conan-daily-driver.md",
+  "sourcePrd": "prd-conan-image-backend.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Probe + record per-provider context windows and effort mechanisms",
-      "description": "As a developer, I need the real context-window sizes and reasoning-effort mechanisms for each provider recorded as verified facts, so the meter and the effort chip are built on truth rather than guesses.",
+      "title": "Context-window denominator resolves from the reported model, not the launch model",
+      "description": "As a user, I want the context meter to use my session's REAL model window, so a Claude thread on fable-5 shows /1M instead of /200k.",
       "acceptanceCriteria": [
-        "Record each provider's context-window size per model where it can be VERIFIED (claude 200k / 1M long-context; probe codex and grok). Where a window size cannot be verified, record it explicitly as UNKNOWN - never guess a denominator",
-        "Record the verified effort mechanisms already probed: grok `--reasoning-effort` (alias `--effort`) accepts exactly high|medium|low (CLI validates client-side); codex `-c model_reasoning_effort=<level>` is a recognized key (passes `--strict-config`); claude has NO flag - effort is prompt-level phrasing",
-        "Record which usage fields each provider reports per turn: claude `input_tokens`+`cache_read_input_tokens`, codex `input_tokens`+`cached_input_tokens`+`output_tokens`, grok `input_tokens`+`cache_read_input_tokens`+`total_tokens`",
-        "Write the findings into a doc (e.g. docs/provider-context-effort.md) with an honest UNKNOWN marker wherever a value could not be verified",
-        "Typecheck passes"
-      ],
-      "priority": 1,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser verification required). Facts-first story; everything downstream depends on it. Keep probe prompts trivial ('Reply with exactly: ok') and run in a temp dir, never the conan repo. Suggested skills: none."
-    },
-    {
-      "id": "US-002",
-      "title": "Report token usage + context position from all three drivers",
-      "description": "As a developer, I want every driver to report per-turn token usage and the resulting context-window position, because two of three currently discard the numbers the meter needs.",
-      "acceptanceCriteria": [
-        "ClaudeDriver and GrokDriver populate the existing `tokens` field on the `result` event (today only CodexDriver does; claude/grok emit costUsd and drop usage). Purely ADDITIVE - `costUsd` behaviour is unchanged",
-        "Add `contextTokens: number | null` to the `result` event = the latest turn's context-window POSITION (input + cached input), which is distinct from what the turn cost. Null when the provider reports nothing",
-        "All three drivers set `contextTokens` from their own usage fields per US-001's table",
-        "Parser tests cover the new fields against the existing `src/agent/fixtures/` NDJSON - no live CLI calls in tests",
+        "The meter's denominator is currently `contextWindowFor(provider, launchModel)`; on a fresh claude thread launchModel is undefined -> registry 'default' = 200k, but claude actually runs claude-fable-5 (1M). Fix: resolve the window from the model the system-init event REPORTS (`e.model` in src/agent/index.ts), not the launch model",
+        "Get the corrected `contextWindowTokens` to the client - either refresh/re-send the capabilities frame after system-init, or add `contextWindowTokens` to the system event; whichever, the client must receive the value derived from the REPORTED model",
+        "An unknown reported model (not in the registry's CONTEXT_WINDOWS table) resolves to null - counts only, never a guessed denominator",
+        "No provider-name branching; codex (reports no usable model) and grok still behave correctly (grok reports a build name - keep it null-safe)",
+        "Unit test: `contextWindowFor('claude','claude-fable-5')` = 1_000_000 and the resolution path picks the reported model; a table-miss returns null",
         "Typecheck passes",
         "Tests pass"
       ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). Standalone from the image work - do it first, it's the quick correct-the-meter win. The registry CONTEXT_WINDOWS table + contextWindowFor already exist (src/agent/registry.ts). Suggested skills: none."
+    },
+    {
+      "id": "US-002",
+      "title": "Facts-first: probe + pin the per-provider image-input mechanisms",
+      "description": "As a developer, I need the exact per-provider image mechanisms captured as verified fixtures, so the driver plumbing is built on truth, not --help guesses.",
+      "acceptanceCriteria": [
+        "Pin the exact image-input shape for each CLI against a REAL small image in a temp dir: claude = the `image` content block format inside a `--input-format stream-json` user message (base64 media_type + data); codex = `-i/--image <FILE>` path semantics (multi-image? initial-prompt only? size cap?); grok = whether `--prompt-json` accepts an image block and its shape, OR that grok does NOT support headless image input",
+        "Record each answer with evidence; where a mechanism cannot be verified, mark it UNKNOWN and say so - never assume a shape",
+        "Capture representative request fixtures under `src/agent/fixtures/` (the serialized stream-json / argv / prompt-json a turn WITH an image produces) so US-005/006/007 can unit-test serialization with no live calls",
+        "Write findings into docs/provider-image-input.md",
+        "Typecheck passes"
+      ],
       "priority": 2,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser verification required). Touches all three working drivers - keep it additive so no existing behaviour regresses. Suggested skills: none."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). Everything downstream depends on this. Keep probes trivial (a tiny PNG), temp dir only, never the conan repo. Suggested skills: none."
     },
     {
       "id": "US-003",
-      "title": "Context-window sizes in the registry + exposed via capabilities",
-      "description": "As a developer, I want the window size for the active provider/model available to the UI, so the meter can show a percentage only when the denominator is real.",
+      "title": "imageInput capability + AgentImageAttachment on the turn seam",
+      "description": "As a developer, I want image support expressed as a capability so the UI can adapt without ever branching on a provider name.",
       "acceptanceCriteria": [
-        "Add a context-window lookup to `src/agent/registry.ts` (per provider, per model where it differs), populated from US-001's verified findings",
-        "Expose the resolved window size to the client - either on the capabilities frame pushed at session start or on `GET /api/agent/providers`; it must be reachable without the UI branching on a provider name",
-        "A provider/model with an UNKNOWN window reports null, never a guessed number",
+        "Add `imageInput: boolean` to `AgentCapabilities` in src/agent/driver.ts; set per US-002's verified truth (claude true, codex true, grok per the probe)",
+        "Add an `AgentImageAttachment` type to the turn seam (src/agent/attachments.ts / AgentTurn) carrying the image bytes reference (e.g. staged path + media type + bytes) alongside the existing file attachments",
+        "The UI capability mirror (ui/src/hooks/useProviders.ts / useAgentChat.ts) picks up `imageInput` via the TYPE-ONLY RE-EXPORT from src/agent/driver.ts - do NOT hand-copy the field (that drift shipped before)",
+        "No behaviour change: a turn with no images serializes exactly as today",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser verification required). Depends on US-001. Keep the table small and data-shaped, like the rest of the registry. Suggested skills: none."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). Same capability-descriptor pattern as effortModes/permissionModes. Suggested skills: none."
     },
     {
       "id": "US-004",
-      "title": "Composer context-window meter",
-      "description": "As a user, I want to see how full my context window is (and what the turn cost), so I know when a conversation is near its limit.",
+      "title": "Server-side image staging (base64 in, per-provider materialization)",
+      "description": "As a developer, I want the gateway to accept a pasted image and stage it however each provider needs, because the browser only has base64 and codex needs a file path.",
       "acceptanceCriteria": [
-        "A compact meter in the composer shows the current context position; when the window size is known it also shows a percentage/gauge",
-        "When the window size is UNKNOWN, show the raw token count with NO percentage and no gauge - never a fabricated ratio",
-        "When the provider reports no usage at all, the meter is absent rather than showing zero",
-        "Cost rides alongside where the provider reports it (`capabilities.costUsd`), tokens where it doesn't - reuse the existing per-turn footer logic, no provider-name branching",
-        "Updates after each turn; a resumed thread shows the restored position or nothing (never a stale number from another thread)",
-        "Renders correctly in light AND dark with semantic tokens only; does not shift the composer layout",
+        "A bounded, token-gated + CORS-reflected path accepts an image as base64 (media type + data) from the browser and stages it - writing a temp file for path-based CLIs (codex `-i`) and keeping base64 for inline CLIs (claude)",
+        "Bound it like the file-pin path: max bytes per image + max image count per turn; reject/truncate honestly, never silently balloon a turn",
+        "Staged temp files live in a predictable temp location, are cleaned up, and their paths are validated (no traversal)",
+        "Extend the outgoing-turn serialization so images ride the turn to the driver (mirrors prepareFileAttachments/serializeTurnPrompt for files)",
+        "Unit tests cover accept -> stage -> per-provider shape (using US-002 fixtures); a directory/oversize/bad-base64 input returns a clear error",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: send turns on claude and on codex, confirm the meter updates and that the unknown-window case degrades to counts"
+        "Tests pass"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). First UI story; depends on US-002 + US-003. Browser-verify on a throwaway port stack. Suggested skills: automate-browser, audit-ui."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). The RECEIVING end; Claude builds the browser paste->base64->send end in the follow-up round. Suggested skills: none."
     },
     {
       "id": "US-005",
-      "title": "Local draft threads \u2014 no DB row until first send",
-      "description": "As a user, I want a new chat to be a local draft so abandoning it doesn't litter my sidebar.",
+      "title": "CodexDriver image plumbing (-i staged paths)",
+      "description": "As a user, I want an image I attach to reach Codex.",
       "acceptanceCriteria": [
-        "'New chat' creates a LOCAL draft only - no `chat_thread` row is written and no sidebar row is persisted until the first message is sent",
-        "The draft holds its own launch config (provider, model, permission mode, cwd) so every composer chip works before a thread exists - this is the hidden dependency, not an afterthought",
-        "An abandoned draft leaves NOTHING behind: no DB row, no orphaned sidebar entry, nothing after a reload",
-        "Existing saved threads still open, resume, and render exactly as before - draft state must not touch the persistence path",
-        "Regression coverage in `src/agent/threads.test.ts` (same throwaway-SQLite pattern the file already uses): a thread created through the draft-promotion path persists with its launch config intact (provider, model, cwd), provider stickiness still holds on a conflicting upsert, and `adoptChatThread` still re-keys correctly on resume - these are the invariants a draft refactor can silently break, and nothing else guards them",
-        "Be honest about the split: 'no DB row exists before the first send' is UI state and is NOT unit-testable here - it stays a browser check. Do not claim unit coverage for it",
+        "CodexDriver passes staged image file paths via `-i/--image` on the turn that spawns the process (initial prompt); multiple images supported per US-002",
+        "Documented limitation: codex `-i` is initial-prompt-only; a resumed codex turn is a fresh process, so images attach to that turn's spawn - state this honestly in code + docs",
+        "A turn with no images spawns exactly as today (additive)",
+        "Unknown/unsupported states never crash the driver",
+        "Unit test against the US-002 fixture: the spawned argv includes the expected `-i <path>` for an image turn and omits it otherwise",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: open a new chat, abandon it, reload, confirm nothing persisted",
         "Tests pass"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "VERIFIED ALREADY SATISFIED \u2014 no code needed. The story's premise was wrong: `upsertChatThread` is called only from the system event (after the first prompt), and `newThreadIn` only pushes React state. Measured live: chat_thread rows 8 -> 8 across three 'New chat' clicks, and 4 abandoned drafts -> 0 after reload with the DB still at 8. The launch config already lives in ChatPane. The threads.test.ts requirement was predicated on a refactor that proved unnecessary; the promotion invariants are covered by US-006's new idempotence test plus the 7 existing tests. Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). The riskiest change in this round - it sits on the thread-persistence path, which has real test coverage beneath it (threads.test.ts). Verify resume/reopen explicitly and extend that file rather than trusting the browser alone. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). Drivers build argv via args.push (src/agent/codex.ts ~135). Suggested skills: none."
     },
     {
       "id": "US-006",
-      "title": "Draft promotion on first send + one draft per project",
-      "description": "As a user, I want my draft to become a real thread the moment I send, and I don't want repeated 'New chat' clicks to pile up empty drafts.",
+      "title": "ClaudeDriver image plumbing (stream-json image content block)",
+      "description": "As a user, I want an image I attach to reach Claude.",
       "acceptanceCriteria": [
-        "Sending the first message promotes the draft to a real thread: the row is created with its launch config intact and appears in the sidebar",
-        "Clicking 'New chat' while an empty draft already exists for that project REUSES the existing draft instead of creating a second one",
-        "The promoted thread behaves identically to one created the old way - resume, reopen, transcript restore, provider avatar",
-        "The auto-open-most-recent behaviour (polish US-002) still works and never auto-opens a draft over a real thread",
-        "Persistence-level assertion that promotion creates EXACTLY ONE chat_thread row - repeated 'New chat' clicks followed by a single send must not produce duplicates. Assert the row count in `src/agent/threads.test.ts`, not just visually in the browser",
+        "ClaudeDriver includes image content blocks (base64, per US-002's verified shape) in the stream-json user message alongside the text block",
+        "A turn with no images produces the same stream-json as today (additive)",
+        "Unit test against the US-002 fixture: an image turn's serialized user message contains the expected image content block; a text-only turn does not",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: click New chat twice (one draft), send, confirm promotion + reload persistence",
         "Tests pass"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-005. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). ClaudeDriver builds the stream-json user message content array. Suggested skills: none."
     },
     {
       "id": "US-007",
-      "title": "Reasoning-effort descriptor on the capability seam + per-driver application",
-      "description": "As a developer, I want reasoning effort expressed as a capability so each provider applies it its own way and the UI never learns provider names.",
+      "title": "GrokDriver image plumbing (--prompt-json) or honest imageInput:false",
+      "description": "As a user, I want images to reach Grok if it supports them, or to honestly not be offered if it doesn't.",
       "acceptanceCriteria": [
-        "Add an effort descriptor to `AgentCapabilities` shaped like `permissionModes` (a list of {id,label,description} in the provider's own vocabulary); an EMPTY list means unsupported",
-        "GrokDriver applies `--reasoning-effort <high|medium|low>` (the verified values); CodexDriver applies `-c model_reasoning_effort=<level>`; ClaudeDriver applies a prompt-level prefix since it has no flag - the UI never knows which mechanism is used",
-        "The chosen effort rides the launch config and persists per thread",
-        "Mirrored UI types stay in sync via the type-only re-export from `src/agent/driver.ts` (do NOT hand-mirror - that drift already shipped once)",
+        "If US-002 verified grok accepts images: GrokDriver sends them via `--prompt-json` in the verified shape, with a unit test against the fixture",
+        "If US-002 found grok does NOT support headless image input: set grok `imageInput: false` and add NO image plumbing - the honest outcome, with a one-line note in docs/provider-image-input.md explaining why",
+        "Either way, a turn with no images behaves exactly as today",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser verification required). Depends on US-001's verified mechanisms. Same capability-descriptor pattern as permissionModes. Suggested skills: codebase-design."
-    },
-    {
-      "id": "US-008",
-      "title": "Effort chip in the composer (capability-driven)",
-      "description": "As a user, I want to ask for more or less thinking, using whatever vocabulary my provider actually supports.",
-      "acceptanceCriteria": [
-        "An effort chip renders beside the existing chips, listing options from the capability descriptor - never a hard-coded list and never a provider-name branch",
-        "The chip is ABSENT (not disabled-and-inert) when the provider's effort list is empty",
-        "Grok shows high/medium/low; codex shows its levels; claude shows its prompt-level options",
-        "Copy must NOT imply the control reveals thinking - reasoning TEXT stays redacted for claude and encrypted for codex (D2)",
-        "Renders correctly in light AND dark; locks with the rest of the launch config after the first turn if that matches the existing chip behaviour",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: compare the chip across claude / codex / grok"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-007. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-009",
-      "title": "@-mention pins: attachment model + prompt serialization + size guard",
-      "description": "As a user, I want an @-mentioned file's CONTENT sent with my turn, instead of only a path the agent has to re-read.",
-      "acceptanceCriteria": [
-        "A pinned `@` mention becomes a structured attachment on the outgoing turn: the path plus the content actually sent",
-        "Pins serialize into the prompt in a clearly delimited block so the agent receives content rather than a path to re-read",
-        "A size guard bounds pinned content; anything truncated carries a visible, honest marker - never silent truncation",
-        "Pins are per-turn by default (not sticky) unless explicitly kept",
-        "Plain (unpinned) `@` path references keep working exactly as today - this is additive",
-        "Typecheck passes",
-        "Tests pass"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser verification required). Port as REAL context attachments, not prettier chips. File pins only - terminal/element/preview channels are out of scope. Suggested skills: none."
-    },
-    {
-      "id": "US-010",
-      "title": "Pin rendering in the composer and transcript",
-      "description": "As a user, I want to see exactly what content was pinned and sent, so the transcript never lies about my prompt.",
-      "acceptanceCriteria": [
-        "Pending pins render in the composer before send, with a way to remove one",
-        "Sent pins render in the transcript attached to their turn, showing what was actually included (and marking truncation where it happened)",
-        "A restored/resumed transcript degrades honestly if pin detail isn't recoverable - never imply content was sent that wasn't",
-        "Renders correctly in light AND dark with semantic tokens only",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: pin a file, send, confirm the transcript shows the pin and the agent answers from the pinned content"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-009. Suggested skills: automate-browser, audit-ui."
-    },
-    {
-      "id": "US-011",
-      "title": "Cross-provider QA + docs",
-      "description": "As a maintainer, I want proof all four features work across all three providers, and the docs updated to match.",
-      "acceptanceCriteria": [
-        "Exercise each feature on claude, codex, and grok: context meter (incl. the unknown-window degradation), draft create/abandon/promote, effort chip, and a pinned-file turn",
-        "Record the honest per-provider result - including anything that does NOT work - in docs/ rather than claiming uniform success",
-        "Update CLAUDE.md's chat-architecture section for the meter, drafts, effort, and pins; mark T3-5/T3-11/T3-6/T3-3 done in docs/t3-port-backlog.md",
-        "Confirm NO story in this round added a Premium gate (PAYWALL_ENABLED stays false)",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Owner: CODEX (no browser). Final image-seam story; degrade honestly rather than force unsupported plumbing. Suggested skills: none."
     }
   ]
 }
