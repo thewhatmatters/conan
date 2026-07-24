@@ -64,6 +64,8 @@ import {
 } from "../hooks/useProviders.ts";
 import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
 import ThreadToolbar from "./ThreadToolbar.tsx";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
+import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
 
 /** One slash command from GET /api/claude/commands (src/commands/index.ts). */
@@ -884,18 +886,6 @@ export default function ChatPane({
                     chip. Codex and Grok don't (`modelSelection: false`), and a
                     chip whose menu holds one inert "Default model" row is a
                     control that lies about what the provider can do. */}
-                {/* Context-window meter (T3-5). The denominator comes from the
-                    session's own capability descriptor, so a percentage shows
-                    only when the window is genuinely known — counts otherwise. */}
-                {contextTokens != null && (
-                  <>
-                    <span className="text-border">|</span>
-                    <ContextMeter
-                      used={contextTokens}
-                      windowTokens={caps.contextWindowTokens}
-                    />
-                  </>
-                )}
                 {caps.modelSelection && (
                   <>
                     <span className="text-border">|</span>
@@ -984,7 +974,13 @@ export default function ChatPane({
                     </Chip>
                   </>
                 )}
-                <span className="text-border">|</span>
+                <div className="flex-1" />
+                {/* Right cluster: a compact context ring (rich hover card),
+                    the pin picker, and send — kept out of the chip row so the
+                    chips stay on one line (T3 layout). */}
+                {contextTokens != null && (
+                  <ContextMeter used={contextTokens} windowTokens={caps.contextWindowTokens} />
+                )}
                 <PinPicker
                   token={token}
                   cwd={effectiveCwd}
@@ -995,7 +991,6 @@ export default function ChatPane({
                     )
                   }
                 />
-                <div className="flex-1" />
                 {busy ? (
                   <button
                     onClick={interrupt}
@@ -1262,39 +1257,49 @@ function ContextMeter({
 }) {
   if (used == null) return null;
   const pct = windowTokens ? Math.min(100, (used / windowTokens) * 100) : null;
-  const tone =
-    pct == null
-      ? "text-muted-foreground"
-      : pct >= 90
-        ? "text-destructive"
-        : pct >= 75
-          ? "text-amber-500 dark:text-amber-400"
-          : "text-muted-foreground";
+  // Ring colour by fill; a genuinely-unknown window (codex) is neutral, never
+  // a fabricated fill.
+  const variant =
+    pct == null ? "neutral" : pct >= 90 ? "error" : pct >= 75 ? "warning" : "default";
+  const barColor =
+    pct == null ? "bg-muted" : pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-chart-1";
+
   return (
-    <span
-      className={cn("inline-flex items-center gap-1.5 text-[11px]", tone)}
-      title={
-        windowTokens
-          ? `Context: ${used.toLocaleString()} of ${windowTokens.toLocaleString()} tokens`
-          : `Context: ${used.toLocaleString()} tokens (window size unknown for this provider/model)`
-      }
-    >
-      {pct != null && (
-        <span className="h-1 w-10 overflow-hidden rounded-full bg-muted">
-          <span
-            className={cn(
-              "block h-full rounded-full",
-              pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-amber-500" : "bg-chart-2",
-            )}
-            style={{ width: `${Math.max(2, pct)}%` }}
+    <TooltipProvider delayDuration={150}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex size-7 cursor-default items-center justify-center">
+          <ProgressCircle
+            value={pct ?? 0}
+            radius={11}
+            strokeWidth={2.5}
+            variant={variant}
           />
         </span>
-      )}
-      <span>
-        {fmtTokens(used)}
-        {pct != null ? ` · ${Math.round(pct)}%` : " ctx"}
-      </span>
-    </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="w-60 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-foreground">Context window</span>
+          <span className="text-[11px] text-muted-foreground">
+            {pct != null
+              ? `${Math.round(pct)}% · ${fmtTokens(used)}/${fmtTokens(windowTokens as number)}`
+              : `${fmtTokens(used)} tokens`}
+          </span>
+        </div>
+        <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-muted">
+          <span
+            className={cn("block h-full rounded-full", barColor)}
+            style={{ width: pct != null ? `${Math.max(2, pct)}%` : "100%", opacity: pct != null ? 1 : 0.4 }}
+          />
+        </span>
+        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+          {pct != null
+            ? "Tokens the conversation is carrying (input + cached). Grows each turn."
+            : "This provider reports no context-window size, so no percentage is shown — only the raw count."}
+        </p>
+      </TooltipContent>
+    </Tooltip>
+    </TooltipProvider>
   );
 }
 
