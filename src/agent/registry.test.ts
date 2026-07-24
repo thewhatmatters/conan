@@ -17,6 +17,7 @@ import {
   CODEX_CAPABILITIES,
   GROK_CAPABILITIES,
   capabilitiesFor,
+  capabilitiesForReportedModel,
   contextWindowFor,
 } from "./registry.js";
 import { CLAUDE_CAPABILITIES } from "./claude.js";
@@ -55,6 +56,28 @@ test("per-launch capabilities expose the selected model window", () => {
   assert.equal(resolved.contextWindowTokens, 272_000);
   assert.equal(resolved.permissionModes, provider.capabilities.permissionModes);
   assert.equal(capabilitiesFor(provider, "unknown").contextWindowTokens, null);
+});
+
+test("reported-model resolution replaces the provisional launch denominator", () => {
+  const claude = getProvider("claude")!;
+  assert.equal(capabilitiesFor(claude).contextWindowTokens, 200_000);
+  assert.equal(
+    capabilitiesForReportedModel(claude, "claude-fable-5").contextWindowTokens,
+    1_000_000,
+  );
+  assert.equal(
+    capabilitiesForReportedModel(claude, "future-claude").contextWindowTokens,
+    null,
+  );
+  assert.equal(
+    capabilitiesForReportedModel(getProvider("grok")!, "grok-4.5-build")
+      .contextWindowTokens,
+    null,
+  );
+  assert.equal(
+    capabilitiesForReportedModel(getProvider("codex")!, null).contextWindowTokens,
+    null,
+  );
 });
 
 test("capabilities pin the US-001 verified matrix", () => {

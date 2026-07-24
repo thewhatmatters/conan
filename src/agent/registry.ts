@@ -132,6 +132,20 @@ export function capabilitiesFor(
   };
 }
 
+/** Re-resolve after the provider reports the model it actually launched.
+ *  An unrecognized telemetry slug means an unknown denominator. */
+export function capabilitiesForReportedModel(
+  provider: ProviderEntry,
+  reportedModel: string | null,
+): AgentCapabilities {
+  return {
+    ...provider.capabilities,
+    contextWindowTokens: reportedModel
+      ? contextWindowFor(provider.id, reportedModel)
+      : null,
+  };
+}
+
 // ── Install probe ──────────────────────────────────────────────────────────
 
 /** One probed answer per provider, cached. */

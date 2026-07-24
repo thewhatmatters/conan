@@ -3,3 +3,4 @@ US-002: reported per-turn token usage and context position from all three driver
 US-003: exposed verified per-model context windows through launch capabilities.
 US-007: added provider-owned reasoning effort to capabilities, launch config, drivers, and thread persistence.
 US-009: added bounded per-turn file attachments and shared prompt serialization.
+US-001: refreshed context-window capabilities from the provider-reported model.

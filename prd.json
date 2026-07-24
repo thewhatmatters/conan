@@ -19,7 +19,7 @@
         "Tests pass"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser). Standalone from the image work - do it first, it's the quick correct-the-meter win. The registry CONTEXT_WINDOWS table + contextWindowFor already exist (src/agent/registry.ts). Suggested skills: none."
     },
     {

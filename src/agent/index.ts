@@ -5,6 +5,7 @@ import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
 import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
 import {
   capabilitiesFor,
+  capabilitiesForReportedModel,
   getProvider,
   resolveRequestedProvider,
   type ProviderEntry,
@@ -78,6 +79,15 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
+    if (e.kind === "system") {
+      // Init is authoritative: launch selection may be absent or only an
+      // alias. Unknown reported models stay null rather than falling back.
+      send({
+        type: "capabilities",
+        provider: provider.id,
+        capabilities: capabilitiesForReportedModel(provider, e.model),
+      });
+    }
     if (e.kind === "system" && e.sessionId) {
       sessionId = e.sessionId;
       if (resumeFrom) {
