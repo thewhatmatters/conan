@@ -36,6 +36,18 @@ import {
 import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
+import claudeIcon from "../assets/providers/claude.svg?raw";
+import grokIcon from "../assets/providers/grok.svg?raw";
+import openaiIcon from "../assets/providers/openai.svg?raw";
+
+/** Provider brand marks by provider id (US: provider-icon avatars). The Codex
+ *  icon is the OpenAI mark. Inlined via ?raw so `currentColor` inherits from
+ *  the wrapper's text color; a provider with no icon falls back to its letter. */
+const PROVIDER_ICON: Record<string, string> = {
+  claude: claudeIcon,
+  codex: openaiIcon,
+  grok: grokIcon,
+};
 
 /**
  * Project-organized chat surface (US-006 sidebar shell, US-025 projects,
@@ -1035,12 +1047,13 @@ const STATUS_ICON: Record<Pill, { Icon: LucideIcon; cls: string; spin?: boolean 
 function agentOf(
   provider: string | null | undefined,
   registry: ProviderStatus[],
-): { letter: string; label: string } {
+): { id: string; letter: string; label: string } {
   const id = provider ?? "claude";
   const entry = registry.find((p) => p.id === id);
-  if (entry) return { letter: entry.avatarLetter, label: entry.name };
-  if (id === "claude") return { letter: "C", label: "Claude Code" };
+  if (entry) return { id, letter: entry.avatarLetter, label: entry.name };
+  if (id === "claude") return { id, letter: "C", label: "Claude Code" };
   return {
+    id,
     letter: id.charAt(0).toUpperCase(),
     label: id.charAt(0).toUpperCase() + id.slice(1),
   };
@@ -1049,16 +1062,30 @@ function agentOf(
 /** Sidebar row leading glyph: an avatar for which agent drove the thread (C /
  *  X / G) with the live status as a small corner badge — the verified-avatar
  *  pattern (identity + a status dot punched out with a ring). */
-function AgentAvatar({ pill, agent }: { pill: Pill; agent: { letter: string; label: string } }) {
+function AgentAvatar({
+  pill,
+  agent,
+}: {
+  pill: Pill;
+  agent: { id: string; letter: string; label: string };
+}) {
   const s = STATUS_ICON[pill];
+  const icon = PROVIDER_ICON[agent.id];
   return (
     <span
       className="relative mt-0.5 shrink-0"
       title={`${agent.label} · ${PILL[pill].label}`}
       aria-label={`${agent.label}, ${PILL[pill].label}`}
     >
-      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground ring-1 ring-border">
-        {agent.letter}
+      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-foreground ring-1 ring-border">
+        {icon ? (
+          <span
+            className="flex size-3.5 items-center justify-center text-[14px] text-foreground [&>svg]:size-full"
+            dangerouslySetInnerHTML={{ __html: icon }}
+          />
+        ) : (
+          <span className="text-[11px] font-semibold">{agent.letter}</span>
+        )}
       </span>
       <s.Icon
         className={cn(
@@ -1088,7 +1115,7 @@ function ThreadRow({
   when: string;
   pill: Pill;
   /** Registry-resolved agent identity (US-011) — picks the avatar letter. */
-  agent: { letter: string; label: string };
+  agent: { id: string; letter: string; label: string };
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
