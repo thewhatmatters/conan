@@ -125,3 +125,42 @@ test("adoptChatThread keeps the provider across the resume re-key", () => {
   assert.equal(getChatThread("codex-1-forked")?.effort, "high");
   closeDb();
 });
+
+// T3-11 (US-006): draft promotion. A draft is UI state — no row exists until
+// the first turn — so what's testable here is the persistence half: promoting
+// must land exactly ONE row, and re-entering the same session (the init event
+// can re-fire, e.g. after a live permission-mode switch) must not add another.
+test("promotion is idempotent — one session id yields exactly one row", () => {
+  const rows = () =>
+    (getDb()
+      .prepare("SELECT COUNT(*) AS n FROM chat_thread WHERE session_id = ?")
+      .get("promote-1") as { n: number }).n;
+
+  upsertChatThread({
+    sessionId: "promote-1",
+    projectId: "p1",
+    cwd: "/tmp/proj",
+    model: "claude-fable-5",
+    provider: "claude",
+    effort: null,
+    title: "promoted draft",
+  });
+  assert.equal(rows(), 1);
+
+  // Same session re-upserted (re-emitted init) — still one row, config intact.
+  upsertChatThread({
+    sessionId: "promote-1",
+    projectId: "p1",
+    cwd: "/tmp/proj",
+    model: "claude-fable-5",
+    provider: "claude",
+    effort: null,
+    title: "promoted draft",
+  });
+  assert.equal(rows(), 1);
+
+  const row = getChatThread("promote-1");
+  assert.equal(row?.provider, "claude");
+  assert.equal(row?.model, "claude-fable-5");
+  assert.equal(row?.cwd, "/tmp/proj");
+});

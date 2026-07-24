@@ -335,6 +335,20 @@ export default function ChatSurface({
   };
 
   const newThreadIn = (projectId: string) => {
+    // T3-11: reuse this project's existing untouched draft instead of stacking
+    // another one. A draft is untouched when it has never reported a session id
+    // (no turn has been sent, so no `chat_thread` row exists either) and it
+    // isn't reopening a saved thread. Without this, three clicks of "New chat"
+    // left three identical empty rows in the sidebar.
+    const draft = threads.find(
+      (t) => t.projectId === projectId && !t.resume && !states[t.id]?.sessionId,
+    );
+    if (draft) {
+      setActiveId(draft.id);
+      setClosedGroups((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
+      setCollapsed(false);
+      return;
+    }
     const id = `t${++seq.current}`;
     setThreads((prev) => [...prev, { id, projectId, createdAt: Date.now() }]);
     setActiveId(id);
