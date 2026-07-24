@@ -140,6 +140,10 @@ const FALLBACK_CAPABILITIES: AgentCapabilities = {
     { id: "acceptEdits", label: "Accept edits", description: "Auto-approves file edits" },
     { id: "bypassPermissions", label: "Full access", description: "Runs every tool without prompting" },
   ],
+  effortModes: [
+    { id: "think", label: "Think", description: "Ask Claude to reason carefully" },
+    { id: "ultrathink", label: "Ultrathink", description: "Ask Claude to reason deeply" },
+  ],
 };
 
 /** Render-facing thread state, reported up to the sidebar (US-006) so the
@@ -166,6 +170,7 @@ export interface ThreadUiState {
 export interface ResumeTarget {
   sessionId: string;
   model: string | null;
+  effort: string | null;
   /** The provider that created the thread (US-008) — shown locked in the
    *  chip; the gateway resumes on it regardless. Null → claude (pre-
    *  migration rows). */
@@ -511,6 +516,7 @@ export default function ChatPane({
       // live switch (codex/grok) each turn re-sends the mode, and a mid-
       // session chip change already updated it via the confirmed event path.
       permissionMode: effectiveMode,
+      effort: resume?.effort ?? undefined,
       cwd: effectiveCwd ?? undefined,
       projectId: projectId ?? undefined,
       resume: resume && historyState === "found" ? resume.sessionId : undefined,

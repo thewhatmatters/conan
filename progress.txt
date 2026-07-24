@@ -1,3 +1,4 @@
 US-001: recorded verified provider context windows, effort mechanisms, and usage fields.
 US-002: reported per-turn token usage and context position from all three drivers.
 US-003: exposed verified per-model context windows through launch capabilities.
+US-007: added provider-owned reasoning effort to capabilities, launch config, drivers, and thread persistence.

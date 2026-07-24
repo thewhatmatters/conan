@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ClaudeStreamParser,
+  claudePromptFor,
   claudeModeFor,
   classifyTool,
   type ControlRequest,
@@ -32,6 +33,15 @@ const wholeAssistant = (id: string, content: unknown[]) =>
   j({ type: "assistant", message: { id, role: "assistant", content } });
 const resultLine = () =>
   j({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.01, duration_ms: 1200, num_turns: 1, result: "done", usage: { input_tokens: 120, cache_read_input_tokens: 80, output_tokens: 7 } });
+
+test("claude effort applies prompt-level phrasing and ignores unknown ids", () => {
+  assert.equal(claudePromptFor("Do it", "think"), "Think carefully.\n\nDo it");
+  assert.equal(
+    claudePromptFor("Do it", "ultrathink"),
+    "Ultrathink before answering.\n\nDo it",
+  );
+  assert.equal(claudePromptFor("Do it", "bogus"), "Do it");
+});
 
 test("text deltas stream incrementally and the whole frame is suppressed", () => {
   const p = new ClaudeStreamParser();

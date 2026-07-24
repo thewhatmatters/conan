@@ -130,6 +130,22 @@ test("grok args: prompt via -p, streaming-json, per-turn mode, resume by session
   );
 });
 
+test("grok args apply only verified reasoning-effort values", () => {
+  assert.deepEqual(
+    buildGrokArgs({
+      cwd: "/w",
+      mode: "default",
+      sessionId: null,
+      effort: "medium",
+      prompt: "hello",
+    }),
+    [
+      "-p", "hello", "--output-format", "streaming-json", "--cwd", "/w",
+      "--permission-mode", "default", "--reasoning-effort", "medium",
+    ],
+  );
+});
+
 test("grok mode mapping: shared vocabulary passes through, unknown → default", () => {
   assert.equal(grokModeFor("default"), "default");
   assert.equal(grokModeFor("plan"), "plan");

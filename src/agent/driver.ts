@@ -29,6 +29,9 @@ export interface AgentLaunchOpts {
    *  floors an id it doesn't recognize to its SAFEST mode (never a silent
    *  bypass), so a stale pick from a provider switch can't crash a CLI. */
   permissionMode?: string;
+  /** Provider-owned reasoning-effort id. The driver applies its own mechanism
+   *  and floors unknown ids to no override. */
+  effort?: string;
   /** Working directory the agent process launches in — the project this chat
    *  operates on. Like the rest of the launch config, fixed at the first
    *  prompt. Omitted → the gateway's active cwd (no pty supplies one here). */
@@ -50,6 +53,13 @@ export interface AgentPermissionMode {
   /** Short chip label (e.g. "Supervised", "Workspace write"). */
   label: string;
   /** One-line hint shown in the chip's dropdown. */
+  description: string;
+}
+
+/** One provider-owned reasoning-effort choice. */
+export interface AgentEffortMode {
+  id: string;
+  label: string;
   description: string;
 }
 
@@ -90,6 +100,8 @@ export interface AgentCapabilities {
   modelSelection: boolean;
   /** The permission modes this provider supports, in its own vocabulary. */
   permissionModes: AgentPermissionMode[];
+  /** Reasoning-effort choices in provider vocabulary; empty = unsupported. */
+  effortModes: AgentEffortMode[];
 }
 
 /**

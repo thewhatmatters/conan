@@ -95,6 +95,14 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
       description: "Runs every tool without prompting",
     },
   ],
+  effortModes: [
+    { id: "think", label: "Think", description: "Ask Claude to reason carefully" },
+    {
+      id: "ultrathink",
+      label: "Ultrathink",
+      description: "Ask Claude to use its deepest available reasoning",
+    },
+  ],
 };
 
 /** Claude's own `--permission-mode` vocabulary. A mode id from another
@@ -106,6 +114,12 @@ const CLAUDE_MODES = new Set(["default", "plan", "acceptEdits", "bypassPermissio
 
 export function claudeModeFor(mode: string | undefined): string {
   return mode && CLAUDE_MODES.has(mode) ? mode : "default";
+}
+
+export function claudePromptFor(text: string, effort: string | undefined): string {
+  if (effort === "think") return `Think carefully.\n\n${text}`;
+  if (effort === "ultrathink") return `Ultrathink before answering.\n\n${text}`;
+  return text;
 }
 
 export class ClaudeDriver implements AgentDriver {
@@ -159,7 +173,10 @@ export class ClaudeDriver implements AgentDriver {
     // stdin (never an argv), so there is no shell-quoting / injection surface.
     const msg = JSON.stringify({
       type: "user",
-      message: { role: "user", content: [{ type: "text", text }] },
+      message: {
+        role: "user",
+        content: [{ type: "text", text: claudePromptFor(text, this.opts.effort) }],
+      },
     });
     this.child.stdin.write(msg + "\n");
     this.turnActive = true;

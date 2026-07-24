@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS chat_thread (
   cwd           TEXT NOT NULL,                  -- launch cwd (the project path at creation)
   model         TEXT,                           -- --model alias; null = default
   provider      TEXT,                           -- agent provider id (T3-1 US-006: claude|codex|grok); null reads as 'claude'
+  effort        TEXT,                           -- provider-owned reasoning-effort launch id
   title         TEXT,                           -- first-prompt-derived display title
   last_message  TEXT,                           -- PD-1: last assistant response (or prompt) preview
   created_at    INTEGER NOT NULL,               -- epoch ms

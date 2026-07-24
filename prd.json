@@ -122,7 +122,7 @@
         "Tests pass"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser verification required). Depends on US-001's verified mechanisms. Same capability-descriptor pattern as permissionModes. Suggested skills: codebase-design."
     },
     {

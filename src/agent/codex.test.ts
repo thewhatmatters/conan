@@ -176,6 +176,22 @@ test("codex args: global flags BEFORE the resume subcommand, prompt as the last 
   );
 });
 
+test("codex args apply recognized reasoning effort before resume", () => {
+  assert.deepEqual(
+    buildCodexArgs({
+      cwd: "/w",
+      sandbox: "read-only",
+      threadId: "thread-1",
+      effort: "high",
+      prompt: "hello",
+    }),
+    [
+      "exec", "--json", "--skip-git-repo-check", "-C", "/w", "--sandbox",
+      "read-only", "-c", "model_reasoning_effort=high", "resume", "thread-1", "hello",
+    ],
+  );
+});
+
 test("codex sandbox mapping: both vocabularies land on the right policy, unknown → read-only", () => {
   assert.equal(sandboxFor("read-only"), "read-only");
   assert.equal(sandboxFor("workspace-write"), "workspace-write");

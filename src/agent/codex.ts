@@ -83,6 +83,11 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
       description: "No sandbox — every command runs unrestricted",
     },
   ],
+  effortModes: [
+    { id: "low", label: "Low", description: "Faster responses with less reasoning" },
+    { id: "medium", label: "Medium", description: "Balanced reasoning effort" },
+    { id: "high", label: "High", description: "More thorough reasoning" },
+  ],
 };
 
 export type CodexSandbox = "read-only" | "workspace-write" | "danger-full-access";
@@ -114,6 +119,7 @@ export function buildCodexArgs(turn: {
   sandbox: CodexSandbox;
   threadId: string | null;
   model?: string;
+  effort?: string;
   prompt: string;
 }): string[] {
   const args = [
@@ -126,6 +132,9 @@ export function buildCodexArgs(turn: {
     turn.sandbox,
   ];
   if (turn.model) args.push("-m", turn.model);
+  if (turn.effort && CODEX_EFFORTS.has(turn.effort)) {
+    args.push("-c", `model_reasoning_effort=${turn.effort}`);
+  }
   if (turn.threadId) args.push("resume", turn.threadId);
   args.push(turn.prompt);
   return args;
@@ -227,6 +236,7 @@ export class CodexDriver implements AgentDriver {
       sandbox,
       threadId: this.threadId,
       model: this.opts.model,
+      effort: this.opts.effort,
       prompt,
     });
     // Fresh parser per turn — its state (tool ids, last message) is per-turn
@@ -475,3 +485,4 @@ function sumReported(...values: Array<number | null>): number | null {
     ? null
     : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
+const CODEX_EFFORTS = new Set(["low", "medium", "high"]);

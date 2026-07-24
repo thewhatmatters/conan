@@ -87,6 +87,9 @@ function migrate(handle: Database.Database): void {
     if (!cols.has("provider")) {
       handle.exec("ALTER TABLE chat_thread ADD COLUMN provider TEXT");
     }
+    if (!cols.has("effort")) {
+      handle.exec("ALTER TABLE chat_thread ADD COLUMN effort TEXT");
+    }
   }
 
   // T3-1 fix: threads on providers without a model picker persisted the model

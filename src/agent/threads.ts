@@ -27,6 +27,7 @@ export interface ThreadRow {
    *  | 'grok'). Pre-multi-provider rows (stored null) read as 'claude' — a
    *  resume must relaunch the thread's OWN provider, never the default. */
   provider: string;
+  effort: string | null;
   title: string | null;
   /** PD-1: preview of the last assistant response (or prompt) for the sidebar
    *  row's description line. Null for pre-PD-1 rows / threads with no turn yet. */
@@ -100,7 +101,7 @@ export function listChatProjects(): ProjectWithThreads[] {
     .all() as { id: string; path: string; name: string; created_at: number }[];
   const threads = db
     .prepare(
-      `SELECT session_id, project_id, cwd, model, provider, title, last_message, created_at, last_activity
+      `SELECT session_id, project_id, cwd, model, provider, effort, title, last_message, created_at, last_activity
          FROM chat_thread ORDER BY last_activity DESC`,
     )
     .all() as {
@@ -109,6 +110,7 @@ export function listChatProjects(): ProjectWithThreads[] {
     cwd: string;
     model: string | null;
     provider: string | null;
+    effort: string | null;
     title: string | null;
     last_message: string | null;
     created_at: number;
@@ -123,6 +125,7 @@ export function listChatProjects(): ProjectWithThreads[] {
       cwd: t.cwd,
       model: t.model,
       provider: t.provider ?? "claude",
+      effort: t.effort,
       title: t.title,
       lastMessage: t.last_message,
       createdAt: t.created_at,
@@ -157,20 +160,22 @@ export function upsertChatThread(t: {
   /** T3-1 US-006: the provider that launched the session. Sticky — a thread
    *  never changes provider, so a conflicting upsert keeps the original. */
   provider: string | null;
+  effort?: string | null;
   title: string | null;
 }): void {
   const now = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO chat_thread (session_id, project_id, cwd, model, provider, title, created_at, last_activity)
-       VALUES (@sessionId, @projectId, @cwd, @model, @provider, @title, @now, @now)
+      `INSERT INTO chat_thread (session_id, project_id, cwd, model, provider, effort, title, created_at, last_activity)
+       VALUES (@sessionId, @projectId, @cwd, @model, @provider, @effort, @title, @now, @now)
        ON CONFLICT(session_id) DO UPDATE SET
          model = COALESCE(excluded.model, chat_thread.model),
          provider = COALESCE(chat_thread.provider, excluded.provider),
+         effort = COALESCE(chat_thread.effort, excluded.effort),
          title = COALESCE(chat_thread.title, excluded.title),
          last_activity = excluded.last_activity`,
     )
-    .run({ ...t, now });
+    .run({ ...t, effort: t.effort ?? null, now });
 }
 
 /** One thread row by session id (US-015: the transcript route needs its cwd
@@ -178,7 +183,7 @@ export function upsertChatThread(t: {
 export function getChatThread(sessionId: string): ThreadRow | null {
   const row = getDb()
     .prepare(
-      `SELECT session_id, project_id, cwd, model, provider, title, last_message, created_at, last_activity
+      `SELECT session_id, project_id, cwd, model, provider, effort, title, last_message, created_at, last_activity
          FROM chat_thread WHERE session_id = ?`,
     )
     .get(sessionId) as
@@ -188,6 +193,7 @@ export function getChatThread(sessionId: string): ThreadRow | null {
         cwd: string;
         model: string | null;
         provider: string | null;
+        effort: string | null;
         title: string | null;
         last_message: string | null;
         created_at: number;
@@ -201,6 +207,7 @@ export function getChatThread(sessionId: string): ThreadRow | null {
     cwd: row.cwd,
     model: row.model,
     provider: row.provider ?? "claude",
+    effort: row.effort,
     title: row.title,
     lastMessage: row.last_message,
     createdAt: row.created_at,

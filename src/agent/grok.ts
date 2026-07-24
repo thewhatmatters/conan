@@ -86,6 +86,11 @@ export const GROK_CAPABILITIES: AgentCapabilities = {
       description: "Runs every tool without prompting",
     },
   ],
+  effortModes: [
+    { id: "high", label: "High", description: "Highest implementation quality" },
+    { id: "medium", label: "Medium", description: "Balanced effort and speed" },
+    { id: "low", label: "Low", description: "Quick responses with less reasoning" },
+  ],
 };
 
 /** Grok's own `--permission-mode` vocabulary (grok 0.2.111 --help). */
@@ -115,6 +120,7 @@ export function buildGrokArgs(turn: {
   mode: string;
   sessionId: string | null;
   model?: string;
+  effort?: string;
   prompt: string;
 }): string[] {
   const args = [
@@ -128,6 +134,9 @@ export function buildGrokArgs(turn: {
     turn.mode,
   ];
   if (turn.model) args.push("-m", turn.model);
+  if (turn.effort && GROK_EFFORTS.has(turn.effort)) {
+    args.push("--reasoning-effort", turn.effort);
+  }
   if (turn.sessionId) args.push("--resume", turn.sessionId);
   return args;
 }
@@ -227,6 +236,7 @@ export class GrokDriver implements AgentDriver {
       mode,
       sessionId: this.sessionId,
       model: this.opts.model,
+      effort: this.opts.effort,
       prompt,
     });
     // Fresh parser per turn — its accumulated text is per-turn anyway, and
@@ -399,3 +409,4 @@ function sumReported(...values: Array<number | null>): number | null {
     ? null
     : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
+const GROK_EFFORTS = new Set(["high", "medium", "low"]);

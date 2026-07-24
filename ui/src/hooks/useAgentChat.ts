@@ -23,6 +23,7 @@ export interface AgentOpts {
    *  codex's `read-only`/`workspace-write`/…. Drivers floor unknown ids to
    *  their safest mode. */
   permissionMode?: string;
+  effort?: string;
   /** Working directory for the session — the FIRST prompt's cwd fixes it
    *  (US-001); omitted → the gateway's active cwd. */
   cwd?: string;

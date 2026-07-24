@@ -96,6 +96,7 @@ interface SavedThread {
   /** Agent provider that drove the thread (T3-1 US-006/008) — 'claude' |
    *  'codex' | 'grok'; the gateway coalesces pre-migration nulls to 'claude'. */
   provider: string | null;
+  effort: string | null;
   title: string | null;
   /** PD-1: last assistant response / prompt preview — the row's description. */
   lastMessage: string | null;
@@ -848,6 +849,7 @@ export default function ChatSurface({
                       sessionId: t.resume.sessionId,
                       model: t.resume.model,
                       provider: t.resume.provider ?? null,
+                      effort: t.resume.effort,
                     }
                   : null
               }

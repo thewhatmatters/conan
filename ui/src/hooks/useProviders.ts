@@ -21,6 +21,7 @@ import { apiBase } from "../lib/gateway.ts";
 export type {
   AgentCapabilities,
   AgentPermissionMode,
+  AgentEffortMode,
 } from "../../../src/agent/driver.ts";
 import type { AgentCapabilities } from "../../../src/agent/driver.ts";
 

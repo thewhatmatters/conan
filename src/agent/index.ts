@@ -73,6 +73,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   let turnText = "";
   /** Session id this connection resumes (US-015) — the saved row to re-key. */
   let resumeFrom: string | null = null;
+  let launchEffort: string | null = null;
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
@@ -100,6 +101,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
             // turn in a reopened thread exit 1.
             model: provider.capabilities.modelSelection ? e.model : null,
             provider: provider.id,
+            effort: launchEffort,
             title: titleFromPrompt(firstPrompt),
           });
         } catch (err) {
@@ -210,6 +212,12 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       if (typeof msg.permissionMode === "string" && msg.permissionMode.trim()) {
         opts.permissionMode = msg.permissionMode.trim();
       }
+      if (typeof msg.effort === "string" && msg.effort.trim()) {
+        opts.effort = msg.effort.trim();
+      } else if (opts.resume) {
+        opts.effort = getChatThread(opts.resume)?.effort ?? undefined;
+      }
+      if (launchEffort === null) launchEffort = opts.effort ?? null;
       const requested =
         typeof msg.provider === "string" && msg.provider.trim()
           ? msg.provider.trim()

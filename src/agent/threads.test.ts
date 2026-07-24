@@ -53,13 +53,14 @@ const {
   upsertChatThread,
 } = await import("./threads.js");
 
-test("migrate() adds provider (and last_message) to a pre-existing chat_thread", () => {
+test("migrate() adds provider, effort, and last_message to a pre-existing chat_thread", () => {
   const cols = getDb()
     .prepare("PRAGMA table_info(chat_thread)")
     .all()
     .map((c) => (c as { name: string }).name);
   assert.ok(cols.includes("provider"));
   assert.ok(cols.includes("last_message"));
+  assert.ok(cols.includes("effort"));
 });
 
 test("a pre-migration row (provider NULL) reads as 'claude'", () => {
@@ -75,9 +76,11 @@ test("upsert records the launching provider; getChatThread returns it", () => {
     cwd: "/tmp/proj",
     model: null,
     provider: "codex",
+    effort: "high",
     title: "codex thread",
   });
   assert.equal(getChatThread("codex-1")?.provider, "codex");
+  assert.equal(getChatThread("codex-1")?.effort, "high");
 });
 
 test("provider is sticky — a conflicting upsert never rewrites it", () => {
@@ -87,9 +90,11 @@ test("provider is sticky — a conflicting upsert never rewrites it", () => {
     cwd: "/tmp/proj",
     model: null,
     provider: "grok",
+    effort: "low",
     title: null,
   });
   assert.equal(getChatThread("codex-1")?.provider, "codex");
+  assert.equal(getChatThread("codex-1")?.effort, "high");
 });
 
 test("upsert with provider null still reads as 'claude'", () => {
@@ -117,5 +122,6 @@ test("adoptChatThread keeps the provider across the resume re-key", () => {
   adoptChatThread("codex-1", "codex-1-forked");
   assert.equal(getChatThread("codex-1"), null);
   assert.equal(getChatThread("codex-1-forked")?.provider, "codex");
+  assert.equal(getChatThread("codex-1-forked")?.effort, "high");
   closeDb();
 });
