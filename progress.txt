@@ -1,0 +1,1 @@
+US-001: recorded verified provider context windows, effort mechanisms, and usage fields.
