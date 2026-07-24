@@ -8,6 +8,44 @@ Size: S (<30min) · M (a focused story) · L (multi-story / new subsystem).
 
 ---
 
+---
+
+## Polish loop (US-001..006) — dogfooded 2026-07-24
+
+The 6 polish-loop stories were marked passing by the build loop but had never
+been QA'd by hand. Walked live against the dev stack (real multi-provider
+threads) with the automate-browser skill, light + dark.
+
+Functional result: **5 of 6 fully pass; US-006 is partial.** Two unrelated
+findings from the multi-provider work surfaced during the walk.
+
+| Story | Result | Evidence |
+|----|------|------|
+| US-001 permission chip unlocked mid-conversation | **pass** | On a Claude thread with prior turns the chip is interactive and offers Supervised / Accept edits / Full access / Plan. |
+| US-002 auto-open most recent thread | **pass** | Boot lands on the most recent thread (toolbar + spine + composer), never "No open chats". |
+| US-003 in-UI Settings + theme | **pass** | Sidebar gear AND ⌘, both open Settings; tabs Status / Config / Appearance / License; Appearance offers Light / Dark / Auto. |
+| US-004 stronger skill ticks | **pass (code-verified only)** | `ActivitySpine.tsx`: skill = `size-2 bg-primary ring-2 ring-primary/25` vs tool = `h-0.5 w-2 bg-muted-foreground/25` — clearly distinct, hierarchy intact. **Not observed live** — no thread in the dev DB has a fired skill. |
+| US-005 sort / group menu | **pass** | Menu carries Sort projects (Last activity / Created / Manual), Sort threads (Last activity / Created), Group (By repository / By path / Keep separate), Visible threads. Persists via `conan-sidebar-view` in localStorage across reload. |
+| US-006 command-palette project picker | **partial** | Palette, keyboard hints (↑↓ / ↵ / ⌫ / esc) and "Local folder" all present — but see P6-a. |
+
+| ID | Item | Size | Status |
+|----|------|------|--------|
+| P6-a | **Recent projects are not offered in the palette.** The story's criterion "Recent projects are offered inline in the palette for quick re-add" is unimplemented: the palette lists only the "Local folder" source, and typing an existing project's name (`con`) returns "No matching source." rather than matching the `conan` project. | S | backlog |
+| MP-a | **A model chip is rendered for providers that have no model selection.** Selecting Grok (or Codex) still shows a "Default model" chip, though `capabilities.modelSelection` is false for both. Not dangerous — the menu degrades to a single inert "Default model" entry rather than offering Claude models — but it is a dead control, and it violates the capability model's own rule that a provider never gets a control it can't honor. Hide the chip when `modelSelection` is false. | S | backlog |
+| MP-b | **Empty-state copy hardcodes Claude.** A new chat reads "Drives `claude` headlessly in the active directory…" regardless of the selected provider — it still says Claude on a Grok or Codex thread. Should read from the registry like every other capability-driven surface. | S | backlog |
+
+Notes:
+- P6-a is the only unmet acceptance criterion across the six; everything else
+  in US-006 (palette, keyboard model, Local folder source) is built.
+- MP-a and MP-b are both instances of the same class the capability model
+  exists to prevent — a surface that still assumes Claude. Neither is a
+  correctness bug; both are honesty/polish.
+- US-004 is the one story that could not be verified by observation. Triggering
+  a real skill firing costs an agent turn; worth doing opportunistically the
+  next time a skill fires naturally rather than paying for a synthetic run.
+
+---
+
 ## A · Sidebar & projects — walked 2026-07-23
 
 Functional result: **A1–A9 all pass.** Enhancements found:
