@@ -1,209 +1,192 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-multi-provider",
-  "description": "T3-1 multi-provider: run Claude, Codex, and Grok behind the existing AgentDriver seam (src/agent/driver.ts), with the UI adapting honestly to each provider's real capabilities instead of assuming Claude's. Adds an AgentCapabilities descriptor, a provider registry + install probe, CodexDriver (one process per turn, `codex exec --json`, no interactive approval) and GrokDriver (Claude-like: `-p --output-format streaming-json`, token deltas, real reasoning text, total_cost_usd), a per-thread provider column, a composer provider chip locked after turn 1, and capability-driven permission/transcript/avatar rendering. Manual failover only; no cross-provider context transfer. Source PRD: prd-conan-multi-provider.md. NOTE for the executing agent: read AGENTS.md + HANDOFF.md first - Conan is chat-primary; run the gateway with `npm start` (not npm run dev); verify BOTH :3747 and :5173 after any gateway restart; browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack with CONAN_ALLOWED_ORIGINS set, never on :3747. Subscription auth only - never introduce ANTHROPIC_API_KEY.",
-  "generatedAt": "2026-07-23",
-  "sourcePrd": "prd-conan-multi-provider.md",
+  "branchName": "loop/conan-daily-driver",
+  "description": "Daily-driver polish for the chat-primary, multi-provider Conan: a context-window meter (T3-5), draft-based new-thread flow (T3-11), reasoning-effort control (T3-6), and @-mention content pinning (T3-3). Every feature must work across claude/codex/grok or degrade honestly via AgentCapabilities - NO provider-name branching in the UI, never render a control a provider can't honour, and never fabricate a number (unknown context window => show counts, no percentage). Source PRD: prd-conan-daily-driver.md. NOTE for the executing agent: read CLAUDE.md + AGENTS.md first - Conan is chat-primary; run the gateway with `npm start` (NO watch - restart manually after ANY src/ edit, a stale gateway 404s new routes); verify BOTH :3747 and :5173 after any gateway restart; browser-verify on a throwaway CONAN_PORT/CONAN_UI_PORT stack with CONAN_ALLOWED_ORIGINS set, never on :3747. Subscription auth only - never introduce ANTHROPIC_API_KEY. The paywall is OFF (PAYWALL_ENABLED=false) - no story may add a gate.",
+  "generatedAt": "2026-07-24",
+  "sourcePrd": "prd-conan-daily-driver.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Probe + pin provider capabilities as test fixtures",
-      "description": "As a developer, I need the real headless behavior of codex and grok captured as fixtures, so every driver is built against verified truth rather than --help guesses.",
+      "title": "Probe + record per-provider context windows and effort mechanisms",
+      "description": "As a developer, I need the real context-window sizes and reasoning-effort mechanisms for each provider recorded as verified facts, so the meter and the effort chip are built on truth rather than guesses.",
       "acceptanceCriteria": [
-        "Add `src/agent/fixtures/` with the observed NDJSON event streams for codex (`codex exec --json`) and grok (`grok -p --output-format streaming-json`), captured from a real run in a temp dir",
-        "Document the verified capability matrix: codex = no token deltas, no interactive approval, one process per turn, token counts only (no USD); grok = token deltas, readable reasoning text, total_cost_usd, --resume",
-        "Explicitly probe and record two open questions: (a) does grok support interactive tool approval headlessly in `--permission-mode default`, (b) can grok switch permission mode mid-session. Record the ANSWER, and if a capability is unavailable say so plainly",
-        "Note the codex stdin footgun: `codex exec` reads stdin when piped ('Reading additional input from stdin...') - the driver must pass the prompt as an argument and give the child stdin: 'ignore'",
-        "Typecheck passes",
-        "Tests pass"
+        "Record each provider's context-window size per model where it can be VERIFIED (claude 200k / 1M long-context; probe codex and grok). Where a window size cannot be verified, record it explicitly as UNKNOWN - never guess a denominator",
+        "Record the verified effort mechanisms already probed: grok `--reasoning-effort` (alias `--effort`) accepts exactly high|medium|low (CLI validates client-side); codex `-c model_reasoning_effort=<level>` is a recognized key (passes `--strict-config`); claude has NO flag - effort is prompt-level phrasing",
+        "Record which usage fields each provider reports per turn: claude `input_tokens`+`cache_read_input_tokens`, codex `input_tokens`+`cached_input_tokens`+`output_tokens`, grok `input_tokens`+`cache_read_input_tokens`+`total_tokens`",
+        "Write the findings into a doc (e.g. docs/provider-context-effort.md) with an honest UNKNOWN marker wherever a value could not be verified",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Facts-first story - everything downstream depends on it. Probes cost a few cents of real agent usage; keep prompts trivial (e.g. 'Reply with exactly: probe-ok') and run in a temp dir, never the conan repo. Suggested skills: none."
+      "passes": false,
+      "notes": "Facts-first story; everything downstream depends on it. Keep probe prompts trivial ('Reply with exactly: ok') and run in a temp dir, never the conan repo. Suggested skills: none."
     },
     {
       "id": "US-002",
-      "title": "Add AgentCapabilities to the driver seam",
-      "description": "As a developer, I want each driver to declare what it can actually do, so the UI can adapt without ever branching on a provider name.",
+      "title": "Report token usage + context position from all three drivers",
+      "description": "As a developer, I want every driver to report per-turn token usage and the resulting context-window position, because two of three currently discard the numbers the meter needs.",
       "acceptanceCriteria": [
-        "Add `AgentCapabilities` to src/agent/driver.ts: streamingDeltas, interactiveApproval, livePermissionSwitch, costUsd, reasoningText, resume, and permissionModes (array of {id, label, description} in the provider's own vocabulary)",
-        "Add `readonly capabilities: AgentCapabilities` to the AgentDriver interface",
-        "ClaudeDriver declares its verified descriptor: streamingDeltas true, interactiveApproval true, livePermissionSwitch true, costUsd true, reasoningText FALSE (D2 - headless claude redacts thinking text), resume true, permissionModes = default/plan/acceptEdits/bypassPermissions with their existing labels",
-        "No behavior change: the chat works exactly as before for Claude",
-        "Typecheck passes"
+        "ClaudeDriver and GrokDriver populate the existing `tokens` field on the `result` event (today only CodexDriver does; claude/grok emit costUsd and drop usage). Purely ADDITIVE - `costUsd` behaviour is unchanged",
+        "Add `contextTokens: number | null` to the `result` event = the latest turn's context-window POSITION (input + cached input), which is distinct from what the turn cost. Null when the provider reports nothing",
+        "All three drivers set `contextTokens` from their own usage fields per US-001's table",
+        "Parser tests cover the new fields against the existing `src/agent/fixtures/` NDJSON - no live CLI calls in tests",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Pure seam widening, no runtime change. Depends on US-001's verified matrix. Suggested skills: codebase-design."
+      "passes": false,
+      "notes": "Touches all three working drivers - keep it additive so no existing behaviour regresses. Suggested skills: none."
     },
     {
       "id": "US-003",
-      "title": "Provider registry + install probe route",
-      "description": "As a user, I want Conan to know which agent CLIs are installed, so the composer can offer the ones I can actually use.",
+      "title": "Context-window sizes in the registry + exposed via capabilities",
+      "description": "As a developer, I want the window size for the active provider/model available to the UI, so the meter can show a percentage only when the denominator is real.",
       "acceptanceCriteria": [
-        "Add `src/agent/registry.ts`: one entry per provider with id ('claude'|'codex'|'grok'), display name, avatar letter (C/X/G), binary name, capabilities, and a driver factory",
-        "Detect installed binaries via a login-shell PATH probe, mirroring src/doctor/claude.ts (packaged app PATH gotcha - use an interactive login shell); cache with a TTL",
-        "GET /api/agent/providers returns [{id, name, avatarLetter, installed, version|null, capabilities}]; token-gated + covered by the CORS reflector like every other gateway route",
-        "An uninstalled provider is reported installed:false with no error - never a hang or a raw stack",
+        "Add a context-window lookup to `src/agent/registry.ts` (per provider, per model where it differs), populated from US-001's verified findings",
+        "Expose the resolved window size to the client - either on the capabilities frame pushed at session start or on `GET /api/agent/providers`; it must be reachable without the UI branching on a provider name",
+        "A provider/model with an UNKNOWN window reports null, never a guessed number",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "The registry is a data table, not a plugin framework - keep it small. Suggested skills: none."
+      "passes": false,
+      "notes": "Depends on US-001. Keep the table small and data-shaped, like the rest of the registry. Suggested skills: none."
     },
     {
       "id": "US-004",
-      "title": "CodexDriver - spawn, parse, resume, interrupt",
-      "description": "As a user, I want to run a chat on Codex, so I can keep working when Claude credits run out.",
+      "title": "Composer context-window meter",
+      "description": "As a user, I want to see how full my context window is (and what the turn cost), so I know when a conversation is near its limit.",
       "acceptanceCriteria": [
-        "Add `src/agent/codex.ts` implementing AgentDriver against `codex exec --json --skip-git-repo-check -C <cwd>` with the prompt as an argument and stdin ignored",
-        "Parse the JSONL into normalized AgentEvents: thread.started to system (thread_id is the resume key), item.completed(agent_message) to assistant-text, command/file items to tool-use/tool-result, turn.completed to result (token usage; costUsd null)",
-        "Multi-turn continuity: the first turn spawns fresh, later turns spawn `codex exec resume <thread_id>` - verify a 2-turn conversation actually retains context",
-        "Map permission to `--sandbox read-only|workspace-write|danger-full-access`; capabilities declare interactiveApproval false, streamingDeltas false, costUsd false, livePermissionSwitch false",
-        "respondPermission() is an explicit no-op (documented, not silently swallowed); interrupt() kills the in-flight turn process and surfaces an honest exit event",
-        "Unknown event types are ignored rather than thrown, so a CLI version bump can't crash the parser",
+        "A compact meter in the composer shows the current context position; when the window size is known it also shows a percentage/gauge",
+        "When the window size is UNKNOWN, show the raw token count with NO percentage and no gauge - never a fabricated ratio",
+        "When the provider reports no usage at all, the meter is absent rather than showing zero",
+        "Cost rides alongside where the provider reports it (`capabilities.costUsd`), tokens where it doesn't - reuse the existing per-turn footer logic, no provider-name branching",
+        "Updates after each turn; a resumed thread shows the restored position or nothing (never a stale number from another thread)",
+        "Renders correctly in light AND dark with semantic tokens only; does not shift the composer layout",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: send turns on claude and on codex, confirm the meter updates and that the unknown-window case degrades to counts"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "The structurally-alien provider - this story is what proves the seam. Parser tests should run against the US-001 fixtures (no live calls in tests). Suggested skills: none."
+      "passes": false,
+      "notes": "First UI story; depends on US-002 + US-003. Browser-verify on a throwaway port stack. Suggested skills: automate-browser, audit-ui."
     },
     {
       "id": "US-005",
-      "title": "GrokDriver - spawn, parse, resume, interrupt",
-      "description": "As a user, I want to run a chat on Grok, including its streamed reasoning.",
+      "title": "Local draft threads — no DB row until first send",
+      "description": "As a user, I want a new chat to be a local draft so abandoning it doesn't litter my sidebar.",
       "acceptanceCriteria": [
-        "Add `src/agent/grok.ts` implementing AgentDriver against `grok -p <prompt> --output-format streaming-json --cwd <cwd>` with `-m` for model and `--resume <sessionId>` for continuity",
-        "Parse the stream into normalized AgentEvents: {type:'thought'} to reasoning deltas, {type:'text'} to assistant-text deltas, {type:'end'} to result with sessionId, num_turns, and total_cost_usd",
-        "Capabilities declare streamingDeltas true, reasoningText TRUE, costUsd true, resume true; interactiveApproval and livePermissionSwitch set to whatever US-001 actually verified",
-        "Map permission modes onto grok's `--permission-mode` (default/acceptEdits/plan/bypassPermissions)",
-        "Multi-turn continuity verified: a 2-turn conversation retains context via --resume",
-        "Unknown event types are ignored rather than thrown",
+        "'New chat' creates a LOCAL draft only - no `chat_thread` row is written and no sidebar row is persisted until the first message is sent",
+        "The draft holds its own launch config (provider, model, permission mode, cwd) so every composer chip works before a thread exists - this is the hidden dependency, not an afterthought",
+        "An abandoned draft leaves NOTHING behind: no DB row, no orphaned sidebar entry, nothing after a reload",
+        "Existing saved threads still open, resume, and render exactly as before - draft state must not touch the persistence path",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: open a new chat, abandon it, reload, confirm nothing persisted"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "The Claude-like provider - should slot in cheaply if the seam is right. Parser tests run against US-001 fixtures. Suggested skills: none."
+      "passes": false,
+      "notes": "The riskiest change in this round - it sits on the thread-persistence path. Verify resume/reopen explicitly. Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
-      "title": "Persist provider per thread + route resume by provider",
-      "description": "As a user, I want a reopened thread to resume on the agent that created it, because a Claude session id means nothing to Codex.",
+      "title": "Draft promotion on first send + one draft per project",
+      "description": "As a user, I want my draft to become a real thread the moment I send, and I don't want repeated 'New chat' clicks to pile up empty drafts.",
       "acceptanceCriteria": [
-        "Add `chat_thread.provider TEXT` (nullable, existing rows read as 'claude') via schema.sql AND the idempotent migrate() path in src/db/index.ts - mirror the last_message migration exactly",
-        "The thread upsert at session init records the provider that launched it; src/agent/threads.ts row type + selects carry it",
-        "GET /api/agent/projects and the transcript/resume routes expose the thread's provider",
-        "Resuming a thread launches its OWN provider - never the default; a Codex thread reopened must not spawn claude",
+        "Sending the first message promotes the draft to a real thread: the row is created with its launch config intact and appears in the sidebar",
+        "Clicking 'New chat' while an empty draft already exists for that project REUSES the existing draft instead of creating a second one",
+        "The promoted thread behaves identically to one created the old way - resume, reopen, transcript restore, provider avatar",
+        "The auto-open-most-recent behaviour (polish US-002) still works and never auto-opens a draft over a real thread",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using automate-browser skill: click New chat twice (one draft), send, confirm promotion + reload persistence"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Schema before the WS wiring that depends on it. Suggested skills: none."
+      "passes": false,
+      "notes": "Depends on US-005. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
-      "title": "WS launch frame carries provider; build driver from the registry",
-      "description": "As a developer, I want the /ws/agent handler to instantiate whichever provider the chat asked for, so the seam is actually used.",
+      "title": "Reasoning-effort descriptor on the capability seam + per-driver application",
+      "description": "As a developer, I want reasoning effort expressed as a capability so each provider applies it its own way and the UI never learns provider names.",
       "acceptanceCriteria": [
-        "The prompt/launch frame accepts a `provider` field; src/agent/index.ts builds the driver from the registry instead of hard-instantiating ClaudeDriver",
-        "Unknown or uninstalled provider gives a clear error event to the client, never a crashed WS or a silent fallback to claude",
-        "Default remains 'claude' when the field is absent, so existing threads and clients are unaffected",
-        "The driver's capabilities are sent to the client once at session start so the UI can adapt",
+        "Add an effort descriptor to `AgentCapabilities` shaped like `permissionModes` (a list of {id,label,description} in the provider's own vocabulary); an EMPTY list means unsupported",
+        "GrokDriver applies `--reasoning-effort <high|medium|low>` (the verified values); CodexDriver applies `-c model_reasoning_effort=<level>`; ClaudeDriver applies a prompt-level prefix since it has no flag - the UI never knows which mechanism is used",
+        "The chosen effort rides the launch config and persists per thread",
+        "Mirrored UI types stay in sync via the type-only re-export from `src/agent/driver.ts` (do NOT hand-mirror - that drift already shipped once)",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Depends on US-002..006. This is the story that makes multi-provider real end-to-end. Suggested skills: none."
+      "passes": false,
+      "notes": "Depends on US-001's verified mechanisms. Same capability-descriptor pattern as permissionModes. Suggested skills: codebase-design."
     },
     {
       "id": "US-008",
-      "title": "Composer provider chip (locked after the first turn)",
-      "description": "As a user, I want to choose which agent drives a chat, from the composer, before I send the first prompt.",
+      "title": "Effort chip in the composer (capability-driven)",
+      "description": "As a user, I want to ask for more or less thinking, using whatever vocabulary my provider actually supports.",
       "acceptanceCriteria": [
-        "A provider chip sits beside the model chip in ChatPane's composer, listing providers from GET /api/agent/providers with their avatar letter and name",
-        "Uninstalled providers appear disabled with an explanatory tooltip (e.g. 'codex not found on PATH') rather than being hidden",
-        "The chosen provider rides the prompt frame and LOCKS after the first turn, exactly like the model/cwd chips (reuse the existing `locked` treatment)",
-        "A reopened thread shows its saved provider, locked from the start",
-        "Renders correctly in light AND dark using semantic theme tokens only",
+        "An effort chip renders beside the existing chips, listing options from the capability descriptor - never a hard-coded list and never a provider-name branch",
+        "The chip is ABSENT (not disabled-and-inert) when the provider's effort list is empty",
+        "Grok shows high/medium/low; codex shows its levels; claude shows its prompt-level options",
+        "Copy must NOT imply the control reveals thinking - reasoning TEXT stays redacted for claude and encrypted for codex (D2)",
+        "Renders correctly in light AND dark; locks with the rest of the launch config after the first turn if that matches the existing chip behaviour",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: switch provider, send a turn on Codex, confirm the chip locks and the transcript streams"
+        "Verify in browser using automate-browser skill: compare the chip across claude / codex / grok"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "First UI story. Depends on US-003 + US-007. Browser-verify on a throwaway port stack. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-007. Suggested skills: automate-browser."
     },
     {
       "id": "US-009",
-      "title": "Capability-driven permission chip",
-      "description": "As a user, I want the permission control to show what my chosen agent can actually enforce, not a Claude control it will ignore.",
+      "title": "@-mention pins: attachment model + prompt serialization + size guard",
+      "description": "As a user, I want an @-mentioned file's CONTENT sent with my turn, instead of only a path the agent has to re-read.",
       "acceptanceCriteria": [
-        "The permission chip renders its options from capabilities.permissionModes - never a hard-coded Claude list and never a branch on provider id",
-        "On Claude it still reads Supervised / Plan / Accept edits / Full access; on Codex it reads its real sandbox options (read-only / workspace-write / full-access) and Supervised is ABSENT, not inert",
-        "When capabilities.livePermissionSwitch is false, the chip explains the change applies to the next turn instead of silently pretending to switch live",
-        "When capabilities.interactiveApproval is false, no approval UI is offered for that thread",
+        "A pinned `@` mention becomes a structured attachment on the outgoing turn: the path plus the content actually sent",
+        "Pins serialize into the prompt in a clearly delimited block so the agent receives content rather than a path to re-read",
+        "A size guard bounds pinned content; anything truncated carries a visible, honest marker - never silent truncation",
+        "Pins are per-turn by default (not sticky) unless explicitly kept",
+        "Plain (unpinned) `@` path references keep working exactly as today - this is additive",
         "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: compare the chip on a Claude thread vs a Codex thread"
+        "Tests pass"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "The honesty story - the whole point of the capability model. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Port as REAL context attachments, not prettier chips. File pins only - terminal/element/preview channels are out of scope. Suggested skills: none."
     },
     {
       "id": "US-010",
-      "title": "Capability-driven transcript (deltas, reasoning, cost)",
-      "description": "As a user, I want the transcript to reflect what my agent actually reports, so nothing looks broken or fabricated.",
+      "title": "Pin rendering in the composer and transcript",
+      "description": "As a user, I want to see exactly what content was pinned and sent, so the transcript never lies about my prompt.",
       "acceptanceCriteria": [
-        "When capabilities.streamingDeltas is false (Codex), the transcript shows a working indicator while the turn runs instead of an idle streaming caret, then renders the completed message",
-        "When capabilities.costUsd is false (Codex), the per-turn footer shows token counts instead of a fabricated or blank dollar figure",
-        "When capabilities.reasoningText is true (Grok), the previously-dormant collapsed reasoning UI renders the streamed thought text; it stays hidden for Claude, where the text is redacted (D2)",
-        "No provider-name branching in the components - all three behaviors read from capabilities",
+        "Pending pins render in the composer before send, with a way to remove one",
+        "Sent pins render in the transcript attached to their turn, showing what was actually included (and marking truncation where it happened)",
+        "A restored/resumed transcript degrades honestly if pin detail isn't recoverable - never imply content was sent that wasn't",
+        "Renders correctly in light AND dark with semantic tokens only",
         "Typecheck passes",
         "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: a Codex turn (no caret, token footer) and a Grok turn (reasoning expands)"
+        "Verify in browser using automate-browser skill: pin a file, send, confirm the transcript shows the pin and the agent answers from the pinned content"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Un-shelves the D2 reasoning UI for Grok - a real user-visible win from this PRD. Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Depends on US-009. Suggested skills: automate-browser, audit-ui."
     },
     {
       "id": "US-011",
-      "title": "Sidebar agent avatar reads from the registry",
-      "description": "As a user, I want each thread's avatar to show which agent drove it.",
-      "acceptanceCriteria": [
-        "agentOf() in ChatSurface.tsx resolves the avatar letter from the thread's persisted provider via the registry, replacing the current model-string sniffing",
-        "Claude threads show C, Codex threads X, Grok threads G, each with the existing status badge overlay",
-        "A thread with no stored provider (pre-migration rows) still renders as Claude rather than blank",
-        "Renders correctly in light AND dark",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using automate-browser skill: threads on two providers show different avatars"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Small; the avatar component already exists from the thread-toolbar work - this only changes where the letter comes from. Suggested skills: automate-browser."
-    },
-    {
-      "id": "US-012",
       "title": "Cross-provider QA + docs",
-      "description": "As a maintainer, I want proof all three providers work end-to-end and the docs to reflect the new architecture.",
+      "description": "As a maintainer, I want proof all four features work across all three providers, and the docs updated to match.",
       "acceptanceCriteria": [
-        "Run a real thread on each of claude, codex, and grok: send 2 turns (verifying context is retained), interrupt a turn, close and reopen the thread to confirm it resumes on its own provider",
-        "Record the honest result per provider - including anything that does NOT work - in docs/ rather than claiming uniform success",
-        "Update CLAUDE.md's chat-architecture section and HANDOFF.md for the provider registry, capabilities model, and the per-thread provider column",
-        "Mark T3-1 done in docs/t3-port-backlog.md and note that T3-19 (provider maintenance UI) is the natural follow-on",
+        "Exercise each feature on claude, codex, and grok: context meter (incl. the unknown-window degradation), draft create/abandon/promote, effort chip, and a pinned-file turn",
+        "Record the honest per-provider result - including anything that does NOT work - in docs/ rather than claiming uniform success",
+        "Update CLAUDE.md's chat-architecture section for the meter, drafts, effort, and pins; mark T3-5/T3-11/T3-6/T3-3 done in docs/t3-port-backlog.md",
+        "Confirm NO story in this round added a Premium gate (PAYWALL_ENABLED stays false)",
         "Typecheck passes",
         "cd ui && npm run build passes",
         "Verify in browser using automate-browser skill"
       ],
-      "priority": 12,
-      "passes": true,
+      "priority": 11,
+      "passes": false,
       "notes": "Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
     }
   ]
