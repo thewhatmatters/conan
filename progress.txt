@@ -1,1 +1,2 @@
 US-001: recorded verified provider context windows, effort mechanisms, and usage fields.
+US-002: reported per-turn token usage and context position from all three drivers.

@@ -51,6 +51,7 @@ test("codex parser: basic turn → system, whole assistant-text, result with tok
   assert.equal(result.isError, false);
   assert.equal(result.costUsd, null);
   assert.equal(result.text, "probe-ok");
+  assert.equal(result.contextTokens, 30561);
   assert.deepEqual(result.tokens, {
     input: 17505,
     cachedInput: 13056,
@@ -135,6 +136,7 @@ test("codex parser: turn.failed closes the turn as an error result", () => {
   const result = evs[0] as Extract<AgentEvent, { kind: "result" }>;
   assert.equal(result.isError, true);
   assert.equal(result.text, "rate limited");
+  assert.equal(result.contextTokens, null);
 });
 
 test("codex args: global flags BEFORE the resume subcommand, prompt as the last argv", () => {

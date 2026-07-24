@@ -709,6 +709,9 @@ export class ClaudeStreamParser {
     if (type === "result") {
       this.streamed.clear();
       this.currentMessageId = null;
+      const usage = record(msg.usage);
+      const input = usage ? num(usage.input_tokens) : null;
+      const cachedInput = usage ? num(usage.cache_read_input_tokens) : null;
       return [
         {
           kind: "result",
@@ -717,6 +720,13 @@ export class ClaudeStreamParser {
           durationMs: num(msg.duration_ms),
           numTurns: num(msg.num_turns),
           text: str(msg.result),
+          contextTokens: sumReported(input, cachedInput),
+          tokens: {
+            input,
+            cachedInput,
+            output: usage ? num(usage.output_tokens) : null,
+            reasoningOutput: null,
+          },
         },
       ];
     }
@@ -755,4 +765,12 @@ function str(v: unknown): string | null {
 }
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function record(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+}
+function sumReported(...values: Array<number | null>): number | null {
+  return values.every((value) => value === null)
+    ? null
+    : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }

@@ -33,7 +33,7 @@
         "Tests pass"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser verification required). Touches all three working drivers - keep it additive so no existing behaviour regresses. Suggested skills: none."
     },
     {

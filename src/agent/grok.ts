@@ -334,6 +334,9 @@ export class GrokStreamParser {
         this.sessionId = str(msg.sessionId);
         const stopReason = str(msg.stopReason);
         const cancelled = stopReason !== null && stopReason !== "EndTurn";
+        const usage = record(msg.usage);
+        const input = usage ? num(usage.input_tokens) : null;
+        const cachedInput = usage ? num(usage.cache_read_input_tokens) : null;
         return [
           {
             kind: "system",
@@ -351,6 +354,13 @@ export class GrokStreamParser {
             costUsd: num(msg.total_cost_usd),
             durationMs: null, // the driver stamps wall time on emit
             numTurns: num(msg.num_turns),
+            contextTokens: sumReported(input, cachedInput),
+            tokens: {
+              input,
+              cachedInput,
+              output: usage ? num(usage.output_tokens) : null,
+              reasoningOutput: usage ? num(usage.reasoning_tokens) : null,
+            },
             text: this.text
               ? this.text
               : cancelled
@@ -382,4 +392,9 @@ function str(v: unknown): string | null {
 }
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function sumReported(...values: Array<number | null>): number | null {
+  return values.every((value) => value === null)
+    ? null
+    : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }

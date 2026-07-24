@@ -170,9 +170,13 @@ export type AgentEvent =
       durationMs: number | null;
       numTurns: number | null;
       text: string | null;
-      /** Token usage, for providers that report counts but no USD (codex —
-       *  `capabilities.costUsd` false renders these instead of a fabricated
-       *  dollar figure). Absent for providers that report cost. */
+      /** Latest turn's context-window position: input plus cached input.
+       *  Distinct from the token cost of the turn; null when no usage was
+       *  reported. */
+      contextTokens: number | null;
+      /** Token usage reported by the provider. This stays independent of USD:
+       *  providers may report both, and the capability descriptor decides
+       *  which summary the current UI renders. */
       tokens?: {
         input: number | null;
         cachedInput: number | null;

@@ -373,6 +373,8 @@ export class CodexStreamParser {
 
       case "turn.completed": {
         const usage = record(msg.usage);
+        const input = usage ? num(usage.input_tokens) : null;
+        const cachedInput = usage ? num(usage.cached_input_tokens) : null;
         return [
           {
             kind: "result",
@@ -381,9 +383,10 @@ export class CodexStreamParser {
             durationMs: null, // the driver stamps wall time on emit
             numTurns: null,
             text: this.lastMessage,
+            contextTokens: sumReported(input, cachedInput),
             tokens: {
-              input: usage ? num(usage.input_tokens) : null,
-              cachedInput: usage ? num(usage.cached_input_tokens) : null,
+              input,
+              cachedInput,
               output: usage ? num(usage.output_tokens) : null,
               reasoningOutput: usage ? num(usage.reasoning_output_tokens) : null,
             },
@@ -403,6 +406,7 @@ export class CodexStreamParser {
             durationMs: null,
             numTurns: null,
             text: (error ? str(error.message) : null) ?? this.lastMessage,
+            contextTokens: null,
           },
         ];
       }
@@ -464,4 +468,9 @@ function str(v: unknown): string | null {
 }
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function sumReported(...values: Array<number | null>): number | null {
+  return values.every((value) => value === null)
+    ? null
+    : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }

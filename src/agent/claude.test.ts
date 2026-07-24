@@ -31,7 +31,7 @@ const thinkingDelta = (thinking: string) =>
 const wholeAssistant = (id: string, content: unknown[]) =>
   j({ type: "assistant", message: { id, role: "assistant", content } });
 const resultLine = () =>
-  j({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.01, duration_ms: 1200, num_turns: 1, result: "done" });
+  j({ type: "result", subtype: "success", is_error: false, total_cost_usd: 0.01, duration_ms: 1200, num_turns: 1, result: "done", usage: { input_tokens: 120, cache_read_input_tokens: 80, output_tokens: 7 } });
 
 test("text deltas stream incrementally and the whole frame is suppressed", () => {
   const p = new ClaudeStreamParser();
@@ -143,6 +143,14 @@ test("result clears streamed state; a later un-streamed message falls back whole
   const events = p.push(resultLine());
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "result");
+  const result = events[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>;
+  assert.equal(result.contextTokens, 200);
+  assert.deepEqual(result.tokens, {
+    input: 120,
+    cachedInput: 80,
+    output: 7,
+    reasoningOutput: null,
+  });
   // Next turn without partial events (e.g. flag unsupported mid-flight) —
   // its whole frame must emit normally.
   assert.deepEqual(

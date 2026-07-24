@@ -57,6 +57,13 @@ test("grok parser: basic turn → reasoning + text deltas, then system + result 
   assert.equal(result.costUsd, 0.0312664); // the float, never the ticks field
   assert.equal(result.numTurns, 1);
   assert.equal(result.text, "probe-ok"); // accumulated deltas
+  assert.equal(result.contextTokens, 19995);
+  assert.deepEqual(result.tokens, {
+    input: 14747,
+    cachedInput: 5248,
+    output: 33,
+    reasoningOutput: 26,
+  });
 });
 
 test("grok parser: resume turn carries the SAME sessionId (2-turn continuity fixture)", () => {
