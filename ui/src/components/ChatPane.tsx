@@ -1277,7 +1277,13 @@ function ContextMeter({
           />
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="w-60 p-3">
+      {/* Override the default inverted-pill tooltip (bg-foreground/text-background)
+          with the app's popover surface so this rich card reads correctly in
+          BOTH themes — the inner text/bar tokens assume a popover background. */}
+      <TooltipContent
+        side="top"
+        className="w-60 border border-border bg-popover p-3 text-popover-foreground shadow-md"
+      >
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-medium text-foreground">Context window</span>
           <span className="text-[11px] text-muted-foreground">
