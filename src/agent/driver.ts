@@ -39,6 +39,50 @@ export interface AgentLaunchOpts {
   resume?: string;
 }
 
+/** One permission mode a provider actually supports, in its OWN vocabulary —
+ *  Claude's `acceptEdits` vs Codex's `workspace-write` are different concepts,
+ *  not translations of each other, so the UI renders these verbatim instead of
+ *  mapping every provider onto Claude's four modes. */
+export interface AgentPermissionMode {
+  /** The value the driver passes to the provider CLI (e.g. `acceptEdits`,
+   *  `workspace-write`). Opaque to the UI beyond selection. */
+  id: string;
+  /** Short chip label (e.g. "Supervised", "Workspace write"). */
+  label: string;
+  /** One-line hint shown in the chip's dropdown. */
+  description: string;
+}
+
+/**
+ * What a provider can ACTUALLY do headlessly — verified against real runs
+ * (`fixtures/README.md`), never inferred from --help. The UI adapts to these
+ * flags instead of branching on provider name: a capability that's false gets
+ * its UI removed or explained, not left inert.
+ */
+export interface AgentCapabilities {
+  /** Token-by-token text deltas while a turn runs. False → the transcript
+   *  shows a working indicator, then the completed message. */
+  streamingDeltas: boolean;
+  /** Supervised approval round-trip: tool calls block on a
+   *  `permission-request` event until `respondPermission()` answers. False →
+   *  no approval UI is offered for this provider's threads. */
+  interactiveApproval: boolean;
+  /** `setPermissionMode()` takes effect on the LIVE session. False → a mode
+   *  change applies from the next turn (new process), and the UI says so. */
+  livePermissionSwitch: boolean;
+  /** `result` events carry a real `costUsd`. False → the footer shows token
+   *  counts, never a fabricated dollar figure. */
+  costUsd: boolean;
+  /** `reasoning` events carry readable thought text. False → the provider
+   *  redacts thinking headlessly (Claude's D2) and the reasoning UI stays
+   *  hidden. */
+  reasoningText: boolean;
+  /** A past conversation can be resumed by id in a fresh process. */
+  resume: boolean;
+  /** The permission modes this provider supports, in its own vocabulary. */
+  permissionModes: AgentPermissionMode[];
+}
+
 /**
  * A normalized agent event — the driver's job is to hide each provider's raw
  * wire shape (Claude's stream-json NDJSON here) behind this union so the WS
@@ -156,6 +200,10 @@ export type PermissionDecision =
 export interface AgentDriver {
   /** Stable provider tag (`"claude"`), for logging/UI labeling. */
   readonly provider: string;
+  /** The provider's verified capability descriptor — what this driver can
+   *  actually deliver headlessly. Sent to the client at session start so the
+   *  UI adapts without ever branching on `provider`. */
+  readonly capabilities: AgentCapabilities;
   /** Submit a user turn. Spawns the process on first call using `opts`. */
   send(text: string, opts: AgentLaunchOpts): Promise<void>;
   /** Cancel the in-flight turn, keeping the session alive — the provider's

@@ -33,7 +33,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Pure seam widening, no runtime change. Depends on US-001's verified matrix. Suggested skills: codebase-design."
     },
     {

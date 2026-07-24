@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import { detectClaude, loginShellPath } from "../doctor/claude.js";
 import type {
+  AgentCapabilities,
   AgentDriver,
   AgentEvent,
   AgentLaunchOpts,
@@ -69,8 +70,33 @@ import type {
  *  claude has no control channel and falling back to killing the process. */
 const INTERRUPT_FALLBACK_MS = 3000;
 
+/** Claude's verified headless capabilities (claude 2.1.218 + the US-001
+ *  probe matrix in `fixtures/README.md`). `reasoningText` is FALSE by design:
+ *  headless `claude -p` redacts thinking text (empty string + signature only —
+ *  D2), so the reasoning UI must stay hidden even though `reasoning` events
+ *  exist on the wire. */
+export const CLAUDE_CAPABILITIES: AgentCapabilities = {
+  streamingDeltas: true,
+  interactiveApproval: true,
+  livePermissionSwitch: true,
+  costUsd: true,
+  reasoningText: false,
+  resume: true,
+  permissionModes: [
+    { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
+    { id: "default", label: "Supervised", description: "Asks before running tools" },
+    { id: "acceptEdits", label: "Accept edits", description: "Auto-approves file edits" },
+    {
+      id: "bypassPermissions",
+      label: "Full access",
+      description: "Runs every tool without prompting",
+    },
+  ],
+};
+
 export class ClaudeDriver implements AgentDriver {
   readonly provider = "claude";
+  readonly capabilities = CLAUDE_CAPABILITIES;
   private child: ChildProcessWithoutNullStreams | null = null;
   private starting: Promise<void> | null = null;
   private disposed = false;
