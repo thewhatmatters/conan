@@ -1,0 +1,17 @@
+{
+  "type": "codex-image-argv",
+  "args": [
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "-C",
+    "/tmp/conan-image-probe",
+    "--sandbox",
+    "read-only",
+    "Reply with exactly: ok",
+    "-i",
+    "/tmp/conan-image-probe/pixel.png",
+    "-i",
+    "/tmp/conan-image-probe/pixel-2.png"
+  ]
+}

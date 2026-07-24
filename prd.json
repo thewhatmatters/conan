@@ -34,7 +34,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CODEX (no browser). Everything downstream depends on this. Keep probes trivial (a tiny PNG), temp dir only, never the conan repo. Suggested skills: none."
     },
     {

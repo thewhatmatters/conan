@@ -19,6 +19,9 @@ gotcha).
 | `grok-turn2-resume.jsonl` | + `--resume <sessionId>` | 2-turn continuity VERIFIED: same sessionId, answered from turn-1 context |
 | `grok-approval-default.jsonl` | + `--permission-mode default`, prompt requires a shell command | Open question (a) ANSWERED: turn ends `stopReason:"Cancelled"` — see below |
 | `grok-turn4-filewrite.jsonl` | + `--permission-mode bypassPermissions --resume <sessionId>` | Open question (b) evidence + tool execution verified on disk (file really created); STILL only thought/text/end in the stream |
+| `claude-image-user-message.json` | Stream-JSON user envelope with a real 1×1 PNG | Verified inline base64 image content block |
+| `codex-image-argv.json` | `codex exec … -i <path> -i <path>` | Verified path-based multi-image argv |
+| `grok-image-prompt-json.json` | `grok --prompt-json <ACP blocks>` | Verified inline ACP image + text blocks |
 
 ## Verified capability matrix
 

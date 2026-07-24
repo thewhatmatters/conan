@@ -4,3 +4,4 @@ US-003: exposed verified per-model context windows through launch capabilities.
 US-007: added provider-owned reasoning effort to capabilities, launch config, drivers, and thread persistence.
 US-009: added bounded per-turn file attachments and shared prompt serialization.
 US-001: refreshed context-window capabilities from the provider-reported model.
+US-002: probed and pinned verified image-input shapes for Claude, Codex, and Grok.
