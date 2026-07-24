@@ -656,7 +656,7 @@ export default function ChatPane({
             </div>
           )}
           {history.map((it) => (
-            <Anchored key={it.id} item={it} planCtx={planCtx} />
+            <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />
           ))}
           {historyState === "found" && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -672,9 +672,9 @@ export default function ChatPane({
           {items.length === 0 && historyState === null ? (
             <EmptyState status={status} />
           ) : (
-            items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} />)
+            items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />)
           )}
-          {busy && <WorkingIndicator items={items} />}
+          {busy && <WorkingIndicator items={items} streaming={caps.streamingDeltas} />}
         </div>
       </aside>
       {/* Activity spine (US-016) — outside the scroller so it stays put
@@ -920,8 +920,13 @@ export default function ChatPane({
  * verification-heavy prompt can legitimately run for minutes), so this shows
  * elapsed time plus what the agent is doing right now — the last tool it
  * reached for. Dogfooding finding: the transcript looked frozen mid-turn.
+ *
+ * `streaming` mirrors `capabilities.streamingDeltas` (US-010): a
+ * non-streaming provider (codex) emits NOTHING until the turn completes, so
+ * this indicator is the turn's only liveness signal — never an idle caret
+ * waiting for deltas that will never come — and says so on hover.
  */
-function WorkingIndicator({ items }: { items: ChatItem[] }) {
+function WorkingIndicator({ items, streaming }: { items: ChatItem[]; streaming: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -950,7 +955,15 @@ function WorkingIndicator({ items }: { items: ChatItem[] }) {
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <Loader2 className="size-3.5 animate-spin" />
-      <span>Working…</span>
+      <span
+        title={
+          streaming
+            ? undefined
+            : "This agent sends its reply all at once — no text streams while it works"
+        }
+      >
+        Working…
+      </span>
       {activity && (
         <>
           <span className="text-border">·</span>
@@ -1052,18 +1065,43 @@ interface PlanCtx {
 }
 
 /** A transcript item, wrapped in a `data-turn` anchor when it's a user
- *  prompt so the activity spine (US-016) can scroll to it. */
-function Anchored({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
-  if (item.role !== "user") return <Item item={item} planCtx={planCtx} />;
+ *  prompt so the activity spine (US-016) can scroll to it. `caps` is the
+ *  pane's active capability descriptor (US-010) — reasoning visibility and
+ *  the turn footer's cost-vs-tokens shape read from it, never from a
+ *  provider name. */
+function Anchored({
+  item,
+  planCtx,
+  caps,
+}: {
+  item: ChatItem;
+  planCtx?: PlanCtx;
+  caps: AgentCapabilities;
+}) {
+  if (item.role !== "user") return <Item item={item} planCtx={planCtx} caps={caps} />;
   return (
     <div data-turn={item.id} className="scroll-mt-4">
-      <Item item={item} planCtx={planCtx} />
+      <Item item={item} planCtx={planCtx} caps={caps} />
     </div>
   );
 }
 
+/** Compact token count for the turn footer — full precision would crowd the
+ *  one-line footer at codex's cache sizes (tens of thousands). */
+function fmtTokens(n: number): string {
+  return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString();
+}
+
 /** Render one transcript item by role. */
-function Item({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
+function Item({
+  item,
+  planCtx,
+  caps,
+}: {
+  item: ChatItem;
+  planCtx?: PlanCtx;
+  caps: AgentCapabilities;
+}) {
   switch (item.role) {
     case "user":
       return (
@@ -1076,7 +1114,11 @@ function Item({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
     case "assistant":
       return <Markdown text={item.text} />;
     case "reasoning":
-      return <ReasoningEntry text={item.text} />;
+      // The collapsed reasoning UI renders only where the provider delivers
+      // READABLE thought text (grok). Claude redacts thinking headlessly
+      // (D2 — empty text, signature only), so its reasoning rows stay
+      // hidden rather than rendering as empty "Thinking" stubs (US-010).
+      return caps.reasoningText ? <ReasoningEntry text={item.text} /> : null;
     case "tool": {
       const plan = planMarkdown(item);
       return plan != null ? (
@@ -1107,7 +1149,16 @@ function Item({ item, planCtx }: { item: ChatItem; planCtx?: PlanCtx }) {
       return (
         <div className="flex items-center gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
           <span>Turn complete</span>
-          {item.costUsd != null && <span>· ${item.costUsd.toFixed(4)}</span>}
+          {/* Cost vs tokens reads from the capability descriptor (US-010):
+              a provider that reports no USD (codex) shows its real token
+              counts instead of a blank where the dollar figure would be. */}
+          {caps.costUsd && item.costUsd != null && <span>· ${item.costUsd.toFixed(4)}</span>}
+          {!caps.costUsd && item.tokens && (
+            <span className="tabular-nums">
+              {item.tokens.input != null && `· ${fmtTokens(item.tokens.input)} in `}
+              {item.tokens.output != null && `· ${fmtTokens(item.tokens.output)} out`}
+            </span>
+          )}
           {item.durationMs != null && <span>· {(item.durationMs / 1000).toFixed(1)}s</span>}
           {item.numTurns != null && <span>· {item.numTurns} steps</span>}
         </div>

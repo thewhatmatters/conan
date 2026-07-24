@@ -65,13 +65,24 @@ type AgentEvent =
   | { kind: "tool-result"; id: string; content: string; isError: boolean }
   | { kind: "permission-request"; id: string; toolKind: ToolPermissionKind; summary: string; detail: string; toolName: string; toolUseId: string | null }
   | { kind: "permission-mode"; mode: string }
-  | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null }
+  | { kind: "result"; isError: boolean; costUsd: number | null; durationMs: number | null; numTurns: number | null; text: string | null; tokens?: TurnTokens }
   | { kind: "exit"; code: number | null }
   | { kind: "error"; message: string };
 
 /** How an approval transcript entry ended: still pending, the user's
  *  decision, or dismissed (the turn ended before anyone answered). */
 export type ApprovalResolution = "pending" | PermissionDecision | "dismissed";
+
+/** Per-turn token usage, from providers that report counts but no USD
+ *  (codex — mirrors the driver's result event, US-010). The footer renders
+ *  these when `capabilities.costUsd` is false instead of a blank or
+ *  fabricated dollar figure. */
+export interface TurnTokens {
+  input: number | null;
+  cachedInput: number | null;
+  output: number | null;
+  reasoningOutput: number | null;
+}
 
 /** A rendered transcript item. */
 export type ChatItem =
@@ -80,7 +91,7 @@ export type ChatItem =
   | { id: string; role: "reasoning"; text: string }
   | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
   | { id: string; role: "approval"; requestId: string; toolKind: ToolPermissionKind; toolName: string; summary: string; resolution: ApprovalResolution }
-  | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null }
+  | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null; tokens: TurnTokens | null }
   | { id: string; role: "system"; model: string | null; cwd: string | null }
   | { id: string; role: "mode"; mode: string }
   | { id: string; role: "error"; message: string };
@@ -244,7 +255,7 @@ export function useAgentChat(token: string | null): AgentChat {
           if (e.kind === "result")
             return [
               ...settled,
-              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns },
+              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns, tokens: e.tokens ?? null },
             ];
           if (e.kind === "exit")
             return [

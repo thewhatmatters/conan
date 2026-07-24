@@ -169,7 +169,7 @@
         "Verify in browser using automate-browser skill: a Codex turn (no caret, token footer) and a Grok turn (reasoning expands)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Un-shelves the D2 reasoning UI for Grok - a real user-visible win from this PRD. Suggested skills: automate-browser."
     },
     {
