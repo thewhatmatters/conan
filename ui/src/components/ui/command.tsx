@@ -68,12 +68,17 @@ function CommandList({
   );
 }
 
-function CommandEmpty(
-  props: React.ComponentProps<typeof CommandPrimitive.Empty>,
-) {
+function CommandEmpty({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.Empty>) {
   return (
     <CommandPrimitive.Empty
-      className="py-6 text-center text-sm"
+      // Merge, don't clobber: spreading `props` over a literal className let a
+      // caller's class REPLACE the defaults, silently dropping text-center and
+      // the padding — which is why the palette's "No matching source." sat
+      // flush against the left edge. Every sibling primitive here uses cn().
+      className={cn("px-3 py-6 text-center text-sm", className)}
       {...props}
     />
   );

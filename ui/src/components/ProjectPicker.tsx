@@ -188,7 +188,7 @@ export default function ProjectPicker({
           <CommandList className="max-h-80">
             {mode === "sources" ? (
               <>
-                <CommandEmpty className="py-4 text-xs text-muted-foreground">
+                <CommandEmpty className="text-xs text-muted-foreground">
                   No matching source.
                 </CommandEmpty>
                 <CommandGroup heading="Sources">
@@ -231,7 +231,7 @@ export default function ProjectPicker({
               </div>
             ) : (
               <>
-                <CommandEmpty className="py-4 text-xs text-muted-foreground">
+                <CommandEmpty className="text-xs text-muted-foreground">
                   {listing?.error ?? "No matching folders."}
                 </CommandEmpty>
                 {listing && (
