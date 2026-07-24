@@ -191,7 +191,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
     }
   ]

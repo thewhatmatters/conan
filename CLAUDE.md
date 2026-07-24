@@ -125,9 +125,25 @@ commits on pass; decompose backlogs with the `decompose-prd` skill).
   UI; `!livePermissionSwitch` notes "applies from the next turn".
   `ActivitySpine.tsx` = the fused prompt/skill/tool tick rail. Composer:
   provider chip (from `GET /api/agent/providers`, uninstalled = disabled w/
-  tooltip, **locks after turn 1**) + model + permission chips +
-  `ComposerAutocomplete.tsx` (`@` files/folders · `$` skills · `/` commands).
-  `ProjectPicker.tsx`/`DirBrowser.tsx` = per-project folder pick.
+  tooltip, **locks after turn 1**) + model + permission + **effort** chips +
+  a **context-window meter** +
+  `ComposerAutocomplete.tsx` (`@` files/folders · `$` skills · `/` commands) +
+  a **paperclip pin picker**. `ProjectPicker.tsx`/`DirBrowser.tsx` = per-project
+  folder pick.
+- **Daily-driver polish (T3-5/11/6/3, 2026-07-24).** All capability-driven, no
+  provider-name branching. (a) **Context meter** — the `result` event carries
+  `contextTokens` (position = input+cached, ≠ turn cost) from all three
+  drivers; `capabilities.contextWindowTokens` is the verified denominator per
+  provider/model (`registry.ts` `CONTEXT_WINDOWS`; **null → counts only, never
+  a guessed %** — codex hits this, no model picker). (b) **Effort chip** from
+  `capabilities.effortModes` in each provider's vocab (claude think/ultrathink
+  via prompt prefix, codex `-c model_reasoning_effort`, grok
+  `--reasoning-effort`); absent when empty; effort changes behaviour but NOT
+  visible thinking (D2). (c) **Draft threads** — `New chat` is local-only state;
+  no `chat_thread` row until first send, one reusable draft per project. (d)
+  **@-pins** — `PinPicker` reads a file via `GET /api/fs/read`, stages a bounded
+  pin; `src/agent/attachments.ts` serializes pin CONTENT into the outgoing
+  prompt (not a path). Honest matrix: `docs/daily-driver-qa.md`.
 - **Dormant (in repo, unmounted):** `TerminalPane`/`Terminal`, `Hud`/`Widgets`/
   `Timeline`/`PulseChart`/`*Widget`, `RadioBar`, `StatusBar`, `src/terminal/*`,
   `correlate.ts`, `terminal_session` table, and their gateway routes. The
