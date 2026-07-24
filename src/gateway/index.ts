@@ -74,6 +74,7 @@ import {
   getChatThread,
 } from "../agent/threads.js";
 import { readChatHistory } from "../agent/history.js";
+import { readCodexHistory } from "../agent/codexHistory.js";
 import { detectEditors, openInEditor } from "../editor/index.js";
 import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
 import {
@@ -481,10 +482,17 @@ app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
   const row = getChatThread(req.params.sessionId);
   // provider rides along (T3-1 US-006) so a reopened thread resumes on the
   // agent that created it; a rowless session reads as claude.
-  res.json({
-    ...readChatHistory(req.params.sessionId, row?.cwd),
-    provider: row?.provider ?? "claude",
-  });
+  const provider = row?.provider ?? "claude";
+  // Each provider persists its own transcript format — read the one that
+  // actually wrote this thread. An unknown provider has no reader, so it
+  // degrades to metadata-only rather than reading the wrong store.
+  const history =
+    provider === "codex"
+      ? readCodexHistory(req.params.sessionId)
+      : provider === "claude"
+        ? readChatHistory(req.params.sessionId, row?.cwd)
+        : { found: false, items: [] };
+  res.json({ ...history, provider });
 });
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */

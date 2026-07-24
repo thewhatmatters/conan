@@ -20,12 +20,12 @@ and reopen the thread and confirm it resumes on its OWN provider.
 | Interrupt mid-turn | ✅ stream stops, turn closes (footer reads $0.0000 — cosmetic) | ✅ process killed → "Session ended." | ✅ partial text kept → "Session ended." |
 | Turn after interrupt | ✅ context intact ("peridot") | not retestable same-session (one process per turn — next send starts a new process anyway) | ✅ (same one-process-per-turn model) |
 | Reopen → own provider | ✅ relaunches claude | ✅ relaunches codex (verified: `codex exec` spawned, never claude) | ✅ relaunches grok |
-| Reopen → transcript restored | ✅ "Resumed from history", context intact | ❌ history missing (see below) | ❌ history missing (see below) |
-| Reopen → conversation continues | ✅ | ⚠️ fresh session — context LOST | ⚠️ fresh session — context LOST (exit-1 bug FIXED 2026-07-24) |
+| Reopen → transcript restored | ✅ "Resumed from history", context intact | ✅ FIXED 2026-07-24 (rollout reader) | ❌ history missing (see below) |
+| Reopen → conversation continues | ✅ | ✅ FIXED 2026-07-24 (quoted a pre-reopen question) | ⚠️ fresh session — context LOST (exit-1 bug FIXED 2026-07-24) |
 
 ## Known limitations (honest, by design or deferred)
 
-### 1. Codex/Grok threads lose their conversation on close+reopen
+### 1. ~~Codex/Grok threads lose their conversation on close+reopen~~ CODEX FIXED 2026-07-24 (grok outstanding)
 
 Transcript reconstruction (`src/agent/history.ts`) reads **Claude's JSONL
 only**. For a codex or grok thread the transcript route finds nothing, the UI
@@ -41,9 +41,24 @@ Side effect: the fresh session gets a new session id, so sending a message in
 a reopened codex/grok thread creates a **duplicate sidebar row** (the original
 row survives untouched).
 
-Fix direction (follow-up story): transcript readers for codex rollout files
-(`~/.codex/sessions/…`) and grok's session store, OR pass the resume id anyway
-and render a "context resumed, transcript unavailable" divider.
+**Codex: FIXED.** `src/agent/codexHistory.ts` reads Codex's rollout JSONL
+(`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<session_id>.jsonl` — the
+session id Conan persists is in the filename, and `codex exec resume` appends
+later turns to the SAME file, so one file is the whole conversation). It maps
+`message` → user/assistant (dropping `developer` records and Codex's injected
+`<recommended_plugins>` / `<environment_context>` / AGENTS.md user messages),
+and `function_call`/`custom_tool_call` → tool cards merged with their outputs
+by `call_id`. Codex's `reasoning` records are encrypted with an empty summary
+(verified across every local rollout), matching `reasoningText: false`, so
+they're skipped rather than rendered blank. Unknown record types are ignored so
+a CLI version bump can't break the reader. The transcript route dispatches by
+the thread's provider. Because history is now FOUND, ChatPane keeps the resume
+id, so reopened codex threads also continue the real conversation — verified
+end-to-end: after close+reopen, Codex correctly quoted the pre-reopen question.
+
+**Grok: still outstanding.** Its store is `~/.grok/sessions/<url-encoded-cwd>/`
+with a `session_search.sqlite` index, so it needs a cwd→dir mapping rather than
+a filename match — a separate piece of work.
 
 ### 2. ~~BUG — reopened Grok threads cannot send any turn (exit 1)~~ FIXED 2026-07-24
 
