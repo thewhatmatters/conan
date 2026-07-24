@@ -6,3 +6,4 @@ US-009: added bounded per-turn file attachments and shared prompt serialization.
 US-001: refreshed context-window capabilities from the provider-reported model.
 US-002: probed and pinned verified image-input shapes for Claude, Codex, and Grok.
 US-003: added the shared image turn seam and verified image-input capabilities for every provider.
+US-004: added bounded authenticated image staging with managed paths, inline data, validation, and cleanup.

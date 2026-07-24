@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
 import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
+import { prepareImageAttachments } from "./imageStaging.js";
 import {
   capabilitiesFor,
   capabilitiesForReportedModel,
@@ -238,8 +239,13 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       void ensureDriver(requested, opts.resume ?? null, opts.model)
         .then((d) => {
           const attachments = prepareFileAttachments(msg.attachments);
+          const images = prepareImageAttachments(msg.images);
           return d.send(
-            { text: serializeTurnPrompt({ text, attachments }), attachments },
+            {
+              text: serializeTurnPrompt({ text, attachments, images }),
+              attachments,
+              images,
+            },
             opts,
           );
         })

@@ -60,6 +60,10 @@ import { globalHooksStatus, installGlobalHooks } from "../hooks/install.js";
 import { radioEmbedHtml, sanitizeEmbedVideoId } from "../radio/embed.js";
 import { readLicense, writeLicense, deleteLicense } from "../license/index.js";
 import { attachAgent, closeAllAgents } from "../agent/index.js";
+import {
+  ImageInputError,
+  prepareImageAttachments,
+} from "../agent/imageStaging.js";
 import { getProvider, listProviderStatuses } from "../agent/registry.js";
 import {
   listChatProjects,
@@ -122,7 +126,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "2mb" }));
+// Four bounded 2 MiB images expand to ~10.7 MiB as base64; the staging layer
+// enforces decoded-byte/count limits after the parser's coarse request cap.
+app.use(express.json({ limit: "12mb" }));
 
 // Open the database up front so a bad schema fails fast at boot (US-001).
 const db = getDb();
@@ -205,6 +211,27 @@ function authed(req: express.Request, res: express.Response): boolean {
   }
   return true;
 }
+
+// Browser-to-driver image bridge. The response carries both the bounded inline
+// representation and a Conan-managed path; each driver consumes its verified
+// native shape. The WS boundary validates the returned path again.
+app.post("/api/agent/images/stage", (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const body = (req.body ?? {}) as { images?: unknown };
+    if (body.images === undefined) {
+      res.status(400).json({ error: "images array required" });
+      return;
+    }
+    res.json({ images: prepareImageAttachments(body.images) });
+  } catch (error) {
+    if (error instanceof ImageInputError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
 
 // ── External editor launch ─────────────────────────────────────────────────
 // Detection uses the user's interactive-login-shell PATH, since a packaged
