@@ -13,8 +13,17 @@ Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
    the run/QA rules inline, and every story's `acceptanceCriteria` are the
    contract. The matching `prd-*.md` beside it is the source PRD with the
    reasoning and the verified probe results behind each decision.
-3. Task lists: `docs/chat-v1-qa-backlog.md` (QA findings + PD-1) and
-   `docs/t3-port-backlog.md` (feature wishlist).
+3. Task lists: `docs/t3-port-backlog.md` (feature wishlist; T3-1/5/11/6/3 done),
+   `docs/ui-improvements-backlog.md` (deferred UI polish — the next likely
+   round: image paste + paperclip rethink, a unified provider/model picker,
+   context-window default fix), and `docs/chat-v1-qa-backlog.md` (older QA).
+
+**Round status (2026-07-24):** the daily-driver round (`loop/conan-daily-driver`
+— context meter, draft threads, reasoning-effort chip, @-pins) is COMPLETE,
+11/11 stories pass. `docs/daily-driver-qa.md` has the per-provider matrix. Split
+last time: Codex took the seam/driver/parser stories (no browser), Claude the UI
+stories (need a port-binding sandbox for automate-browser). Owner hints live in
+each story's `notes` and the split rule is under "The build loop" below.
 
 **If you are NOT Claude Code:** the checkpoint entry named above lives in
 Claude's project memory (`~/.claude/projects/…`), outside this repo — you
