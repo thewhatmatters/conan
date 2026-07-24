@@ -479,7 +479,12 @@ app.delete("/api/agent/threads/:sessionId", (req, res) => {
 app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
   if (!authed(req, res)) return;
   const row = getChatThread(req.params.sessionId);
-  res.json(readChatHistory(req.params.sessionId, row?.cwd));
+  // provider rides along (T3-1 US-006) so a reopened thread resumes on the
+  // agent that created it; a rowless session reads as claude.
+  res.json({
+    ...readChatHistory(req.params.sessionId, row?.cwd),
+    provider: row?.provider ?? "claude",
+  });
 });
 
 /** Byte size of a value as it contributes to context (string as-is, else JSON). */

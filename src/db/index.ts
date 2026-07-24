@@ -82,6 +82,11 @@ function migrate(handle: Database.Database): void {
     if (!cols.has("last_message")) {
       handle.exec("ALTER TABLE chat_thread ADD COLUMN last_message TEXT");
     }
+    // T3-1 US-006: which agent CLI drives the thread (claude|codex|grok).
+    // Nullable — pre-multi-provider rows read as 'claude' at the select layer.
+    if (!cols.has("provider")) {
+      handle.exec("ALTER TABLE chat_thread ADD COLUMN provider TEXT");
+    }
   }
 
   // loop/conan-thread-toolbar US-004: per-project custom toolbar actions.

@@ -1,9 +1,9 @@
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
-import { ClaudeDriver } from "./claude.js";
 import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
-import { adoptChatThread, touchChatThread, upsertChatThread,
+import { getProvider, type ProviderEntry } from "./registry.js";
+import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
   setChatThreadLastMessage,
 } from "./threads.js";
 
@@ -22,7 +22,8 @@ import { adoptChatThread, touchChatThread, upsertChatThread,
  *     project so the thread row persists; it never reaches the driver.
  *     resume (US-015) is a past session id — the driver launches with
  *     `--resume` and the saved chat_thread row is re-keyed to the forked
- *     session id claude reports at init.
+ *     session id claude reports at init. The saved row's PROVIDER picks the
+ *     driver (T3-1 US-006): a codex thread reopens on codex, never claude.
  *   {type:"interrupt"}   cancel the in-flight turn (graceful — the session
  *     survives and takes the next prompt; falls back to ending the session,
  *     surfaced as an `exit` event, if the CLI has no control channel)
@@ -59,7 +60,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   /** Session id this connection resumes (US-015) — the saved row to re-key. */
   let resumeFrom: string | null = null;
 
-  const driver: AgentDriver = new ClaudeDriver((e: AgentEvent) => {
+  const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
     if (e.kind === "system" && e.sessionId) {
       sessionId = e.sessionId;
@@ -80,6 +81,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
             projectId,
             cwd: e.cwd ?? getActiveCwd(),
             model: e.model,
+            provider: provider.id,
             title: titleFromPrompt(firstPrompt),
           });
         } catch (err) {
@@ -105,8 +107,31 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
     if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
       send({ type: "busy", busy: false });
     }
-  }, getActiveCwd);
-  active.add(driver);
+  };
+
+  // T3-1 US-006: the driver is built lazily at the first prompt so a resumed
+  // thread can relaunch on the provider that CREATED it (a Codex thread id
+  // means nothing to claude). Fresh threads stay on claude until US-007 lets
+  // the launch frame pick a provider explicitly.
+  let provider: ProviderEntry = getProvider("claude")!;
+  let driver: AgentDriver | null = null;
+
+  const ensureDriver = (resume: string | null): AgentDriver => {
+    if (driver) return driver;
+    if (resume) {
+      try {
+        const saved = getChatThread(resume)?.provider;
+        // A stored id the registry doesn't know (a downgrade / hand-edited DB)
+        // falls back to claude rather than crashing the socket.
+        if (saved) provider = getProvider(saved) ?? provider;
+      } catch (err) {
+        console.warn(`[agent] provider lookup failed: ${(err as Error).message}`);
+      }
+    }
+    driver = provider.createDriver(onEvent, getActiveCwd);
+    active.add(driver);
+    return driver;
+  };
 
   socket.on("message", (raw) => {
     let msg: Record<string, unknown>;
@@ -140,12 +165,14 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         opts.permissionMode = msg.permissionMode;
       }
       send({ type: "busy", busy: true });
-      void driver.send(msg.text, opts).catch((err: unknown) => {
-        send({ type: "error", message: (err as Error).message });
-        send({ type: "busy", busy: false });
-      });
+      void ensureDriver(opts.resume ?? null)
+        .send(msg.text, opts)
+        .catch((err: unknown) => {
+          send({ type: "error", message: (err as Error).message });
+          send({ type: "busy", busy: false });
+        });
     } else if (msg.type === "interrupt") {
-      driver.interrupt();
+      driver?.interrupt();
     } else if (
       msg.type === "permission-response" &&
       typeof msg.id === "string" &&
@@ -154,7 +181,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         msg.decision === "decline" ||
         msg.decision === "cancel")
     ) {
-      driver.respondPermission(msg.id, msg.decision);
+      driver?.respondPermission(msg.id, msg.decision);
     } else if (
       msg.type === "set-permission-mode" &&
       (msg.mode === "default" ||
@@ -162,13 +189,15 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         msg.mode === "acceptEdits" ||
         msg.mode === "bypassPermissions")
     ) {
-      driver.setPermissionMode(msg.mode);
+      driver?.setPermissionMode(msg.mode);
     }
   });
 
   const cleanup = (): void => {
+    if (!driver) return;
     driver.dispose();
     active.delete(driver);
+    driver = null;
   };
   socket.on("close", cleanup);
   socket.on("error", cleanup);
