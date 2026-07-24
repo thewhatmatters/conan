@@ -67,7 +67,7 @@
         "Tests pass"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "The structurally-alien provider - this story is what proves the seam. Parser tests should run against the US-001 fixtures (no live calls in tests). Suggested skills: none."
     },
     {

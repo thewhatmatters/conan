@@ -62,14 +62,15 @@ test("capabilities pin the US-001 verified matrix", () => {
   assert.equal(CLAUDE_CAPABILITIES.reasoningText, false);
 });
 
-test("claude's factory builds a driver; codex/grok factories throw until US-004/005", () => {
-  const driver = getProvider("claude")!.createDriver(
-    () => {},
-    () => null,
-  );
-  assert.equal(driver.provider, "claude");
-  driver.dispose();
-  assert.throws(() => getProvider("codex")!.createDriver(() => {}, () => null), /US-004/);
+test("claude/codex factories build drivers; grok's throws until US-005", () => {
+  for (const id of ["claude", "codex"] as const) {
+    const driver = getProvider(id)!.createDriver(
+      () => {},
+      () => null,
+    );
+    assert.equal(driver.provider, id);
+    driver.dispose();
+  }
   assert.throws(() => getProvider("grok")!.createDriver(() => {}, () => null), /US-005/);
 });
 

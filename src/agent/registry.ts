@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
 import type { AgentCapabilities, AgentDriver, AgentEvent } from "./driver.js";
 import { CLAUDE_CAPABILITIES, ClaudeDriver } from "./claude.js";
+import { CODEX_CAPABILITIES, CodexDriver } from "./codex.js";
+
+// Each provider's capability descriptor lives beside its driver (claude.ts /
+// codex.ts); the registry re-exports them as the one lookup surface.
+export { CODEX_CAPABILITIES };
 
 /**
  * Provider registry (T3-1 US-003) — the one table mapping a provider id to
@@ -38,37 +43,6 @@ export interface ProviderEntry {
     fallbackCwd: () => string | null,
   ) => AgentDriver;
 }
-
-/** Codex's verified headless capabilities (codex-cli 0.144.6, US-001 probe):
- *  whole items only (no deltas), no approval channel — permissions are a
- *  sandbox policy fixed at spawn — token counts but never USD, reasoning
- *  counted but never streamed as text. Resume verified via the
- *  `codex exec … resume <thread_id>` subcommand. */
-export const CODEX_CAPABILITIES: AgentCapabilities = {
-  streamingDeltas: false,
-  interactiveApproval: false,
-  livePermissionSwitch: false,
-  costUsd: false,
-  reasoningText: false,
-  resume: true,
-  permissionModes: [
-    {
-      id: "read-only",
-      label: "Read only",
-      description: "Sandbox: read files only — no writes or state changes",
-    },
-    {
-      id: "workspace-write",
-      label: "Workspace write",
-      description: "Sandbox: writes allowed inside the workspace",
-    },
-    {
-      id: "danger-full-access",
-      label: "Full access",
-      description: "No sandbox — every command runs unrestricted",
-    },
-  ],
-};
 
 /** Grok's verified headless capabilities (grok 0.2.111, US-001 probe): real
  *  `thought`/`text` deltas (readable reasoning — unlike Claude's D2 redaction)
@@ -122,10 +96,7 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     avatarLetter: "X",
     binary: "codex",
     capabilities: CODEX_CAPABILITIES,
-    createDriver: () => {
-      // US-004 lands CodexDriver; until then the composer can't launch codex.
-      throw new Error("CodexDriver not implemented yet (US-004)");
-    },
+    createDriver: (emit, fallbackCwd) => new CodexDriver(emit, fallbackCwd),
   },
   {
     id: "grok",

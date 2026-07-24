@@ -164,6 +164,15 @@ export type AgentEvent =
       durationMs: number | null;
       numTurns: number | null;
       text: string | null;
+      /** Token usage, for providers that report counts but no USD (codex —
+       *  `capabilities.costUsd` false renders these instead of a fabricated
+       *  dollar figure). Absent for providers that report cost. */
+      tokens?: {
+        input: number | null;
+        cachedInput: number | null;
+        output: number | null;
+        reasoningOutput: number | null;
+      };
     }
   | {
       /** The underlying process exited (chat session ended). */
