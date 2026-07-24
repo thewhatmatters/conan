@@ -56,29 +56,62 @@ CI=true npm run tauri:build # bundle Conan.app + .dmg (CI=true for headless DMG)
 ## Chat architecture (CURRENT — the mounted app)
 The chat-primary stack, built on branch `loop/conan-chat-v1`. Full narrative +
 run/QA workflow in `HANDOFF.md`.
-- **Backend `src/agent/`** — the `AgentDriver` seam (`driver.ts`) + `ClaudeDriver`
-  (`claude.ts`) spawns `claude --print --output-format stream-json
-  --input-format stream-json --verbose --include-partial-messages` and parses
-  its NDJSON into normalized `AgentEvent`s; `index.ts` is the `/ws/agent` WS
-  handler (one connection = one headless session = one process). Token-streaming
-  (text deltas), graceful interrupt (stdin `control_request`), and **interactive
-  tool-approval** all ride the CLI's stdio control channel with
-  `--permission-prompt-tool stdio` — **subscription auth, never
-  `ANTHROPIC_API_KEY`** (the `sk-ant-oat*` gotcha). Live permission-mode switch
-  via `set_permission_mode`.
-- **Persistence (`src/db/`)** — `project` + `chat_thread` tables. Threads are
-  metadata-only; transcripts are **reconstructed from Claude's own JSONL** on
-  reopen (`src/agent/history.ts` over the transcript readers) and continued with
-  `claude --resume <session_id>`. Routes: `GET/POST /api/agent/projects`,
-  `DELETE /api/agent/threads/:sessionId`, `GET /api/agent/threads/:id/transcript`.
+- **Backend `src/agent/` — MULTI-PROVIDER (T3-1, 2026-07-23).** The
+  `AgentDriver` seam (`driver.ts`) now carries a `readonly capabilities:
+  AgentCapabilities` descriptor (streamingDeltas / interactiveApproval /
+  livePermissionSwitch / costUsd / reasoningText / resume + `permissionModes`
+  in the provider's own vocabulary) and three drivers behind it:
+  - `ClaudeDriver` (`claude.ts`): spawns `claude --print --output-format
+    stream-json --input-format stream-json --verbose
+    --include-partial-messages`, one process per session. Token-streaming,
+    graceful interrupt (stdin `control_request`), **interactive tool-approval**
+    via `--permission-prompt-tool stdio`, live permission-mode switch via
+    `set_permission_mode` — **subscription auth, never `ANTHROPIC_API_KEY`**
+    (the `sk-ant-oat*` gotcha). reasoningText FALSE (D2: headless claude
+    redacts thought text).
+  - `CodexDriver` (`codex.ts`): **one process per turn** — `codex exec --json`
+    fresh, `codex exec resume <thread_id>` for later turns; prompt as argv +
+    `stdin:'ignore'` (codex reads stdin when piped). No deltas, no $, no
+    interactive approval; permission maps to `--sandbox
+    read-only|workspace-write|danger-full-access`.
+  - `GrokDriver` (`grok.ts`): one process per turn — `grok -p … --output-format
+    streaming-json`, `--resume <sessionId>`. Token deltas, REAL reasoning
+    text, `total_cost_usd`; no headless approval (approval-needing tools
+    cancel the turn in `default` mode).
+  `registry.ts` = the provider table (id/name/avatar letter C·X·G/binary/
+  capabilities/factory) + login-shell install probe (10min TTL) behind
+  `GET /api/agent/providers`. `index.ts` is the `/ws/agent` WS handler; the
+  prompt frame carries `provider`, the driver is built from the registry
+  (unknown/uninstalled → readable error event, never a silent claude
+  fallback), and its capabilities are pushed to the client once at session
+  start as `{type:'capabilities'}`.
+- **Persistence (`src/db/`)** — `project` + `chat_thread` tables (thread rows
+  carry a `provider` column, null = 'claude' for pre-migration rows). Threads
+  are metadata-only; transcripts are **reconstructed from Claude's own JSONL**
+  on reopen (`src/agent/history.ts`) and continued with `--resume`. A resumed
+  thread relaunches its OWN provider. ⚠ History reconstruction is
+  **Claude-only**: reopened codex/grok threads show a "history couldn't be
+  found" banner and degrade to a fresh session (context lost) — plus an open
+  grok bug (saved reported model `grok-4.5-build` is not a valid `-m` id →
+  exit 1). Honest per-provider QA matrix: `docs/multi-provider-qa.md`.
+  Routes: `GET/POST /api/agent/projects`, `DELETE
+  /api/agent/threads/:sessionId`, `GET /api/agent/threads/:id/transcript`.
 - **UI (`ui/src/`)** — `App.tsx` mounts `ChatSurface.tsx` (project-grouped thread
-  sidebar) → N `ChatPane.tsx` (one per thread, own `useAgentChat.ts` WS +
-  process, mounted-but-hidden). Transcript renders streamed text, collapsed
-  reasoning (dormant — see D2 note in `HANDOFF.md`), tool cards w/ inline diffs,
-  plan cards, per-turn cost footer. `ActivitySpine.tsx` = the fused
-  prompt/skill/tool tick rail. Composer: model + permission chips +
+  sidebar; per-thread avatar letter resolves the persisted provider against the
+  registry) → N `ChatPane.tsx` (one per thread, own `useAgentChat.ts` WS +
+  process, mounted-but-hidden). The transcript is **capability-driven — no
+  provider-name branching**: streamed text or an honest Working indicator
+  (`streamingDeltas`), collapsed "Thinking" rows only where `reasoningText` is
+  real (grok; hidden for claude per D2), tool cards w/ inline diffs, plan
+  cards, per-turn footer showing $ (`costUsd`) or token counts. The permission
+  chip renders `capabilities.permissionModes` (Codex shows its sandbox
+  vocabulary; Supervised absent); `!interactiveApproval` hides the approval
+  UI; `!livePermissionSwitch` notes "applies from the next turn".
+  `ActivitySpine.tsx` = the fused prompt/skill/tool tick rail. Composer:
+  provider chip (from `GET /api/agent/providers`, uninstalled = disabled w/
+  tooltip, **locks after turn 1**) + model + permission chips +
   `ComposerAutocomplete.tsx` (`@` files/folders · `$` skills · `/` commands).
-  `CwdPicker.tsx`/`DirBrowser.tsx` = per-project folder pick.
+  `ProjectPicker.tsx`/`DirBrowser.tsx` = per-project folder pick.
 - **Dormant (in repo, unmounted):** `TerminalPane`/`Terminal`, `Hud`/`Widgets`/
   `Timeline`/`PulseChart`/`*Widget`, `RadioBar`, `StatusBar`, `src/terminal/*`,
   `correlate.ts`, `terminal_session` table, and their gateway routes. The

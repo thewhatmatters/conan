@@ -203,7 +203,7 @@
         "Verify in browser using automate-browser skill"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Final aggregate story. Real agent usage across three CLIs - keep prompts trivial. Suggested skills: automate-browser."
     }
   ]

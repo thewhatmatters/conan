@@ -1,0 +1,82 @@
+# Multi-provider QA — T3-1 (US-012)
+
+_Run 2026-07-23 on branch `loop/conan-multi-provider`, browser dev stack
+(throwaway `CONAN_PORT=3796` + Vite `:5196`), driven with the automate-browser
+skill. CLI versions: claude 2.1.218 · codex 0.144.6 · grok 0.2.111. Test cwd:
+a scratch folder (`~/conan-qa-us012`), never a real repo._
+
+Protocol per provider: send 2 turns (turn 1 plants a codeword, turn 2 asks it
+back — proves cross-turn context), interrupt a long turn mid-flight, then close
+and reopen the thread and confirm it resumes on its OWN provider.
+
+## Result matrix
+
+| Check | Claude | Codex | Grok |
+|---|---|---|---|
+| 2-turn context retained | ✅ "peridot" | ✅ "zephyr" (via `codex exec resume`) | ✅ "quasar" (via `--resume`) |
+| Turn footer | ✅ $ cost | ✅ token counts ("17.7k in · 5 out"), no fabricated $ | ✅ $ cost |
+| Streaming | ✅ token deltas | ✅ honest Working indicator, whole message at end | ✅ token deltas + streamed partial text |
+| Reasoning rows | hidden (D2 — headless claude redacts thought text) | n/a (none emitted) | ✅ "Thinking" rows render per turn (expansion with real thought text verified in US-010) |
+| Interrupt mid-turn | ✅ stream stops, turn closes (footer reads $0.0000 — cosmetic) | ✅ process killed → "Session ended." | ✅ partial text kept → "Session ended." |
+| Turn after interrupt | ✅ context intact ("peridot") | not retestable same-session (one process per turn — next send starts a new process anyway) | ✅ (same one-process-per-turn model) |
+| Reopen → own provider | ✅ relaunches claude | ✅ relaunches codex (verified: `codex exec` spawned, never claude) | ✅ relaunches grok |
+| Reopen → transcript restored | ✅ "Resumed from history", context intact | ❌ history missing (see below) | ❌ history missing (see below) |
+| Reopen → conversation continues | ✅ | ⚠️ fresh session — context LOST | ❌ **broken — every turn exits 1** (see bug below) |
+
+## Known limitations (honest, by design or deferred)
+
+### 1. Codex/Grok threads lose their conversation on close+reopen
+
+Transcript reconstruction (`src/agent/history.ts`) reads **Claude's JSONL
+only**. For a codex or grok thread the transcript route finds nothing, the UI
+shows "This chat's saved history couldn't be found on disk — your next message
+starts a fresh session in this project", and `ChatPane.tsx` (~line 509)
+deliberately drops the `--resume` id when history is missing — so the next
+message starts a **fresh session on the same provider**. Deliberate degradation
+(the agent would otherwise know context the visible transcript doesn't show),
+but it means close+reopen is lossy on codex/grok while a thread's pane stays
+mounted-but-hidden fine within an app run.
+
+Side effect: the fresh session gets a new session id, so sending a message in
+a reopened codex/grok thread creates a **duplicate sidebar row** (the original
+row survives untouched).
+
+Fix direction (follow-up story): transcript readers for codex rollout files
+(`~/.codex/sessions/…`) and grok's session store, OR pass the resume id anyway
+and render a "context resumed, transcript unavailable" divider.
+
+### 2. BUG — reopened Grok threads cannot send any turn (exit 1)
+
+The thread row persists the model the driver *reports* (`upsertChatThread`
+`model: e.model` in `src/agent/index.ts`). Grok's stream reports its internal
+build name — `grok-4.5-build` — which is **not a valid `-m` model id**. On
+reopen the saved model is re-applied to the launch (`ChatPane.tsx` ~502,
+`resume.model`), so every turn dies with:
+
+```
+Error: Couldn't set model 'grok-4.5-build': Invalid params: "unknown model id".
+```
+
+Claude is unaffected only by luck (it reports a valid alias like
+`claude-fable-5`); codex reports no model (null → no `-m`). Fix direction:
+don't re-apply a saved model the user never picked (non-claude providers have
+no model options — resume should omit `-m` for them), or have GrokDriver stop
+reporting the build name as the launch model. **Must fix before merge to
+main** — until then grok threads are single-app-run only.
+
+### 3. Cosmetics
+
+- Interrupted claude turn footer shows `$0.0000` for cost.
+- `codex exec` still prints "Reading additional input from stdin..." to stderr
+  even with stdin ignored — benign (it sees EOF and proceeds); logged noise
+  only.
+
+## What's solid
+
+The capability model held up end-to-end with zero provider-name branching in
+the UI: the composer chip locks after turn 1, the permission chip renders each
+provider's real vocabulary (Codex sandbox modes, Supervised absent), the
+transcript adapts (Working indicator vs caret, token counts vs $, Thinking
+rows only where reasoning text is real), and sidebar avatars C/X/G come from
+the persisted per-thread provider. Within a single app run all three providers
+hold multi-turn conversations and interrupt cleanly.

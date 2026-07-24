@@ -6,52 +6,65 @@ picking up the Conan build._
 
 ## What Conan is NOW
 
-A **chat-primary desktop cockpit for driving Claude Code** (Tauri v2 + React +
-a loopback Node gateway sidecar). It drives `claude` **headlessly** (`claude -p`
-stream-json over a `/ws/agent` WebSocket) behind a custom chat UI:
+A **chat-primary, multi-provider desktop cockpit for coding agents** (Tauri v2
++ React + a loopback Node gateway sidecar). It drives **Claude Code, Codex, and
+Grok headlessly** (stream-json/JSONL child processes normalized through the
+`AgentDriver` seam, over a `/ws/agent` WebSocket) behind a custom chat UI:
 
 - **Project-grouped thread sidebar** (first-class projects with a folder path;
-  threads nested inside; persisted in SQLite, survive reload + gateway restart).
-- **Streaming transcript** — token-by-token text, collapsed reasoning*, tool
-  cards with inline diffs, plan cards, per-turn cost footer.
-- **Interactive tool-approval** (Supervised default: Approve once / Always allow
-  / Decline / Cancel), live-switchable permission mode.
+  threads nested inside; persisted in SQLite, survive reload + gateway restart;
+  per-thread C/X/G avatar = the provider that drove it).
+- **Streaming transcript** — capability-driven: token deltas or an honest
+  Working indicator, collapsed reasoning (real for Grok*), tool cards with
+  inline diffs, plan cards, per-turn $-or-token footer.
+- **Interactive tool-approval** (Claude only — Codex/Grok have no headless
+  approval channel; the UI hides it via capabilities), permission chip in each
+  provider's own vocabulary (Claude modes / Codex sandbox levels).
 - **Activity spine** — a thin rail fusing prompt/skill/tool ticks (hover-preview,
   click-to-jump). Conan's differentiator vs t3-code (which has no timeline/cost).
-- **Sigil composer** — model + permission chips + `@` files/folders · `$` skills
-  · `/` commands autocomplete.
+- **Sigil composer** — provider chip (locks after turn 1) + model + permission
+  chips + `@` files/folders · `$` skills · `/` commands autocomplete.
 
 The terminal (`xterm.js`) surface and the DevTools HUD were **removed from the
 mounted UI**; that code is dormant in the repo. See `CLAUDE.md` for the current
 chat architecture + the dormant subsystems.
 
-\* reasoning is plumbed but DORMANT — see the D2 note under "Known limits".
+\* reasoning TEXT is real for Grok; for headless Claude it's redacted (D2, see
+"Known limits") so the Thinking UI stays hidden there.
 
 ## Current state (branch / git)
 
-- **Branch: `loop/conan-chat-v1`** (git), **pushed to `origin`**. `main` is clean
-  at `f23bc7c` — the chat rebuild is NOT merged yet (feature branch only).
-- **`prd.json` branchName label:** rotates per loop (`loop/conan-chat-v1` for the
-  25-story chat-v1 build, `loop/conan-chat-v1-polish` for the polish loop).
+- **Branch: `loop/conan-multi-provider`** (on top of `loop/conan-chat-v1`).
+  `main` is clean at `f23bc7c` — nothing chat-era is merged yet.
 - **chat-v1: DONE** — 25 stories, archived at
-  `archive/2026-07-23-conan-chat-v1-complete/`.
-- **Polish loop: DONE** — all 6 stories pass (permission-unlock, auto-open,
-  settings entry, skill ticks, sort/group menu, command-palette picker).
-- **PD-1 richer thread rows: DONE** — status icon + title + description +
-  badge/timestamp; a `last_message` column on `chat_thread` feeds the
-  description.
-- **QA:** the whole build was walked A–G; findings + status live in
-  `docs/chat-v1-qa-backlog.md` (the running backlog / task source). The **polish
-  loop's 6 stories are NOT yet QA-dogfooded** — that's the next verify pass.
+  `archive/2026-07-23-conan-chat-v1-complete/`. **Polish loop: DONE** (6
+  stories). **PD-1 richer thread rows: DONE.**
+- **T3-1 multi-provider: DONE (2026-07-23, this branch, 12 stories)** —
+  `AgentCapabilities` on the driver seam; provider registry + login-shell
+  install probe (`GET /api/agent/providers`); `CodexDriver` (one process per
+  turn, `codex exec --json`, sandbox permission mapping) + `GrokDriver`
+  (deltas, real reasoning text, `total_cost_usd`); `chat_thread.provider`
+  column + resume routed to the thread's OWN provider; WS launch frame carries
+  provider + capabilities pushed at session start; capability-driven composer
+  chip / permission chip / transcript / sidebar avatars. **Read
+  `docs/multi-provider-qa.md`** for the honest per-provider matrix — headline
+  limits: codex/grok threads lose conversation context on close+reopen
+  (Claude-only history reconstruction), and reopened grok threads have an OPEN
+  BUG (saved reported model `grok-4.5-build` re-applied as `-m` → every turn
+  exits 1). Fix before merge.
+- **QA:** chat-v1 findings live in `docs/chat-v1-qa-backlog.md`; the polish
+  loop's 6 stories are still not QA-dogfooded; multi-provider QA is
+  `docs/multi-provider-qa.md`.
 
 ## What's next (the roadmap, ordered)
 
-1. **QA the polish loop** — dogfood the 6 polish stories (US-001..006); log
-   findings to `docs/chat-v1-qa-backlog.md`. (PD-1 is DONE — no longer pending.)
-2. **t3 feature ports** — see `docs/t3-port-backlog.md` (the wishlist). This is
-   the main "keep building" track; not yet decomposed into stories. **T3-1
-   multi-provider is the highest-leverage** (adds Codex etc. behind the existing
-   `AgentDriver` seam — also the credit-failover story).
+1. **Fix the two multi-provider reopen gaps** (`docs/multi-provider-qa.md`):
+   the grok saved-model exit-1 bug (small — stop re-applying a never-picked
+   model on resume), then codex/grok transcript readers so reopen isn't lossy.
+2. **QA the polish loop** — dogfood the 6 polish stories (US-001..006); log
+   findings to `docs/chat-v1-qa-backlog.md`.
+3. **t3 feature ports** — see `docs/t3-port-backlog.md`. T3-1 is DONE; **T3-19
+   provider maintenance UI** is the natural follow-on (registry + probe exist).
 4. **Ship-gates (before any release / merge to `main`):**
    - **H1 — native build unverified.** EVERYTHING so far ran only in a browser
      dev stack. **No Rust toolchain is installed** on this machine, so
@@ -70,8 +83,9 @@ chat architecture + the dormant subsystems.
    - **Dead-code decision** — delete or keep dormant: `TerminalPane`/`Terminal`,
      `Hud`/`Widgets`/`Timeline`/`*Widget`/`PulseChart`, `RadioBar`, `StatusBar`,
      `src/terminal/*`, `correlate.ts`, `terminal_session`, orphaned routes.
-   - **Merge `loop/conan-chat-v1` → `main`** — 20+ commits replacing the primary
-     surface; needs a real review pass.
+   - **Merge `loop/conan-multi-provider` (contains `loop/conan-chat-v1`) →
+     `main`** — 30+ commits replacing the primary surface; needs a real review
+     pass, and the grok reopen bug fixed first.
 5. **Release** — version bump + `npm run release` (sign/notarize/staple) +
    `gh release create` + announce (see `.claude/skills/release-conan/` and the
    `announce-conan-release` skill).
@@ -106,11 +120,16 @@ cd ui && npm run dev            # vite on :5173  (open http://localhost:5173)
   (tsx-watch) restarts the gateway and kills ptys. Use `npm start`.
 - **`t3code/` is gitignored** — it's the reference t3-code source (an embedded
   repo). Never commit it.
-- **D2 / reasoning is a platform limit**, not a bug: headless `claude -p`
-  redacts thinking TEXT (empty string + signature only), verified across
-  fable-5/opus/sonnet. The reasoning UI is left dormant.
-- **Subscription auth only** — the headless path uses the user's Claude login;
-  never introduce `ANTHROPIC_API_KEY` (`sk-ant-oat*` is blocked for API calls).
+- **D2 / Claude reasoning is a platform limit**, not a bug: headless
+  `claude -p` redacts thinking TEXT (empty string + signature only), verified
+  across fable-5/opus/sonnet. The Thinking UI is capability-gated
+  (`reasoningText`): live for Grok, hidden for Claude.
+- **Subscription auth only** — the headless Claude path uses the user's Claude
+  login; never introduce `ANTHROPIC_API_KEY` (`sk-ant-oat*` is blocked for API
+  calls). Codex/Grok likewise ride their own CLI logins.
+- **Codex reads stdin when piped** — `codex exec` must get the prompt as argv
+  with `stdin:'ignore'` (the driver does this; the "Reading additional input
+  from stdin..." stderr line is benign noise).
 
 ## The autonomous build loop (provider-agnostic)
 
