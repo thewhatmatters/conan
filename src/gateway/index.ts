@@ -75,6 +75,7 @@ import {
 } from "../agent/threads.js";
 import { readChatHistory } from "../agent/history.js";
 import { readCodexHistory } from "../agent/codexHistory.js";
+import { readGrokHistory } from "../agent/grokHistory.js";
 import { detectEditors, openInEditor } from "../editor/index.js";
 import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
 import {
@@ -489,9 +490,11 @@ app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
   const history =
     provider === "codex"
       ? readCodexHistory(req.params.sessionId)
-      : provider === "claude"
-        ? readChatHistory(req.params.sessionId, row?.cwd)
-        : { found: false, items: [] };
+      : provider === "grok"
+        ? readGrokHistory(req.params.sessionId, row?.cwd)
+        : provider === "claude"
+          ? readChatHistory(req.params.sessionId, row?.cwd)
+          : { found: false, items: [] };
   res.json({ ...history, provider });
 });
 

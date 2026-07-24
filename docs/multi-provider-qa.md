@@ -20,12 +20,12 @@ and reopen the thread and confirm it resumes on its OWN provider.
 | Interrupt mid-turn | ✅ stream stops, turn closes (footer reads $0.0000 — cosmetic) | ✅ process killed → "Session ended." | ✅ partial text kept → "Session ended." |
 | Turn after interrupt | ✅ context intact ("peridot") | not retestable same-session (one process per turn — next send starts a new process anyway) | ✅ (same one-process-per-turn model) |
 | Reopen → own provider | ✅ relaunches claude | ✅ relaunches codex (verified: `codex exec` spawned, never claude) | ✅ relaunches grok |
-| Reopen → transcript restored | ✅ "Resumed from history", context intact | ✅ FIXED 2026-07-24 (rollout reader) | ❌ history missing (see below) |
-| Reopen → conversation continues | ✅ | ✅ FIXED 2026-07-24 (quoted a pre-reopen question) | ⚠️ fresh session — context LOST (exit-1 bug FIXED 2026-07-24) |
+| Reopen → transcript restored | ✅ "Resumed from history", context intact | ✅ FIXED 2026-07-24 (rollout reader) | ✅ FIXED 2026-07-24 (chat_history reader, Thinking rows intact) |
+| Reopen → conversation continues | ✅ | ✅ FIXED 2026-07-24 (quoted a pre-reopen question) | ✅ FIXED 2026-07-24 (quoted a pre-reopen question) |
 
 ## Known limitations (honest, by design or deferred)
 
-### 1. ~~Codex/Grok threads lose their conversation on close+reopen~~ CODEX FIXED 2026-07-24 (grok outstanding)
+### 1. ~~Codex/Grok threads lose their conversation on close+reopen~~ FIXED 2026-07-24
 
 Transcript reconstruction (`src/agent/history.ts`) reads **Claude's JSONL
 only**. For a codex or grok thread the transcript route finds nothing, the UI
@@ -56,9 +56,22 @@ the thread's provider. Because history is now FOUND, ChatPane keeps the resume
 id, so reopened codex threads also continue the real conversation — verified
 end-to-end: after close+reopen, Codex correctly quoted the pre-reopen question.
 
-**Grok: still outstanding.** Its store is `~/.grok/sessions/<url-encoded-cwd>/`
-with a `session_search.sqlite` index, so it needs a cwd→dir mapping rather than
-a filename match — a separate piece of work.
+**Grok: FIXED.** `src/agent/grokHistory.ts` reads
+`$GROK_HOME/sessions/<encodeURIComponent(cwd)>/<session_id>/chat_history.jsonl`
+— the thread's cwd makes this a direct path hit, with a one-level scan as
+fallback; the `session_search.sqlite` index turned out to be unnecessary.
+`--resume` reuses the original session id (only `--fork-session` mints a new
+one, which the driver never passes), so later turns append to the same file.
+It unwraps the real prompt from Grok's `<user_query>` envelope, drops injected
+`<user_info>` / `<system-reminder>` user records, emits reasoning rows from the
+READABLE `summary_text` (Grok's differentiator — Claude redacts, Codex
+encrypts), and merges `assistant.tool_calls` with their `tool_result` by
+`tool_call_id` (Grok has no separate tool_call record). Verified end-to-end:
+after close+reopen the restored transcript shows its Thinking rows and Grok
+quoted the question asked before the reopen.
+
+All three providers now restore transcripts and continue conversations across
+close+reopen.
 
 ### 2. ~~BUG — reopened Grok threads cannot send any turn (exit 1)~~ FIXED 2026-07-24
 
