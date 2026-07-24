@@ -43,7 +43,19 @@ export interface OutgoingFileAttachment {
   type: "file";
   path: string;
   content: string;
+  /** Set by the composer when the read hit its cap — surfaced in the
+   *  transcript so a partial pin never looks complete. */
+  truncated?: boolean;
   keep?: boolean;
+}
+
+/** A pin as it renders in the transcript — path + size, not the content
+ *  (which is in the prompt the agent received). `truncated` when the read hit
+ *  its cap, so the transcript never implies the whole file was sent. */
+export interface SentPin {
+  path: string;
+  bytes: number;
+  truncated: boolean;
 }
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */
@@ -95,7 +107,7 @@ export interface TurnTokens {
 
 /** A rendered transcript item. */
 export type ChatItem =
-  | { id: string; role: "user"; text: string }
+  | { id: string; role: "user"; text: string; pins?: SentPin[] }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "reasoning"; text: string }
   | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
@@ -336,7 +348,15 @@ export function useAgentChat(token: string | null): AgentChat {
     (text: string, opts: AgentOpts, attachments: OutgoingFileAttachment[] = []) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== ws.OPEN || busy || !text.trim()) return;
-      setItems((prev) => [...prev, { id: nextId(), role: "user", text }]);
+      const pins: SentPin[] = attachments.map((a) => ({
+        path: a.path,
+        bytes: new TextEncoder().encode(a.content).length,
+        truncated: a.truncated === true,
+      }));
+      setItems((prev) => [
+        ...prev,
+        { id: nextId(), role: "user", text, ...(pins.length ? { pins } : {}) },
+      ]);
       ws.send(JSON.stringify({ type: "prompt", text, attachments, ...opts }));
     },
     [busy],

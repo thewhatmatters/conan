@@ -18,6 +18,8 @@ import {
   ShieldCheck,
   Sparkles,
   Brain,
+  Paperclip,
+  X,
   Square,
   SquareSlash,
   Terminal,
@@ -236,6 +238,10 @@ export default function ChatPane({
   // override (the provider's default). effortModes lists only the override
   // levels; "Default" is their absence.
   const [effort, setEffort] = useState<string>("");
+  // Pending @-pins (US-010): file content to attach to the NEXT turn. Bounded
+  // server-side at turn time; `truncated` is set when the read hit its cap so
+  // the transcript can say so.
+  const [pins, setPins] = useState<PendingPin[]>([]);
   // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
   // pick here until the dialog confirms it once per thread; declining reverts.
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
@@ -533,7 +539,14 @@ export default function ChatPane({
       // relaunches its own provider (also honored when the JSONL is missing
       // and the "resume" degrades to a fresh session on the same agent).
       provider: effectiveProviderId,
-    });
+    }, pins.map((p) => ({
+      type: "file" as const,
+      path: p.path,
+      content: p.content,
+      truncated: p.truncated,
+    })));
+    // Per-turn by default — drop pins after send unless explicitly kept.
+    setPins((prev) => prev.filter((p) => p.keep));
     return true;
   };
 
@@ -778,6 +791,34 @@ export default function ChatPane({
             />
           ) : (
             <>
+              {/* Pending pins (US-010) — staged for the next turn, each
+                  removable. Truncation is shown here too, before send. */}
+              {pins.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {pins.map((pin) => (
+                    <span
+                      key={pin.path}
+                      title={pin.path}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground"
+                    >
+                      <Paperclip className="size-3 shrink-0" />
+                      <span className="max-w-40 truncate">{basename(pin.path)}</span>
+                      <span className="shrink-0 opacity-70">
+                        {fmtBytes(pin.bytes)}
+                        {pin.truncated ? " · truncated" : ""}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${basename(pin.path)}`}
+                        onClick={() => setPins((prev) => prev.filter((p) => p.path !== pin.path))}
+                        className="cursor-pointer rounded p-0.5 hover:bg-muted hover:text-destructive"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 value={text}
@@ -943,6 +984,17 @@ export default function ChatPane({
                     </Chip>
                   </>
                 )}
+                <span className="text-border">|</span>
+                <PinPicker
+                  token={token}
+                  cwd={effectiveCwd}
+                  disabled={status !== "open"}
+                  onPin={(pin) =>
+                    setPins((prev) =>
+                      prev.some((p) => p.path === pin.path) ? prev : [...prev, pin],
+                    )
+                  }
+                />
                 <div className="flex-1" />
                 {busy ? (
                   <button
@@ -1246,6 +1298,123 @@ function ContextMeter({
   );
 }
 
+/** A file staged to attach to the next turn. */
+interface PendingPin {
+  path: string;
+  content: string;
+  bytes: number;
+  totalBytes: number;
+  truncated: boolean;
+  keep?: boolean;
+}
+
+/** Compact byte size for pin chips. */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Pin picker (US-010) — a paperclip that searches the thread's cwd (reusing
+ * /api/fs/search) and, on pick, fetches the file's content via /api/fs/read to
+ * stage a pin. The browser can't read disk itself; the gateway does the real
+ * bounding at turn time.
+ */
+function PinPicker({
+  token,
+  cwd,
+  onPin,
+  disabled,
+}: {
+  token: string | null;
+  cwd: string | null;
+  onPin: (pin: PendingPin) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<{ rel: string; name: string; isDir?: boolean }[]>([]);
+
+  useEffect(() => {
+    if (!open || !token || !cwd) return;
+    let cancelled = false;
+    fetch(
+      apiBase() + `/api/fs/search?path=${encodeURIComponent(cwd)}&q=${encodeURIComponent(q)}`,
+      { headers: { "x-conan-token": token } },
+    )
+      .then((r) => (r.ok ? r.json() : { hits: [] }))
+      .then((d: { hits?: { rel: string; name: string; isDir?: boolean }[] }) => {
+        if (!cancelled) setResults((d.hits ?? []).filter((r) => !r.isDir).slice(0, 8));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, q, token, cwd]);
+
+  const pick = async (path: string) => {
+    if (!token) return;
+    try {
+      const r = await fetch(apiBase() + `/api/fs/read?path=${encodeURIComponent(path)}`, {
+        headers: { "x-conan-token": token },
+      });
+      if (!r.ok) return;
+      const d = (await r.json()) as {
+        content: string;
+        totalBytes: number;
+        readBytes: number;
+      };
+      onPin({
+        path,
+        content: d.content,
+        bytes: d.readBytes,
+        totalBytes: d.totalBytes,
+        truncated: d.readBytes < d.totalBytes,
+      });
+    } finally {
+      setOpen(false);
+      setQ("");
+    }
+  };
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        aria-label="Pin a file"
+        title="Pin a file's content to the next message"
+        className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+      >
+        <Paperclip className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search files to pin…"
+          className="mb-1 w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus-visible:border-primary/60"
+          onKeyDown={(e) => e.stopPropagation()}
+        />
+        {results.length === 0 ? (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No files</div>
+        ) : (
+          results.map((r) => (
+            <DropdownMenuItem
+              key={r.rel}
+              onSelect={() => void pick(cwd ? `${cwd}/${r.rel}` : r.rel)}
+            >
+              <Paperclip className="size-3.5 text-muted-foreground" />
+              <span className="truncate">{r.name}</span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** Render one transcript item by role. */
 function Item({
   item,
@@ -1259,10 +1428,27 @@ function Item({
   switch (item.role) {
     case "user":
       return (
-        <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-1">
           <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
             {item.text}
           </div>
+          {/* Pins sent with this turn (US-010) — show WHAT was included so the
+              transcript never misrepresents the prompt. `truncated` is marked
+              honestly; the content itself lives in the prompt the agent got. */}
+          {item.pins?.map((pin) => (
+            <span
+              key={pin.path}
+              title={pin.path}
+              className="inline-flex max-w-[85%] items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground"
+            >
+              <Paperclip className="size-3 shrink-0" />
+              <span className="truncate">{basename(pin.path)}</span>
+              <span className="shrink-0 opacity-70">
+                {fmtBytes(pin.bytes)}
+                {pin.truncated ? " · truncated" : ""}
+              </span>
+            </span>
+          ))}
         </div>
       );
     case "assistant":

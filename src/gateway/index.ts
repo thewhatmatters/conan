@@ -276,6 +276,46 @@ app.get("/api/fs/search", (req, res) => {
   res.json(searchFiles(p, typeof q === "string" ? q : ""));
 });
 
+// Read a file's UTF-8 content for composer pinning (T3-3 US-010). The browser
+// (a WKWebView) can't touch the filesystem, so it fetches content here to build
+// a pin; the gateway does the actual bounding at turn time
+// (prepareFileAttachments). Bounded read so a huge/binary file can't wedge the
+// request, and refuses a directory. Token-gated + CORS-reflected like every fs
+// route.
+app.get("/api/fs/read", (req, res) => {
+  if (!authed(req, res)) return;
+  const p = req.query.path;
+  if (typeof p !== "string" || !p.trim()) {
+    res.status(400).json({ error: "path required" });
+    return;
+  }
+  try {
+    const stat = fs.statSync(p);
+    if (stat.isDirectory()) {
+      res.status(400).json({ error: "path is a directory" });
+      return;
+    }
+    // Cap the read a touch above MAX_PIN_BYTES so the UI can show "truncated"
+    // honestly; the driver's prepareFileAttachments enforces the real limit.
+    const cap = 64 * 1024;
+    const fd = fs.openSync(p, "r");
+    try {
+      const buf = Buffer.alloc(Math.min(cap, stat.size));
+      const bytes = fs.readSync(fd, buf, 0, buf.length, 0);
+      res.json({
+        path: p,
+        content: buf.subarray(0, bytes).toString("utf8"),
+        totalBytes: stat.size,
+        readBytes: bytes,
+      });
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    res.status(404).json({ error: `cannot read: ${(err as Error).message}` });
+  }
+});
+
 // Git branch + dirty count for an arbitrary directory (US-011) — powers the
 // chat surface's StatusBar, which follows the active thread's cwd rather than
 // a correlated session. Degrades to {available:false} for non-repo paths.

@@ -174,7 +174,7 @@
         "Verify in browser using automate-browser skill: pin a file, send, confirm the transcript shows the pin and the agent answers from the pinned content"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-009. Suggested skills: automate-browser, audit-ui."
     },
     {
