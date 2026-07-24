@@ -40,6 +40,32 @@ import { apiBase } from "../lib/gateway.ts";
 
 export type Tier = "free" | "premium";
 
+/**
+ * MASTER PAYWALL SWITCH — currently **OFF**.
+ *
+ * Decision 2026-07-24: every feature is available to every user while the
+ * chat-primary rebuild is verified. The reason is honesty, not generosity —
+ * the surfaces Premium used to gate (Timeline insight rows, the Pulse chart,
+ * the Radio nag) were all unmounted in the rebuild, so a license would have
+ * bought nothing. Rather than ship a hollow tier, nothing is gated at all.
+ *
+ * The licensing machinery is deliberately left intact — verification, storage,
+ * the Settings ▸ License tab, the revocation refresh — so re-enabling is this
+ * one flag plus a decision about WHAT to gate, not a rebuild. Premium gating
+ * gets revisited once the feature set is settled.
+ *
+ * While false, the effective tier every gated surface reads is always
+ * "premium". `license` stays honest (null when there's no valid license), so
+ * Settings can tell the truth about what's on disk.
+ */
+export const PAYWALL_ENABLED = false;
+
+/** The tier gated surfaces should act on. With the paywall off, everything is
+ *  unlocked regardless of what the license says. */
+function gatedTier(real: Tier): Tier {
+  return PAYWALL_ENABLED ? real : "premium";
+}
+
 /** Public state the hook surfaces. Discriminated so consumers can render
  *  specific Premium copy (with expiry, fingerprint) without re-parsing the
  *  JWT every time. */
@@ -58,7 +84,7 @@ export interface TierState {
 /* ───── Module-level store ──────────────────────────────────────────────── */
 
 let state: TierState = {
-  tier: "free",
+  tier: gatedTier("free"),
   license: null,
   lastVerify: null,
   // Bundled revocation snapshot would normally live in
@@ -102,14 +128,14 @@ function setState(patch: Partial<TierState>): void {
 function recompute(): void {
   const v = state.lastVerify;
   if (!v || !v.ok) {
-    setState({ tier: "free", license: null });
+    setState({ tier: gatedTier("free"), license: null });
     return;
   }
   // Re-check against the latest revocation set (the verifier may have
   // run when revokedSubs was empty; an arriving snapshot moves the goalpost).
   if (state.revokedSubs.has(v.license.sub)) {
     setState({
-      tier: "free",
+      tier: gatedTier("free"),
       license: null,
       lastVerify: {
         ok: false,

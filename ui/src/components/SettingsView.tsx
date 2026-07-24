@@ -19,6 +19,7 @@ import { Check, Eye, EyeOff, Lock } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
 import { TAB_LIST, TAB_TRIGGER } from "../lib/tabStyles.ts";
 import {
+  PAYWALL_ENABLED,
   useTier,
   saveLicense,
   clearLicense,
@@ -1158,6 +1159,21 @@ function LicenseTab({
       <div className="rounded-lg border border-border bg-card px-4 py-3">
         {tier.loading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : !PAYWALL_ENABLED && !tier.license ? (
+          // Paywall off (useTier.PAYWALL_ENABLED) — say so plainly rather than
+          // letting the effective "premium" tier imply a license we don't have.
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-chart-2/10 px-2 py-0.5 text-xs font-medium text-chart-2">
+                All features unlocked
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Every feature is currently free — no license required. Paid tiers
+              are on hold while the app is being rebuilt; if that changes it
+              will be announced, never switched on silently.
+            </p>
+          </div>
         ) : tier.tier === "premium" && tier.license ? (
           <div>
             <div className="flex items-center gap-2">
