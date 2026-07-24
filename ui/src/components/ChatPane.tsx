@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Brain,
   Square,
   SquareSlash,
   Terminal,
@@ -231,6 +232,10 @@ export default function ChatPane({
   // Permission-mode id in the PROVIDER's vocabulary (US-009) — one of the
   // active capability descriptor's permissionModes ids.
   const [permission, setPermission] = useState<string>("default");
+  // Reasoning-effort id in the PROVIDER's vocabulary (US-008), or "" for no
+  // override (the provider's default). effortModes lists only the override
+  // levels; "Default" is their absence.
+  const [effort, setEffort] = useState<string>("");
   // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
   // pick here until the dialog confirms it once per thread; declining reverts.
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
@@ -476,6 +481,9 @@ export default function ChatPane({
     // place that should know which providers those are.
     const next = providerList.find((p) => p.id === id)?.capabilities;
     if (next && !next.modelSelection) setModel(undefined);
+    // Effort ids are provider vocabulary (claude "ultrathink" vs codex "high"),
+    // so a switch can't carry the old pick — fall back to the default.
+    setEffort("");
   };
   const modelOptions = MODELS;
 
@@ -898,6 +906,43 @@ export default function ChatPane({
                     </div>
                   )}
                 </Chip>
+                {/* Reasoning-effort chip (US-008). ABSENT — not disabled — when
+                    the provider has no effort levels; each provider lists its
+                    own vocabulary (claude think/ultrathink, codex/grok
+                    low/medium/high). "Default" means no override. The copy must
+                    not imply this reveals thinking: reasoning TEXT stays
+                    redacted for claude and encrypted for codex (D2). */}
+                {caps.effortModes.length > 0 && (
+                  <>
+                    <span className="text-border">|</span>
+                    <Chip
+                      icon={<Brain className="size-3.5" />}
+                      label={
+                        caps.effortModes.find((e) => e.id === effort)?.label ?? "Default effort"
+                      }
+                      locked={locked}
+                    >
+                      <DropdownMenuItem onClick={() => setEffort("")}>
+                        <div className="flex flex-col">
+                          <span>Default effort</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            The provider's usual reasoning
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                      {caps.effortModes.map((e) => (
+                        <DropdownMenuItem key={e.id} onClick={() => setEffort(e.id)}>
+                          <div className="flex flex-col">
+                            <span>{e.label}</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {e.description}
+                            </span>
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </Chip>
+                  </>
+                )}
                 <div className="flex-1" />
                 {busy ? (
                   <button

@@ -140,7 +140,7 @@
         "Verify in browser using automate-browser skill: compare the chip across claude / codex / grok"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Owner: CLAUDE (requires browser verification \u2014 a port-binding sandbox is needed; do not mark passing without it). Depends on US-007. Suggested skills: automate-browser."
     },
     {
