@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useThemes } from "./hooks/useThemes.ts";
-import { useUserThemes } from "./hooks/useUserThemes.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
 import ChatSurface from "./components/ChatSurface.tsx";
@@ -46,12 +45,10 @@ export default function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<
     "status" | "config" | "appearance" | "license" | undefined
   >(undefined);
-  // US-023: the full theme set (built-ins + user themes from ~/.conan/themes.json)
-  // and the active selection. useThemes registers the user themes into the shared
-  // apply store, so selecting one — in the Appearance picker or the View ▸ Theme
-  // menu — reskins the app live and persists by id across reload.
-  const userThemes = useUserThemes(config?.token ?? null);
-  const { themes, activeId, setActiveTheme } = useThemes(userThemes);
+  // The built-in theme set (Light/Dark) + the active selection ("light" /
+  // "dark" / "auto"), shared through useThemes's apply store so the Appearance
+  // picker and the View ▸ Theme menu reskin live and persist across reload.
+  const { themes, activeId, setActiveTheme } = useThemes();
   const { tasks, lastEvent, lastSkillFired, reconnectSeq } = useGateway(
     config?.token ?? null,
     [],

@@ -43,7 +43,6 @@ import {
 import { getMcpServers } from "../mcp/index.js";
 import { startMcpAuth, reconnectMcp } from "../mcp/auth.js";
 import { readClaudeConfig, configSchema, writeConfigKey } from "../config/index.js";
-import { readUserThemes } from "../themes/index.js";
 import { startReaper } from "../session/reaper.js";
 import { ingestClaudeEvent } from "../session/ingest.js";
 import { readTimeline, parseTouchedFiles } from "../timeline/index.js";
@@ -695,17 +694,6 @@ app.put("/api/license", (req, res) => {
 app.delete("/api/license", (req, res) => {
   if (!authed(req, res)) return;
   res.json(deleteLicense());
-});
-
-// User themes (US-022): the validated palettes from ~/.conan/themes.json (or
-// themes/*.json), CONAN_DATA_DIR-aware. The UI's useThemes hook merges these
-// over the bundled built-ins by id. Each entry is strictly validated (known
-// token keys + clean color literals only — see src/themes/index.ts) so a value
-// can never inject raw CSS into the <html> custom properties. Token-gated; a
-// missing/malformed file yields [] (never throws). Read-only.
-app.get("/api/claude/themes", (req, res) => {
-  if (!authed(req, res)) return;
-  res.json(readUserThemes());
 });
 
 // On-demand /context refresh (US-009): inject `/context` into the session's

@@ -1,6 +1,7 @@
 import claudeIcon from "../assets/providers/claude.svg?raw";
 import grokIcon from "../assets/providers/grok.svg?raw";
 import openaiIcon from "../assets/providers/openai.svg?raw";
+import kimiIcon from "../assets/providers/kimi.svg?raw";
 import { cn } from "../lib/utils.ts";
 
 /** Provider brand marks by provider id. The Codex icon is the OpenAI mark.
@@ -13,6 +14,7 @@ export const PROVIDER_ICON: Record<string, string> = {
   claude: claudeIcon,
   codex: openaiIcon,
   grok: grokIcon,
+  kimi: kimiIcon,
 };
 
 /** A provider's brand mark sized to `className`, with a letter fallback for any

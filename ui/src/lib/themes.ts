@@ -141,131 +141,17 @@ const DARK_TOKENS: FullTokens = {
   "heat-4": "#39d353",
 };
 
-const SOLARIZED_LIGHT_TOKENS: FullTokens = {
-  background: "#fdf6e3",
-  foreground: "#657b83",
-  card: "#eee8d5",
-  "card-foreground": "#586e75",
-  border: "#ddd6c1",
-  muted: "#eee8d5",
-  "muted-foreground": "#93a1a1",
-  primary: "#268bd2",
-  "primary-foreground": "#fdf6e3",
-  secondary: "#eee8d5",
-  "secondary-foreground": "#586e75",
-  accent: "#eee8d5",
-  "accent-foreground": "#586e75",
-  popover: "#fdf6e3",
-  "popover-foreground": "#657b83",
-  destructive: "#dc322f",
-  "destructive-foreground": "#fdf6e3",
-  input: "#ddd6c1",
-  ring: "#268bd2",
-  "term-bg": "#fdf6e3",
-  "term-fg": "#657b83",
-  "chart-1": "#268bd2",
-  "chart-2": "#2aa198",
-  "chart-3": "#b58900",
-  "chart-4": "#6c71c4",
-  "chart-5": "#d33682",
-  "heat-0": "#eee8d5",
-  "heat-1": "#c5e1a5",
-  "heat-2": "#9ccc65",
-  "heat-3": "#689f38",
-  "heat-4": "#33691e",
-};
-
-const DRACULA_TOKENS: FullTokens = {
-  background: "#282a36",
-  foreground: "#f8f8f2",
-  card: "#21222c",
-  "card-foreground": "#f8f8f2",
-  border: "#44475a",
-  muted: "#343746",
-  "muted-foreground": "#6272a4",
-  primary: "#bd93f9",
-  "primary-foreground": "#282a36",
-  secondary: "#343746",
-  "secondary-foreground": "#f8f8f2",
-  accent: "#343746",
-  "accent-foreground": "#f8f8f2",
-  popover: "#21222c",
-  "popover-foreground": "#f8f8f2",
-  destructive: "#ff5555",
-  "destructive-foreground": "#282a36",
-  input: "#44475a",
-  ring: "#bd93f9",
-  "term-bg": "#282a36",
-  "term-fg": "#f8f8f2",
-  "chart-1": "#50fa7b",
-  "chart-2": "#8be9fd",
-  "chart-3": "#f1fa8c",
-  "chart-4": "#bd93f9",
-  "chart-5": "#ff79c6",
-  "heat-0": "#343746",
-  "heat-1": "#2d4a3e",
-  "heat-2": "#2e7d52",
-  "heat-3": "#43b581",
-  "heat-4": "#50fa7b",
-};
-
-// The Conan brand palette (US-006) — conan.sh's warm ink-and-fire dark look.
-// Ember (#d97706) is the primary/ring; warm bone (#f0e8d6) on near-black ink
-// (#0c0a09). Charts ramp straw → ember → oxblood; the heat ramp climbs from the
-// muted ink toward ember. FREE for everyone (allow-listed in SettingsView).
-const CONAN_TOKENS: FullTokens = {
-  background: "#0c0a09",
-  foreground: "#f0e8d6",
-  card: "#1a1512",
-  "card-foreground": "#f0e8d6",
-  border: "#2c2521",
-  muted: "#231c18",
-  "muted-foreground": "#a89a86",
-  primary: "#d97706",
-  "primary-foreground": "#0c0a09",
-  secondary: "#231c18",
-  "secondary-foreground": "#f0e8d6",
-  accent: "#231c18",
-  "accent-foreground": "#f0e8d6",
-  popover: "#1a1512",
-  "popover-foreground": "#f0e8d6",
-  destructive: "#a3341f",
-  "destructive-foreground": "#f0e8d6",
-  input: "#2c2521",
-  ring: "#d97706",
-  "term-bg": "#0c0a09",
-  "term-fg": "#f0e8d6",
-  "chart-1": "#e0a42b",
-  "chart-2": "#d97706",
-  "chart-3": "#f0c674",
-  "chart-4": "#b45309",
-  "chart-5": "#a3341f",
-  "heat-0": "#231c18",
-  "heat-1": "#5a3a14",
-  "heat-2": "#92591a",
-  "heat-3": "#c8962b",
-  "heat-4": "#d97706",
-};
 
 /** IDs of the default light/dark themes — the `auto` pair maps to these (US-021). */
 export const DEFAULT_LIGHT_ID = "light";
 export const DEFAULT_DARK_ID = "dark";
 
-/** The free Conan-brand theme id — allow-listed in SettingsView's gate (US-006). */
-export const CONAN_THEME_ID = "conan";
-
-/** The themes shipped with the app, in picker order. */
+/** The themes shipped with the app — light and dark only (US-024: the extra
+ *  built-in palettes and the user-themes-from-disk feature were removed to keep
+ *  a focused two-mode surface). `auto` (useThemes) maps to this pair. */
 export const BUILTIN_THEMES: Theme[] = [
   { id: DEFAULT_LIGHT_ID, name: "Light", type: "light", tokens: LIGHT_TOKENS },
   { id: DEFAULT_DARK_ID, name: "Dark", type: "dark", tokens: DARK_TOKENS },
-  { id: CONAN_THEME_ID, name: "Conan", type: "dark", tokens: CONAN_TOKENS },
-  {
-    id: "solarized-light",
-    name: "Solarized Light",
-    type: "light",
-    tokens: SOLARIZED_LIGHT_TOKENS,
-  },
-  { id: "dracula", name: "Dracula", type: "dark", tokens: DRACULA_TOKENS },
 ];
 
 /** The built-in default theme for a given type — the merge base for partials. */

@@ -31,22 +31,15 @@ import { useAppearance } from "../hooks/useAppearance.ts";
 import { detectMonoFonts, DEFAULT_MONO } from "../lib/fontDetect.ts";
 import { AUTO_ID } from "../hooks/useThemes.ts";
 import {
-  CONAN_THEME_ID,
   DEFAULT_DARK_ID,
   DEFAULT_LIGHT_ID,
   resolveTokens,
   type Theme,
 } from "../lib/themes.ts";
-/** Theme gating for Free users — Light, Dark, Auto, and the Conan brand theme
- *  are unlocked (US-006). Solarized, Dracula, and any user themes from
- *  themes.json render with a lock icon + muted style; clicking them opens
- *  Settings ▸ License instead of switching. */
-const FREE_THEME_IDS = new Set([
-  DEFAULT_LIGHT_ID,
-  DEFAULT_DARK_ID,
-  AUTO_ID,
-  CONAN_THEME_ID,
-]);
+/** Theme gating (US-006) — now inert: since US-024 reduced the app to Light and
+ *  Dark only, every shipped theme is free, so nothing ever renders locked. Kept
+ *  as a thin seam in case a Premium theme returns. */
+const FREE_THEME_IDS = new Set([DEFAULT_LIGHT_ID, DEFAULT_DARK_ID, AUTO_ID]);
 function isPremiumThemeId(id: string): boolean {
   return !FREE_THEME_IDS.has(id);
 }
