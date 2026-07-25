@@ -77,6 +77,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   /** Session id this connection resumes (US-015) — the saved row to re-key. */
   let resumeFrom: string | null = null;
   let launchEffort: string | null = null;
+  /** The model the client LAUNCHED with (a valid `-m` id, or null for the
+   *  provider default) — persisted and re-applied on resume, unlike the model
+   *  a provider reports. Captured on the first prompt, like launchEffort. */
+  let launchModel: string | null = null;
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
@@ -107,11 +111,11 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
             sessionId: e.sessionId,
             projectId,
             cwd: e.cwd ?? getActiveCwd(),
-            // Only persist a REPORTED model when it's a valid launch id worth
-            // re-applying on resume. Grok reports an internal build name
-            // (`grok-4.5-build`) that `-m` rejects, so saving it made every
-            // turn in a reopened thread exit 1.
-            model: provider.capabilities.modelSelection ? e.model : null,
+            // Persist the LAUNCH model (the `-m` id the client chose, or null
+            // for the default) — always valid to re-apply on resume. Never the
+            // REPORTED model: Grok reports a build name (`grok-4.5-build`) that
+            // `-m` rejects, and Codex reports none, both of which broke reopen.
+            model: launchModel,
             provider: provider.id,
             effort: launchEffort,
             title: titleFromPrompt(firstPrompt),
@@ -230,6 +234,14 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         opts.effort = getChatThread(opts.resume)?.effort ?? undefined;
       }
       if (launchEffort === null) launchEffort = opts.effort ?? null;
+      // Model, same shape as effort: the frame's pick, else the saved thread's
+      // on resume. The LAUNCH model is always a valid `-m` id, so it's what we
+      // persist — never the model a provider REPORTS (Grok's build name that
+      // `-m` rejects, or Codex's none), which broke reopened threads before.
+      if (opts.model === undefined && opts.resume) {
+        opts.model = getChatThread(opts.resume)?.model ?? undefined;
+      }
+      if (launchModel === null) launchModel = opts.model ?? null;
       const requested =
         typeof msg.provider === "string" && msg.provider.trim()
           ? msg.provider.trim()

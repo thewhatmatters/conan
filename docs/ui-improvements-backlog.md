@@ -60,6 +60,36 @@ Reference: `t3code/apps/web/src/components/chat/ChatComposer.tsx`
 
 ## Unified provider + model picker (T3 `ProviderModelPicker`)
 
+**SHIPPED 2026-07-25** (`loop/conan-image-ui`). `ProviderModelPicker.tsx` +
+`ProviderMark.tsx` (shared brand-mark module, dedupes `PROVIDER_ICON` with
+ChatSurface). One popover replaces the provider chip + model chip in
+`ChatPane.tsx`: a provider rail (brand marks; uninstalled disabled w/ reason,
+active = check) + the browsed provider's model list. Only `modelSelection`
+providers (Claude) show a model list; Codex/Grok degrade to a single honest
+"runs on its own built-in model — Use <name>" commit row. Trigger face shows the
+brand mark + provider name, appending `· <model>` only when a non-default Claude
+model is chosen. Rail = browse-only; every commit is from the right panel, so
+the interaction is uniform. Locked (turn 1 / resumed) → static mark+label+lock,
+same as the old chips. Browser-verified: rail marks, Claude model list, Codex
+degrade panel, and both commit paths ("Codex", "Claude Code · Opus") update the
+trigger. Gates: gateway typecheck, 158 tests, ui build. Paperclip retirement
+NOT included — deliberately deferred (see the paste/paperclip section above).
+
+**Follow-up SHIPPED 2026-07-25 — real per-provider model selection.** `MODELS`
+was hardcoded (Claude-only, missing Fable) and codex/grok had
+`modelSelection:false`. Now every provider carries its OWN verified model list
+in `capabilities.models` (`AgentModel` in driver.ts): Claude = `/model` aliases
+(Default/Opus/Fable/Sonnet/Haiku), Codex = 8 verified CLI-cache ids
+(`gpt-5.6-sol` … `gpt-5.3-codex-spark`, internal `codex-auto-review` omitted),
+Grok = default + `grok-4.5` (from `grok models`). The picker reads each browsed
+provider's list — no shared Claude list, no provider-name branching. The `-m`
+plumbing already existed; the real fix was persisting the **launch** model
+(client's `-m` id) instead of the **reported** one (grok's `grok-4.5-build` /
+codex's none) — fixes the reopened-thread exit-1 bug and retires the DB
+scrub-migration that would now wipe legit models. Gates: gateway typecheck, 160
+tests (+2), ui build. Browser-verified all three panels. Still open: Grok's list
+is dynamic-able (`grok models`) but wired statically for now (1 model today).
+
 **Raised:** 2026-07-24, during the daily-driver QA walkthrough.
 
 Today the composer has **two separate controls** — a provider chip ("Claude

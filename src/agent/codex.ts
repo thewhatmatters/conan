@@ -70,8 +70,22 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
   reasoningText: false,
   resume: true,
   contextWindowTokens: null,
-  // No model picker in Conan; codex reports no model at all.
-  modelSelection: false,
+  // Codex accepts `-m <model>` (the plumbing already existed); it just reports
+  // no model in-stream, so the LAUNCH model is persisted, not a reported one.
+  modelSelection: true,
+  // Verified against the CLI model cache in docs/provider-context-effort.md
+  // (Codex CLI 0.144.6, 2026-07-24). null = the CLI's own default model.
+  // `codex-auto-review` is an internal review model — deliberately omitted.
+  models: [
+    { value: null, label: "Default model", description: "Codex's own default" },
+    { value: "gpt-5.6-sol", label: "gpt-5.6-sol", description: "272K context" },
+    { value: "gpt-5.6-terra", label: "gpt-5.6-terra", description: "272K context" },
+    { value: "gpt-5.6-luna", label: "gpt-5.6-luna", description: "272K context" },
+    { value: "gpt-5.5", label: "gpt-5.5", description: "272K context" },
+    { value: "gpt-5.4", label: "gpt-5.4", description: "272K context" },
+    { value: "gpt-5.4-mini", label: "gpt-5.4-mini", description: "272K context" },
+    { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", description: "128K context" },
+  ],
   permissionModes: [
     {
       id: "read-only",

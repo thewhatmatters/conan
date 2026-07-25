@@ -3,13 +3,16 @@ import type { AgentCapabilities, AgentDriver, AgentEvent } from "./driver.js";
 import { CLAUDE_CAPABILITIES, ClaudeDriver } from "./claude.js";
 import { CODEX_CAPABILITIES, CodexDriver } from "./codex.js";
 import { GROK_CAPABILITIES, GrokDriver } from "./grok.js";
+import { KIMI_CAPABILITIES, KimiDriver } from "./kimi.js";
 import { readChatHistory, type ChatHistory } from "./history.js";
 import { readCodexHistory } from "./codexHistory.js";
 import { readGrokHistory } from "./grokHistory.js";
+import { readKimiHistory } from "./kimiHistory.js";
 
 // Each provider's capability descriptor lives beside its driver (claude.ts /
-// codex.ts / grok.ts); the registry re-exports them as the one lookup surface.
-export { CODEX_CAPABILITIES, GROK_CAPABILITIES };
+// codex.ts / grok.ts / kimi.ts); the registry re-exports them as the one
+// lookup surface.
+export { CODEX_CAPABILITIES, GROK_CAPABILITIES, KIMI_CAPABILITIES };
 
 /**
  * Provider registry (T3-1 US-003) — the one table mapping a provider id to
@@ -29,7 +32,7 @@ export { CODEX_CAPABILITIES, GROK_CAPABILITIES };
  * plain `installed: false`, never an error or a hang.
  */
 
-export type ProviderId = "claude" | "codex" | "grok";
+export type ProviderId = "claude" | "codex" | "grok" | "kimi";
 
 export interface ProviderEntry {
   id: ProviderId;
@@ -84,6 +87,15 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     createDriver: (emit, fallbackCwd) => new GrokDriver(emit, fallbackCwd),
     readHistory: (sessionId, cwd) => readGrokHistory(sessionId, cwd),
   },
+  {
+    id: "kimi",
+    name: "Kimi",
+    avatarLetter: "K",
+    binary: "kimi",
+    capabilities: KIMI_CAPABILITIES,
+    createDriver: (emit, fallbackCwd) => new KimiDriver(emit, fallbackCwd),
+    readHistory: (sessionId, cwd) => readKimiHistory(sessionId, cwd),
+  },
 ];
 
 export function getProvider(id: string): ProviderEntry | undefined {
@@ -113,6 +125,14 @@ const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, numbe
   grok: {
     default: 500_000,
     "grok-4.5": 500_000,
+  },
+  // Verified via `kimi provider list --json` (kimi 0.27.0): K3 (the default) has
+  // a 1M window; the two K2.7 coding models are 256K.
+  kimi: {
+    default: 1_048_576,
+    "kimi-code/k3": 1_048_576,
+    "kimi-code/kimi-for-coding": 262_144,
+    "kimi-code/kimi-for-coding-highspeed": 262_144,
   },
 };
 

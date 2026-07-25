@@ -54,6 +54,7 @@ import {
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
 import { apiBase } from "../lib/gateway.ts";
+import { ProviderModelPicker } from "./ProviderModelPicker.tsx";
 import { basename } from "./DirBrowser.tsx";
 import { useDirGit } from "../hooks/useDirGit.ts";
 import type { SkillFiredEvent } from "../hooks/useTasks.ts";
@@ -96,14 +97,6 @@ import {
  * turn, and a reopened thread shows its saved provider locked from the start.
  */
 
-/** `--model` chip options — aliases resolve to the latest of each family. */
-const MODELS: { label: string; value: string | undefined }[] = [
-  { label: "Default model", value: undefined },
-  { label: "Opus", value: "opus" },
-  { label: "Sonnet", value: "sonnet" },
-  { label: "Haiku", value: "haiku" },
-];
-
 /** Display metadata per KNOWN permission-mode id (US-009). The chip's
  *  OPTIONS — which modes exist, their labels and hints — come from the
  *  provider's `capabilities.permissionModes`, never from a hard-coded list;
@@ -141,6 +134,13 @@ const FALLBACK_CAPABILITIES: AgentCapabilities = {
   resume: true,
   contextWindowTokens: null,
   modelSelection: true,
+  models: [
+    { value: null, label: "Default model", description: "Opus 5 · best for everyday, complex tasks" },
+    { value: "opus", label: "Opus", description: "Opus 5 · 1M context" },
+    { value: "fable", label: "Fable", description: "Fable 5 · most capable, longest-running tasks" },
+    { value: "sonnet", label: "Sonnet", description: "Sonnet 5 · efficient for routine tasks" },
+    { value: "haiku", label: "Haiku", description: "Haiku 4.5 · fastest for quick answers" },
+  ],
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
     { id: "default", label: "Supervised", description: "Asks before running tools" },
@@ -499,7 +499,14 @@ export default function ChatPane({
     // so a switch can't carry the old pick — fall back to the default.
     setEffort("");
   };
-  const modelOptions = MODELS;
+  // The fused picker commits a provider + model in one action. selectProvider
+  // first (it resets model/effort for the provider's vocabulary), then apply
+  // the explicit model pick on top — claude keeps it, no-model providers get
+  // undefined either way.
+  const selectProviderModel = (id: string, m: string | undefined) => {
+    selectProvider(id);
+    setModel(m);
+  };
 
   // The active capability descriptor (US-009): once the session's driver is
   // built the gateway's capabilities frame is authoritative; before that, the
@@ -582,9 +589,6 @@ export default function ChatPane({
     else setPermission(value);
   };
 
-  const modelLabel = resume
-    ? resume.model ?? "Default model"
-    : MODELS.find((m) => m.value === model)?.label ?? "Default model";
   // The indicator follows the LIVE mode once the session reports one — a
   // mid-session switch (the plan card's "Proceed in build", US-022) moves the
   // locked chip off Plan so it never lies about what the agent may do.
@@ -906,56 +910,36 @@ export default function ChatPane({
                 className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="mt-2 flex items-center gap-2">
-                {/* Provider chip (US-008): which agent CLI drives this thread.
-                    Locks with the launch config; uninstalled providers stay
-                    listed but disabled so the option is discoverable. */}
-                <Chip
-                  icon={<ProviderLetter letter={providerMeta.avatarLetter} />}
-                  label={providerMeta.name}
+                {/* Fused provider + model picker (US-008 + model): one popover
+                    — a provider rail + the browsed provider's OWN model list —
+                    replacing the two separate chips. Each provider's models come
+                    from its capabilities (Claude aliases, Codex's CLI cache,
+                    Grok's `grok models`), so the panel is provider-specific, not
+                    a shared Claude list. Locks with the launch config;
+                    uninstalled providers stay listed but disabled. */}
+                <ProviderModelPicker
+                  providers={
+                    providerList.length
+                      ? providerList
+                      : [
+                          {
+                            id: "claude",
+                            name: "Claude Code",
+                            avatarLetter: "C",
+                            binary: "claude",
+                            installed: true,
+                            version: null,
+                            capabilities: caps,
+                          },
+                        ]
+                  }
+                  activeProviderId={effectiveProviderId}
+                  activeProviderName={providerMeta.name}
+                  activeProviderLetter={providerMeta.avatarLetter}
+                  model={resume ? resume.model ?? undefined : model}
                   locked={locked}
-                >
-                  {(providerList.length
-                    ? providerList
-                    : [{ id: "claude", name: "Claude Code", avatarLetter: "C", installed: true, version: null }]
-                  ).map((p) => (
-                    <div key={p.id} title={p.installed ? undefined : `${p.id} not found on PATH`}>
-                      <DropdownMenuItem
-                        disabled={!p.installed}
-                        onClick={() => selectProvider(p.id)}
-                      >
-                        <ProviderLetter letter={p.avatarLetter} />
-                        <div className="flex flex-col">
-                          <span>{p.name}</span>
-                          {!p.installed && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {p.id} not found on PATH
-                            </span>
-                          )}
-                        </div>
-                      </DropdownMenuItem>
-                    </div>
-                  ))}
-                </Chip>
-                {/* Only providers that actually offer a model choice get a model
-                    chip. Codex and Grok don't (`modelSelection: false`), and a
-                    chip whose menu holds one inert "Default model" row is a
-                    control that lies about what the provider can do. */}
-                {caps.modelSelection && (
-                  <>
-                    <span className="text-border">|</span>
-                    <Chip
-                      icon={<Sparkles className="size-3.5" />}
-                      label={modelLabel}
-                      locked={locked}
-                    >
-                      {modelOptions.map((m) => (
-                        <DropdownMenuItem key={m.label} onClick={() => setModel(m.value)}>
-                          {m.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </Chip>
-                  </>
-                )}
+                  onSelect={selectProviderModel}
+                />
                 <span className="text-border">|</span>
                 {/* The active permission mode stays visible here whether or not the
                     dropdown is ever opened — the persistent indicator. Options come
@@ -1166,16 +1150,6 @@ function WorkingIndicator({ items, streaming }: { items: ChatItem[]; streaming: 
       <span className="text-border">·</span>
       <span className="tabular-nums">{label}</span>
     </div>
-  );
-}
-
-/** Tiny round agent-avatar letter (C/X/G) — the provider chip's icon, sized
- *  to sit where the other chips put a lucide glyph. */
-function ProviderLetter({ letter }: { letter: string }) {
-  return (
-    <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-semibold text-foreground ring-1 ring-border">
-      {letter}
-    </span>
   );
 }
 

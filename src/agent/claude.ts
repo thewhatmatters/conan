@@ -88,6 +88,17 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   contextWindowTokens: null,
   // Claude reports a real alias (e.g. claude-fable-5) and offers a model picker.
   modelSelection: true,
+  // Mirrors Claude Code's own `/model` picker: the CLI aliases resolve to the
+  // latest of each family (`--model` accepts an alias or a full id). null =
+  // the CLI default (Opus 5, 1M). Verified: `claude --help` lists fable/opus/
+  // sonnet as aliases and `claude-fable-5` as a full name.
+  models: [
+    { value: null, label: "Default model", description: "Opus 5 · best for everyday, complex tasks" },
+    { value: "opus", label: "Opus", description: "Opus 5 · 1M context" },
+    { value: "fable", label: "Fable", description: "Fable 5 · most capable, longest-running tasks" },
+    { value: "sonnet", label: "Sonnet", description: "Sonnet 5 · efficient for routine tasks" },
+    { value: "haiku", label: "Haiku", description: "Haiku 4.5 · fastest for quick answers" },
+  ],
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
     { id: "default", label: "Supervised", description: "Asks before running tools" },

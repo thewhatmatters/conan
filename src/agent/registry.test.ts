@@ -24,13 +24,14 @@ import { CLAUDE_CAPABILITIES } from "./claude.js";
 
 beforeEach(() => clearProviderDetection());
 
-test("registry lists exactly claude/codex/grok with their avatar letters", () => {
+test("registry lists exactly claude/codex/grok/kimi with their avatar letters", () => {
   assert.deepEqual(
     PROVIDERS.map((p) => [p.id, p.avatarLetter, p.binary]),
     [
       ["claude", "C", "claude"],
       ["codex", "X", "codex"],
       ["grok", "G", "grok"],
+      ["kimi", "K", "kimi"],
     ],
   );
   assert.equal(getProvider("codex")?.name, "Codex");
@@ -112,6 +113,37 @@ test("capabilities pin the US-001 verified matrix", () => {
   assert.equal(CLAUDE_CAPABILITIES.imageInput, true);
 });
 
+test("every provider exposes a launch-model list with a null-valued default first", () => {
+  for (const p of PROVIDERS) {
+    const { models, modelSelection } = p.capabilities;
+    assert.ok(models.length >= 1, `${p.id} has at least a default model`);
+    assert.equal(models[0]!.value, null, `${p.id}'s first model is the default (null)`);
+    // A provider that advertises a picker must offer more than just the default.
+    if (modelSelection) {
+      assert.ok(models.length > 1, `${p.id} advertises modelSelection so offers a choice`);
+    }
+    // Every non-default value is a real `-m` id string (never null past index 0).
+    for (const m of models.slice(1)) {
+      assert.equal(typeof m.value, "string", `${p.id} model "${m.label}" has a string value`);
+    }
+  }
+});
+
+test("codex and grok now advertise model selection with their verified ids", () => {
+  assert.equal(CODEX_CAPABILITIES.modelSelection, true);
+  assert.ok(
+    CODEX_CAPABILITIES.models.some((m) => m.value === "gpt-5.6-sol"),
+    "codex lists a verified CLI-cache model",
+  );
+  // codex-auto-review is an internal review model — must stay out of the picker.
+  assert.ok(!CODEX_CAPABILITIES.models.some((m) => m.value === "codex-auto-review"));
+
+  assert.equal(GROK_CAPABILITIES.modelSelection, true);
+  assert.ok(GROK_CAPABILITIES.models.some((m) => m.value === "grok-4.5"));
+  // The build name grok REPORTS is never a selectable launch id.
+  assert.ok(!GROK_CAPABILITIES.models.some((m) => m.value === "grok-4.5-build"));
+});
+
 test("every provider's factory builds a driver tagged with its own id", () => {
   for (const id of ["claude", "codex", "grok"] as const) {
     const driver = getProvider(id)!.createDriver(
@@ -182,7 +214,7 @@ test("detectProvider caches within the TTL", async () => {
 test("resolveRequestedProvider: unknown id throws a readable error", async () => {
   await assert.rejects(
     resolveRequestedProvider("cursor"),
-    /Unknown provider "cursor" \(available: claude, codex, grok\)/,
+    /Unknown provider "cursor" \(available: claude, codex, grok, kimi\)/,
   );
 });
 
@@ -211,6 +243,9 @@ test("listProviderStatuses carries identity + capabilities per provider", async 
   await detectProvider("grok", async (cmd) =>
     cmd.startsWith("command -v") ? "/Users/x/.local/bin/grok" : "0.2.111",
   );
+  await detectProvider("kimi", async () => {
+    throw new Error("not found");
+  });
   const statuses = await listProviderStatuses();
   assert.deepEqual(
     statuses.map((s) => [s.id, s.installed]),
@@ -218,6 +253,7 @@ test("listProviderStatuses carries identity + capabilities per provider", async 
       ["claude", true],
       ["codex", false],
       ["grok", true],
+      ["kimi", false],
     ],
   );
   const grok = statuses.find((s) => s.id === "grok")!;

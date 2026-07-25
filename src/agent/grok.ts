@@ -66,8 +66,17 @@ export const GROK_CAPABILITIES: AgentCapabilities = {
   reasoningText: true,
   resume: true,
   contextWindowTokens: null,
-  // Grok reports an internal build name (grok-4.5-build) that `-m` rejects.
-  modelSelection: false,
+  // Grok accepts `-m <model>`; it reports an internal build name
+  // (`grok-4.5-build`) that `-m` rejects, so the LAUNCH model is persisted, not
+  // the reported one — which is what made reopened threads exit 1 before.
+  modelSelection: true,
+  // Verified via `grok models` (Grok 0.2.111): one selectable model today,
+  // `grok-4.5`. null = the CLI default (also grok-4.5). The list grows as the
+  // provider adds models — sourced from the CLI, not guessed.
+  models: [
+    { value: null, label: "Default model", description: "Grok's own default (grok-4.5)" },
+    { value: "grok-4.5", label: "grok-4.5", description: "500K context" },
+  ],
   permissionModes: [
     {
       id: "plan",

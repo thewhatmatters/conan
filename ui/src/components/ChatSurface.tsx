@@ -36,18 +36,7 @@ import {
 import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
-import claudeIcon from "../assets/providers/claude.svg?raw";
-import grokIcon from "../assets/providers/grok.svg?raw";
-import openaiIcon from "../assets/providers/openai.svg?raw";
-
-/** Provider brand marks by provider id (US: provider-icon avatars). The Codex
- *  icon is the OpenAI mark. Inlined via ?raw so `currentColor` inherits from
- *  the wrapper's text color; a provider with no icon falls back to its letter. */
-const PROVIDER_ICON: Record<string, string> = {
-  claude: claudeIcon,
-  codex: openaiIcon,
-  grok: grokIcon,
-};
+import { PROVIDER_ICON } from "./ProviderMark.tsx";
 
 /**
  * Project-organized chat surface (US-006 sidebar shell, US-025 projects,

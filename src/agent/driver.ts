@@ -65,6 +65,19 @@ export interface AgentEffortMode {
   description: string;
 }
 
+/** One selectable launch model in a provider's own vocabulary — the value the
+ *  driver passes as `-m`/`--model`. `value: null` = the provider's own default
+ *  (no flag). Sourced from each provider's verified model set (Claude's `/model`
+ *  aliases, Codex's CLI model cache, Grok's `grok models`), never guessed. */
+export interface AgentModel {
+  /** The `-m`/`--model` argument, or null for the CLI default (no flag). */
+  value: string | null;
+  /** Chip/row label (e.g. "Fable", "gpt-5.6-sol"). */
+  label: string;
+  /** One-line sub-label (family · what it's for). */
+  description?: string;
+}
+
 /**
  * What a provider can ACTUALLY do headlessly — verified against real runs
  * (`fixtures/README.md`), never inferred from --help. The UI adapts to these
@@ -97,12 +110,17 @@ export interface AgentCapabilities {
   /** Verified context-window denominator for this launch's selected model.
    *  Null means unknown — consumers must show counts only, never infer one. */
   contextWindowTokens: number | null;
-  /** The user can choose a launch model for this provider, so the model a
-   *  thread reports is a valid `--model` id worth re-applying on resume.
-   *  False → the reported model is internal telemetry (Grok answers with a
-   *  build name like `grok-4.5-build`, which `-m` rejects), so it must NEVER
-   *  be persisted as a launch model or a reopened thread dies on every turn. */
+  /** This provider offers a launch-model picker (more than just its default).
+   *  Drives whether the composer shows a model list; it does NOT gate model
+   *  PERSISTENCE — the LAUNCH model the client chose is what's saved and
+   *  re-applied on resume (a valid `-m` id by construction), never the model a
+   *  provider REPORTS (Grok answers with a build name `grok-4.5-build` that
+   *  `-m` rejects; Codex reports none at all). */
   modelSelection: boolean;
+  /** The selectable launch models in this provider's own vocabulary — the
+   *  first entry is the default (value null). A single-entry list means the
+   *  provider runs one model; the picker degrades to that. */
+  models: readonly AgentModel[];
   /** The permission modes this provider supports, in its own vocabulary. */
   permissionModes: AgentPermissionMode[];
   /** Reasoning-effort choices in provider vocabulary; empty = unsupported. */
