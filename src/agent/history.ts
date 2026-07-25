@@ -10,9 +10,9 @@ import { readTranscript, type TranscriptMessage } from "../transcript/index.js";
 
 /** One reconstructed transcript entry, mirroring the UI's ChatItem roles. */
 export type HistoryItem =
-  | { role: "user"; text: string }
-  | { role: "assistant"; text: string }
-  | { role: "reasoning"; text: string }
+  | { role: "user"; text: string; ts?: number | null }
+  | { role: "assistant"; text: string; ts?: number | null }
+  | { role: "reasoning"; text: string; ts?: number | null }
   | {
       role: "tool";
       id: string;
@@ -20,6 +20,7 @@ export type HistoryItem =
       input: unknown;
       result: string | null;
       isError: boolean;
+      ts?: number | null;
     };
 
 export interface ChatHistory {
@@ -67,12 +68,12 @@ export function adaptMessages(messages: TranscriptMessage[]): HistoryItem[] {
     for (const b of m.blocks) {
       if (b.type === "text") {
         if (m.role === "user") {
-          if (!isMetaUserText(b.text)) items.push({ role: "user", text: b.text });
+          if (!isMetaUserText(b.text)) items.push({ role: "user", text: b.text, ts: m.ts });
         } else if (m.role === "assistant") {
-          items.push({ role: "assistant", text: b.text });
+          items.push({ role: "assistant", text: b.text, ts: m.ts });
         }
       } else if (b.type === "thinking") {
-        if (m.role === "assistant") items.push({ role: "reasoning", text: b.text });
+        if (m.role === "assistant") items.push({ role: "reasoning", text: b.text, ts: m.ts });
       } else if (b.type === "tool_use") {
         const id = b.id ?? `tool-${items.length}`;
         toolIndex.set(id, items.length);
@@ -83,6 +84,7 @@ export function adaptMessages(messages: TranscriptMessage[]): HistoryItem[] {
           input: b.input,
           result: null,
           isError: false,
+          ts: m.ts,
         });
       } else if (b.type === "tool_result") {
         const idx = b.toolUseId != null ? toolIndex.get(b.toolUseId) : undefined;

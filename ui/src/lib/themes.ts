@@ -80,7 +80,7 @@ const LIGHT_TOKENS: FullTokens = {
   "card-foreground": "#171717",
   border: "#e5e5e5",
   muted: "#f5f5f5",
-  "muted-foreground": "#737373",
+  "muted-foreground": "#6b6b6b",
   primary: "#059669",
   "primary-foreground": "#ffffff",
   secondary: "#f5f5f5",

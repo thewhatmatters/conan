@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
@@ -64,7 +64,10 @@ import {
   type AgentCapabilities,
   type ProviderStatus,
 } from "../hooks/useProviders.ts";
-import ActivitySpine, { type SpineTurn } from "./ActivitySpine.tsx";
+import ActivitySpine, {
+  type SpineTurn,
+  type SpineViewport,
+} from "./ActivitySpine.tsx";
 import ThreadToolbar from "./ThreadToolbar.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
@@ -187,8 +190,8 @@ export interface ResumeTarget {
 /** One reconstructed history entry from GET /api/agent/threads/:id/transcript
  *  (mirrors the gateway's HistoryItem). */
 type HistoryItem =
-  | { role: "user" | "assistant" | "reasoning"; text: string }
-  | { role: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean };
+  | { role: "user" | "assistant" | "reasoning"; text: string; ts?: number | null }
+  | { role: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; ts?: number | null };
 
 export default function ChatPane({
   token,
@@ -214,6 +217,8 @@ export default function ChatPane({
    *  with several threads mounted. */
   lastSkillFired?: SkillFiredEvent | null;
   onState?: (s: ThreadUiState) => void;
+  /** Thread creation time — the spine's top time label. */
+  createdAt?: number | null;
 }) {
   const {
     items,
@@ -255,6 +260,7 @@ export default function ChatPane({
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
   const fullAccessConfirmed = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const spineJumpFrameRef = useRef<number | null>(null);
   // Whether the view is pinned to the bottom. Scrolling up releases the pin
   // (so streaming doesn't yank the user back down); scrolling back near the
   // bottom re-engages it.
@@ -287,7 +293,7 @@ export default function ChatPane({
           data.items.map((it, i) =>
             it.role === "tool"
               ? { ...it, id: `h${i}-${it.id}` }
-              : { id: `h${i}`, role: it.role, text: it.text },
+              : { id: `h${i}`, role: it.role, text: it.text, ts: it.ts },
           ),
         );
         setHistoryState("found");
@@ -622,7 +628,11 @@ export default function ChatPane({
   const turnGroups: SpineTurn[] = [];
   for (const it of [...history, ...items]) {
     if (it.role === "user") {
-      turnGroups.push({ id: it.id, text: it.text, ticks: [] });
+      turnGroups.push({ id: it.id, text: it.text, ticks: [], ts: it.ts });
+    } else if (it.role === "assistant" && it.text) {
+      // First reply line of the turn — previewed in the spine's hover card.
+      const group = turnGroups[turnGroups.length - 1];
+      if (group && !group.reply) group.reply = it.text;
     } else if (it.role === "tool" && it.name !== "Skill") {
       const group = turnGroups[turnGroups.length - 1];
       if (group) {
@@ -630,6 +640,7 @@ export default function ChatPane({
         group.ticks.push({
           kind: "tool",
           label: summary ? `${it.name} · ${summary}` : it.name,
+          id: it.id,
         });
       }
     }
@@ -660,25 +671,170 @@ export default function ChatPane({
   }, [lastSkillFired]);
 
   // Merge: skill ticks lead their turn's cluster (accent before faint).
+  const [spinePositions, setSpinePositions] = useState<Record<string, number>>(
+    {},
+  );
+  const [spineViewportOffsets, setSpineViewportOffsets] = useState<
+    Record<string, number>
+  >({});
   const turns: SpineTurn[] = turnGroups.map((g, i) => {
     const skills = firedSkills.filter((f) => f.turnIndex === i);
+    const measured = {
+      ...g,
+      position: spinePositions[g.id],
+      viewportOffset: spineViewportOffsets[g.id],
+      ticks: g.ticks.map((tick) => ({
+        ...tick,
+        position: tick.id ? spinePositions[tick.id] : spinePositions[g.id],
+        viewportOffset: tick.id
+          ? spineViewportOffsets[tick.id]
+          : spineViewportOffsets[g.id],
+      })),
+    };
     return skills.length === 0
-      ? g
+      ? measured
       : {
-          ...g,
+          ...measured,
           ticks: [
-            ...skills.map((f) => ({ kind: "skill" as const, label: f.skill })),
-            ...g.ticks,
+            ...skills.map((f) => ({
+              kind: "skill" as const,
+              label: f.skill,
+              position: spinePositions[g.id],
+              viewportOffset: spineViewportOffsets[g.id],
+            })),
+            ...measured.ticks,
           ],
         };
   });
   const jumpToTurn = (id: string) => {
-    // Scoped to THIS pane's scroller — item ids repeat across the
-    // mounted-but-hidden threads, so a global lookup could hit another pane.
-    scrollRef.current
-      ?.querySelector(`[data-turn="${CSS.escape(id)}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Drive this pane's scroll position directly. `scrollIntoView` can choose
+    // an ancestor outside the transcript; a measured local target guarantees
+    // the clicked tick, transcript viewport, and blue pill share one motion.
+    const el = scrollRef.current;
+    const target = el?.querySelector<HTMLElement>(
+      `[data-turn="${CSS.escape(id)}"]`,
+    );
+    if (!el || !target) return;
+    const top =
+      target.getBoundingClientRect().top -
+      el.getBoundingClientRect().top +
+      el.scrollTop;
+    const destination = Math.max(
+      0,
+      Math.min(top, el.scrollHeight - el.clientHeight),
+    );
+    const origin = el.scrollTop;
+    const distance = destination - origin;
+    if (spineJumpFrameRef.current != null)
+      cancelAnimationFrame(spineJumpFrameRef.current);
+    pinnedRef.current = false;
+    if (Math.abs(distance) < 1) return;
+    const started = performance.now();
+    // Shorter than native smooth-scroll, but long enough for the transcript
+    // and pill to read as one coordinated scrollbar-like movement.
+    const duration = 160;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - started) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.scrollTop = origin + distance * eased;
+      if (progress < 1) {
+        spineJumpFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        spineJumpFrameRef.current = null;
+      }
+    };
+    spineJumpFrameRef.current = requestAnimationFrame(animate);
   };
+  const scrollFromSpine = useCallback((top: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (spineJumpFrameRef.current != null) {
+      cancelAnimationFrame(spineJumpFrameRef.current);
+      spineJumpFrameRef.current = null;
+    }
+    const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = Math.max(0, Math.min(top * el.scrollHeight, maxTop));
+  }, []);
+
+  // Spine minimap viewport — the scroller's visible window as 0–1 fractions.
+  // Epsilon-gated so 60Hz scroll events don't re-render the pane per frame.
+  const [spineViewport, setSpineViewport] = useState<SpineViewport | null>(null);
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+  const updateSpineViewport = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || el.scrollHeight <= 0) return;
+    setCanScrollUp(el.scrollTop > 1);
+    setCanScrollDown(
+      el.scrollTop + el.clientHeight < el.scrollHeight - 1,
+    );
+    const top = el.scrollTop / el.scrollHeight;
+    const height = Math.min(el.clientHeight / el.scrollHeight, 1);
+    setSpineViewport((prev) =>
+      prev &&
+      Math.abs(prev.top - top) < 0.004 &&
+      Math.abs(prev.height - height) < 0.004
+        ? prev
+        : { top, height },
+    );
+    const scrollerTop = el.getBoundingClientRect().top;
+    const positions: Record<string, number> = {};
+    const viewportOffsets: Record<string, number> = {};
+    el.querySelectorAll<HTMLElement>("[data-spine-anchor]").forEach((node) => {
+      const id = node.dataset.spineAnchor;
+      if (!id) return;
+      const nodeTop = node.getBoundingClientRect().top;
+      positions[id] = Math.max(
+        0,
+        Math.min(
+          1,
+          (nodeTop - scrollerTop + el.scrollTop) /
+            el.scrollHeight,
+        ),
+      );
+      viewportOffsets[id] = (nodeTop - scrollerTop) / el.clientHeight;
+    });
+    setSpinePositions((prev) => {
+      const keys = Object.keys(positions);
+      if (
+        keys.length === Object.keys(prev).length &&
+        keys.every(
+          (key) =>
+            prev[key] != null &&
+            Math.abs((prev[key] ?? 0) - (positions[key] ?? 0)) < 0.0005,
+        )
+      )
+        return prev;
+      return positions;
+    });
+    setSpineViewportOffsets((prev) => {
+      const keys = Object.keys(viewportOffsets);
+      if (
+        keys.length === Object.keys(prev).length &&
+        keys.every(
+          (key) =>
+            prev[key] != null &&
+            Math.abs(
+              (prev[key] ?? 0) - (viewportOffsets[key] ?? 0),
+            ) < 0.004,
+        )
+      )
+        return prev;
+      return viewportOffsets;
+    });
+  }, []);
+  useEffect(() => {
+    updateSpineViewport();
+  }, [items.length, history.length, updateSpineViewport]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(updateSpineViewport);
+    observer.observe(el);
+    const content = el.firstElementChild;
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [updateSpineViewport]);
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -690,16 +846,26 @@ export default function ChatPane({
         onSendPrompt={sendPrompt}
       />
       <div className="flex min-h-0 flex-1">
+      {/* Activity spine (US-016) — outside the scroller so it stays put
+          while the transcript scrolls; bound to this thread's turns. */}
+      <ActivitySpine
+        turns={turns}
+        onJump={jumpToTurn}
+        onViewportChange={scrollFromSpine}
+        viewport={spineViewport}
+      />
       {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
-      <aside
-        ref={scrollRef}
-        onScroll={() => {
-          const el = scrollRef.current;
-          if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-        }}
-        className="min-h-0 min-w-0 flex-1 overflow-y-auto"
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <aside
+          ref={scrollRef}
+          onScroll={() => {
+            const el = scrollRef.current;
+            if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            updateSpineViewport();
+          }}
+          className="absolute inset-0 overflow-y-auto"
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
           {historyState === "loading" && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
@@ -731,12 +897,24 @@ export default function ChatPane({
           ) : (
             items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />)
           )}
-          {busy && <WorkingIndicator items={items} streaming={caps.streamingDeltas} />}
-        </div>
-      </aside>
-      {/* Activity spine (US-016) — outside the scroller so it stays put
-          while the transcript scrolls; bound to this thread's turns. */}
-      <ActivitySpine turns={turns} onJump={jumpToTurn} />
+            {busy && <WorkingIndicator items={items} streaming={caps.streamingDeltas} />}
+          </div>
+        </aside>
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent transition-opacity duration-200",
+            canScrollUp ? "opacity-100" : "opacity-0",
+          )}
+        />
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-background to-transparent transition-opacity duration-200",
+            canScrollDown ? "opacity-100" : "opacity-0",
+          )}
+        />
+      </div>
       </div>
 
       {/* Composer — textarea with a chip row + send button. */}
@@ -1233,11 +1411,12 @@ interface PlanCtx {
   busy: boolean;
 }
 
-/** A transcript item, wrapped in a `data-turn` anchor when it's a user
- *  prompt so the activity spine (US-016) can scroll to it. `caps` is the
- *  pane's active capability descriptor (US-010) — reasoning visibility and
- *  the turn footer's cost-vs-tokens shape read from it, never from a
- *  provider name. */
+/** A transcript item, wrapped in a measurable spine anchor when it is a user
+ *  prompt or tool call. User anchors are navigable turn marks; tool anchors
+ *  place activity segments at the tool row's real transcript position.
+ *  `caps` is the pane's active capability descriptor (US-010) — reasoning
+ *  visibility and the turn footer's cost-vs-tokens shape read from it, never
+ *  from a provider name. */
 function Anchored({
   item,
   planCtx,
@@ -1247,9 +1426,14 @@ function Anchored({
   planCtx?: PlanCtx;
   caps: AgentCapabilities;
 }) {
-  if (item.role !== "user") return <Item item={item} planCtx={planCtx} caps={caps} />;
+  if (item.role !== "user" && item.role !== "tool")
+    return <Item item={item} planCtx={planCtx} caps={caps} />;
   return (
-    <div data-turn={item.id} className="scroll-mt-4">
+    <div
+      data-turn={item.role === "user" ? item.id : undefined}
+      data-spine-anchor={item.id}
+      className="scroll-mt-4"
+    >
       <Item item={item} planCtx={planCtx} caps={caps} />
     </div>
   );
@@ -1474,7 +1658,7 @@ function Item({
     case "user":
       return (
         <div className="flex flex-col items-end gap-1">
-          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground dark:border dark:border-border dark:bg-card dark:text-card-foreground dark:shadow-sm">
             {item.text}
           </div>
           {/* Images sent with this turn — so the transcript shows what the
@@ -1564,7 +1748,7 @@ function Item({
       );
     case "error":
       return (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
           {item.message}
         </div>
       );
@@ -1809,7 +1993,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
             )
           ) : (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Input
               </div>
               <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
@@ -1819,7 +2003,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
           )}
           {item.result != null && (
             <div className="border-t border-border/60 pt-2">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Result{item.result.length > 4000 ? " (truncated)" : ""}
               </div>
               <pre className="max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-foreground">
@@ -1859,10 +2043,10 @@ function DiffView({ diff }: { diff: FileDiff }) {
   return (
     <div>
       <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           Diff
         </span>
-        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground/70">
+        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {diff.path}
         </span>
         <DiffStat added={diff.added} removed={diff.removed} />
@@ -1870,7 +2054,7 @@ function DiffView({ diff }: { diff: FileDiff }) {
       <div className="max-h-64 overflow-auto rounded-md border border-border/60 bg-muted/20 py-0.5 font-mono text-[11px] leading-5">
         {shown.map((l, i) =>
           l.type === "hunk" ? (
-            <div key={i} className="border-y border-border/60 bg-muted/50 px-2 text-center text-muted-foreground/60">
+            <div key={i} className="border-y border-border/60 bg-muted/50 px-2 text-center text-muted-foreground">
               ⋯
             </div>
           ) : (
@@ -1880,7 +2064,8 @@ function DiffView({ diff }: { diff: FileDiff }) {
                 "whitespace-pre px-2",
                 l.type === "add" &&
                   "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-                l.type === "del" && "bg-destructive/10 text-destructive",
+                l.type === "del" &&
+                  "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300",
                 l.type === "ctx" && "text-muted-foreground",
               )}
             >

@@ -153,7 +153,7 @@ export default function Toaster({
               {t.detail}
             </div>
           )}
-          <div className="mt-1.5 pl-4 text-[10px] tabular-nums text-muted-foreground/70">
+          <div className="mt-1.5 pl-4 text-[10px] tabular-nums text-muted-foreground">
             {formatRel(t.ts)}
           </div>
         </div>

@@ -120,7 +120,7 @@ export interface TurnTokens {
 }
 
 /** A rendered transcript item. */
-export type ChatItem =
+export type ChatItem = (
   | { id: string; role: "user"; text: string; pins?: SentPin[]; images?: SentImage[] }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "reasoning"; text: string }
@@ -129,7 +129,8 @@ export type ChatItem =
   | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null; tokens: TurnTokens | null }
   | { id: string; role: "system"; model: string | null; cwd: string | null }
   | { id: string; role: "mode"; mode: string }
-  | { id: string; role: "error"; message: string };
+  | { id: string; role: "error"; message: string }
+) & { ts?: number | null };
 
 export type ChatStatus = "connecting" | "open" | "closed";
 
@@ -261,6 +262,7 @@ export function useAgentChat(token: string | null): AgentChat {
 
   /** Fold one normalized event into the flat transcript. */
   const applyEvent = useCallback((e: AgentEvent) => {
+    const eventTs = Date.now();
     // Session-level state rides alongside the transcript fold.
     if (e.kind === "system") {
       setSessionId(e.sessionId);
@@ -291,6 +293,7 @@ export function useAgentChat(token: string | null): AgentChat {
               toolName: e.toolName,
               summary: e.summary,
               resolution: "pending",
+              ts: eventTs,
             },
           ];
         case "result":
@@ -309,14 +312,14 @@ export function useAgentChat(token: string | null): AgentChat {
           if (e.kind === "result")
             return [
               ...settled,
-              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns, tokens: e.tokens ?? null },
+              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns, tokens: e.tokens ?? null, ts: eventTs },
             ];
           if (e.kind === "exit")
             return [
               ...settled,
-              { id: nextId(), role: "error", message: `Session ended${e.code != null ? ` (exit ${e.code})` : ""}.` },
+              { id: nextId(), role: "error", message: `Session ended${e.code != null ? ` (exit ${e.code})` : ""}.`, ts: eventTs },
             ];
-          return [...settled, { id: nextId(), role: "error", message: e.message }];
+          return [...settled, { id: nextId(), role: "error", message: e.message, ts: eventTs }];
         }
         case "system": {
           // A re-init with the same session id follows a mid-session mode
@@ -324,10 +327,10 @@ export function useAgentChat(token: string | null): AgentChat {
           // (re)start and keeps its "Session started" line.
           if (e.sessionId && e.sessionId === lastInitSessionRef.current) return prev;
           lastInitSessionRef.current = e.sessionId;
-          return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd }];
+          return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd, ts: eventTs }];
         }
         case "permission-mode":
-          return [...prev, { id: nextId(), role: "mode", mode: e.mode }];
+          return [...prev, { id: nextId(), role: "mode", mode: e.mode, ts: eventTs }];
         case "assistant-text":
         case "reasoning": {
           // Deltas append to the open item of the same role in place; a
@@ -341,12 +344,12 @@ export function useAgentChat(token: string | null): AgentChat {
             next[next.length - 1] = { ...last, text: last.text + e.text };
             return next;
           }
-          return [...prev, { id: nextId(), role, text: e.text }];
+          return [...prev, { id: nextId(), role, text: e.text, ts: eventTs }];
         }
         case "tool-use":
           return [
             ...prev,
-            { id: e.id || nextId(), role: "tool", name: e.name, input: e.input, result: null, isError: false },
+            { id: e.id || nextId(), role: "tool", name: e.name, input: e.input, result: null, isError: false, ts: eventTs },
           ];
         case "tool-result": {
           // Merge into the matching tool-use card by id; append if unseen.
@@ -388,6 +391,7 @@ export function useAgentChat(token: string | null): AgentChat {
           text,
           ...(pins.length ? { pins } : {}),
           ...(sentImages.length ? { images: sentImages } : {}),
+          ts: Date.now(),
         },
       ]);
       ws.send(JSON.stringify({ type: "prompt", text, attachments, images, ...opts }));

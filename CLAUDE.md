@@ -123,7 +123,17 @@ commits on pass; decompose backlogs with the `decompose-prd` skill).
   chip renders `capabilities.permissionModes` (Codex shows its sandbox
   vocabulary; Supervised absent); `!interactiveApproval` hides the approval
   UI; `!livePermissionSwitch` notes "applies from the next turn".
-  `ActivitySpine.tsx` = the fused prompt/skill/tool tick rail. Composer:
+  `ActivitySpine.tsx` = the **thermometer minimap** (2026-07-25, Randy's
+  design, Codex/Claude hybrid): a left-rail scrollbar-grade timeline — turn
+  ticks at real measured `[data-turn]` positions, a draggable ~30% blue
+  viewport pill, long threads split into overlapping ranges w/ a time-labeled
+  dropdown ("4:04 PM · 1/4"), start-time/Present labels, hover card w/ prompt
+  + first-reply preview, full keyboard support (`role="scrollbar"`). Real
+  timestamps ride the JSONL → `src/agent/history.ts` `ts` → transcript route
+  (gateway restart needed to serve them). The transcript scroller also gets
+  FadeScroll-style top/bottom edge fades (overlay bands on the existing
+  `<aside>` — its `scrollRef` drives pinning + spine measurement; never
+  replace it). Composer:
   provider chip (from `GET /api/agent/providers`, uninstalled = disabled w/
   tooltip, **locks after turn 1**) + model + permission + **effort** chips +
   a **context-window meter** +

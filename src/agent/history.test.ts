@@ -35,9 +35,9 @@ test("adaptMessages: user + assistant text become chat items in order", () => {
   );
   const items = adaptMessages(normalizeTranscriptLines(raw));
   assert.deepEqual(items, [
-    { role: "user", text: "hello there" },
-    { role: "reasoning", text: "pondering" },
-    { role: "assistant", text: "hi back" },
+    { role: "user", text: "hello there", ts: Date.parse("2026-07-23T10:00:00Z") },
+    { role: "reasoning", text: "pondering", ts: Date.parse("2026-07-23T10:00:05Z") },
+    { role: "assistant", text: "hi back", ts: Date.parse("2026-07-23T10:00:05Z") },
   ]);
 });
 
@@ -71,6 +71,7 @@ test("adaptMessages: tool_result merges into its tool card by id", () => {
       input: { command: "ls" },
       result: "file.txt",
       isError: false,
+      ts: null,
     },
   ]);
 });
@@ -123,5 +124,5 @@ test("adaptMessages: injected meta user messages are skipped", () => {
     },
   );
   const items = adaptMessages(normalizeTranscriptLines(raw));
-  assert.deepEqual(items, [{ role: "user", text: "real question" }]);
+  assert.deepEqual(items, [{ role: "user", text: "real question", ts: null }]);
 });

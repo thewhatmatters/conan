@@ -124,7 +124,7 @@ const PILL: Record<Pill, { label: string; cls: string; dot: string }> = {
   },
   awaiting: {
     label: "Awaiting approval",
-    cls: "bg-destructive/10 text-destructive",
+    cls: "bg-destructive/10 text-red-700 dark:text-red-300",
     dot: "bg-destructive animate-pulse",
   },
   ready: { label: "Ready", cls: "bg-muted text-muted-foreground", dot: "bg-chart-2" },
@@ -641,7 +641,7 @@ export default function ChatSurface({
                       repo/parent — the common case renders exactly as before. */}
                   {g.members.length > 1 && (
                     <div
-                      className="truncate px-1 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
+                      className="truncate px-1 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                       title={g.key}
                     >
                       {basename(g.key)}
@@ -756,7 +756,7 @@ export default function ChatSurface({
                     </div>
                     {!closed &&
                       (list.length === 0 && savedOnly.length === 0 ? (
-                        <p className="py-1 pl-5 pr-2 text-[11px] text-muted-foreground/70">
+                        <p className="py-1 pl-5 pr-2 text-[11px] text-muted-foreground">
                           No chats yet.
                         </p>
                       ) : (
@@ -793,7 +793,7 @@ export default function ChatSurface({
                               onClick={() =>
                                 setExpandedThreads((prev) => ({ ...prev, [proj.id]: true }))
                               }
-                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               Show {hiddenCount} more…
                             </button>
@@ -804,7 +804,7 @@ export default function ChatSurface({
                               onClick={() =>
                                 setExpandedThreads((prev) => ({ ...prev, [proj.id]: false }))
                               }
-                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="w-full rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               Show less
                             </button>
@@ -870,6 +870,7 @@ export default function ChatSurface({
               }
               lastSkillFired={lastSkillFired}
               onState={(s) => reportState(t.id, s)}
+              createdAt={t.createdAt}
             />
           </div>
         ))}
@@ -1137,7 +1138,7 @@ function ThreadRow({
           {title ?? "New chat"}
         </span>
         <span
-          className="block truncate text-[10px] text-muted-foreground/70"
+          className="block truncate text-[10px] text-muted-foreground"
           title={desc ?? undefined}
         >
           {desc ?? "No messages yet"}
@@ -1156,7 +1157,7 @@ function ThreadRow({
             {p.label}
           </span>
         ) : (
-          <span className="whitespace-nowrap text-[10px] text-muted-foreground/60 group-hover:opacity-0">
+          <span className="whitespace-nowrap text-[10px] text-muted-foreground group-hover:opacity-0">
             {when}
           </span>
         )}
