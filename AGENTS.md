@@ -18,12 +18,23 @@ Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
    round: image paste + paperclip rethink, a unified provider/model picker,
    context-window default fix), and `docs/chat-v1-qa-backlog.md` (older QA).
 
-**Round status (2026-07-24):** the daily-driver round (`loop/conan-daily-driver`
-— context meter, draft threads, reasoning-effort chip, @-pins) is COMPLETE,
-11/11 stories pass. `docs/daily-driver-qa.md` has the per-provider matrix. Split
-last time: Codex took the seam/driver/parser stories (no browser), Claude the UI
-stories (need a port-binding sandbox for automate-browser). Owner hints live in
-each story's `notes` and the split rule is under "The build loop" below.
+**Round status (2026-07-24):** three stacked feature branches, none merged to
+`main` yet (each builds on the prior):
+1. `loop/conan-daily-driver` — context meter, draft threads, effort chip,
+   @-pins. DONE 11/11. `docs/daily-driver-qa.md`.
+2. `loop/conan-image-backend` — Codex round: context-window fix + image-input
+   backend seam (imageInput capability, staging, per-provider driver plumbing).
+   DONE 7/7. `docs/provider-image-input.md`.
+3. `loop/conan-image-ui` (current) — provider brand-icon avatars + image PASTE
+   (browser → base64 → staging → transcript). DONE + verified (Claude read a
+   pasted image). Remaining UI round work: the unified provider/model picker and
+   retiring the paperclip (fold pinning into `@`) — see
+   `docs/ui-improvements-backlog.md`.
+
+Merge order when collapsing to main: daily-driver → image-backend → image-ui.
+The Codex/Claude split keeps working: Codex takes seam/driver/parser stories
+(no browser); Claude takes UI stories (need a port-binding sandbox for
+automate-browser). Owner hints live in each story's `notes`.
 
 **If you are NOT Claude Code:** the checkpoint entry named above lives in
 Claude's project memory (`~/.claude/projects/…`), outside this repo — you
@@ -44,6 +55,13 @@ the UI but still in the repo (dormant).
   must pass before commit. `npm test` for the suite.
 - **Run the gateway with `npm start`, not `npm run dev`** (tsx-watch restarts on
   src edits). UI: `cd ui && npm run dev` → http://localhost:5173.
+- **To restart the gateway, `pkill -f "gateway/index.ts"` — NOT
+  `pkill -f "tsx src/gateway"`** (the process is `node …/tsx …/gateway/index.ts`,
+  so the tsx pattern matches nothing). If the old one survives, the port stays
+  bound and the new `npm start` exits on "port bound" while a STALE gateway
+  keeps serving — silently, so new routes 404 and code changes don't apply. And
+  do NOT `lsof -ti:3747 | xargs kill` — vite holds a proxy connection to 3747
+  and gets killed too. Cost real time; verify the served process's start time.
 - **After restarting the gateway, verify BOTH :3747 and :5173** — vite drops
   silently; the gateway being up does not mean the UI is.
 - **Subscription auth only.** The headless path uses the user's Claude login;
