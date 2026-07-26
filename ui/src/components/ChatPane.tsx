@@ -69,6 +69,7 @@ import ActivitySpine, {
   type SpineViewport,
 } from "./ActivitySpine.tsx";
 import ThreadToolbar from "./ThreadToolbar.tsx";
+import SurfacePanel from "./SurfacePanel.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
@@ -259,6 +260,12 @@ export default function ChatPane({
   // pick here until the dialog confirms it once per thread; declining reverts.
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
   const fullAccessConfirmed = useRef(false);
+  // Surface panel (Conan Surfaces US-001): per-thread, in-memory — ChatPane
+  // instances are mounted-but-hidden per thread, so this state survives
+  // thread switches. Width lives here (not in SurfacePanel) because the
+  // composer offsets itself by it to keep the F8 axis alignment.
+  const [surfacesOpen, setSurfacesOpen] = useState(false);
+  const [surfaceWidth, setSurfaceWidth] = useState(420);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const spineJumpFrameRef = useRef<number | null>(null);
   // Whether the view is pinned to the bottom. Scrolling up releases the pin
@@ -844,6 +851,8 @@ export default function ChatPane({
         projectId={projectId ?? null}
         title={title}
         onSendPrompt={sendPrompt}
+        surfacesOpen={surfacesOpen}
+        onToggleSurfaces={() => setSurfacesOpen((o) => !o)}
       />
       <div className="flex min-h-0 flex-1">
       {/* Activity spine (US-016) — outside the scroller so it stays put
@@ -915,11 +924,22 @@ export default function ChatPane({
           )}
         />
       </div>
-      <div aria-hidden className="w-16 shrink-0" />
+      {/* Right side of the row: the surface panel when open, else the w-16
+          gutter that mirrors the spine so the transcript centers (F8). The
+          composer below compensates with matching margins so its axis tracks
+          the transcript's in both states. */}
+      {surfacesOpen ? (
+        <SurfacePanel width={surfaceWidth} onWidthChange={setSurfaceWidth} />
+      ) : (
+        <div aria-hidden className="w-16 shrink-0" />
+      )}
       </div>
 
       {/* Composer — textarea with a chip row + send button. */}
-      <div className="shrink-0 px-4 pb-4">
+      <div
+        className="shrink-0 px-4 pb-4"
+        style={surfacesOpen ? { marginLeft: 64, marginRight: surfaceWidth } : undefined}
+      >
         {/* Thread context pills — ABOVE the input (the Claude Code pattern),
             scoped to THIS thread. cwd and branch describe the conversation,
             not the app, so they live with the composer instead of in a

@@ -21,7 +21,7 @@
         "Verify in browser using the automate-browser skill on the throwaway stack: screenshot the card grid, a stub surface open, and the splitter at two widths, in BOTH light and dark"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 0a. The T3 screenshot description in prd-conan-surfaces.md §benchmark is the layout contract. Keep the spine + transcript + panel in one flex row; the composer stays full-row below — check the F8 gutter still balances (the matching right gutter may need to collapse when the panel is open). Suggested skills: automate-browser, shadcn, build-ui."
     },
     {

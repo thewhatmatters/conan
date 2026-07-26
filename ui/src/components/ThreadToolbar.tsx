@@ -6,6 +6,7 @@ import {
   GitPullRequestArrow,
   Loader2,
   MessageSquare,
+  PanelRight,
   Pencil,
   Play,
   Plus,
@@ -81,6 +82,8 @@ export default function ThreadToolbar({
   projectId,
   title,
   onSendPrompt,
+  surfacesOpen,
+  onToggleSurfaces,
 }: {
   token: string | null;
   /** The thread's working directory (its project's path). */
@@ -92,6 +95,9 @@ export default function ThreadToolbar({
   /** Send a prompt into this thread's chat (for prompt-kind actions). Returns
    *  false when the thread can't accept it right now (busy / not ready). */
   onSendPrompt: (text: string) => boolean;
+  /** Whether this thread's surface panel is open (Conan Surfaces US-001). */
+  surfacesOpen: boolean;
+  onToggleSurfaces: () => void;
 }) {
   const auth = useMemo(
     () => ({ "x-conan-token": token ?? "", "content-type": "application/json" }),
@@ -431,6 +437,23 @@ export default function ThreadToolbar({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        <span className="mx-0.5 h-4 w-px bg-border" />
+
+        {/* Surface panel toggle (Conan Surfaces US-001) */}
+        <button
+          type="button"
+          onClick={onToggleSurfaces}
+          title={surfacesOpen ? "Close the surface panel" : "Open a surface (Browser · Terminal · Files · Diff)"}
+          aria-pressed={surfacesOpen}
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 transition-colors hover:bg-muted hover:text-foreground",
+            surfacesOpen ? "bg-muted text-foreground" : "text-muted-foreground",
+          )}
+        >
+          <PanelRight className="size-3.5" />
+          Surfaces
+        </button>
       </div>
 
       {/* ── Commit dialog ── */}

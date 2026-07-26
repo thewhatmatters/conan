@@ -1,0 +1,2 @@
+[2026-07-25 20:58:33] iteration 1 → US-001: SurfacePanel shell: right panel + splitter + T3 'Open a surface' card grid
+[2026-07-25 21:05:32] iteration 2 → US-001 DONE: SurfacePanel shell — ThreadToolbar Surfaces toggle, T3 'Open a surface' 2x2 card grid, stub surface windows (h-9 header + close), left-edge splitter (clamped 320px–60%, verified 320/720 @1440w), per-thread in-memory open/width state, composer axis matches transcript open+closed (512/512, 840/840); typecheck+ui build green; browser QA light+dark on :5199 throwaway stack
