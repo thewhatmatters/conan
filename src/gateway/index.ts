@@ -33,6 +33,11 @@ import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUs
 import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
 import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
 import { collectBranches } from "../fs/branches.js";
+import {
+  ensureWorktree,
+  pruneWorktreesAtBoot,
+  WorktreeValidationError,
+} from "../fs/worktrees.js";
 import { probeUrl } from "../browser/probe.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
@@ -369,6 +374,38 @@ app.get("/api/fs/branches", async (req, res) => {
     res.json(await collectBranches(cwd.trim()));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/agent/worktrees", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as {
+    cwd?: unknown;
+    branch?: unknown;
+    createBranch?: unknown;
+    base?: unknown;
+  };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ error: "cwd required" });
+    return;
+  }
+  if (typeof body.branch !== "string" || !body.branch.trim()) {
+    res.status(400).json({ error: "branch required" });
+    return;
+  }
+  try {
+    res.json(
+      await ensureWorktree({
+        cwd: body.cwd.trim(),
+        branch: body.branch.trim(),
+        createBranch:
+          typeof body.createBranch === "boolean" ? body.createBranch : undefined,
+        base: typeof body.base === "string" ? body.base.trim() : undefined,
+      }),
+    );
+  } catch (error) {
+    const status = error instanceof WorktreeValidationError ? 400 : 500;
+    res.status(status).json({ error: (error as Error).message });
   }
 });
 
@@ -1156,6 +1193,9 @@ const stopWatching = watchTasks((state) => broadcast({ type: "tasks", payload: s
 // US-004: start the passive OAuth-endpoint usage poller (macOS-only, no-op
 // elsewhere — see startOAuthUsagePoller's platform guard).
 startOAuthUsagePoller();
+void pruneWorktreesAtBoot().catch((error) => {
+  console.warn(`Unable to prune Conan worktrees at boot: ${(error as Error).message}`);
+});
 
 // Wire the live /usage capture broadcast: when the terminal's passive scanner
 // lands a fresh frame, push `{type:'usage-captured', sessionId}` over /ws so

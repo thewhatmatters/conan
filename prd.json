@@ -38,7 +38,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sanitize branch names for the directory segment (slashes → dashes). Worktree root is literally ~/.conan/worktrees (os.homedir()), NOT $CONAN_DATA_DIR — ratified. git forbids two worktrees on one branch; the reuse + passthrough rules are how that constraint surfaces."
     },
     {
