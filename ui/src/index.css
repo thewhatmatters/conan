@@ -51,15 +51,15 @@
 /* Light (default) */
 :root {
   color-scheme: light;
-  --background: #fafafa;
-  --foreground: #171717;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
   --card: #ffffff;
-  --card-foreground: #171717;
+  --card-foreground: #0a0a0a;
   --border: #e5e5e5;
   --muted: #f5f5f5;
   --muted-foreground: #6b6b6b;
-  --primary: #059669;
-  --primary-foreground: #ffffff;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
   /* Conan brand accent — the warm ember of the app icon + marketing site
      (conan.sh). Used for brand "detail" moments (the What's New splash, etc.),
      NOT the app's functional chrome, which stays emerald (--primary). Reads
@@ -71,14 +71,14 @@
   --accent: #f5f5f5;
   --accent-foreground: #171717;
   --popover: #ffffff;
-  --popover-foreground: #171717;
+  --popover-foreground: #0a0a0a;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --input: #e5e5e5;
-  --ring: #059669;
+  --ring: #a1a1a1;
   --radius: 0.625rem;
   --term-bg: #ffffff;
-  --term-fg: #1f2937;
+  --term-fg: #0a0a0a;
   /* Chart series — emerald-anchored, distinct hues */
   --chart-1: #059669;
   --chart-2: #3b82f6;
@@ -97,30 +97,30 @@
 .dark {
   color-scheme: dark;
   --background: #0a0a0a;
-  --foreground: #ededed;
+  --foreground: #fafafa;
   --card: #171717;
-  --card-foreground: #ededed;
+  --card-foreground: #fafafa;
   --border: #262626;
-  --muted: #1f1f1f;
-  --muted-foreground: #9aa0a6;
-  --primary: #34d399;
-  --primary-foreground: #0a0a0a;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
   /* Brand accent, brightened for dark surfaces (mirrors how --primary lifts in
      dark). Amber-500 on near-black text pops without glaring. */
   --brand: #f59e0b;
   --brand-foreground: #1a1206;
-  --secondary: #1f1f1f;
-  --secondary-foreground: #ededed;
-  --accent: #1f1f1f;
-  --accent-foreground: #ededed;
+  --secondary: #262626;
+  --secondary-foreground: #fafafa;
+  --accent: #262626;
+  --accent-foreground: #fafafa;
   --popover: #171717;
-  --popover-foreground: #ededed;
+  --popover-foreground: #fafafa;
   --destructive: #f87171;
   --destructive-foreground: #0a0a0a;
   --input: #262626;
-  --ring: #34d399;
+  --ring: #737373;
   --term-bg: #0a0a0a;
-  --term-fg: #ededed;
+  --term-fg: #fafafa;
   /* Chart series — brighter for dark surfaces */
   --chart-1: #34d399;
   --chart-2: #60a5fa;
@@ -259,5 +259,4 @@ aside .overflow-auto::-webkit-scrollbar-thumb:hover {
     opacity: 1;
   }
 }
-
 

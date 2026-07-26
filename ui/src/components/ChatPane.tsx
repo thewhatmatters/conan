@@ -915,6 +915,7 @@ export default function ChatPane({
           )}
         />
       </div>
+      <div aria-hidden className="w-16 shrink-0" />
       </div>
 
       {/* Composer — textarea with a chip row + send button. */}

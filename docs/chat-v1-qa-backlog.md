@@ -130,6 +130,7 @@ cluttered) reads as GRACEFUL. Refinements:
 | F1-a | Vertically center the spine tick cluster (was top-jammed). | S | **done** |
 | F4-a | **Better skill visualization** in the spine/timeline — skill ticks work (accent color) but deserve a stronger/clearer treatment so a fired skill is more legible at a glance. | S–M | backlog |
 | F6 | Density guard (`+N` on tool-heavy turns) — **unverified**, hard to trigger manually (needs a 20+ tool turn). Can force it live if wanted. | — | pending |
+| F8 | **Transcript column misaligned with the composer** (found 2026-07-25, post-thermometer): the transcript centers inside the flex row that includes the `w-16` spine rail, so its `max-w-3xl` column sits ~32px RIGHT of the composer's (which centers on the full pane width) — content visibly overhangs the input box's right edge. Fix: balance the axes — matching `w-16` spacer on the composer row, or overlay the spine so the transcript centers full-width. `ChatPane.tsx` ~line 868 (transcript wrapper) vs ~970 (composer wrapper). | S | backlog |
 
 ---
 

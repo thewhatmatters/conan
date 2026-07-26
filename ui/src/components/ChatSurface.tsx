@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
+  Moon,
+  Sun,
   type LucideIcon,
 } from "lucide-react";
 import ChatPane, { type ThreadUiState } from "./ChatPane.tsx";
@@ -37,6 +39,7 @@ import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
 import { PROVIDER_ICON } from "./ProviderMark.tsx";
+import { useThemes } from "../hooks/useThemes.ts";
 
 /**
  * Project-organized chat surface (US-006 sidebar shell, US-025 projects,
@@ -221,6 +224,9 @@ export default function ChatSurface({
    *  user is looking at — the chat-era replacement for pty correlation. */
   onActiveSessionChange?: (sessionId: string | null) => void;
 }) {
+  const { activeTheme, setActiveTheme } = useThemes();
+  const isDarkTheme = activeTheme.type === "dark";
+
   const seq = useRef(0);
   const [projects, setProjects] = useState<Project[]>([]);
   /** Persisted threads by project id, newest activity first (US-014). */
@@ -613,6 +619,12 @@ export default function ChatSurface({
             <IconButton title="Settings" onClick={openSettings}>
               <Settings className="size-4" />
             </IconButton>
+            <IconButton
+              title="Toggle theme"
+              onClick={() => setActiveTheme(isDarkTheme ? "light" : "dark")}
+            >
+              {isDarkTheme ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </IconButton>
           </div>
         </div>
       ) : (
@@ -824,6 +836,12 @@ export default function ChatSurface({
           <div className="flex h-9 shrink-0 items-center border-t border-border px-2">
             <IconButton title="Settings" onClick={openSettings}>
               <Settings className="size-4" />
+            </IconButton>
+            <IconButton
+              title="Toggle theme"
+              onClick={() => setActiveTheme(isDarkTheme ? "light" : "dark")}
+            >
+              {isDarkTheme ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </IconButton>
           </div>
         </aside>
