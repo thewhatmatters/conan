@@ -32,6 +32,7 @@ import {
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
 import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
 import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
+import { collectBranches } from "../fs/branches.js";
 import { probeUrl } from "../browser/probe.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
@@ -355,6 +356,20 @@ app.get("/api/fs/git", (req, res) => {
     return;
   }
   gitStatus(p).then((g) => res.json(g));
+});
+
+app.get("/api/fs/branches", async (req, res) => {
+  if (!authed(req, res)) return;
+  const cwd = req.query.cwd;
+  if (typeof cwd !== "string" || !cwd.trim()) {
+    res.status(400).json({ error: "cwd required" });
+    return;
+  }
+  try {
+    res.json(await collectBranches(cwd.trim()));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
 });
 
 // The files Claude Edited/Wrote/Read in a session, parsed from the persisted

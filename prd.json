@@ -19,7 +19,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Mirror src/fs/diff.ts structure (pure logic module + thin route handler, runGit-style spawning). The composer's existing branch display endpoint (src/gateway/index.ts:347) shows the current-branch read pattern."
     },
     {

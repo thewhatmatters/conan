@@ -1,0 +1,1 @@
+[2026-07-26 12:18:16] US-001 DONE: branch listing backend — src/fs/branches.ts (collectBranches: repo/root/current/defaultBranch/branches, detached→null, non-repo→repo:false) + GET /api/fs/branches (authed, 400 on missing cwd) + 4 tests wired into npm test; typecheck + 188/188 green (codex exec, Claude-gated)
