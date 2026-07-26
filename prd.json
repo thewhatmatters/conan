@@ -88,7 +88,7 @@
         "Verify in browser using the automate-browser skill: run a throwaway-stack thread that edits a file, open Diff, screenshot expanded diff light + dark"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1b UI. Depends on US-001 + US-004. DiffView lives in ChatPane.tsx (~line 1856) — extracting it to a shared component is in scope. Suggested skills: automate-browser, build-ui."
     },
     {

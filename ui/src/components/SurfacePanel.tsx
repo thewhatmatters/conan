@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { FileDiff, FolderTree, Globe, Plus, SquareTerminal, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import FileExplorer from "./FileExplorer.tsx";
+import DiffSurface from "./DiffSurface.tsx";
 
 /**
  * Right-side surface panel (Conan Surfaces US-001/US-002, T3 parity): a
@@ -10,7 +11,8 @@ import FileExplorer from "./FileExplorer.tsx";
  * ratified v1 decision). This shell ships the T3-style "Open a surface" card
  * grid, the side-by-side split, and a draggable splitter on the panel's left
  * edge. Files (US-003) mounts the real FileExplorer pegged to the thread's
- * project cwd; the remaining surfaces are stubs until their stories land.
+ * project cwd; Diff (US-005) reviews the thread's uncommitted changes; the
+ * remaining surfaces are stubs until their stories land.
  *
  * Width state lives in ChatPane (per-thread, in-memory) because the composer
  * needs it to keep its centering axis matched to the transcript's while the
@@ -84,6 +86,7 @@ export default function SurfacePanel({
   onWidthChange,
   token,
   cwd,
+  touchedPaths,
 }: {
   /** Current panel width in px (owned by ChatPane, per-thread). */
   width: number;
@@ -93,6 +96,9 @@ export default function SurfacePanel({
   token: string | null;
   /** The thread's project cwd; Files (and later Terminal/Diff) peg to it. */
   cwd: string | null;
+  /** Files this thread's edit tools touched (US-005) — the Diff surface's
+   *  path set, extracted from the transcript by ChatPane. */
+  touchedPaths: string[];
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Open internal windows, left to right (US-002: up to SURFACE_MAX_WINDOWS).
@@ -228,6 +234,10 @@ export default function SurfacePanel({
                 {w.kind === "files" ? (
                   <div className="min-h-0 flex-1">
                     <FileExplorer token={token ?? ""} cwd={cwd} />
+                  </div>
+                ) : w.kind === "diff" ? (
+                  <div className="min-h-0 flex-1">
+                    <DiffSurface token={token} cwd={cwd} touchedPaths={touchedPaths} />
                   </div>
                 ) : (
                   <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">

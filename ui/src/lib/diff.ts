@@ -176,3 +176,40 @@ export function buildFileDiff(name: string, input: unknown): FileDiff | null {
   });
   return { path: parsed.path, added, removed, lines };
 }
+
+/**
+ * Parse a git unified diff (one file's patch from POST /api/fs/diff) into the
+ * FileDiff shape DiffView renders — the Diff surface (Conan Surfaces US-005)
+ * reuses the transcript's exact red/green row treatment. Headers (`diff
+ * --git`, `index`, `---`/`+++`) are dropped; each `@@` hunk after the first
+ * becomes a ⋯ separator row. A truncated patch (the gateway's byte cap) may
+ * end mid-line — it still parses; the caller shows the truncated notice.
+ */
+export function parseUnifiedPatch(path: string, patch: string): FileDiff {
+  if (/^Binary files .* differ$/m.test(patch)) {
+    return { path, added: 0, removed: 0, lines: null, degraded: "binary" };
+  }
+  const lines: DiffLine[] = [];
+  let added = 0;
+  let removed = 0;
+  let inHunk = false;
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("@@")) {
+      if (lines.length > 0) lines.push({ type: "hunk", text: "" });
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue; // file headers before the first hunk
+    if (raw.startsWith("+")) {
+      lines.push({ type: "add", text: raw.slice(1) });
+      added++;
+    } else if (raw.startsWith("-")) {
+      lines.push({ type: "del", text: raw.slice(1) });
+      removed++;
+    } else if (raw.startsWith(" ")) {
+      lines.push({ type: "ctx", text: raw.slice(1) });
+    }
+    // "\ No newline at end of file" and the trailing split artifact drop out.
+  }
+  return { path, added, removed, lines };
+}

@@ -72,7 +72,8 @@ import ThreadToolbar from "./ThreadToolbar.tsx";
 import SurfacePanel from "./SurfacePanel.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
-import { buildFileDiff, type FileDiff } from "../lib/diff.ts";
+import { buildFileDiff } from "../lib/diff.ts";
+import { DiffView, DiffStat } from "./DiffView.tsx";
 
 /** One slash command from GET /api/claude/commands (src/commands/index.ts). */
 interface CommandEntry {
@@ -346,6 +347,32 @@ export default function ChatPane({
   }, [items, history, busy]);
 
   const effectiveCwd = cwd ?? null;
+
+  // Files this thread's edit tools touched (Conan Surfaces US-005) — the Diff
+  // surface's path set. Extracted from BOTH the restored history and the live
+  // items (the same tool items the transcript renders), deduped in first-touch
+  // order. DiffSurface keys its refetch on the joined content, so the fresh
+  // array identity each render doesn't spam git.
+  const touchedPaths = useMemo(() => {
+    const seen = new Set<string>();
+    for (const it of [...history, ...items]) {
+      if (it.role !== "tool" || !/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(it.name))
+        continue;
+      const o =
+        it.input && typeof it.input === "object"
+          ? (it.input as Record<string, unknown>)
+          : null;
+      const p =
+        o &&
+        (typeof o.file_path === "string"
+          ? o.file_path
+          : typeof o.notebook_path === "string"
+            ? o.notebook_path
+            : null);
+      if (p) seen.add(p);
+    }
+    return [...seen];
+  }, [history, items]);
   // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
   // on another repo never shows the active thread's branch.
   const git = useDirGit(token, effectiveCwd);
@@ -934,6 +961,7 @@ export default function ChatPane({
           onWidthChange={setSurfaceWidth}
           token={token}
           cwd={effectiveCwd}
+          touchedPaths={touchedPaths}
         />
       ) : (
         <div aria-hidden className="w-16 shrink-0" />
@@ -2039,75 +2067,6 @@ function ToolCard({ item }: { item: Extract<ChatItem, { role: "tool" }> }) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/** `+N −M` line counts for a file-edit card (collapsed header + degraded
- *  summary). Additions ride the emerald status green (the Onboarding/MCP
- *  precedent — there's no semantic "success" token); removals the
- *  destructive token. */
-function DiffStat({ added, removed }: { added: number; removed: number }) {
-  return (
-    <span className="shrink-0 font-mono text-[11px] tabular-nums">
-      <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>{" "}
-      <span className="text-destructive">−{removed}</span>
-    </span>
-  );
-}
-
-/** Cap on rendered patch rows — a Write of a whole large file stays scrollable
- *  without mounting thousands of DOM nodes. */
-const MAX_DIFF_ROWS = 600;
-
-/** The inline patch inside an expanded file-edit card (US-021): red/green
- *  +/− rows in a bounded scroller, MultiEdit hunks separated by a ⋯ row.
- *  No modal, no side panel — the diff lives in the transcript. */
-function DiffView({ diff }: { diff: FileDiff }) {
-  const lines = diff.lines ?? [];
-  const shown = lines.slice(0, MAX_DIFF_ROWS);
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Diff
-        </span>
-        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
-          {diff.path}
-        </span>
-        <DiffStat added={diff.added} removed={diff.removed} />
-      </div>
-      <div className="max-h-64 overflow-auto rounded-md border border-border/60 bg-muted/20 py-0.5 font-mono text-[11px] leading-5">
-        {shown.map((l, i) =>
-          l.type === "hunk" ? (
-            <div key={i} className="border-y border-border/60 bg-muted/50 px-2 text-center text-muted-foreground">
-              ⋯
-            </div>
-          ) : (
-            <div
-              key={i}
-              className={cn(
-                "whitespace-pre px-2",
-                l.type === "add" &&
-                  "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-                l.type === "del" &&
-                  "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-                l.type === "ctx" && "text-muted-foreground",
-              )}
-            >
-              <span className="select-none opacity-60">
-                {l.type === "add" ? "+ " : l.type === "del" ? "− " : "  "}
-              </span>
-              {l.text}
-            </div>
-          ),
-        )}
-        {lines.length > MAX_DIFF_ROWS && (
-          <div className="px-2 py-1 text-muted-foreground">
-            … {lines.length - MAX_DIFF_ROWS} more lines
-          </div>
-        )}
-      </div>
     </div>
   );
 }
