@@ -72,7 +72,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser, shadcn. Follow the existing composer chip pattern (provider/model/permission/effort chips in ChatPane) — DropdownMenu primitive, locks after turn 1 like the provider chip. Draft threads are local-only (no chat_thread row until first send) — the branch selection rides that same draft state."
     },
     {

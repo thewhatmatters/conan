@@ -50,6 +50,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { cn } from "../lib/utils.ts";
@@ -235,6 +236,7 @@ export default function ChatPane({
     interrupt,
     permissionMode: liveMode,
     setPermissionMode,
+    reportError,
     capabilities: sessionCaps,
   } = useAgentChat(token);
   const [text, setText] = useState("");
@@ -257,6 +259,20 @@ export default function ChatPane({
   // type; the gateway validates/bounds/writes the per-provider temp file. Only
   // accepted when the active provider's capabilities.imageInput is true.
   const [images, setImages] = useState<OutgoingImage[]>([]);
+  const [branchInfo, setBranchInfo] = useState<{
+    repo: boolean;
+    current: string | null;
+    branches: string[];
+  } | null>(null);
+  const [branchPick, setBranchPick] = useState<{
+    branch: string;
+    createNew: boolean;
+  } | null>(null);
+  // A fresh worktree selection becomes this pane's real cwd at first send.
+  // The parent still supplies the project root, while every thread-scoped
+  // surface/indicator must follow the launched session directory.
+  const [launchedCwd, setLaunchedCwd] = useState<string | null>(null);
+  const branchLaunchPending = useRef(false);
   // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
   // pick here until the dialog confirms it once per thread; declining reverts.
   const [confirmingDangerMode, setConfirmingDangerMode] = useState<string | null>(null);
@@ -346,7 +362,7 @@ export default function ChatPane({
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [items, history, busy]);
 
-  const effectiveCwd = cwd ?? null;
+  const effectiveCwd = launchedCwd ?? cwd ?? null;
 
   // Files this thread's edit tools touched (Conan Surfaces US-005) — the Diff
   // surface's path set. Extracted from BOTH the restored history and the live
@@ -511,6 +527,38 @@ export default function ChatPane({
   // control channel can switch mode mid-session (US-022), so it stays live.
   const locked = firstUser != null || resume != null;
 
+  useEffect(() => {
+    if (locked || !token || !effectiveCwd) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(
+          apiBase() + `/api/fs/branches?cwd=${encodeURIComponent(effectiveCwd)}`,
+          { headers: { "x-conan-token": token } },
+        );
+        if (!r.ok) return;
+        const data = (await r.json()) as {
+          repo: boolean;
+          current: string | null;
+          branches: string[];
+        };
+        if (!cancelled) {
+          setBranchInfo(data);
+          setBranchPick(
+            data.repo && data.current
+              ? { branch: data.current, createNew: false }
+              : null,
+          );
+        }
+      } catch {
+        // Match the existing git indicator: an unavailable probe hides the chip.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [locked, token, effectiveCwd]);
+
   // Provider chip data (US-008): the registry's install probe, shared across
   // panes. Until the fetch lands (or if the gateway is unreachable) the chip
   // falls back to a Claude-only entry so it's never blank.
@@ -577,37 +625,76 @@ export default function ChatPane({
   // Returns false when a send can't happen (busy / not open / history loading)
   // so the caller can decide whether to clear its input. Used by the composer
   // submit and by prompt-kind toolbar actions.
-  const sendPrompt = (promptText: string): boolean => {
+  const sendPrompt = (promptText: string, onSent?: () => void): boolean => {
     const t = promptText.trim();
-    if (!t || busy || status !== "open" || historyState === "loading") return false;
-    send(t, {
-      model: resume ? resume.model ?? undefined : model,
-      // The CONFIRMED mode, not just the local pick: for providers without a
-      // live switch (codex/grok) each turn re-sends the mode, and a mid-
-      // session chip change already updated it via the confirmed event path.
-      permissionMode: effectiveMode,
-      effort: resume?.effort ?? undefined,
-      cwd: effectiveCwd ?? undefined,
-      projectId: projectId ?? undefined,
-      resume: resume && historyState === "found" ? resume.sessionId : undefined,
-      // US-008: fresh threads launch on the chip's pick; a resumed thread
-      // relaunches its own provider (also honored when the JSONL is missing
-      // and the "resume" degrades to a fresh session on the same agent).
-      provider: effectiveProviderId,
-    }, pins.map((p) => ({
-      type: "file" as const,
-      path: p.path,
-      content: p.content,
-      truncated: p.truncated,
-    })), images);
-    // Per-turn by default — drop pins/images after send unless kept.
-    setPins((prev) => prev.filter((p) => p.keep));
-    setImages([]);
+    if (
+      !t ||
+      busy ||
+      branchLaunchPending.current ||
+      status !== "open" ||
+      historyState === "loading"
+    )
+      return false;
+    branchLaunchPending.current = true;
+    void (async () => {
+      let launchCwd = effectiveCwd ?? undefined;
+      if (
+        !locked &&
+        effectiveCwd &&
+        branchPick &&
+        branchPick.branch !== branchInfo?.current
+      ) {
+        try {
+          const r = await fetch(apiBase() + "/api/agent/worktrees", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-conan-token": token ?? "",
+            },
+            body: JSON.stringify({
+              cwd: effectiveCwd,
+              branch: branchPick.branch,
+              createBranch: branchPick.createNew || undefined,
+            }),
+          });
+          const data = (await r.json()) as { path?: string; error?: string };
+          if (!r.ok || !data.path) {
+            reportError(data.error ?? "Could not prepare the selected branch.");
+            branchLaunchPending.current = false;
+            return;
+          }
+          launchCwd = data.path;
+          setLaunchedCwd(data.path);
+        } catch {
+          reportError("Could not prepare the selected branch.");
+          branchLaunchPending.current = false;
+          return;
+        }
+      }
+      send(t, {
+        model: resume ? resume.model ?? undefined : model,
+        permissionMode: effectiveMode,
+        effort: resume?.effort ?? undefined,
+        cwd: launchCwd,
+        projectId: projectId ?? undefined,
+        resume: resume && historyState === "found" ? resume.sessionId : undefined,
+        provider: effectiveProviderId,
+      }, pins.map((p) => ({
+        type: "file" as const,
+        path: p.path,
+        content: p.content,
+        truncated: p.truncated,
+      })), images);
+      setPins((prev) => prev.filter((p) => p.keep));
+      setImages([]);
+      branchLaunchPending.current = false;
+      onSent?.();
+    })();
     return true;
   };
 
   const submit = () => {
-    if (sendPrompt(text)) setText("");
+    sendPrompt(text, () => setText(""));
   };
 
   const selectPermission = (value: string) => {
@@ -982,7 +1069,13 @@ export default function ChatPane({
             </span>
             {locked && <Lock className="size-3 shrink-0 opacity-60" />}
           </span>
-          {git?.available && git.branch && (
+          {!locked && branchInfo?.repo && branchPick ? (
+            <BranchPicker
+              info={branchInfo}
+              selection={branchPick}
+              onSelect={setBranchPick}
+            />
+          ) : git?.available && git.branch ? (
             <span
               title={`${git.branch}${git.dirty ? ` · ${git.dirty} uncommitted` : ""}`}
               className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
@@ -993,7 +1086,7 @@ export default function ChatPane({
                 {git.dirty ? "*" : ""}
               </span>
             </span>
-          )}
+          ) : null}
           <div className="flex-1" />
           {status !== "open" && (
             <span
@@ -1425,6 +1518,130 @@ function Chip({
         <ChevronDown className="size-3 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function BranchPicker({
+  info,
+  selection,
+  onSelect,
+}: {
+  info: { current: string | null; branches: string[] };
+  selection: { branch: string; createNew: boolean };
+  onSelect: (value: { branch: string; createNew: boolean }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const trimmed = name.trim();
+  const exists = info.branches.includes(trimmed);
+  const invalid =
+    trimmed.length > 0 &&
+    (/\s|~|\^|:|\?|\*|\[|\\/.test(name) ||
+      trimmed.includes("..") ||
+      trimmed.startsWith("/") ||
+      trimmed.endsWith("/"));
+  const validation = exists ? "branch exists" : invalid ? "invalid name" : null;
+  const canConfirm = trimmed.length > 0 && validation == null;
+
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(open) => {
+        setOpen(open);
+        if (!open) {
+          setCreating(false);
+          setName("");
+        }
+      }}
+    >
+      <DropdownMenuTrigger
+        title={`Branch: ${selection.branch}`}
+        className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <GitBranch className="size-3.5 shrink-0" />
+        <span className="max-w-48 truncate">{selection.branch}</span>
+        <ChevronDown className="size-3 shrink-0 opacity-60" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-56">
+        {!creating ? (
+          <>
+            {info.branches.map((branch) => (
+              <DropdownMenuItem
+                key={branch}
+                onSelect={() => onSelect({ branch, createNew: false })}
+              >
+                <GitBranch className="text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{branch}</span>
+                {branch === selection.branch && !selection.createNew && (
+                  <span className="text-xs text-muted-foreground">Selected</span>
+                )}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setCreating(true);
+              }}
+            >
+              <GitBranch className="text-muted-foreground" />
+              New branch…
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <div
+            className="space-y-2 p-2"
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <label className="block text-xs font-medium text-foreground">
+              New branch
+            </label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && canConfirm) {
+                  event.preventDefault();
+                  onSelect({ branch: trimmed, createNew: true });
+                  setOpen(false);
+                }
+              }}
+              placeholder="feature/my-branch"
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            {validation && (
+              <p className="text-xs text-destructive">{validation}</p>
+            )}
+            <div className="flex justify-end gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCreating(false);
+                  setName("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!canConfirm}
+                onClick={() => {
+                  onSelect({ branch: trimmed, createNew: true });
+                  setOpen(false);
+                }}
+              >
+                Create
+              </Button>
+            </div>
+          </div>
+        )}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }

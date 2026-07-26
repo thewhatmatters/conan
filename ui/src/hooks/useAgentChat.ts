@@ -173,6 +173,8 @@ export interface AgentChat {
    *  build"). Confirmation comes back as a permission-mode event; failure
    *  surfaces as an error item and the mode stays. */
   setPermissionMode: (mode: string) => void;
+  /** Surface a client-side launch/composer failure in the transcript. */
+  reportError: (message: string) => void;
   /** The session driver's verified capability descriptor — the
    *  `{type:"capabilities"}` frame the gateway sends once when the first
    *  prompt builds the driver (US-007). Null until then; the pane falls back
@@ -415,6 +417,13 @@ export function useAgentChat(token: string | null): AgentChat {
     [],
   );
 
+  const reportError = useCallback((message: string) => {
+    setItems((prev) => [
+      ...prev,
+      { id: nextId(), role: "error", message, ts: Date.now() },
+    ]);
+  }, []);
+
   const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return;
@@ -445,6 +454,7 @@ export function useAgentChat(token: string | null): AgentChat {
     interrupt,
     permissionMode,
     setPermissionMode,
+    reportError,
     capabilities,
   };
 }
