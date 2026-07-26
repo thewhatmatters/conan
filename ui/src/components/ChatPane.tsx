@@ -1311,6 +1311,7 @@ export default function ChatPane({
         <SurfacePanel
           width={surfaceWidth}
           onWidthChange={setSurfaceWidth}
+          onClose={() => setSurfacesOpen(false)}
           token={token}
           cwd={effectiveCwd}
           touchedPaths={touchedPaths}

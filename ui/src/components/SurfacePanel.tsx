@@ -88,6 +88,7 @@ function basename(p: string): string {
 export default function SurfacePanel({
   width,
   onWidthChange,
+  onClose,
   token,
   cwd,
   touchedPaths,
@@ -95,6 +96,8 @@ export default function SurfacePanel({
   /** Current panel width in px (owned by ChatPane, per-thread). */
   width: number;
   onWidthChange: (width: number) => void;
+  /** Close the whole surfaces panel (owned by ChatPane, per-thread). */
+  onClose: () => void;
   /** Gateway auth token (null until /api/config resolves) — surfaces fetch
    *  through the same authed routes. */
   token: string | null;
@@ -174,6 +177,33 @@ export default function SurfacePanel({
         }
       />
 
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-card px-3">
+        <span className="truncate text-[11px] font-medium text-muted-foreground">
+          Surfaces
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {windows.length === 1 && !adding && (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              aria-label="Open another surface"
+              title="Open another surface"
+              className="inline-flex cursor-pointer items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close surfaces panel"
+            className="inline-flex cursor-pointer items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      </div>
+
       {windows.length === 0 ? (
         /* T3-style empty state: "Open a surface" + 2x2 card grid. */
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
@@ -212,19 +242,6 @@ export default function SurfacePanel({
                     {title}
                   </span>
                   <div className="ml-auto flex items-center gap-0.5">
-                    {i === windows.length - 1 &&
-                      windows.length < SURFACE_MAX_WINDOWS &&
-                      !adding && (
-                        <button
-                          type="button"
-                          onClick={() => setAdding(true)}
-                          aria-label="Open another surface"
-                          title="Open another surface"
-                          className="inline-flex cursor-pointer items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        >
-                          <Plus className="size-3.5" />
-                        </button>
-                      )}
                     <button
                       type="button"
                       onClick={() => closeWindow(w.id)}
