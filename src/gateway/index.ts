@@ -31,6 +31,7 @@ import {
 } from "../usage/probe.js";
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
 import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
+import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -372,6 +373,35 @@ app.get("/api/fs/touched", (req, res) => {
     )
     .all(session) as { tool_name: string | null; payload: string | null }[];
   res.json(parseTouchedFiles(rows));
+});
+
+// Working-tree git diffs for the Diff surface (Conan Surfaces US-004). Body
+// {cwd, paths?}: omit paths → every uncommitted change in cwd's repo. Non-repo
+// cwd answers 200 {repo:false, files:[]} (honest empty, never a 500); only a
+// malformed body or a path escaping the repo root is a 400. Token-gated + CORS-
+// reflected like every fs route; the shaping lives in src/fs/diff.ts.
+app.post("/api/fs/diff", async (req, res) => {
+  if (!authed(req, res)) return;
+  const body = (req.body ?? {}) as { cwd?: unknown; paths?: unknown };
+  if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    res.status(400).json({ error: "cwd required" });
+    return;
+  }
+  if (
+    body.paths !== undefined &&
+    (!Array.isArray(body.paths) || body.paths.some((p) => typeof p !== "string"))
+  ) {
+    res.status(400).json({ error: "paths must be an array of strings" });
+    return;
+  }
+  try {
+    res.json(
+      await collectWorkingTreeDiff(body.cwd.trim(), body.paths as string[] | undefined),
+    );
+  } catch (error) {
+    const status = error instanceof PathOutsideRepoError ? 400 : 500;
+    res.status(status).json({ error: (error as Error).message });
+  }
 });
 
 // Reveal a path in Finder (macOS `open -R`). Existence-checked; args passed as

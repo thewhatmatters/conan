@@ -71,7 +71,7 @@
         "Tests pass"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1b backend — NO browser needed; ideal Codex story (sandboxed, unit-test-verifiable). Independent of US-001–003. Gateway restart note in the description applies when manually curling — tests drive the module directly. Suggested skills: none."
     },
     {
