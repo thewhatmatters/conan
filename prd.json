@@ -105,7 +105,7 @@
         "Verify in browser using the automate-browser skill: open Terminal, run `pwd` (output shows the thread cwd), close the window, verify via the gateway (e.g. GET /api/terminals or process check) that the pty is gone; screenshot light + dark"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2. Depends on US-001. The terminal-era footguns in CLAUDE.md apply (WS-close kills pty — here that is the DESIRED behavior on window close; ensure hidden-not-unmounted panes don't trigger it). Suggested skills: automate-browser, run."
     },
     {

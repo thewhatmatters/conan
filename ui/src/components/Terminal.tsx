@@ -45,6 +45,22 @@ interface TerminalProps {
    * cwd adoption — and the StatusBar footer — to this tab without any typing.
    */
   active?: boolean;
+  /**
+   * What the pty runs (Surfaces US-006): "shell" spawns a plain workspace
+   * shell instead of the default claude launch. Read at connect time by the
+   * socket URL builder; fixed for the component's lifetime.
+   */
+  mode?: "claude" | "shell";
+  /** Spawn directory for a FRESH pty (surfaces peg it to the thread's project
+   *  cwd). Reconnects re-attach to the surviving pty, which keeps its own. */
+  cwd?: string;
+  /**
+   * Called once when the pty process exits (Surfaces US-006: shell surfaces
+   * show an honest "shell exited" state). Opting in also stops the reconnect
+   * loop — without that, ResilientSocket would silently respawn a fresh shell
+   * under the same tid after the gateway destroys the exited session.
+   */
+  onExit?: () => void;
 }
 
 /**
@@ -58,6 +74,9 @@ export default function Terminal({
   tid,
   closeOnUnmount,
   active,
+  mode = "claude",
+  cwd,
+  onExit,
 }: TerminalProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Xterm | null>(null);
@@ -67,6 +86,9 @@ export default function Terminal({
   const sockRef = useRef<ResilientSocket | null>(null);
   const activeRef = useRef(active ?? false);
   activeRef.current = active ?? false;
+  // Readable from the mount effect's onMessage without re-creating the socket.
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
   // Re-fit + tell the pty the new cols/rows. Set during mount so the appearance
   // effect (which lives outside that effect's scope) can drive a reflow.
   const sendResizeRef = useRef<(() => void) | null>(null);
@@ -125,14 +147,31 @@ export default function Terminal({
           cols: String(term.cols),
           rows: String(term.rows),
         });
+        // Shell-mode surfaces (US-006) spawn a plain shell in the thread's
+        // project cwd. Like `setup`, both params only matter for fresh spawns.
+        if (mode === "shell") params.set("mode", "shell");
+        if (cwd) params.set("cwd", cwd);
         // Settings ▸ Terminal "Conan Setup" toggle (1.2.0): fresh claude-mode
         // ptys start in the bundled conan-cli menu. Read at connect time (not
         // render time); reconnects re-attach to the surviving pty, so the
         // param only matters for fresh spawns.
-        if (getAppearance().terminalSetupLauncher) params.set("setup", "1");
+        if (mode !== "shell" && getAppearance().terminalSetupLauncher)
+          params.set("setup", "1");
         return wsUrl(`/ws/terminal?${params}`);
       },
-      onMessage: (ev) => term.write(ev.data as string),
+      onMessage: (ev) => {
+        const data = ev.data as string;
+        term.write(data);
+        // The gateway announces a pty exit as its own frame right before it
+        // closes the socket and destroys the session. Callers that opt in
+        // (shell surfaces) get an honest exited state — and the socket is
+        // closed for good, since a reconnect under the same tid would
+        // silently respawn a fresh shell.
+        if (onExitRef.current && data.includes("[conan] process exited")) {
+          sock.close();
+          onExitRef.current();
+        }
+      },
       onStatus: (status) => {
         if (status === "reconnecting") term.write("\r\n[conan] reconnecting…\r\n");
       },

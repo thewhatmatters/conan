@@ -3,6 +3,7 @@ import { FileDiff, FolderTree, Globe, Plus, SquareTerminal, X } from "lucide-rea
 import type { LucideIcon } from "lucide-react";
 import FileExplorer from "./FileExplorer.tsx";
 import DiffSurface from "./DiffSurface.tsx";
+import TerminalSurface from "./TerminalSurface.tsx";
 
 /**
  * Right-side surface panel (Conan Surfaces US-001/US-002, T3 parity): a
@@ -11,8 +12,9 @@ import DiffSurface from "./DiffSurface.tsx";
  * ratified v1 decision). This shell ships the T3-style "Open a surface" card
  * grid, the side-by-side split, and a draggable splitter on the panel's left
  * edge. Files (US-003) mounts the real FileExplorer pegged to the thread's
- * project cwd; Diff (US-005) reviews the thread's uncommitted changes; the
- * remaining surfaces are stubs until their stories land.
+ * project cwd; Diff (US-005) reviews the thread's uncommitted changes;
+ * Terminal (US-006) runs a real workspace shell (close = kill, ratified);
+ * Browser stays a stub until its story lands.
  *
  * Width state lives in ChatPane (per-thread, in-memory) because the composer
  * needs it to keep its centering axis matched to the transcript's while the
@@ -238,6 +240,10 @@ export default function SurfacePanel({
                 ) : w.kind === "diff" ? (
                   <div className="min-h-0 flex-1">
                     <DiffSurface token={token} cwd={cwd} touchedPaths={touchedPaths} />
+                  </div>
+                ) : w.kind === "terminal" ? (
+                  <div className="min-h-0 flex-1">
+                    <TerminalSurface token={token} cwd={cwd} />
                   </div>
                 ) : (
                   <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
