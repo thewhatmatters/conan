@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   ensureWorktree,
+  removeWorktreeIfClean,
   setWorktreeRootForTests,
 } from "./worktrees.js";
 
@@ -102,5 +103,44 @@ test("rejects an invalid branch name with a readable error", async () => {
   await assert.rejects(
     ensureWorktree({ cwd: repo, branch: "bad name" }),
     /invalid branch name: bad name/,
+  );
+});
+
+test("removes a clean managed worktree", async () => {
+  const { repo } = makeFixture();
+  git(repo, "branch", "feature");
+  const worktree = await ensureWorktree({ cwd: repo, branch: "feature" });
+
+  assert.equal(await removeWorktreeIfClean(worktree.path), "removed");
+  assert.equal(fs.existsSync(worktree.path), false);
+  assert.equal(
+    git(repo, "worktree", "list", "--porcelain").includes(worktree.path),
+    false,
+  );
+});
+
+test("keeps a dirty managed worktree", async () => {
+  const { repo } = makeFixture();
+  git(repo, "branch", "feature");
+  const worktree = await ensureWorktree({ cwd: repo, branch: "feature" });
+  fs.writeFileSync(path.join(worktree.path, "untracked.txt"), "dirty\n");
+
+  assert.equal(await removeWorktreeIfClean(worktree.path), "kept-dirty");
+  assert.equal(fs.existsSync(worktree.path), true);
+});
+
+test("does not touch a path outside the managed root", async () => {
+  const { repo } = makeFixture();
+
+  assert.equal(await removeWorktreeIfClean(repo), "not-managed");
+  assert.equal(fs.existsSync(repo), true);
+});
+
+test("reports a nonexistent path under the managed root as missing", async () => {
+  const { worktrees } = makeFixture();
+
+  assert.equal(
+    await removeWorktreeIfClean(path.join(worktrees, "does-not-exist")),
+    "missing",
   );
 });

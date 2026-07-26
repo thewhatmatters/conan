@@ -54,7 +54,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Detection = path prefix match on the worktree root; keep the logic in src/fs/worktrees.ts (removeWorktreeIfUnused) so the route stays thin."
     },
     {

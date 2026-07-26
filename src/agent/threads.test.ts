@@ -48,6 +48,8 @@ process.env.CONAN_DB_PATH = dbPath;
 const { getDb, closeDb } = await import("../db/index.js");
 const {
   adoptChatThread,
+  countThreadsByCwd,
+  deleteChatThread,
   getChatThread,
   listChatProjects,
   upsertChatThread,
@@ -163,4 +165,21 @@ test("promotion is idempotent — one session id yields exactly one row", () => 
   assert.equal(row?.provider, "claude");
   assert.equal(row?.model, "claude-fable-5");
   assert.equal(row?.cwd, "/tmp/proj");
+});
+
+test("countThreadsByCwd tracks threads sharing a working directory", () => {
+  for (const sessionId of ["shared-1", "shared-2"]) {
+    upsertChatThread({
+      sessionId,
+      projectId: "p1",
+      cwd: "/tmp/shared-worktree",
+      model: null,
+      provider: "claude",
+      title: null,
+    });
+  }
+
+  assert.equal(countThreadsByCwd("/tmp/shared-worktree"), 2);
+  deleteChatThread("shared-1");
+  assert.equal(countThreadsByCwd("/tmp/shared-worktree"), 1);
 });

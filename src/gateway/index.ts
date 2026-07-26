@@ -35,7 +35,9 @@ import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
 import { collectBranches } from "../fs/branches.js";
 import {
   ensureWorktree,
+  isManagedWorktreePath,
   pruneWorktreesAtBoot,
+  removeWorktreeIfClean,
   WorktreeValidationError,
 } from "../fs/worktrees.js";
 import { probeUrl } from "../browser/probe.js";
@@ -75,6 +77,7 @@ import { getProvider, listProviderStatuses } from "../agent/registry.js";
 import {
   listChatProjects,
   upsertChatProject,
+  countThreadsByCwd,
   deleteChatThread,
   getChatThread,
 } from "../agent/threads.js";
@@ -636,9 +639,33 @@ app.post("/api/agent/projects/:id/actions/:actionId/run", async (req, res) => {
 });
 
 // Close-X on a thread row: the row goes away; its project persists.
-app.delete("/api/agent/threads/:sessionId", (req, res) => {
+app.delete("/api/agent/threads/:sessionId", async (req, res) => {
   if (!authed(req, res)) return;
-  res.json({ deleted: deleteChatThread(req.params.sessionId) });
+  const thread = getChatThread(req.params.sessionId);
+  const deleted = deleteChatThread(req.params.sessionId);
+  const response: {
+    deleted: boolean;
+    worktree?: "removed" | "kept-dirty";
+  } = { deleted };
+
+  if (
+    thread &&
+    isManagedWorktreePath(thread.cwd) &&
+    countThreadsByCwd(thread.cwd) === 0
+  ) {
+    try {
+      const outcome = await removeWorktreeIfClean(thread.cwd);
+      if (outcome === "removed" || outcome === "kept-dirty") {
+        response.worktree = outcome;
+      }
+    } catch (error) {
+      console.warn(
+        `Unable to remove worktree ${thread.cwd}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  res.json(response);
 });
 
 // Reopen a saved thread (US-015): reconstruct its transcript from Claude

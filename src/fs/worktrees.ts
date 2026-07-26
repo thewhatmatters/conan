@@ -23,6 +23,12 @@ export interface EnsureWorktreeResult {
   reused: boolean;
 }
 
+export type RemoveWorktreeOutcome =
+  | "removed"
+  | "kept-dirty"
+  | "not-managed"
+  | "missing";
+
 export class WorktreeValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -39,6 +45,16 @@ export function setWorktreeRootForTests(dir: string | null): void {
 
 function worktreeRoot(): string {
   return worktreeRootOverride ?? WORKTREE_ROOT;
+}
+
+export function isManagedWorktreePath(p: string): boolean {
+  const relative = path.relative(path.resolve(worktreeRoot()), path.resolve(p));
+  return (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
 }
 
 function runGit(
@@ -133,6 +149,32 @@ export async function ensureWorktree(
   }
 
   return { path: worktreePath, created: true, reused: false };
+}
+
+export async function removeWorktreeIfClean(
+  worktreePath: string,
+): Promise<RemoveWorktreeOutcome> {
+  const resolvedPath = path.resolve(worktreePath);
+  if (!isManagedWorktreePath(resolvedPath)) return "not-managed";
+  if (!fs.existsSync(resolvedPath)) return "missing";
+
+  const status = await runGit(resolvedPath, ["status", "--porcelain"]);
+  if (status.code !== 0) throw gitError("cannot inspect worktree status", status);
+  if (status.stdout.trim()) return "kept-dirty";
+
+  const commonDir = await runGit(resolvedPath, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]);
+  if (commonDir.code !== 0) {
+    throw gitError("cannot locate worktree repository", commonDir);
+  }
+
+  const repoRoot = path.dirname(commonDir.stdout.trim());
+  const removed = await runGit(repoRoot, ["worktree", "remove", resolvedPath]);
+  if (removed.code !== 0) throw gitError("cannot remove worktree", removed);
+  return "removed";
 }
 
 export async function pruneWorktreesAtBoot(): Promise<void> {

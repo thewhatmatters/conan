@@ -260,3 +260,11 @@ export function deleteChatThread(sessionId: string): boolean {
     .run(sessionId);
   return info.changes > 0;
 }
+
+/** Number of saved threads sharing a working directory. */
+export function countThreadsByCwd(cwd: string): number {
+  const row = getDb()
+    .prepare("SELECT COUNT(*) AS count FROM chat_thread WHERE cwd = ?")
+    .get(cwd) as { count: number };
+  return row.count;
+}
