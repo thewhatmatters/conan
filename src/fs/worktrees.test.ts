@@ -8,6 +8,7 @@ import {
   ensureWorktree,
   removeWorktreeIfClean,
   setWorktreeRootForTests,
+  worktreeNeedsInstall,
 } from "./worktrees.js";
 
 const cleanup: string[] = [];
@@ -55,6 +56,24 @@ test("creates a worktree for an existing branch", async () => {
     reused: false,
   });
   assert.equal(git(result.path, "rev-parse", "--abbrev-ref", "HEAD"), "feature");
+});
+
+test("reports when a fresh worktree needs dependencies installed", async () => {
+  const { repo } = makeFixture();
+  fs.writeFileSync(path.join(repo, "package.json"), "{}\n");
+  git(repo, "add", "package.json");
+  git(repo, "commit", "-q", "-m", "add package");
+  git(repo, "branch", "with-package");
+  git(repo, "branch", "without-package", "HEAD~1");
+
+  const withPackage = await ensureWorktree({ cwd: repo, branch: "with-package" });
+  assert.equal(worktreeNeedsInstall(withPackage.path), true);
+
+  fs.mkdirSync(path.join(withPackage.path, "node_modules"));
+  assert.equal(worktreeNeedsInstall(withPackage.path), false);
+
+  const withoutPackage = await ensureWorktree({ cwd: repo, branch: "without-package" });
+  assert.equal(worktreeNeedsInstall(withoutPackage.path), false);
 });
 
 test("reuses the Conan-managed worktree for the same branch", async () => {

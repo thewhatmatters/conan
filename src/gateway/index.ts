@@ -38,6 +38,7 @@ import {
   isManagedWorktreePath,
   pruneWorktreesAtBoot,
   removeWorktreeIfClean,
+  worktreeNeedsInstall,
   WorktreeValidationError,
 } from "../fs/worktrees.js";
 import { probeUrl } from "../browser/probe.js";
@@ -397,15 +398,17 @@ app.post("/api/agent/worktrees", async (req, res) => {
     return;
   }
   try {
-    res.json(
-      await ensureWorktree({
-        cwd: body.cwd.trim(),
-        branch: body.branch.trim(),
-        createBranch:
-          typeof body.createBranch === "boolean" ? body.createBranch : undefined,
-        base: typeof body.base === "string" ? body.base.trim() : undefined,
-      }),
-    );
+    const result = await ensureWorktree({
+      cwd: body.cwd.trim(),
+      branch: body.branch.trim(),
+      createBranch:
+        typeof body.createBranch === "boolean" ? body.createBranch : undefined,
+      base: typeof body.base === "string" ? body.base.trim() : undefined,
+    });
+    res.json({
+      ...result,
+      freshDeps: result.created && worktreeNeedsInstall(result.path),
+    });
   } catch (error) {
     const status = error instanceof WorktreeValidationError ? 400 : 500;
     res.status(status).json({ error: (error as Error).message });

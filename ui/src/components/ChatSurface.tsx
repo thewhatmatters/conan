@@ -874,7 +874,11 @@ export default function ChatSurface({
           >
             <ChatPane
               token={token}
-              cwd={projectPath(t.projectId) ?? defaultCwd}
+              // A reopened thread carries its OWN persisted cwd — the worktree
+              // for a branch-picker thread (US-005). Fall back to the project
+              // folder only for fresh/live drafts, whose worktree cwd is fixed
+              // in-pane at first send via launchedCwd.
+              cwd={t.resume?.cwd ?? projectPath(t.projectId) ?? defaultCwd}
               projectId={t.projectId}
               resume={
                 t.resume

@@ -47,6 +47,13 @@ function worktreeRoot(): string {
   return worktreeRootOverride ?? WORKTREE_ROOT;
 }
 
+export function worktreeNeedsInstall(worktreePath: string): boolean {
+  return (
+    fs.existsSync(path.join(worktreePath, "package.json")) &&
+    !fs.existsSync(path.join(worktreePath, "node_modules"))
+  );
+}
+
 export function isManagedWorktreePath(p: string): boolean {
   const relative = path.relative(path.resolve(worktreeRoot()), path.resolve(p));
   return (

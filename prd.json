@@ -87,7 +87,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Suggested skills: automate-browser. Surfaces already key off thread cwd — expect mostly verification + the hint component. The 'worktree deleted externally' reopen case is an OPEN QUESTION in the PRD — out of scope, do not build it."
     }
   ]

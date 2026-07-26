@@ -272,6 +272,7 @@ export default function ChatPane({
   // The parent still supplies the project root, while every thread-scoped
   // surface/indicator must follow the launched session directory.
   const [launchedCwd, setLaunchedCwd] = useState<string | null>(null);
+  const [showFreshDepsHint, setShowFreshDepsHint] = useState(false);
   const branchLaunchPending = useRef(false);
   // Full-access one-time confirm: selecting a DANGER_MODE_IDS mode holds the
   // pick here until the dialog confirms it once per thread; declining reverts.
@@ -657,7 +658,11 @@ export default function ChatPane({
               createBranch: branchPick.createNew || undefined,
             }),
           });
-          const data = (await r.json()) as { path?: string; error?: string };
+          const data = (await r.json()) as {
+            path?: string;
+            freshDeps?: boolean;
+            error?: string;
+          };
           if (!r.ok || !data.path) {
             reportError(data.error ?? "Could not prepare the selected branch.");
             branchLaunchPending.current = false;
@@ -665,6 +670,7 @@ export default function ChatPane({
           }
           launchCwd = data.path;
           setLaunchedCwd(data.path);
+          if (data.freshDeps) setShowFreshDepsHint(true);
         } catch {
           reportError("Could not prepare the selected branch.");
           branchLaunchPending.current = false;
@@ -1099,6 +1105,21 @@ export default function ChatPane({
             </span>
           )}
         </div>
+        {showFreshDepsHint && (
+          <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">
+              Fresh worktree — dependencies not installed
+            </span>
+            <button
+              type="button"
+              aria-label="Dismiss dependencies hint"
+              onClick={() => setShowFreshDepsHint(false)}
+              className="cursor-pointer rounded p-0.5 hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
         <div className="relative mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
           {!pendingApproval && <AutocompleteOverlay ac={ac} />}
           {/* Approval UI only where the provider HAS an approval channel
