@@ -38,7 +38,7 @@
         "Verify in browser using the automate-browser skill: two stub surfaces side by side, close-one/close-both flows, light + dark screenshots"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 0b. Depends on US-001. Randy ratified 2-up max for v1 — do not build n-window management. Suggested skills: automate-browser, shadcn."
     },
     {
