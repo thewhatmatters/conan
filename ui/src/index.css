@@ -160,24 +160,29 @@ body {
 /* Discreet thin scrollbars for every HUD + Timeline scroll region (the chrome
    around the terminal). Matches the minimal feel of xterm's macOS scrollbar:
    6px wide, transparent track, theme-token thumb that brightens on hover.
-   Scoped to `aside .overflow-auto` so both the HUD <aside> and the per-tab
-   Timeline <aside> pick it up automatically — no per-component changes. */
-aside .overflow-auto {
+   Scoped to `aside .overflow-auto` and `aside.overflow-auto` so the HUD,
+   per-tab Timeline, and transcript aside all ride it automatically. */
+aside .overflow-auto,
+aside.overflow-auto {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
-aside .overflow-auto::-webkit-scrollbar {
+aside .overflow-auto::-webkit-scrollbar,
+aside.overflow-auto::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-aside .overflow-auto::-webkit-scrollbar-track {
+aside .overflow-auto::-webkit-scrollbar-track,
+aside.overflow-auto::-webkit-scrollbar-track {
   background: transparent;
 }
-aside .overflow-auto::-webkit-scrollbar-thumb {
+aside .overflow-auto::-webkit-scrollbar-thumb,
+aside.overflow-auto::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
 }
-aside .overflow-auto::-webkit-scrollbar-thumb:hover {
+aside .overflow-auto::-webkit-scrollbar-thumb:hover,
+aside.overflow-auto::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
 
@@ -259,4 +264,3 @@ aside .overflow-auto::-webkit-scrollbar-thumb:hover {
     opacity: 1;
   }
 }
-

@@ -900,9 +900,10 @@ export default function ChatPane({
             if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
             updateSpineViewport();
           }}
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 overflow-auto"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
+          <div className="w-full pr-16">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
           {historyState === "loading" && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
@@ -935,6 +936,7 @@ export default function ChatPane({
             items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />)
           )}
             {busy && <WorkingIndicator items={items} streaming={caps.streamingDeltas} />}
+            </div>
           </div>
         </aside>
         <div
@@ -952,9 +954,6 @@ export default function ChatPane({
           )}
         />
       </div>
-      {/* Mirror the activity spine so the transcript and composer share the
-          same centered axis within the chat column (F8). */}
-        <div aria-hidden className="w-16 shrink-0" />
         </div>
 
       {/* Composer — textarea with a chip row + send button. */}
