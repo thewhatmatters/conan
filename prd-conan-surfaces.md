@@ -116,3 +116,32 @@ Spike deliverable: a one-page decision doc; then build the winner.
    webview) — the spike decides, Randy ratifies.
 2. Does Diff need commit/stage actions v1, or read-only review? (Assuming
    read-only.)
+
+## Browser v1 decision — iframe (spiked + ratified by build, 2026-07-25)
+
+**v1 ships the iframe path** (US-007): local-app preview, honest refusal for
+everything else. The spike settled the detection question empirically:
+
+- Chrome fires the iframe `load` event even for X-Frame-Options/CSP-blocked
+  frames (measured: github.com "loads" in ~170ms, a dead port in ~9ms) — a
+  deliberate anti-probing measure — and a blocked frame's document is exactly
+  as opaque as any legit cross-origin one. **Client-side refusal detection is
+  impossible in Chrome**; a load/timeout heuristic alone would show blocked
+  sites as silent blank frames.
+- Detection therefore runs through the gateway: `GET /api/browser/probe`
+  (token-gated, CORS-reflected) fetches the target's response headers and
+  decides frameability from `X-Frame-Options` + CSP `frame-ancestors`
+  (approximate source matching, erring refused = honest). The client's
+  load-timeout heuristic remains as the fallback when the probe route is
+  unavailable (stale gateway).
+- Refused targets get the honest state — "This site refuses to be embedded —
+  Browser v1 previews local apps" — with an *Open in system browser* link.
+
+**What the Tauri child-webview v2 adds:** a real browser surface with no
+framing limits (github.com, docs sites, anything), because a child
+`WebviewWindow`/`Webview` positioned over the panel region is a top-level
+browsing context that XFO/CSP `frame-ancestors` never applies to. Cost: Rust
+work (create/position/resize/z-order the child webview in `src-tauri/`, keep
+it glued to the panel rect through splitter drags and window resizes), plus
+nav chrome (back/forward/history) — deliberately kept out of the autonomous
+loop per this PRD's phasing.

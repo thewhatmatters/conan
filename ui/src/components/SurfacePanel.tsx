@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import FileExplorer from "./FileExplorer.tsx";
 import DiffSurface from "./DiffSurface.tsx";
 import TerminalSurface from "./TerminalSurface.tsx";
+import BrowserSurface from "./BrowserSurface.tsx";
 
 /**
  * Right-side surface panel (Conan Surfaces US-001/US-002, T3 parity): a
@@ -14,7 +15,8 @@ import TerminalSurface from "./TerminalSurface.tsx";
  * edge. Files (US-003) mounts the real FileExplorer pegged to the thread's
  * project cwd; Diff (US-005) reviews the thread's uncommitted changes;
  * Terminal (US-006) runs a real workspace shell (close = kill, ratified);
- * Browser stays a stub until its story lands.
+ * Browser (US-007) previews local apps in an iframe, honest about framing
+ * limits via the gateway header probe.
  *
  * Width state lives in ChatPane (per-thread, in-memory) because the composer
  * needs it to keep its centering axis matched to the transcript's while the
@@ -246,8 +248,8 @@ export default function SurfacePanel({
                     <TerminalSurface token={token} cwd={cwd} />
                   </div>
                 ) : (
-                  <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
-                    The {meta.name} surface arrives in a later story.
+                  <div className="min-h-0 flex-1">
+                    <BrowserSurface token={token} />
                   </div>
                 )}
               </div>

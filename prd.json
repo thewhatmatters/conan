@@ -123,7 +123,7 @@
         "Verify in browser using the automate-browser skill: load the throwaway-stack UI's own URL (http://localhost:5199) inside the surface (Conan-in-Conan), screenshot; attempt https://github.com and screenshot the honest refusal state; light + dark"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3, scoped to the iframe path — the Tauri child-webview full browser is explicitly v2 (Rust work, stays out of the autonomous loop per prd-conan-surfaces.md). WKWebView CORS strictness gotcha does not apply to plain iframe embeds of localhost origins; packaged-app QA is NOT required for this story (dev-webview QA only). Suggested skills: automate-browser."
     }
   ]

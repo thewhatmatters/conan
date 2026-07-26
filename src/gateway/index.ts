@@ -32,6 +32,7 @@ import {
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
 import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
 import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
+import { probeUrl } from "../browser/probe.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -402,6 +403,32 @@ app.post("/api/fs/diff", async (req, res) => {
     const status = error instanceof PathOutsideRepoError ? 400 : 500;
     res.status(status).json({ error: (error as Error).message });
   }
+});
+
+// Frameability probe for the Browser surface (Conan Surfaces US-007). Chrome
+// fires `load` even on X-Frame-Options-blocked iframes (anti-probing), so the
+// UI cannot detect refusal client-side — this route fetches the target's
+// headers and answers whether `origin` may embed it. Token-gated + CORS-
+// reflected like every route; probeUrl never throws (unreachable is data).
+app.get("/api/browser/probe", async (req, res) => {
+  if (!authed(req, res)) return;
+  const { url, origin } = req.query;
+  if (typeof url !== "string" || typeof origin !== "string" || !origin.trim()) {
+    res.status(400).json({ error: "url and origin required" });
+    return;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    res.status(400).json({ error: "invalid url" });
+    return;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    res.status(400).json({ error: "only http/https urls can be probed" });
+    return;
+  }
+  res.json(await probeUrl(parsed.href, origin));
 });
 
 // Reveal a path in Finder (macOS `open -R`). Existence-checked; args passed as
