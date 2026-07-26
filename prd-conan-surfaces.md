@@ -104,6 +104,12 @@ Spike deliverable: a one-page decision doc; then build the winner.
 
 ## Decisions (ratified by Randy, 2026-07-25)
 
+0. **The panel is a TRUE THIRD COLUMN (corrected 2026-07-26).** It spans the
+   full viewport height beside the chat column — ThreadToolbar, transcript,
+   AND composer all belong to the middle column; the panel never sits above
+   the composer or below the toolbar. (The loop's US-001 nested it in the
+   transcript row; restructured same-day.)
+
 1. **Side-by-side: 2-up v1.** Two internal windows max in the right panel;
    single-window view is the default, second window opt-in.
 2. **Terminal close = KILL the shell.** No background/keep-alive — closing

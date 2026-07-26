@@ -871,17 +871,18 @@ export default function ChatPane({
   }, [updateSpineViewport]);
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <ThreadToolbar
-        token={token}
-        cwd={effectiveCwd}
-        projectId={projectId ?? null}
-        title={title}
-        onSendPrompt={sendPrompt}
-        surfacesOpen={surfacesOpen}
-        onToggleSurfaces={() => setSurfacesOpen((o) => !o)}
-      />
-      <div className="flex min-h-0 flex-1">
+    <section className="flex min-h-0 min-w-0 flex-1 bg-background">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ThreadToolbar
+          token={token}
+          cwd={effectiveCwd}
+          projectId={projectId ?? null}
+          title={title}
+          onSendPrompt={sendPrompt}
+          surfacesOpen={surfacesOpen}
+          onToggleSurfaces={() => setSurfacesOpen((o) => !o)}
+        />
+        <div className="flex min-h-0 flex-1">
       {/* Activity spine (US-016) — outside the scroller so it stays put
           while the transcript scrolls; bound to this thread's turns. */}
       <ActivitySpine
@@ -951,28 +952,13 @@ export default function ChatPane({
           )}
         />
       </div>
-      {/* Right side of the row: the surface panel when open, else the w-16
-          gutter that mirrors the spine so the transcript centers (F8). The
-          composer below compensates with matching margins so its axis tracks
-          the transcript's in both states. */}
-      {surfacesOpen ? (
-        <SurfacePanel
-          width={surfaceWidth}
-          onWidthChange={setSurfaceWidth}
-          token={token}
-          cwd={effectiveCwd}
-          touchedPaths={touchedPaths}
-        />
-      ) : (
+      {/* Mirror the activity spine so the transcript and composer share the
+          same centered axis within the chat column (F8). */}
         <div aria-hidden className="w-16 shrink-0" />
-      )}
-      </div>
+        </div>
 
       {/* Composer — textarea with a chip row + send button. */}
-      <div
-        className="shrink-0 px-4 pb-4"
-        style={surfacesOpen ? { marginLeft: 64, marginRight: surfaceWidth } : undefined}
-      >
+        <div className="shrink-0 px-4 pb-4">
         {/* Thread context pills — ABOVE the input (the Claude Code pattern),
             scoped to THIS thread. cwd and branch describe the conversation,
             not the app, so they live with the composer instead of in a
@@ -1284,7 +1270,7 @@ export default function ChatPane({
             </>
           )}
         </div>
-      </div>
+        </div>
 
       {/* One-time Full-access confirm — declining (or dismissing) reverts to
           the previously selected mode; confirming skips the dialog next time. */}
@@ -1320,6 +1306,16 @@ export default function ChatPane({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
+      {surfacesOpen && (
+        <SurfacePanel
+          width={surfaceWidth}
+          onWidthChange={setSurfaceWidth}
+          token={token}
+          cwd={effectiveCwd}
+          touchedPaths={touchedPaths}
+        />
+      )}
     </section>
   );
 }
