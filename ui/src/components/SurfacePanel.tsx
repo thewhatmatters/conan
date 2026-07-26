@@ -127,6 +127,11 @@ export default function SurfacePanel({
     setWindows((ws) => ws.filter((w) => w.id !== id));
   }, []);
 
+  const showSurfaceGrid = useCallback(() => {
+    setWindows([]);
+    setAdding(false);
+  }, []);
+
   // Splitter drag: pointer-captured horizontal resize against the pane row's
   // width (the panel's flex-row parent), clamped to [min, 60% of the row].
   const onSplitterPointerDown = useCallback(
@@ -178,9 +183,50 @@ export default function SurfacePanel({
       />
 
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-card px-3">
-        <span className="truncate text-[11px] font-medium text-muted-foreground">
-          Surfaces
-        </span>
+        {windows.length === 0 ? (
+          <span className="truncate text-[11px] font-medium text-foreground">
+            Surfaces
+          </span>
+        ) : (
+          <div className="flex min-w-0 items-center gap-1 text-[11px]">
+            <button
+              type="button"
+              onClick={showSurfaceGrid}
+              className="shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Surfaces
+            </button>
+            <span className="shrink-0 text-muted-foreground/50">›</span>
+            {windows.map((w, i) => {
+              const meta = SURFACES.find((s) => s.kind === w.kind)!;
+              const title = w.kind === "files" && cwd ? basename(cwd) : meta.name;
+              return (
+                <div key={w.id} className="flex min-w-0 items-center gap-1">
+                  {i > 0 && (
+                    <span className="shrink-0 text-muted-foreground/50">·</span>
+                  )}
+                  <meta.Icon className="size-3.5 shrink-0 text-foreground" />
+                  <span
+                    className="truncate text-foreground"
+                    title={w.kind === "files" ? (cwd ?? undefined) : undefined}
+                  >
+                    {title}
+                  </span>
+                  {windows.length === SURFACE_MAX_WINDOWS && (
+                    <button
+                      type="button"
+                      onClick={() => closeWindow(w.id)}
+                      aria-label={`Close ${meta.name}`}
+                      className="inline-flex shrink-0 cursor-pointer items-center rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {windows.length === 1 && !adding && (
             <button
@@ -216,15 +262,10 @@ export default function SurfacePanel({
           </div>
         </div>
       ) : (
-        /* Internal windows side by side (2-up max), each with its own h-9
-           header + close. Closing one gives its space to the other via
-           flex-1. */
+        /* Internal windows side by side (2-up max). Closing one gives its
+           space to the other via flex-1. */
         <div className="flex min-h-0 min-w-0 flex-1">
           {windows.map((w, i) => {
-            const meta = SURFACES.find((s) => s.kind === w.kind)!;
-            // Files pegs to the thread's cwd — its window is titled by the
-            // workspace (the cwd basename), not the generic surface name.
-            const title = w.kind === "files" && cwd ? basename(cwd) : meta.name;
             return (
               <div
                 key={w.id}
@@ -233,25 +274,6 @@ export default function SurfacePanel({
                   (i > 0 ? " border-l border-border" : "")
                 }
               >
-                <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3">
-                  <meta.Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span
-                    className="truncate text-[11px] text-muted-foreground"
-                    title={w.kind === "files" ? (cwd ?? undefined) : undefined}
-                  >
-                    {title}
-                  </span>
-                  <div className="ml-auto flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => closeWindow(w.id)}
-                      aria-label={`Close ${meta.name}`}
-                      className="inline-flex cursor-pointer items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
                 {w.kind === "files" ? (
                   <div className="min-h-0 flex-1">
                     <FileExplorer token={token ?? ""} cwd={cwd} />
@@ -275,19 +297,6 @@ export default function SurfacePanel({
           {adding && windows.length < SURFACE_MAX_WINDOWS && (
             /* Second-slot picker: the card grid in the empty slot. */
             <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border">
-              <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3">
-                <span className="truncate text-[11px] text-muted-foreground">
-                  Open another surface
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setAdding(false)}
-                  aria-label="Cancel opening another surface"
-                  className="ml-auto inline-flex cursor-pointer items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-4">
                 <SurfaceCardGrid columns={1} onSelect={openWindow} />
               </div>
