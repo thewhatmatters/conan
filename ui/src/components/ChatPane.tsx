@@ -929,7 +929,12 @@ export default function ChatPane({
           composer below compensates with matching margins so its axis tracks
           the transcript's in both states. */}
       {surfacesOpen ? (
-        <SurfacePanel width={surfaceWidth} onWidthChange={setSurfaceWidth} />
+        <SurfacePanel
+          width={surfaceWidth}
+          onWidthChange={setSurfaceWidth}
+          token={token}
+          cwd={effectiveCwd}
+        />
       ) : (
         <div aria-hidden className="w-16 shrink-0" />
       )}

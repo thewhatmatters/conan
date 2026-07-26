@@ -55,7 +55,7 @@
         "Verify in browser using the automate-browser skill: browse into a nested dir, open a text file, screenshot light + dark"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1a. Depends on US-001. Reuse map is in prd-conan-surfaces.md — FileExplorer.tsx is dormant but present; DirBrowser.tsx shows the listing-route usage. Suggested skills: automate-browser, build-ui."
     },
     {

@@ -1,11 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  ArrowLeft,
   ChevronRight,
   Copy,
   ExternalLink,
   File as FileIcon,
   Folder,
+  Loader2,
   RefreshCw,
 } from "lucide-react";
 import { apiBase } from "../lib/gateway.ts";
@@ -39,14 +41,38 @@ const EMPTY_TOUCHED: Touched = { edited: new Set(), read: new Set() };
 interface FileExplorerProps {
   token: string;
   /** The session correlated to this tab's pty — scopes the "Claude touched"
-   *  overlay. Null when the tab has no live Claude session (overlay is empty). */
-  sessionId: string | null;
-  /** This tab's live working directory (the per-tab cwd from useTerminals).
-   *  Null until the pty reports one — the panel then shows an empty state. */
+   *  overlay. Omit/null when there's no correlated session (the Files
+   *  surface): the overlay is simply empty. */
+  sessionId?: string | null;
+  /** The root directory to browse (per-tab cwd, or the thread's project cwd
+   *  for the Files surface). Null shows an empty state. */
   cwd: string | null;
   /** The latest app-WS event; its `seq` nudges the touched-files refresh so the
    *  badges keep up as Claude edits/reads without a manual refresh. */
   lastEvent?: (GatewayEvent & { seq: number }) | null;
+}
+
+/** /api/fs/read payload — the gateway caps the read at 64 KB, so
+ *  readBytes < totalBytes means the preview is truncated. */
+interface FileContent {
+  path: string;
+  content: string;
+  totalBytes: number;
+  readBytes: number;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Heuristic binary sniff on the UTF-8-decoded preview: NUL bytes or a
+ *  meaningful share of replacement characters mean this wasn't text. */
+function looksBinary(content: string): boolean {
+  if (content.includes("\u0000")) return true;
+  const replacements = content.match(/�/g)?.length ?? 0;
+  return replacements > 0 && replacements / Math.max(content.length, 1) > 0.01;
 }
 
 /** A GET against the gateway carrying the auth token header. */
@@ -64,12 +90,13 @@ function prettyPath(p: string): string {
 }
 
 /**
- * The File Explorer panel (per-tab): a read-only, lazy-expanding tree of the
- * active terminal tab's working directory, with files Claude touched this
- * session badged (ember = edited/written, muted = read). Folders expand inline
- * on click; each row reveals in Finder or copies its path. Re-lists when the
- * tab's cwd changes; the tree is the Files half of the right split panel,
- * sharing it with the Timeline (TerminalPane owns the Files|Timeline switch).
+ * The File Explorer: a read-only, lazy-expanding tree of a working directory,
+ * with files Claude touched this session badged (ember = edited/written,
+ * muted = read) when a session is correlated. Folders expand inline on click;
+ * files open a read-only content view (bounded /api/fs/read, honest
+ * truncated/binary notices); each row reveals in Finder or copies its path.
+ * Mounted by the Files surface (Conan Surfaces US-003, rooted at the thread's
+ * project cwd) and by the dormant terminal-era TerminalPane split panel.
  */
 export default function FileExplorer({
   token,
@@ -84,6 +111,36 @@ export default function FileExplorer({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [touched, setTouched] = useState<Touched>(EMPTY_TOUCHED);
   const [error, setError] = useState<string | null>(null);
+  // Read-only file view (Conan Surfaces US-003): clicking a file swaps the
+  // tree for its content, fetched via the same bounded /api/fs/read the pin
+  // picker uses. Back returns to the tree with expansion state intact.
+  const [openFile, setOpenFile] = useState<FileEntry | null>(null);
+  const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openFile) {
+      setFileContent(null);
+      setFileError(null);
+      return;
+    }
+    let cancelled = false;
+    setFileContent(null);
+    setFileError(null);
+    authedGet(`/api/fs/read?path=${encodeURIComponent(openFile.path)}`, token)
+      .then(async (r) => {
+        const data = (await r.json()) as FileContent & { error?: string };
+        if (cancelled) return;
+        if (!r.ok || data.error) setFileError(data.error ?? "could not read file");
+        else setFileContent(data);
+      })
+      .catch(() => {
+        if (!cancelled) setFileError("could not read file");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openFile, token]);
 
   const loadDir = useCallback(
     (path: string) => {
@@ -108,6 +165,7 @@ export default function FileExplorer({
     setExpanded(new Set());
     setCache({});
     setError(null);
+    setOpenFile(null);
     authedGet(`/api/fs/list?path=${encodeURIComponent(cwd)}`, token)
       .then((r) => r.json())
       .then((data: FileListing) => {
@@ -201,6 +259,7 @@ export default function FileExplorer({
                 : null
           }
           onToggle={() => toggleDir(e.path)}
+          onOpen={() => setOpenFile(e)}
           onReveal={() => reveal(e.path)}
           onCopy={() => copyPath(e.path)}
         />
@@ -209,43 +268,106 @@ export default function FileExplorer({
     ));
   };
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
-      {/* Breadcrumb header — h-9 fixed, matching every other secondary
-          toolbar (Timeline's own header, HudTabHeader) exactly, not just
-          "close enough" padding. */}
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-        <span
-          className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"
-          title={cwd ?? undefined}
-        >
-          {cwd ? prettyPath(cwd) : "No directory"}
-        </span>
-        <button
-          onClick={refresh}
-          title="Refresh"
-          aria-label="Refresh"
-          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <RefreshCw className="size-3.5" />
-        </button>
-      </div>
+  // The preview is truncated when the gateway's 64 KB cap cut the read short.
+  const truncated =
+    fileContent != null && fileContent.readBytes < fileContent.totalBytes;
+  const binary = fileContent != null && looksBinary(fileContent.content);
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1 text-xs">
-        {error ? (
-          <p className="px-3 py-2 text-muted-foreground">{error}</p>
-        ) : !root ? (
-          <p className="px-3 py-2 text-muted-foreground">
-            {cwd ? "Loading…" : "Waiting for this tab's directory…"}
-          </p>
-        ) : root.entries.length === 0 ? (
-          <p className="px-3 py-2 text-muted-foreground">Empty directory</p>
-        ) : (
-          renderEntries(root, 0)
-        )}
-      </div>
-    </div>
+  // <aside> root so every scroll region below picks up the themed 6px
+  // scrollbar (`aside .overflow-auto` in index.css) instead of the OS default
+  // — the drift the CLAUDE.md conventions TODO called out.
+  return (
+    <aside className="flex h-full min-h-0 flex-col bg-card">
+      {openFile ? (
+        /* File view (read-only): back + name + size header, then content. */
+        <>
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+            <button
+              onClick={() => setOpenFile(null)}
+              title="Back to files"
+              aria-label="Back to files"
+              className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="size-3.5" />
+            </button>
+            <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span
+              className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"
+              title={openFile.path}
+            >
+              {openFile.name}
+            </span>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {formatBytes(openFile.size)}
+            </span>
+          </div>
+          {fileError ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">{fileError}</p>
+          ) : !fileContent ? (
+            <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              Loading…
+            </p>
+          ) : binary ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              Binary file — no preview ({formatBytes(fileContent.totalBytes)}).
+            </p>
+          ) : (
+            <>
+              {truncated && (
+                <p className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+                  Too large to show in full — first{" "}
+                  {formatBytes(fileContent.readBytes)} of{" "}
+                  {formatBytes(fileContent.totalBytes)}.
+                </p>
+              )}
+              <div className="min-h-0 flex-1 overflow-auto">
+                <pre className="px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+                  {fileContent.content}
+                </pre>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Breadcrumb header — h-9 fixed, matching every other secondary
+              toolbar (Timeline's own header, HudTabHeader) exactly, not just
+              "close enough" padding. */}
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+            <span
+              className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"
+              title={cwd ?? undefined}
+            >
+              {cwd ? prettyPath(cwd) : "No directory"}
+            </span>
+            <button
+              onClick={refresh}
+              title="Refresh"
+              aria-label="Refresh"
+              className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <RefreshCw className="size-3.5" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto py-1 text-xs">
+            {error ? (
+              <p className="px-3 py-2 text-muted-foreground">{error}</p>
+            ) : !root ? (
+              <p className="px-3 py-2 text-muted-foreground">
+                {cwd ? "Loading…" : "Waiting for a working directory…"}
+              </p>
+            ) : root.entries.length === 0 ? (
+              <p className="px-3 py-2 text-muted-foreground">Empty directory</p>
+            ) : (
+              renderEntries(root, 0)
+            )}
+          </div>
+        </>
+      )}
+    </aside>
   );
 }
 
@@ -255,17 +377,20 @@ interface RowProps {
   expanded: boolean;
   touched: "edited" | "read" | null;
   onToggle: () => void;
+  onOpen: () => void;
   onReveal: () => void;
   onCopy: () => void;
 }
 
-/** One tree row: indent + chevron (dirs) + icon + name + touched dot + actions. */
+/** One tree row: indent + chevron (dirs) + icon + name + touched dot + actions.
+ *  Dirs expand inline; files open the read-only content view. */
 function Row({
   entry,
   depth,
   expanded,
   touched,
   onToggle,
+  onOpen,
   onReveal,
   onCopy,
 }: RowProps) {
@@ -276,11 +401,8 @@ function Row({
       style={{ paddingLeft: depth * 12 + 8 }}
     >
       <button
-        onClick={entry.isDir ? onToggle : undefined}
-        className={
-          "flex min-w-0 flex-1 items-center gap-1 text-left " +
-          (entry.isDir ? "cursor-pointer" : "cursor-default")
-        }
+        onClick={entry.isDir ? onToggle : onOpen}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
       >
         {entry.isDir ? (
           <ChevronRight

@@ -295,16 +295,11 @@ commits on pass; decompose backlogs with the `decompose-prd` skill).
   text-muted-foreground` title convention) — check new/edited toolbars
   against an existing one (e.g. `HudTabHeader`) before shipping, don't just
   eyeball it.
-- **TODO: `FileExplorer.tsx`'s scrollbar doesn't match Timeline/Terminal.**
-  The discreet 6px themed scrollbar (`aside .overflow-auto` in `index.css`)
-  is scoped to elements inside an `<aside>` wrapper — Timeline and the HUD
-  panels get it automatically because they're `<aside>`-rooted. `FileExplorer`'s
-  scroll container is a plain `<div className="... overflow-y-auto ...">`,
-  which matches neither the `<aside>` ancestor nor the literal `overflow-auto`
-  class the CSS selector targets, so it falls back to the default OS
-  scrollbar. Fix: either wrap it in `<aside>` (matching Timeline) or switch
-  the selector/class so `overflow-y-auto` qualifies too — check FadeScroll.tsx
-  isn't a cleaner fit first, since Timeline/HUD panels use it already.
+- **The themed 6px scrollbar is scoped to `aside .overflow-auto`**
+  (`index.css`) — any new scroll region must be `<aside>`-rooted AND use the
+  literal `overflow-auto` class (not `overflow-y-auto`) to pick it up.
+  Timeline, the HUD panels, and `FileExplorer` (fixed while reviving it as
+  the Files surface, US-003) all follow this.
 - **Charts ride Tremor Raw** (recharts-based, Tailwind-v4-native copy-in
   components vendored under `ui/src/components/charts/`), themed through
   `ui/src/lib/chartUtils.ts` so colors resolve to the `--color-chart-1..5`

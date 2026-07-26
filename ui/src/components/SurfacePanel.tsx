@@ -1,14 +1,16 @@
 import { useCallback, useRef, useState } from "react";
 import { FileDiff, FolderTree, Globe, Plus, SquareTerminal, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import FileExplorer from "./FileExplorer.tsx";
 
 /**
  * Right-side surface panel (Conan Surfaces US-001/US-002, T3 parity): a
  * per-thread panel beside the transcript that opens Browser / Terminal /
  * Files / Diff as internal windows — up to TWO side by side (2-up max, the
  * ratified v1 decision). This shell ships the T3-style "Open a surface" card
- * grid, stub windows, the side-by-side split, and a draggable splitter on
- * the panel's left edge. The real surfaces mount in later stories.
+ * grid, the side-by-side split, and a draggable splitter on the panel's left
+ * edge. Files (US-003) mounts the real FileExplorer pegged to the thread's
+ * project cwd; the remaining surfaces are stubs until their stories land.
  *
  * Width state lives in ChatPane (per-thread, in-memory) because the composer
  * needs it to keep its centering axis matched to the transcript's while the
@@ -72,13 +74,25 @@ function SurfaceCardGrid({
   );
 }
 
+/** The last path segment of a directory, for surface window titles. */
+function basename(p: string): string {
+  return p.replace(/\/+$/, "").split("/").pop() || p;
+}
+
 export default function SurfacePanel({
   width,
   onWidthChange,
+  token,
+  cwd,
 }: {
   /** Current panel width in px (owned by ChatPane, per-thread). */
   width: number;
   onWidthChange: (width: number) => void;
+  /** Gateway auth token (null until /api/config resolves) — surfaces fetch
+   *  through the same authed routes. */
+  token: string | null;
+  /** The thread's project cwd; Files (and later Terminal/Diff) peg to it. */
+  cwd: string | null;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Open internal windows, left to right (US-002: up to SURFACE_MAX_WINDOWS).
@@ -168,6 +182,9 @@ export default function SurfacePanel({
         <div className="flex min-h-0 min-w-0 flex-1">
           {windows.map((w, i) => {
             const meta = SURFACES.find((s) => s.kind === w.kind)!;
+            // Files pegs to the thread's cwd — its window is titled by the
+            // workspace (the cwd basename), not the generic surface name.
+            const title = w.kind === "files" && cwd ? basename(cwd) : meta.name;
             return (
               <div
                 key={w.id}
@@ -178,8 +195,11 @@ export default function SurfacePanel({
               >
                 <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3">
                   <meta.Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {meta.name}
+                  <span
+                    className="truncate text-[11px] text-muted-foreground"
+                    title={w.kind === "files" ? (cwd ?? undefined) : undefined}
+                  >
+                    {title}
                   </span>
                   <div className="ml-auto flex items-center gap-0.5">
                     {i === windows.length - 1 &&
@@ -205,9 +225,15 @@ export default function SurfacePanel({
                     </button>
                   </div>
                 </div>
-                <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
-                  The {meta.name} surface arrives in a later story.
-                </div>
+                {w.kind === "files" ? (
+                  <div className="min-h-0 flex-1">
+                    <FileExplorer token={token ?? ""} cwd={cwd} />
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
+                    The {meta.name} surface arrives in a later story.
+                  </div>
+                )}
               </div>
             );
           })}
