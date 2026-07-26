@@ -1,121 +1,130 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-image-backend",
-  "description": "Backend-only round, designed for a sandboxed agent (Codex) that CANNOT bind localhost ports for browser QA - every story is verifiable by unit tests / curl / fixtures, NO browser. Two things: (A) fix the context-window meter's denominator to resolve from the model the system-init event REPORTS (claude runs fable-5 = 1M) instead of the launch model (undefined -> 200k); (B) build the image-input BACKEND seam for #1 image paste - an imageInput capability, AgentImageAttachment on the turn seam, server-side base64->per-provider staging, and driver plumbing (codex -i file path, claude stream-json image content block, grok --prompt-json or honest imageInput:false). The composer paste handler, transcript image rendering, retiring the paperclip, and the unified provider/model picker are a SEPARATE Claude follow-up round (they need automate-browser). This branch is cut from loop/conan-daily-driver (NOT yet merged to main) because it builds on that round's contextWindowFor/registry + attachments seam. Constraints: NO provider-name branching (ride AgentCapabilities); never claim a capability a provider lacks; never fabricate a number (unknown window -> null); UI mirror types via the type-only re-export from src/agent/driver.ts (import-free) so drift is a compile error; subscription auth only, never ANTHROPIC_API_KEY; paywall stays off, no gates. Source PRD: prd-conan-image-backend.md. NOTE: read CLAUDE.md + AGENTS.md first. Run the gateway with `npm start` (NO watch - restart after ANY src/ edit). Gates: `npm run typecheck` AND `npm test` AND `cd ui && npm run build`. Keep probe prompts trivial and run in a temp dir, never the conan repo.",
-  "generatedAt": "2026-07-24",
-  "sourcePrd": "prd-conan-image-backend.md",
+  "branchName": "loop/conan-surfaces",
+  "description": "Conan Surfaces — T3-parity right panel beside the chat: Browser / Terminal / Files / Diff as internal windows, 2-up side-by-side max (v1), per-thread. Source PRD: prd-conan-surfaces.md (READ IT FIRST every iteration — it carries the T3 reference mandate, the reuse map of dormant terminal-era code, and Randy's ratified decisions: 2-up v1; closing a Terminal window KILLS its shell). Read CLAUDE.md + AGENTS.md first. House rules: semantic theme tokens only (post-retheme: shadcn neutral, monochrome primary), shadcn primitives, h-9 shrink-0 panel toolbars, capability-driven (no provider branching), CORS reflector + WS Origin allowlist on every new gateway endpoint. Gateway runs with `npm start` (NO watch — restart after ANY src/ edit; a stale gateway 404s new routes). Gates: `npm run typecheck` AND `npm test` AND `cd ui && npm run build`. Browser QA on the throwaway stack (CONAN_PORT=3799 CONAN_DATA_DIR=/tmp/x npm start + CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run dev + CONAN_ALLOWED_ORIGINS=http://localhost:5199) — NEVER against dev :3747/:5173.",
+  "generatedAt": "2026-07-25",
+  "sourcePrd": "prd-conan-surfaces.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Context-window denominator resolves from the reported model, not the launch model",
-      "description": "As a user, I want the context meter to use my session's REAL model window, so a Claude thread on fable-5 shows /1M instead of /200k.",
+      "title": "SurfacePanel shell: right panel + splitter + T3 'Open a surface' card grid",
+      "description": "As a user, I want an 'Open' affordance on my thread that reveals a right panel with T3's surface picker, so chat and a workspace surface live side by side.",
       "acceptanceCriteria": [
-        "The meter's denominator is currently `contextWindowFor(provider, launchModel)`; on a fresh claude thread launchModel is undefined -> registry 'default' = 200k, but claude actually runs claude-fable-5 (1M). Fix: resolve the window from the model the system-init event REPORTS (`e.model` in src/agent/index.ts), not the launch model",
-        "Get the corrected `contextWindowTokens` to the client - either refresh/re-send the capabilities frame after system-init, or add `contextWindowTokens` to the system event; whichever, the client must receive the value derived from the REPORTED model",
-        "An unknown reported model (not in the registry's CONTEXT_WINDOWS table) resolves to null - counts only, never a guessed denominator",
-        "No provider-name branching; codex (reports no usable model) and grok still behave correctly (grok reports a build name - keep it null-safe)",
-        "Unit test: `contextWindowFor('claude','claude-fable-5')` = 1_000_000 and the resolution path picks the reported model; a table-miss returns null",
+        "New `ui/src/components/SurfacePanel.tsx` mounted inside ChatPane's main row (right of the transcript column, inside the same flex row that holds the spine + transcript) — per-thread, so each mounted ChatPane owns its panel state",
+        "Toolbar entry: a 'Surfaces' (or panel icon) button in ThreadToolbar.tsx toggles the panel; panel is CLOSED by default",
+        "Open panel with no surface selected shows the T3-style empty state: centered 'Open a surface' heading, 'Choose what to show in the right panel.' subline, and a 2x2 card grid — Browser ('Open a local app or URL.'), Terminal ('Start a shell in this workspace.'), Files ('Browse and read workspace files.'), Diff ('Review changes in this thread.') — lucide icons, shadcn-card styling, semantic tokens only",
+        "Selecting any card mounts a stub surface window: h-9 shrink-0 header bar with the surface name + an X close button; closing returns to the card grid; stub body says the surface is coming in a later story",
+        "Panel width is draggable via a splitter handle on its left edge (pointer events, min 320px, max 60% of the pane); the transcript column flexes correctly and the F8 composer alignment is not regressed (the composer axis matches the transcript axis with the panel both open and closed)",
+        "Panel open/width state is per-thread in-memory (switching threads preserves each thread's panel state; no persistence yet)",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill on the throwaway stack: screenshot the card grid, a stub surface open, and the splitter at two widths, in BOTH light and dark"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). Standalone from the image work - do it first, it's the quick correct-the-meter win. The registry CONTEXT_WINDOWS table + contextWindowFor already exist (src/agent/registry.ts). Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 0a. The T3 screenshot description in prd-conan-surfaces.md §benchmark is the layout contract. Keep the spine + transcript + panel in one flex row; the composer stays full-row below — check the F8 gutter still balances (the matching right gutter may need to collapse when the panel is open). Suggested skills: automate-browser, shadcn, build-ui."
     },
     {
       "id": "US-002",
-      "title": "Facts-first: probe + pin the per-provider image-input mechanisms",
-      "description": "As a developer, I need the exact per-provider image mechanisms captured as verified fixtures, so the driver plumbing is built on truth, not --help guesses.",
+      "title": "2-up internal windows: open a second surface side by side",
+      "description": "As a user, I want two surfaces open at once (e.g. Files beside Diff), so I can reference one while reviewing the other.",
       "acceptanceCriteria": [
-        "Pin the exact image-input shape for each CLI against a REAL small image in a temp dir: claude = the `image` content block format inside a `--input-format stream-json` user message (base64 media_type + data); codex = `-i/--image <FILE>` path semantics (multi-image? initial-prompt only? size cap?); grok = whether `--prompt-json` accepts an image block and its shape, OR that grok does NOT support headless image input",
-        "Record each answer with evidence; where a mechanism cannot be verified, mark it UNKNOWN and say so - never assume a shape",
-        "Capture representative request fixtures under `src/agent/fixtures/` (the serialized stream-json / argv / prompt-json a turn WITH an image produces) so US-005/006/007 can unit-test serialization with no live calls",
-        "Write findings into docs/provider-image-input.md",
-        "Typecheck passes"
+        "With one surface open, a '+' affordance in the panel header (or an 'Open another surface' entry) shows the card grid for the SECOND window; the two internal windows split the panel 50/50 vertically (side by side), each with its own h-9 header + close",
+        "Max 2 windows (v1 decision) — with 2 open, the add affordance is hidden/disabled",
+        "Closing one window gives its space to the other; closing the last returns to the card grid; the same surface type may be open in both windows without state bleed",
+        "Per-thread in-memory state extends to both windows (type per slot)",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill: two stub surfaces side by side, close-one/close-both flows, light + dark screenshots"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). Everything downstream depends on this. Keep probes trivial (a tiny PNG), temp dir only, never the conan repo. Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 0b. Depends on US-001. Randy ratified 2-up max for v1 — do not build n-window management. Suggested skills: automate-browser, shadcn."
     },
     {
       "id": "US-003",
-      "title": "imageInput capability + AgentImageAttachment on the turn seam",
-      "description": "As a developer, I want image support expressed as a capability so the UI can adapt without ever branching on a provider name.",
+      "title": "Files surface: revive FileExplorer pegged to the thread's project cwd",
+      "description": "As a user, I want a Files surface that browses my thread's workspace read-only, so I can inspect files without leaving the chat.",
       "acceptanceCriteria": [
-        "Add `imageInput: boolean` to `AgentCapabilities` in src/agent/driver.ts; set per US-002's verified truth (claude true, codex true, grok per the probe)",
-        "Add an `AgentImageAttachment` type to the turn seam (src/agent/attachments.ts / AgentTurn) carrying the image bytes reference (e.g. staged path + media type + bytes) alongside the existing file attachments",
-        "The UI capability mirror (ui/src/hooks/useProviders.ts / useAgentChat.ts) picks up `imageInput` via the TYPE-ONLY RE-EXPORT from src/agent/driver.ts - do NOT hand-copy the field (that drift shipped before)",
-        "No behaviour change: a turn with no images serializes exactly as today",
+        "The Files card mounts the dormant `ui/src/components/FileExplorer.tsx` (adapted as needed) inside a surface window, rooted at the thread's project cwd (the same cwd ChatPane already receives) — directory tree + file content view, read-only, via the existing gateway fs routes ChatPane/PinPicker already use (GET /api/fs/read + the DirBrowser listing route); NO new gateway endpoints",
+        "Fix the known FileExplorer scrollbar drift while remounting (CLAUDE.md TODO): its scroll container must get the themed 6px scrollbar — root it in an <aside> like the transcript, or reuse FadeScroll — not the OS default scrollbar",
+        "Binary/huge files degrade gracefully (size-capped read with an honest 'too large / binary' notice rather than a hang or garbage render)",
+        "Surface header shows the cwd basename; h-9 shrink-0 per convention",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill: browse into a nested dir, open a text file, screenshot light + dark"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). Same capability-descriptor pattern as effortModes/permissionModes. Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 1a. Depends on US-001. Reuse map is in prd-conan-surfaces.md — FileExplorer.tsx is dormant but present; DirBrowser.tsx shows the listing-route usage. Suggested skills: automate-browser, build-ui."
     },
     {
       "id": "US-004",
-      "title": "Server-side image staging (base64 in, per-provider materialization)",
-      "description": "As a developer, I want the gateway to accept a pasted image and stage it however each provider needs, because the browser only has base64 and codex needs a file path.",
+      "title": "Diff backend: POST /api/fs/diff — per-file working-tree git diffs",
+      "description": "As the Diff surface, I need a gateway endpoint that returns working-tree git diffs for a set of paths, so the UI can render this thread's changes.",
       "acceptanceCriteria": [
-        "A bounded, token-gated + CORS-reflected path accepts an image as base64 (media type + data) from the browser and stages it - writing a temp file for path-based CLIs (codex `-i`) and keeping base64 for inline CLIs (claude)",
-        "Bound it like the file-pin path: max bytes per image + max image count per turn; reject/truncate honestly, never silently balloon a turn",
-        "Staged temp files live in a predictable temp location, are cleaned up, and their paths are validated (no traversal)",
-        "Extend the outgoing-turn serialization so images ride the turn to the driver (mirrors prepareFileAttachments/serializeTurnPrompt for files)",
-        "Unit tests cover accept -> stage -> per-provider shape (using US-002 fixtures); a directory/oversize/bad-base64 input returns a clear error",
+        "New gateway endpoint POST /api/fs/diff accepting {cwd, paths?: string[]} — runs git in the repo containing cwd and returns JSON: per-file {path, status (modified/added/deleted/untracked), patch (unified diff text, size-capped with a truncated flag)}; omit paths → all working-tree changes in that repo",
+        "Non-repo cwd returns {repo:false, files:[]} (200, honest empty) — never a 500; paths outside the repo root are rejected; the endpoint is auth-token'd and behind the CORS reflector like every /api route (src/gateway/index.ts conventions)",
+        "Pure diff-parsing/shaping logic lives in a testable module (src/fs/diff.ts or similar), not inline in the route handler",
+        "Unit tests: fixture repo (init in a tmpdir) covering modified + untracked + deleted, the non-repo case, and the size-cap truncation flag; node --test green",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). The RECEIVING end; Claude builds the browser paste->base64->send end in the follow-up round. Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 1b backend — NO browser needed; ideal Codex story (sandboxed, unit-test-verifiable). Independent of US-001–003. Gateway restart note in the description applies when manually curling — tests drive the module directly. Suggested skills: none."
     },
     {
       "id": "US-005",
-      "title": "CodexDriver image plumbing (-i staged paths)",
-      "description": "As a user, I want an image I attach to reach Codex.",
+      "title": "Diff surface: review this thread's changes with the existing DiffView renderer",
+      "description": "As a user, I want the Diff surface to show what this thread changed, so I can review the agent's work without leaving the chat.",
       "acceptanceCriteria": [
-        "CodexDriver passes staged image file paths via `-i/--image` on the turn that spawns the process (initial prompt); multiple images supported per US-002",
-        "Documented limitation: codex `-i` is initial-prompt-only; a resumed codex turn is a fresh process, so images attach to that turn's spawn - state this honestly in code + docs",
-        "A turn with no images spawns exactly as today (additive)",
-        "Unknown/unsupported states never crash the driver",
-        "Unit test against the US-002 fixture: the spawned argv includes the expected `-i <path>` for an image turn and omits it otherwise",
+        "The Diff card mounts a surface listing this thread's touched files: paths extracted client-side from the thread's transcript tool items (Edit/Write/MultiEdit/NotebookEdit inputs across history + live items — the same items ChatPane already renders), deduped, then hydrated via POST /api/fs/diff with the thread cwd",
+        "Per-file rows (path + status + +N/−N) expand to the unified diff rendered with the SAME red/green row treatment as ChatPane's DiffView (extract/reuse that renderer — do not fork a second diff style)",
+        "A refresh control re-fetches; an empty state says no changes when the thread touched nothing or the working tree is clean; truncated patches show the honest truncated notice",
+        "A thread whose touched files have since been committed shows the clean-tree empty state (v1 is working-tree-only — surface copy says 'Uncommitted changes')",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill: run a throwaway-stack thread that edits a file, open Diff, screenshot expanded diff light + dark"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). Drivers build argv via args.push (src/agent/codex.ts ~135). Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 1b UI. Depends on US-001 + US-004. DiffView lives in ChatPane.tsx (~line 1856) — extracting it to a shared component is in scope. Suggested skills: automate-browser, build-ui."
     },
     {
       "id": "US-006",
-      "title": "ClaudeDriver image plumbing (stream-json image content block)",
-      "description": "As a user, I want an image I attach to reach Claude.",
+      "title": "Terminal surface: revive the pty stack as a workspace shell (close = kill)",
+      "description": "As a user, I want a Terminal surface running a real shell in my thread's workspace, so I can run commands beside the chat.",
       "acceptanceCriteria": [
-        "ClaudeDriver includes image content blocks (base64, per US-002's verified shape) in the stream-json user message alongside the text block",
-        "A turn with no images produces the same stream-json as today (additive)",
-        "Unit test against the US-002 fixture: an image turn's serialized user message contains the expected image content block; a text-only turn does not",
+        "The Terminal card mounts an xterm.js terminal (reuse the dormant Terminal.tsx/@xterm wiring and getTerminalTheme()) connected to the gateway's /ws/terminal pty route with mode=shell and cwd = the thread's project path — verify the dormant route still registers on the gateway and revive it if it was unplugged",
+        "Closing the surface window KILLS the pty (Randy's ratified decision — no keep-alive, no background shells); switching threads (pane hidden, not unmounted) does NOT kill it; a dead/exited shell shows an honest 'shell exited' state with a restart affordance",
+        "Terminal theme derives from the active theme tokens (getTerminalTheme) and flips correctly with the sidebar light/dark toggle",
+        "The WS connection uses the existing auth/Origin-allowlist upgrade path — no new auth surface",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill: open Terminal, run `pwd` (output shows the thread cwd), close the window, verify via the gateway (e.g. GET /api/terminals or process check) that the pty is gone; screenshot light + dark"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). ClaudeDriver builds the stream-json user message content array. Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 2. Depends on US-001. The terminal-era footguns in CLAUDE.md apply (WS-close kills pty — here that is the DESIRED behavior on window close; ensure hidden-not-unmounted panes don't trigger it). Suggested skills: automate-browser, run."
     },
     {
       "id": "US-007",
-      "title": "GrokDriver image plumbing (--prompt-json) or honest imageInput:false",
-      "description": "As a user, I want images to reach Grok if it supports them, or to honestly not be offered if it doesn't.",
+      "title": "Browser surface v1: local-app preview via iframe, honest about framing limits",
+      "description": "As a user, I want the Browser surface to open my local dev apps (e.g. a Vite server) beside the chat, so I can watch the app I'm building without leaving Conan.",
       "acceptanceCriteria": [
-        "If US-002 verified grok accepts images: GrokDriver sends them via `--prompt-json` in the verified shape, with a unit test against the fixture",
-        "If US-002 found grok does NOT support headless image input: set grok `imageInput: false` and add NO image plumbing - the honest outcome, with a one-line note in docs/provider-image-input.md explaining why",
-        "Either way, a turn with no images behaves exactly as today",
+        "The Browser card mounts a surface with a URL bar (defaults to empty with placeholder suggesting http://localhost:…) + go/refresh controls in the h-9 header, rendering the target in an <iframe> body",
+        "Frame-refused targets (X-Frame-Options/CSP — most public sites) surface an honest error state explaining the v1 limitation ('This site refuses to be embedded — Browser v1 previews local apps') with an 'Open in system browser' fallback link; detection via iframe load failure/timeout heuristic, not silence",
+        "localhost/127.0.0.1 URLs render and navigate (history back/forward within the surface is NOT required v1); the URL bar reflects manual reloads",
+        "Per-window state: the entered URL survives switching threads (in-memory, same as panel state)",
+        "A short section is APPENDED to prd-conan-surfaces.md recording the v1 iframe decision and what the Tauri child-webview v2 would add (full-site browsing) — the spike's decision doc, kept where the mandate lives",
         "Typecheck passes",
-        "Tests pass"
+        "cd ui && npm run build passes",
+        "Verify in browser using the automate-browser skill: load the throwaway-stack UI's own URL (http://localhost:5199) inside the surface (Conan-in-Conan), screenshot; attempt https://github.com and screenshot the honest refusal state; light + dark"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Owner: CODEX (no browser). Final image-seam story; degrade honestly rather than force unsupported plumbing. Suggested skills: none."
+      "passes": false,
+      "notes": "Phase 3, scoped to the iframe path — the Tauri child-webview full browser is explicitly v2 (Rust work, stays out of the autonomous loop per prd-conan-surfaces.md). WKWebView CORS strictness gotcha does not apply to plain iframe embeds of localhost origins; packaged-app QA is NOT required for this story (dev-webview QA only). Suggested skills: automate-browser."
     }
   ]
 }
