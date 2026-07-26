@@ -140,6 +140,28 @@ commits on pass; decompose backlogs with the `decompose-prd` skill).
   `ComposerAutocomplete.tsx` (`@` files/folders · `$` skills · `/` commands) +
   a **paperclip pin picker**. `ProjectPicker.tsx`/`DirBrowser.tsx` = per-project
   folder pick.
+- **Surfaces (T3 parity, 2026-07-25/26 — the `loop/conan-surfaces` round +
+  QA fixes).** `SurfacePanel.tsx` = a TRUE THIRD COLUMN (full viewport
+  height beside sidebar + chat column; toolbar/transcript/composer all
+  belong to the middle column) toggled by a ThreadToolbar "Surfaces"
+  button. ONE h-9 breadcrumb toolbar ("Surfaces › Browser ✕ · Terminal ✕" —
+  crumb-back to the card grid, per-window closes, panel ✕; NO per-window
+  title bars), T3-style "Open a surface" 2×2 card grid, draggable splitter
+  (min 320px / max 60%), 2-up side-by-side max (ratified), per-thread
+  in-memory state. Surfaces: **Files** (revived `FileExplorer.tsx`,
+  cwd-pegged, read-only, themed scrollbar), **Diff** (`POST /api/fs/diff`
+  working-tree git diffs in `src/fs/diff.ts` + shared `DiffView.tsx`,
+  thread-scoped via transcript tool items, uncommitted-only v1),
+  **Terminal** (revived pty stack via `/ws/terminal`, `mode=shell`, thread
+  cwd, **close = KILL the shell** — ratified), **Browser** (iframe
+  local-app preview; gateway header probe in `src/browser/probe.ts` powers
+  an honest framing-refusal state — most public sites send
+  `frame-ancestors`/XFO and cannot render; full browsing = the Tauri
+  child-webview v2 spike in `prd-conan-surfaces.md`). ⚠ The transcript's
+  themed scrollbar rides `aside.overflow-auto` (selector extended beyond
+  descendants); the F8 composer-axis balance lives INSIDE the scroller as
+  a `pr-16` content wrapper — moving it back outside un-flushes the
+  scrollbar.
 - **Daily-driver polish (T3-5/11/6/3, 2026-07-24).** All capability-driven, no
   provider-name branching. (a) **Context meter** — the `result` event carries
   `contextTokens` (position = input+cached, ≠ turn cost) from all three
