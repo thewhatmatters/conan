@@ -1,130 +1,94 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-surfaces",
-  "description": "Conan Surfaces — T3-parity right panel beside the chat: Browser / Terminal / Files / Diff as internal windows, 2-up side-by-side max (v1), per-thread. Source PRD: prd-conan-surfaces.md (READ IT FIRST every iteration — it carries the T3 reference mandate, the reuse map of dormant terminal-era code, and Randy's ratified decisions: 2-up v1; closing a Terminal window KILLS its shell). Read CLAUDE.md + AGENTS.md first. House rules: semantic theme tokens only (post-retheme: shadcn neutral, monochrome primary), shadcn primitives, h-9 shrink-0 panel toolbars, capability-driven (no provider branching), CORS reflector + WS Origin allowlist on every new gateway endpoint. Gateway runs with `npm start` (NO watch — restart after ANY src/ edit; a stale gateway 404s new routes). Gates: `npm run typecheck` AND `npm test` AND `cd ui && npm run build`. Browser QA on the throwaway stack (CONAN_PORT=3799 CONAN_DATA_DIR=/tmp/x npm start + CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run dev + CONAN_ALLOWED_ORIGINS=http://localhost:5199) — NEVER against dev :3747/:5173.",
-  "generatedAt": "2026-07-25",
-  "sourcePrd": "prd-conan-surfaces.md",
+  "branchName": "loop/conan-branch-picker",
+  "description": "Conan Branch Picker — worktree-backed branch selection at thread creation. Source PRD: prd-conan-branch-picker.md (READ IT FIRST every iteration — it carries the mental model 'project = repo, thread = branch', the rejected checkout-in-place alternative, and Randy's ratified decisions: worktrees live in ~/.conan/worktrees/; prune auto on thread delete ONLY IF CLEAN + git worktree prune on gateway boot; 'new branch from…' bases on the repo default branch; the worktree is created AT FIRST SEND, never at picker time — abandoned drafts leave zero residue). Read CLAUDE.md + AGENTS.md first. House rules: semantic theme tokens only (shadcn neutral, monochrome primary), shadcn primitives, h-9 shrink-0 toolbars, capability-driven (no provider branching), CORS reflector + WS Origin allowlist on every new gateway endpoint. Gateway runs with `npm start` (NO watch — restart after ANY src/ edit; a stale gateway 404s new routes). Gates: `npm run typecheck` AND `npm test` AND `cd ui && npm run build`. Browser QA on the throwaway stack (CONAN_PORT=3799 CONAN_DATA_DIR=/tmp/x npm start + CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run dev + CONAN_ALLOWED_ORIGINS=http://localhost:5199) — NEVER against dev :3747/:5173.",
+  "generatedAt": "2026-07-26",
+  "sourcePrd": "prd-conan-branch-picker.md",
   "userStories": [
     {
       "id": "US-001",
-      "title": "SurfacePanel shell: right panel + splitter + T3 'Open a surface' card grid",
-      "description": "As a user, I want an 'Open' affordance on my thread that reveals a right panel with T3's surface picker, so chat and a workspace surface live side by side.",
+      "title": "Branch listing backend: GET /api/fs/branches",
+      "description": "As the branch picker UI, I need the gateway to list a repo's local branches so the picker has real options to render.",
       "acceptanceCriteria": [
-        "New `ui/src/components/SurfacePanel.tsx` mounted inside ChatPane's main row (right of the transcript column, inside the same flex row that holds the spine + transcript) — per-thread, so each mounted ChatPane owns its panel state",
-        "Toolbar entry: a 'Surfaces' (or panel icon) button in ThreadToolbar.tsx toggles the panel; panel is CLOSED by default",
-        "Open panel with no surface selected shows the T3-style empty state: centered 'Open a surface' heading, 'Choose what to show in the right panel.' subline, and a 2x2 card grid — Browser ('Open a local app or URL.'), Terminal ('Start a shell in this workspace.'), Files ('Browse and read workspace files.'), Diff ('Review changes in this thread.') — lucide icons, shadcn-card styling, semantic tokens only",
-        "Selecting any card mounts a stub surface window: h-9 shrink-0 header bar with the surface name + an X close button; closing returns to the card grid; stub body says the surface is coming in a later story",
-        "Panel width is draggable via a splitter handle on its left edge (pointer events, min 320px, max 60% of the pane); the transcript column flexes correctly and the F8 composer alignment is not regressed (the composer axis matches the transcript axis with the panel both open and closed)",
-        "Panel open/width state is per-thread in-memory (switching threads preserves each thread's panel state; no persistence yet)",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill on the throwaway stack: screenshot the card grid, a stub surface open, and the splitter at two widths, in BOTH light and dark"
+        "New module src/fs/branches.ts: given a cwd, resolve the repo root and return { repo: boolean, current: string | null, defaultBranch: string | null, branches: string[] } — local branches only",
+        "Non-repo cwd returns { repo: false } (never a throw); detached HEAD returns current: null",
+        "defaultBranch resolves from origin/HEAD when set, falling back to main/master if present locally",
+        "Route GET /api/fs/branches?cwd=… registered with token auth + CORS reflector like the existing /api/fs/* routes",
+        "Unit tests cover: repo with branches, non-repo dir, detached HEAD",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Phase 0a. The T3 screenshot description in prd-conan-surfaces.md §benchmark is the layout contract. Keep the spine + transcript + panel in one flex row; the composer stays full-row below — check the F8 gutter still balances (the matching right gutter may need to collapse when the panel is open). Suggested skills: automate-browser, shadcn, build-ui."
+      "passes": false,
+      "notes": "Mirror src/fs/diff.ts structure (pure logic module + thin route handler, runGit-style spawning). The composer's existing branch display endpoint (src/gateway/index.ts:347) shows the current-branch read pattern."
     },
     {
       "id": "US-002",
-      "title": "2-up internal windows: open a second surface side by side",
-      "description": "As a user, I want two surfaces open at once (e.g. Files beside Diff), so I can reference one while reviewing the other.",
+      "title": "Worktree manager backend: create-or-reuse under ~/.conan/worktrees",
+      "description": "As a thread starting on a non-checked-out branch, I need the gateway to create (or reuse) a git worktree for that branch and hand back its path.",
       "acceptanceCriteria": [
-        "With one surface open, a '+' affordance in the panel header (or an 'Open another surface' entry) shows the card grid for the SECOND window; the two internal windows split the panel 50/50 vertically (side by side), each with its own h-9 header + close",
-        "Max 2 windows (v1 decision) — with 2 open, the add affordance is hidden/disabled",
-        "Closing one window gives its space to the other; closing the last returns to the card grid; the same surface type may be open in both windows without state bleed",
-        "Per-thread in-memory state extends to both windows (type per slot)",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill: two stub surfaces side by side, close-one/close-both flows, light + dark screenshots"
+        "New module src/fs/worktrees.ts: ensureWorktree({ cwd, branch, createBranch?, base? }) → { path, created, reused } with worktrees at ~/.conan/worktrees/<repo-dirname>--<branch-sanitized>/",
+        "Branch already checked out in the project folder itself → return the project folder path, no worktree (the picker's current-branch case)",
+        "Branch already has a Conan-managed worktree → reuse it, never a duplicate",
+        "createBranch: true creates the branch from the repo's default branch (explicit base override allowed) then adds the worktree",
+        "git worktree prune runs once at gateway boot for repos that have Conan-managed worktrees",
+        "Route POST /api/agent/worktrees (token auth + CORS reflector) wrapping ensureWorktree; failures return a readable error message, never a raw 500 stack",
+        "Unit tests cover: fresh create, reuse, current-branch passthrough, new-branch-from-default, invalid branch name rejected",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Phase 0b. Depends on US-001. Randy ratified 2-up max for v1 — do not build n-window management. Suggested skills: automate-browser, shadcn."
+      "passes": false,
+      "notes": "Sanitize branch names for the directory segment (slashes → dashes). Worktree root is literally ~/.conan/worktrees (os.homedir()), NOT $CONAN_DATA_DIR — ratified. git forbids two worktrees on one branch; the reuse + passthrough rules are how that constraint surfaces."
     },
     {
       "id": "US-003",
-      "title": "Files surface: revive FileExplorer pegged to the thread's project cwd",
-      "description": "As a user, I want a Files surface that browses my thread's workspace read-only, so I can inspect files without leaving the chat.",
+      "title": "Worktree lifecycle: auto-prune on thread delete",
+      "description": "As a user deleting a thread, I want its worktree cleaned up automatically when nothing else uses it, so worktrees don't accumulate silently.",
       "acceptanceCriteria": [
-        "The Files card mounts the dormant `ui/src/components/FileExplorer.tsx` (adapted as needed) inside a surface window, rooted at the thread's project cwd (the same cwd ChatPane already receives) — directory tree + file content view, read-only, via the existing gateway fs routes ChatPane/PinPicker already use (GET /api/fs/read + the DirBrowser listing route); NO new gateway endpoints",
-        "Fix the known FileExplorer scrollbar drift while remounting (CLAUDE.md TODO): its scroll container must get the themed 6px scrollbar — root it in an <aside> like the transcript, or reuse FadeScroll — not the OS default scrollbar",
-        "Binary/huge files degrade gracefully (size-capped read with an honest 'too large / binary' notice rather than a hang or garbage render)",
-        "Surface header shows the cwd basename; h-9 shrink-0 per convention",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill: browse into a nested dir, open a text file, screenshot light + dark"
+        "DELETE /api/agent/threads/:sessionId: when the thread's cwd is a Conan-managed worktree (under ~/.conan/worktrees/) AND no other chat_thread row shares that cwd → remove the worktree",
+        "Removal only if the worktree is CLEAN (git status --porcelain empty); dirty worktrees are kept and the delete response says so (e.g. { worktreeKept: 'dirty' })",
+        "Threads whose cwd is a plain project folder are untouched by this path",
+        "Unit tests cover: last-thread clean → removed, last-thread dirty → kept, cwd shared by another thread → kept, non-worktree cwd → no-op",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Phase 1a. Depends on US-001. Reuse map is in prd-conan-surfaces.md — FileExplorer.tsx is dormant but present; DirBrowser.tsx shows the listing-route usage. Suggested skills: automate-browser, build-ui."
+      "passes": false,
+      "notes": "Detection = path prefix match on the worktree root; keep the logic in src/fs/worktrees.ts (removeWorktreeIfUnused) so the route stays thin."
     },
     {
       "id": "US-004",
-      "title": "Diff backend: POST /api/fs/diff — per-file working-tree git diffs",
-      "description": "As the Diff surface, I need a gateway endpoint that returns working-tree git diffs for a set of paths, so the UI can render this thread's changes.",
+      "title": "Branch picker UI in the new-thread composer flow",
+      "description": "As a user starting a new chat on a git-repo project, I want to pick the branch the thread works on — or cut a new one — before my first message.",
       "acceptanceCriteria": [
-        "New gateway endpoint POST /api/fs/diff accepting {cwd, paths?: string[]} — runs git in the repo containing cwd and returns JSON: per-file {path, status (modified/added/deleted/untracked), patch (unified diff text, size-capped with a truncated flag)}; omit paths → all working-tree changes in that repo",
-        "Non-repo cwd returns {repo:false, files:[]} (200, honest empty) — never a 500; paths outside the repo root are rejected; the endpoint is auth-token'd and behind the CORS reflector like every /api route (src/gateway/index.ts conventions)",
-        "Pure diff-parsing/shaping logic lives in a testable module (src/fs/diff.ts or similar), not inline in the route handler",
-        "Unit tests: fixture repo (init in a tmpdir) covering modified + untracked + deleted, the non-repo case, and the size-cap truncation flag; node --test green",
-        "Typecheck passes",
-        "Tests pass"
+        "Draft threads (pre-first-send) on a repo project show a branch chip in the composer context row, preselected to the repo's current branch, options from GET /api/fs/branches",
+        "Chip includes a 'New branch…' action: name input, base = the repo's default branch, inline validation feedback on an invalid or taken name",
+        "Non-repo project folders show no branch chip (unchanged behaviour); existing threads never show the picker — branch is fixed at creation",
+        "First send with a non-current branch selected: POST /api/agent/worktrees first, then the thread launches with cwd = the returned worktree path; current-branch selection launches in the project folder exactly as today",
+        "The thread's existing branch display shows the picked branch after launch",
+        "Selecting a branch on a draft then abandoning the draft creates NO worktree (creation happens at first send only)",
+        "Verify in browser using automate-browser skill (light + dark, on the throwaway stack)",
+        "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Phase 1b backend — NO browser needed; ideal Codex story (sandboxed, unit-test-verifiable). Independent of US-001–003. Gateway restart note in the description applies when manually curling — tests drive the module directly. Suggested skills: none."
+      "passes": false,
+      "notes": "Suggested skills: automate-browser, shadcn. Follow the existing composer chip pattern (provider/model/permission/effort chips in ChatPane) — DropdownMenu primitive, locks after turn 1 like the provider chip. Draft threads are local-only (no chat_thread row until first send) — the branch selection rides that same draft state."
     },
     {
       "id": "US-005",
-      "title": "Diff surface: review this thread's changes with the existing DiffView renderer",
-      "description": "As a user, I want the Diff surface to show what this thread changed, so I can review the agent's work without leaving the chat.",
+      "title": "Worktree thread end-to-end: surfaces inherit + fresh-worktree hint",
+      "description": "As a user working in a worktree-backed thread, I want Files/Diff/Terminal and the branch display to reflect the worktree — and an honest hint that a fresh worktree has no node_modules.",
       "acceptanceCriteria": [
-        "The Diff card mounts a surface listing this thread's touched files: paths extracted client-side from the thread's transcript tool items (Edit/Write/MultiEdit/NotebookEdit inputs across history + live items — the same items ChatPane already renders), deduped, then hydrated via POST /api/fs/diff with the thread cwd",
-        "Per-file rows (path + status + +N/−N) expand to the unified diff rendered with the SAME red/green row treatment as ChatPane's DiffView (extract/reuse that renderer — do not fork a second diff style)",
-        "A refresh control re-fetches; an empty state says no changes when the thread touched nothing or the working tree is clean; truncated patches show the honest truncated notice",
-        "A thread whose touched files have since been committed shows the clean-tree empty state (v1 is working-tree-only — surface copy says 'Uncommitted changes')",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill: run a throwaway-stack thread that edits a file, open Diff, screenshot expanded diff light + dark"
+        "On a worktree-backed thread: Files surface roots at the worktree, Terminal surface shell opens in the worktree cwd (pwd verified), Diff surface diffs the worktree's tree",
+        "A one-line dismissible hint shows once for a freshly CREATED worktree whose repo has a package.json but no node_modules (e.g. 'Fresh worktree — dependencies not installed'), semantic tokens only; no auto-install in v1",
+        "Reopening a worktree-backed thread resumes with the worktree cwd intact",
+        "Verify in browser using automate-browser skill: create a worktree thread on a fixture repo, walk all three surfaces + the hint, light + dark, throwaway stack",
+        "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Phase 1b UI. Depends on US-001 + US-004. DiffView lives in ChatPane.tsx (~line 1856) — extracting it to a shared component is in scope. Suggested skills: automate-browser, build-ui."
-    },
-    {
-      "id": "US-006",
-      "title": "Terminal surface: revive the pty stack as a workspace shell (close = kill)",
-      "description": "As a user, I want a Terminal surface running a real shell in my thread's workspace, so I can run commands beside the chat.",
-      "acceptanceCriteria": [
-        "The Terminal card mounts an xterm.js terminal (reuse the dormant Terminal.tsx/@xterm wiring and getTerminalTheme()) connected to the gateway's /ws/terminal pty route with mode=shell and cwd = the thread's project path — verify the dormant route still registers on the gateway and revive it if it was unplugged",
-        "Closing the surface window KILLS the pty (Randy's ratified decision — no keep-alive, no background shells); switching threads (pane hidden, not unmounted) does NOT kill it; a dead/exited shell shows an honest 'shell exited' state with a restart affordance",
-        "Terminal theme derives from the active theme tokens (getTerminalTheme) and flips correctly with the sidebar light/dark toggle",
-        "The WS connection uses the existing auth/Origin-allowlist upgrade path — no new auth surface",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill: open Terminal, run `pwd` (output shows the thread cwd), close the window, verify via the gateway (e.g. GET /api/terminals or process check) that the pty is gone; screenshot light + dark"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Phase 2. Depends on US-001. The terminal-era footguns in CLAUDE.md apply (WS-close kills pty — here that is the DESIRED behavior on window close; ensure hidden-not-unmounted panes don't trigger it). Suggested skills: automate-browser, run."
-    },
-    {
-      "id": "US-007",
-      "title": "Browser surface v1: local-app preview via iframe, honest about framing limits",
-      "description": "As a user, I want the Browser surface to open my local dev apps (e.g. a Vite server) beside the chat, so I can watch the app I'm building without leaving Conan.",
-      "acceptanceCriteria": [
-        "The Browser card mounts a surface with a URL bar (defaults to empty with placeholder suggesting http://localhost:…) + go/refresh controls in the h-9 header, rendering the target in an <iframe> body",
-        "Frame-refused targets (X-Frame-Options/CSP — most public sites) surface an honest error state explaining the v1 limitation ('This site refuses to be embedded — Browser v1 previews local apps') with an 'Open in system browser' fallback link; detection via iframe load failure/timeout heuristic, not silence",
-        "localhost/127.0.0.1 URLs render and navigate (history back/forward within the surface is NOT required v1); the URL bar reflects manual reloads",
-        "Per-window state: the entered URL survives switching threads (in-memory, same as panel state)",
-        "A short section is APPENDED to prd-conan-surfaces.md recording the v1 iframe decision and what the Tauri child-webview v2 would add (full-site browsing) — the spike's decision doc, kept where the mandate lives",
-        "Typecheck passes",
-        "cd ui && npm run build passes",
-        "Verify in browser using the automate-browser skill: load the throwaway-stack UI's own URL (http://localhost:5199) inside the surface (Conan-in-Conan), screenshot; attempt https://github.com and screenshot the honest refusal state; light + dark"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Phase 3, scoped to the iframe path — the Tauri child-webview full browser is explicitly v2 (Rust work, stays out of the autonomous loop per prd-conan-surfaces.md). WKWebView CORS strictness gotcha does not apply to plain iframe embeds of localhost origins; packaged-app QA is NOT required for this story (dev-webview QA only). Suggested skills: automate-browser."
+      "passes": false,
+      "notes": "Suggested skills: automate-browser. Surfaces already key off thread cwd — expect mostly verification + the hint component. The 'worktree deleted externally' reopen case is an OPEN QUESTION in the PRD — out of scope, do not build it."
     }
   ]
 }
