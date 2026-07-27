@@ -80,6 +80,7 @@ import {
   upsertChatProject,
   countThreadsByCwd,
   deleteChatThread,
+  deleteChatProject,
   getChatThread,
 } from "../agent/threads.js";
 import { detectEditors, openInEditor } from "../editor/index.js";
@@ -593,6 +594,26 @@ app.post("/api/agent/projects", (req, res) => {
     return;
   }
   res.json(upsertChatProject(dir, typeof b.name === "string" ? b.name : undefined));
+});
+
+// Remove a project from Conan (metadata-only — the folder on disk is never
+// touched). Threads + actions cascade; any Conan-managed worktree the removed
+// threads left behind is pruned when clean, mirroring thread delete.
+app.delete("/api/agent/projects/:id", async (req, res) => {
+  if (!authed(req, res)) return;
+  const { deleted, cwds } = deleteChatProject(req.params.id);
+  const worktrees: string[] = [];
+  for (const cwd of cwds) {
+    if (!isManagedWorktreePath(cwd) || countThreadsByCwd(cwd) > 0) continue;
+    try {
+      if ((await removeWorktreeIfClean(cwd)) === "removed") worktrees.push(cwd);
+    } catch (error) {
+      console.warn(
+        `Unable to remove worktree ${cwd}: ${(error as Error).message}`,
+      );
+    }
+  }
+  res.json({ deleted, worktrees });
 });
 
 app.get("/api/agent/projects/:id/actions", (req, res) => {

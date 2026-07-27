@@ -13,6 +13,7 @@ import {
   PanelLeftOpen,
   Plus,
   Settings,
+  Trash2,
   X,
   AlertTriangle,
   CheckCircle2,
@@ -35,6 +36,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "./ui/context-menu.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "./ui/dialog.tsx";
 import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
@@ -247,6 +262,11 @@ export default function ChatSurface({
   /** Projects whose saved-thread list is expanded past the visible cap.
    *  Session-only — a reload re-collapses to the cap. */
   const [expandedThreads, setExpandedThreads] = useState<Record<string, boolean>>({});
+  /** Project pending a remove confirmation (only projects WITH chats prompt;
+   *  empty ones remove immediately). Null = no dialog. */
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     try {
@@ -500,6 +520,46 @@ export default function ChatSurface({
     });
   };
 
+  /** Remove a project from Conan (metadata-only — the folder on disk is never
+   *  touched). Drops its open live panes, then its sidebar/DB rows; the
+   *  gateway cascades threads/actions and prunes clean managed worktrees. */
+  const removeProject = async (projectId: string) => {
+    setThreads((prev) => {
+      const next = prev.filter((t) => t.projectId !== projectId);
+      if (activeId && !next.some((t) => t.id === activeId)) {
+        setActiveId(next[next.length - 1]?.id ?? null);
+      }
+      return next;
+    });
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    setSaved((prev) => {
+      const rest = { ...prev };
+      delete rest[projectId];
+      return rest;
+    });
+    if (token) {
+      try {
+        await fetch(apiBase() + `/api/agent/projects/${encodeURIComponent(projectId)}`, {
+          method: "DELETE",
+          headers: { "x-conan-token": token },
+        });
+      } catch {
+        /* best-effort — the project resurfaces on the next refresh if not */
+      }
+    }
+    void refreshRef.current();
+  };
+
+  /** Context-menu entry point: empty projects remove at once; a project with
+   *  chats routes through the confirm dialog (removal discards thread rows). */
+  const requestRemoveProject = (projectId: string, name: string) => {
+    const hasChats =
+      threads.some((t) => t.projectId === projectId) ||
+      (saved[projectId]?.length ?? 0) > 0;
+    if (hasChats) setRemoveTarget({ id: projectId, name });
+    else void removeProject(projectId);
+  };
+
   // US-012: File ▸ New Chat / Close Chat menu items dispatch window events —
   // the same decoupled bridge the File menu used for terminals. No dep array:
   // the handlers close over threads/projects/activeId, so re-subscribing per
@@ -718,7 +778,8 @@ export default function ChatSurface({
                 const closed = closedGroups[proj.id] === true;
                 return (
                   <div key={proj.id} className="mb-1">
-                    <div className="group flex items-center gap-0.5">
+                    <ContextMenu>
+                    <ContextMenuTrigger className="group flex items-center gap-0.5">
                       <button
                         type="button"
                         title={proj.path}
@@ -765,7 +826,17 @@ export default function ChatSurface({
                           <MessageSquarePlus className="size-3.5" />
                         </IconButton>
                       </span>
-                    </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => requestRemoveProject(proj.id, proj.name)}
+                      >
+                        <Trash2 />
+                        Remove from Conan
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                    </ContextMenu>
                     {!closed &&
                       (list.length === 0 && savedOnly.length === 0 ? (
                         <p className="py-1 pl-5 pr-2 text-[11px] text-muted-foreground">
@@ -910,6 +981,41 @@ export default function ChatSurface({
           onClose={() => setPickingFolder(false)}
         />
       )}
+      <Dialog
+        open={removeTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove “{removeTarget?.name}” from Conan?</DialogTitle>
+            <DialogDescription>
+              This removes the project and its chats from Conan. The folder on
+              disk is untouched — you can add it again anytime.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setRemoveTarget(null)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (removeTarget) void removeProject(removeTarget.id);
+                setRemoveTarget(null);
+              }}
+              className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              Remove
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

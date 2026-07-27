@@ -261,6 +261,24 @@ export function deleteChatThread(sessionId: string): boolean {
   return info.changes > 0;
 }
 
+/** Remove a project from Conan (metadata-only — never touches the folder on
+ *  disk). Its threads + actions go via ON DELETE CASCADE. Returns the distinct
+ *  thread cwds that existed so the caller can prune any Conan-managed
+ *  worktrees the removed threads left behind. */
+export function deleteChatProject(projectId: string): {
+  deleted: boolean;
+  cwds: string[];
+} {
+  const db = getDb();
+  const cwds = (
+    db
+      .prepare("SELECT DISTINCT cwd FROM chat_thread WHERE project_id = ?")
+      .all(projectId) as { cwd: string }[]
+  ).map((r) => r.cwd);
+  const info = db.prepare("DELETE FROM project WHERE id = ?").run(projectId);
+  return { deleted: info.changes > 0, cwds };
+}
+
 /** Number of saved threads sharing a working directory. */
 export function countThreadsByCwd(cwd: string): number {
   const row = getDb()
