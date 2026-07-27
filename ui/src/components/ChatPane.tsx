@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
+  ChevronUp,
   ClipboardList,
   Eye,
   FilePenLine,
@@ -74,6 +75,7 @@ import SurfacePanel from "./SurfacePanel.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff } from "../lib/diff.ts";
+import { chunkTranscript, type ToolItem } from "../lib/worklog.ts";
 import { DiffView, DiffStat } from "./DiffView.tsx";
 
 /** One slash command from GET /api/claude/commands (src/commands/index.ts). */
@@ -1002,9 +1004,12 @@ export default function ChatPane({
               message starts a fresh session in this project.
             </div>
           )}
-          {history.map((it) => (
-            <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />
-          ))}
+          <GroupedTranscript
+            items={history}
+            liveActive={false}
+            planCtx={planCtx}
+            caps={caps}
+          />
           {historyState === "found" && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <History className="size-3 shrink-0" />
@@ -1019,7 +1024,12 @@ export default function ChatPane({
           {items.length === 0 && historyState === null ? (
             <EmptyState status={status} binary={providerMeta.binary} />
           ) : (
-            items.map((it) => <Anchored key={it.id} item={it} planCtx={planCtx} caps={caps} />)
+            <GroupedTranscript
+              items={items}
+              liveActive={busy}
+              planCtx={planCtx}
+              caps={caps}
+            />
           )}
             {busy && <WorkingIndicator items={items} streaming={caps.streamingDeltas} />}
             </div>
@@ -1724,6 +1734,96 @@ function Anchored({
       className="scroll-mt-4"
     >
       <Item item={item} planCtx={planCtx} caps={caps} />
+    </div>
+  );
+}
+
+/** Renders a transcript list with consecutive tool runs folded into Work Log
+ *  groups (roll-ups). `liveActive` marks the LAST group as the one currently
+ *  streaming, so it renders expanded while the rest collapse. */
+function GroupedTranscript({
+  items,
+  liveActive,
+  planCtx,
+  caps,
+}: {
+  items: ChatItem[];
+  liveActive: boolean;
+  planCtx?: PlanCtx;
+  caps: AgentCapabilities;
+}) {
+  const chunks = useMemo(() => chunkTranscript(items), [items]);
+  const last = chunks[chunks.length - 1];
+  const activeGroupId =
+    liveActive && last?.kind === "group" ? last.id : null;
+  return (
+    <>
+      {chunks.map((chunk) =>
+        chunk.kind === "single" ? (
+          <Anchored
+            key={chunk.item.id}
+            item={chunk.item}
+            planCtx={planCtx}
+            caps={caps}
+          />
+        ) : (
+          <WorkLogGroup
+            key={chunk.id}
+            tools={chunk.tools}
+            active={chunk.id === activeGroupId}
+            planCtx={planCtx}
+            caps={caps}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+/** One collapsed run of tool cards. Expanded shows every card + "Show fewer";
+ *  collapsed shows a "+N earlier steps" disclosure above the latest card.
+ *  Default follows `active` (the streaming group is open, finished groups
+ *  collapse) until the user toggles, which pins the choice. */
+function WorkLogGroup({
+  tools,
+  active,
+  planCtx,
+  caps,
+}: {
+  tools: ToolItem[];
+  active: boolean;
+  planCtx?: PlanCtx;
+  caps: AgentCapabilities;
+}) {
+  const [manual, setManual] = useState<boolean | null>(null);
+  const expanded = manual ?? active;
+  const hidden = tools.length - 1;
+  const latest = tools[tools.length - 1];
+  const toggle =
+    "flex items-center gap-1.5 self-start rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+  if (expanded) {
+    return (
+      <div className="flex flex-col gap-4">
+        {tools.map((t) => (
+          <Anchored key={t.id} item={t} planCtx={planCtx} caps={caps} />
+        ))}
+        <button type="button" onClick={() => setManual(false)} className={toggle}>
+          <ChevronUp className="size-3 shrink-0" />
+          Show fewer
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <button type="button" onClick={() => setManual(true)} className={toggle}>
+        <ChevronDown className="size-3 shrink-0" />
+        {hidden} earlier {hidden === 1 ? "step" : "steps"}
+      </button>
+      {latest && (
+        <Anchored key={latest.id} item={latest} planCtx={planCtx} caps={caps} />
+      )}
     </div>
   );
 }
