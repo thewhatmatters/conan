@@ -60,11 +60,10 @@
   --muted-foreground: #6b6b6b;
   --primary: #171717;
   --primary-foreground: #fafafa;
-  /* Conan brand accent — the warm ember of the app icon + marketing site
-     (conan.sh). Used for brand "detail" moments (the What's New splash, etc.),
-     NOT the app's functional chrome, which stays emerald (--primary). Reads
-     warm and on-brand on the white card where emerald looked harsh. */
-  --brand: #d97706;
+  /* Conan brand accent — clay, per the Studio composer redesign (Figma 9:189).
+     Used for brand "detail" moments (What's New splash) AND the composer send
+     button; the rest of the functional chrome stays monochrome (--primary). */
+  --brand: #d97757;
   --brand-foreground: #ffffff;
   --secondary: #f5f5f5;
   --secondary-foreground: #171717;
@@ -105,10 +104,10 @@
   --muted-foreground: #a3a3a3;
   --primary: #fafafa;
   --primary-foreground: #171717;
-  /* Brand accent, brightened for dark surfaces (mirrors how --primary lifts in
-     dark). Amber-500 on near-black text pops without glaring. */
-  --brand: #f59e0b;
-  --brand-foreground: #1a1206;
+  /* Brand accent — the same clay as light (the design uses one clay on both
+     surfaces); white glyph on clay reads on dark too. */
+  --brand: #d97757;
+  --brand-foreground: #ffffff;
   --secondary: #262626;
   --secondary-foreground: #fafafa;
   --accent: #262626;

@@ -56,18 +56,19 @@ export function ProviderModelPicker({
   const activeModelLabel = active?.capabilities.models?.find(
     (m) => (m.value ?? undefined) === model,
   )?.label;
-  // Trigger face: brand mark + provider name, plus the model when a non-default
-  // one is chosen ("Claude Code · Opus"). The default model appends nothing.
-  const triggerLabel =
-    model !== undefined && activeModelLabel
-      ? `${activeProviderName} · ${activeModelLabel}`
-      : activeProviderName;
+  // Trigger face: brand mark + provider name + the model — ALWAYS both (the
+  // Studio composer shows the full pair). An untouched pick resolves to the
+  // provider's `value: null` entry, whose "Default model" label compresses to
+  // "Default" so the chip stays short.
+  const triggerLabel = activeModelLabel
+    ? `${activeProviderName} · ${activeModelLabel === "Default model" ? "Default" : activeModelLabel}`
+    : activeProviderName;
 
   if (locked) {
     return (
       <span
         title="Locked for this thread — a new chat starts a fresh config"
-        className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground"
+        className="flex cursor-default items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground"
       >
         <ProviderMark id={activeProviderId} letter={activeProviderLetter} className="size-4" />
         {triggerLabel}
@@ -89,7 +90,7 @@ export function ProviderModelPicker({
         setOpen(o);
       }}
     >
-      <PopoverTrigger className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <PopoverTrigger className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <ProviderMark id={activeProviderId} letter={activeProviderLetter} className="size-4" />
         {triggerLabel}
         <ChevronDown className="size-3 opacity-60" />

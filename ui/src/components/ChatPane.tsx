@@ -20,6 +20,7 @@ import {
   Sparkles,
   Brain,
   Paperclip,
+  Plus,
   X,
   Square,
   SquareSlash,
@@ -1060,62 +1061,12 @@ export default function ChatPane({
       />
         </div>
 
-      {/* Composer — textarea with a chip row + send button. */}
+      {/* Composer (Studio redesign, Figma 9:189) — ONE rounded card: a darker
+          input region (textarea + thread-context chips INSIDE it) over a
+          footer row on the card chrome (+ · provider/model · permission ·
+          effort · send). cwd and branch describe the conversation, so they
+          ride inside the input region rather than a separate row above. */}
         <div className="shrink-0 px-4 pb-4">
-        {/* Thread context pills — ABOVE the input (the Claude Code pattern),
-            scoped to THIS thread. cwd and branch describe the conversation,
-            not the app, so they live with the composer instead of in a
-            full-width app footer. Left = the working directory (interactive
-            picker); then the branch it's on (informational). */}
-        <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-1.5">
-          {/* Static directory pill (US-025): the PROJECT owns the path, so
-              this is an indicator, not a picker. Lock appears once the first
-              turn fixes the session's launch cwd, as before. */}
-          <span
-            title={
-              (effectiveCwd ? `${effectiveCwd}\n` : "") +
-              (locked
-                ? "Locked for this session — the project owns the path"
-                : "Project directory")
-            }
-            className="flex min-w-0 cursor-default items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
-          >
-            <FolderOpen className="size-3.5 shrink-0" />
-            <span className="max-w-40 truncate">
-              {effectiveCwd ? basename(effectiveCwd) : "Directory"}
-            </span>
-            {locked && <Lock className="size-3 shrink-0 opacity-60" />}
-          </span>
-          {!locked && branchInfo?.repo && branchPick ? (
-            <BranchPicker
-              info={branchInfo}
-              selection={branchPick}
-              onSelect={setBranchPick}
-            />
-          ) : git?.available && git.branch ? (
-            <span
-              title={`${git.branch}${git.dirty ? ` · ${git.dirty} uncommitted` : ""}`}
-              className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground"
-            >
-              <GitBranch className="size-3.5 shrink-0" />
-              <span className="max-w-48 truncate">
-                {git.branch}
-                {git.dirty ? "*" : ""}
-              </span>
-            </span>
-          ) : null}
-          <div className="flex-1" />
-          {status !== "open" && (
-            <span
-              className={cn(
-                "text-[11px]",
-                status === "connecting" ? "text-muted-foreground" : "text-destructive",
-              )}
-            >
-              {status === "connecting" ? "connecting to agent…" : "agent disconnected"}
-            </span>
-          )}
-        </div>
         {showFreshDepsHint && (
           <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">
@@ -1131,7 +1082,7 @@ export default function ChatPane({
             </button>
           </div>
         )}
-        <div className="relative mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60">
+        <div className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-border bg-card shadow-sm focus-within:border-primary/60">
           {!pendingApproval && <AutocompleteOverlay ac={ac} />}
           {/* Approval UI only where the provider HAS an approval channel
               (US-009): codex/grok never emit permission-requests, and the
@@ -1139,13 +1090,18 @@ export default function ChatPane({
           {pendingApproval && caps.interactiveApproval ? (
             /* Supervised mode: the input area becomes the approval prompt —
                the turn is blocked on this decision, so typing can wait. */
-            <ApprovalPanel
-              approval={pendingApproval}
-              count={pendingApprovals.length}
-              respond={respondToApproval}
-            />
+            <div className="p-3">
+              <ApprovalPanel
+                approval={pendingApproval}
+                count={pendingApprovals.length}
+                respond={respondToApproval}
+              />
+            </div>
           ) : (
             <>
+              {/* Input region — a shade darker than the card chrome, textarea
+                  plus the thread-context chips at its foot. */}
+              <div className="flex flex-col rounded-3xl bg-background px-4 pb-3 pt-4">
               {/* Pending pasted images — thumbnails, each removable, staged for
                   the next turn (gateway bounds them). */}
               {images.length > 0 && (
@@ -1247,11 +1203,75 @@ export default function ChatPane({
                 placeholder={
                   status === "closed"
                     ? "Agent disconnected — start a new chat to continue"
-                    : "Message the agent…  (Enter to send, Shift+Enter for newline)"
+                    : "How can I help you today?"
                 }
-                className="max-h-48 min-h-9 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-h-48 min-h-9 w-full resize-none bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <div className="mt-2 flex items-center gap-2">
+              {/* Thread context — INSIDE the input region (US-025 + Studio
+                  redesign): the working directory (project-owned indicator)
+                  and the branch (picker on drafts, indicator after launch). */}
+              <div className="mt-3 flex items-center gap-2">
+                <span
+                  title={
+                    (effectiveCwd ? `${effectiveCwd}\n` : "") +
+                    (locked
+                      ? "Locked for this session — the project owns the path"
+                      : "Project directory")
+                  }
+                  className="flex min-w-0 cursor-default items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-sm text-foreground"
+                >
+                  <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="max-w-40 truncate">
+                    {effectiveCwd ? basename(effectiveCwd) : "Directory"}
+                  </span>
+                  {locked && <Lock className="size-3 shrink-0 opacity-60" />}
+                </span>
+                {!locked && branchInfo?.repo && branchPick ? (
+                  <BranchPicker
+                    info={branchInfo}
+                    selection={branchPick}
+                    onSelect={setBranchPick}
+                  />
+                ) : git?.available && git.branch ? (
+                  <span
+                    title={`${git.branch}${git.dirty ? ` · ${git.dirty} uncommitted` : ""}`}
+                    className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-sm text-foreground"
+                  >
+                    <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="max-w-48 truncate">
+                      {git.branch}
+                      {git.dirty ? "*" : ""}
+                    </span>
+                  </span>
+                ) : null}
+                <div className="flex-1" />
+                {status !== "open" && (
+                  <span
+                    className={cn(
+                      "text-[11px]",
+                      status === "connecting" ? "text-muted-foreground" : "text-destructive",
+                    )}
+                  >
+                    {status === "connecting" ? "connecting to agent…" : "agent disconnected"}
+                  </span>
+                )}
+              </div>
+              </div>
+              {/* Footer — on the card chrome: attach · provider/model ·
+                  permission · effort, then context meter + send. 16/8 padding
+                  per the Studio frame. */}
+              <div className="flex items-center justify-between gap-2 px-4 py-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                <PinPicker
+                  token={token}
+                  cwd={effectiveCwd}
+                  disabled={status !== "open"}
+                  onPin={(pin) =>
+                    setPins((prev) =>
+                      prev.some((p) => p.path === pin.path) ? prev : [...prev, pin],
+                    )
+                  }
+                />
                 {/* Fused provider + model picker (US-008 + model): one popover
                     — a provider rail + the browsed provider's OWN model list —
                     replacing the two separate chips. Each provider's models come
@@ -1282,7 +1302,6 @@ export default function ChatPane({
                   locked={locked}
                   onSelect={selectProviderModel}
                 />
-                <span className="text-border">|</span>
                 {/* The active permission mode stays visible here whether or not the
                     dropdown is ever opened — the persistent indicator. Options come
                     from the provider's own capability descriptor (US-009): codex
@@ -1325,7 +1344,6 @@ export default function ChatPane({
                     redacted for claude and encrypted for codex (D2). */}
                 {caps.effortModes.length > 0 && (
                   <>
-                    <span className="text-border">|</span>
                     <Chip
                       icon={<Brain className="size-3.5" />}
                       label={
@@ -1354,29 +1372,18 @@ export default function ChatPane({
                     </Chip>
                   </>
                 )}
-                <div className="flex-1" />
-                {/* Right cluster: a compact context ring (rich hover card),
-                    the pin picker, and send — kept out of the chip row so the
-                    chips stay on one line (T3 layout). */}
+                </div>
+                {/* Right cluster: the context ring (rich hover card) + send. */}
+                <div className="flex shrink-0 items-center gap-2">
                 {contextTokens != null && (
                   <ContextMeter used={contextTokens} windowTokens={caps.contextWindowTokens} />
                 )}
-                <PinPicker
-                  token={token}
-                  cwd={effectiveCwd}
-                  disabled={status !== "open"}
-                  onPin={(pin) =>
-                    setPins((prev) =>
-                      prev.some((p) => p.path === pin.path) ? prev : [...prev, pin],
-                    )
-                  }
-                />
                 {busy ? (
                   <button
                     onClick={interrupt}
                     aria-label="Stop"
                     title="Stop — cancel this turn (the conversation survives)"
-                    className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     <Square className="size-3.5 fill-current" />
                   </button>
@@ -1385,11 +1392,12 @@ export default function ChatPane({
                     onClick={submit}
                     disabled={!text.trim() || status !== "open" || historyState === "loading"}
                     aria-label="Send"
-                    className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-default disabled:opacity-40"
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-brand text-brand-foreground transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-default disabled:opacity-40"
                   >
                     <ArrowUp className="size-4" />
                   </button>
                 )}
+                </div>
               </div>
             </>
           )}
@@ -1527,13 +1535,13 @@ function Chip({
       <span
         title="Locked for this thread — a new chat starts a fresh config"
         className={cn(
-          "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground",
+          "flex cursor-default items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground",
           className,
         )}
       >
         {icon}
         {label}
-        <Lock className="size-3 opacity-60" />
+        <Lock className="size-3.5 opacity-60" />
       </span>
     );
   }
@@ -1541,13 +1549,13 @@ function Chip({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg:first-child]:text-muted-foreground",
           className,
         )}
       >
         {icon}
         {label}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown className="size-3.5 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">{children}</DropdownMenuContent>
     </DropdownMenu>
@@ -1590,9 +1598,9 @@ function BranchPicker({
     >
       <DropdownMenuTrigger
         title={`Branch: ${selection.branch}`}
-        className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-sm text-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <GitBranch className="size-3.5 shrink-0" />
+        <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="max-w-48 truncate">{selection.branch}</span>
         <ChevronDown className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
@@ -2002,9 +2010,9 @@ function PinPicker({
         disabled={disabled}
         aria-label="Pin a file"
         title="Pin a file's content to the next message"
-        className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
       >
-        <Paperclip className="size-4" />
+        <Plus className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
         <input
