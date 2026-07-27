@@ -1,3 +1,11 @@
+/* Geist — self-hosted via fontsource (the `geist` npm package is a next/font
+   wrapper that drags in Next.js; see the vault gotcha). Sans in the weights
+   the app uses; Mono at 400 for code/diff surfaces. */
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource/geist-sans/700.css";
+@import "@fontsource/geist-mono/400.css";
 @import "tailwindcss";
 
 /* Class-based dark mode: toggling `.dark` on <html> flips the tokens below. */
@@ -7,6 +15,10 @@
    border-border, bg-card, text-muted-foreground, bg-term-bg, text-term-fg, ...).
    shadcn-compatible naming so the component library slots in at US-009. */
 @theme inline {
+  /* Typeface system — Geist throughout (fontsource family names). font-sans /
+     font-mono utilities and the body default all resolve to these. */
+  --font-sans: "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -142,7 +154,7 @@ body,
 
 body {
   margin: 0;
-  font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   background: var(--background);
   color: var(--foreground);
 }
