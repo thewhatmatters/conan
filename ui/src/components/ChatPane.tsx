@@ -976,15 +976,8 @@ export default function ChatPane({
           onToggleSurfaces={() => setSurfacesOpen((o) => !o)}
         />
         <div className="flex min-h-0 flex-1">
-      {/* Activity spine (US-016) — outside the scroller so it stays put
-          while the transcript scrolls; bound to this thread's turns. */}
-      <ActivitySpine
-        turns={turns}
-        onJump={jumpToTurn}
-        onViewportChange={scrollFromSpine}
-        viewport={spineViewport}
-      />
-      {/* Transcript — aside-rooted so it inherits the themed 6px scrollbar. */}
+      {/* Transcript — aside-rooted; the activity spine sits to its RIGHT and is
+          the primary scroll affordance, so the native scrollbar is hidden. */}
       <div className="relative min-h-0 min-w-0 flex-1">
         <aside
           ref={scrollRef}
@@ -993,9 +986,9 @@ export default function ChatPane({
             if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
             updateSpineViewport();
           }}
-          className="absolute inset-0 overflow-auto"
+          className="absolute inset-0 overflow-auto no-native-scrollbar"
         >
-          <div className="w-full pr-16">
+          <div className="w-full pl-16">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
           {historyState === "loading" && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1047,6 +1040,14 @@ export default function ChatPane({
           )}
         />
       </div>
+      {/* Activity spine (US-016) — RIGHT side, primary scroll affordance;
+          internals unchanged so drag/jump/pill behave as the working version. */}
+      <ActivitySpine
+        turns={turns}
+        onJump={jumpToTurn}
+        onViewportChange={scrollFromSpine}
+        viewport={spineViewport}
+      />
         </div>
 
       {/* Composer — textarea with a chip row + send button. */}

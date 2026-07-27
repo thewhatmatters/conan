@@ -366,7 +366,7 @@ export default function ActivitySpine({
                     {activeRange + 1}/{rangeCount}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
-                    side="right"
+                    side="left"
                     align="center"
                     sideOffset={8}
                     className="min-w-28"
@@ -451,7 +451,7 @@ export default function ActivitySpine({
                           onJump(bucket.first.id);
                         }}
                         aria-label={`Jump to prompt ${index + 1}`}
-                        className={`absolute left-1/2 z-30 h-4 w-8 -translate-x-1/2 -translate-y-1/2 cursor-pointer bg-transparent transition-[top] duration-150 ease-out after:absolute after:left-[calc(50%-6px)] after:top-1/2 after:h-px after:w-3 after:-translate-y-1/2 after:rounded-full after:transition-[width,background-color] after:duration-150 hover:after:w-6 hover:after:bg-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                        className={`absolute left-1/2 z-30 h-4 w-8 -translate-x-1/2 -translate-y-1/2 cursor-pointer bg-transparent transition-[top] duration-150 ease-out after:absolute after:right-[calc(50%-6px)] after:top-1/2 after:h-px after:w-3 after:-translate-y-1/2 after:rounded-full after:transition-[width,background-color] after:duration-150 hover:after:w-6 hover:after:bg-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
                           inViewport
                             ? "after:bg-muted-foreground/70"
                             : "after:bg-muted-foreground/40"
@@ -459,9 +459,9 @@ export default function ActivitySpine({
                         style={{ top: `${localPosition * 100}%` }}
                       />
                       <TooltipContent
-                        side="right"
+                        side="left"
                         sideOffset={10}
-                        className="w-72 max-w-72 rounded-lg border border-border border-l-2 border-l-chart-1 bg-popover px-3 py-2.5 text-popover-foreground shadow-md"
+                        className="w-72 max-w-72 rounded-lg border border-border border-r-2 border-r-chart-1 bg-popover px-3 py-2.5 text-popover-foreground shadow-md"
                       >
                         <div className="flex items-start gap-2">
                           <span className="mt-1 size-2.5 shrink-0 rounded-full bg-foreground" />

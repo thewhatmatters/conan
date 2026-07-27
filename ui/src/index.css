@@ -186,6 +186,20 @@ aside.overflow-auto::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
 
+/* The chat transcript scroller has NO native scrollbar — the ActivitySpine
+   to its right is the scroll affordance. Higher specificity than the themed
+   rule above so it actually wins (and once scrollbar-width is `none`, the
+   ::-webkit-scrollbar pseudo is honored again). Scoped to this one region so
+   the HUD / Files surface keep their themed bar. */
+aside.overflow-auto.no-native-scrollbar {
+  scrollbar-width: none;
+}
+aside.overflow-auto.no-native-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Claude Radio playing-state equalizer — 5 bars in a gentle left-to-right
    wave. Each bar's height oscillates between 30% and 100% of the container;
    staggered `animation-delay` on the bars produces the wave. The bar's
