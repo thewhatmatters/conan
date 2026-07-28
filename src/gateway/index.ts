@@ -80,6 +80,7 @@ import {
   upsertChatProject,
   countThreadsByCwd,
   deleteChatThread,
+  renameChatThread,
   deleteChatProject,
   getChatThread,
 } from "../agent/threads.js";
@@ -127,7 +128,7 @@ app.use((req, res, next) => {
     );
     res.setHeader(
       "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS",
+      "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     );
     res.setHeader("Vary", "Origin");
   }
@@ -690,6 +691,16 @@ app.delete("/api/agent/threads/:sessionId", async (req, res) => {
   }
 
   res.json(response);
+});
+
+// Rename a thread (sidebar context menu). Body { title }; an empty title
+// clears back to the first-prompt fallback. 404 when the id is unknown.
+app.patch("/api/agent/threads/:sessionId", (req, res) => {
+  if (!authed(req, res)) return;
+  const title = typeof req.body?.title === "string" ? req.body.title : "";
+  const renamed = renameChatThread(req.params.sessionId, title);
+  if (!renamed) return res.status(404).json({ error: "thread not found" });
+  res.json({ renamed: true });
 });
 
 // Reopen a saved thread (US-015): reconstruct its transcript from Claude

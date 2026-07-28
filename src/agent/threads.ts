@@ -253,6 +253,17 @@ export function setChatThreadLastMessage(sessionId: string, text: string): void 
     .run(preview, sessionId);
 }
 
+/** Rename a thread (sidebar context menu). Trims + caps the title; an empty
+ *  title clears it back to null (the row falls back to "New chat"). Returns
+ *  false when the id is unknown. */
+export function renameChatThread(sessionId: string, title: string): boolean {
+  const clean = title.replace(/\s+/g, " ").trim().slice(0, 200);
+  const info = getDb()
+    .prepare("UPDATE chat_thread SET title = ? WHERE session_id = ?")
+    .run(clean || null, sessionId);
+  return info.changes > 0;
+}
+
 /** Delete a thread row (the sidebar's close-X). The project persists. */
 export function deleteChatThread(sessionId: string): boolean {
   const info = getDb()

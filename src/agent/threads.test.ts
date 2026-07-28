@@ -52,6 +52,7 @@ const {
   deleteChatThread,
   getChatThread,
   listChatProjects,
+  renameChatThread,
   upsertChatThread,
 } = await import("./threads.js");
 
@@ -63,6 +64,17 @@ test("migrate() adds provider, effort, and last_message to a pre-existing chat_t
   assert.ok(cols.includes("provider"));
   assert.ok(cols.includes("last_message"));
   assert.ok(cols.includes("effort"));
+});
+
+test("renameChatThread sets, trims, and clears the title; unknown id → false", () => {
+  assert.equal(renameChatThread("pre-migration", "  Renamed   thread  "), true);
+  assert.equal(getChatThread("pre-migration")?.title, "Renamed thread");
+  // Empty title clears back to null (row falls back to "New chat").
+  assert.equal(renameChatThread("pre-migration", "   "), true);
+  assert.equal(getChatThread("pre-migration")?.title, null);
+  assert.equal(renameChatThread("does-not-exist", "x"), false);
+  // Restore so later assertions that read this row are unaffected.
+  renameChatThread("pre-migration", "old thread");
 });
 
 test("a pre-migration row (provider NULL) reads as 'claude'", () => {
