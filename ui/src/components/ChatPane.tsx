@@ -863,10 +863,45 @@ export default function ChatPane({
           ],
         };
   });
+  // Eased scroll to an absolute scrollTop — the single motion primitive behind
+  // every discrete spine navigation (tick click, range jump, Present), so the
+  // transcript, ticks, and blue pill always glide together instead of teleporting.
+  const animateScrollTo = useCallback((destination: number, duration = 380) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const dest = Math.max(0, Math.min(destination, maxTop));
+    const origin = el.scrollTop;
+    const distance = dest - origin;
+    if (spineJumpFrameRef.current != null)
+      cancelAnimationFrame(spineJumpFrameRef.current);
+    // Any spine navigation is an explicit move away from Present — release the
+    // stick-to-bottom pin so a streaming delta doesn't yank us back mid-glide.
+    pinnedRef.current = false;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion || Math.abs(distance) < 1) {
+      el.scrollTop = dest;
+      spineJumpFrameRef.current = null;
+      return;
+    }
+    const started = performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - started) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+      el.scrollTop = origin + distance * eased;
+      if (progress < 1) {
+        spineJumpFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        spineJumpFrameRef.current = null;
+      }
+    };
+    spineJumpFrameRef.current = requestAnimationFrame(animate);
+  }, []);
   const jumpToTurn = (id: string) => {
-    // Drive this pane's scroll position directly. `scrollIntoView` can choose
-    // an ancestor outside the transcript; a measured local target guarantees
-    // the clicked tick, transcript viewport, and blue pill share one motion.
+    // `scrollIntoView` can choose an ancestor outside the transcript; a measured
+    // local target guarantees the clicked tick, viewport, and pill share one motion.
     const el = scrollRef.current;
     const target = el?.querySelector<HTMLElement>(
       `[data-turn="${CSS.escape(id)}"]`,
@@ -876,42 +911,28 @@ export default function ChatPane({
       target.getBoundingClientRect().top -
       el.getBoundingClientRect().top +
       el.scrollTop;
-    const destination = Math.max(
-      0,
-      Math.min(top, el.scrollHeight - el.clientHeight),
-    );
-    const origin = el.scrollTop;
-    const distance = destination - origin;
-    if (spineJumpFrameRef.current != null)
-      cancelAnimationFrame(spineJumpFrameRef.current);
-    pinnedRef.current = false;
-    if (Math.abs(distance) < 1) return;
-    const started = performance.now();
-    // Shorter than native smooth-scroll, but long enough for the transcript
-    // and pill to read as one coordinated scrollbar-like movement.
-    const duration = 160;
-    const animate = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      el.scrollTop = origin + distance * eased;
-      if (progress < 1) {
-        spineJumpFrameRef.current = requestAnimationFrame(animate);
-      } else {
+    animateScrollTo(top);
+  };
+  const scrollFromSpine = useCallback(
+    (top: number, smooth = false) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const destination = top * el.scrollHeight;
+      // Dragging the pill needs frame-exact tracking (instant); discrete jumps
+      // (range dropdown, chevrons, Present) glide so the motion reads clearly.
+      if (smooth) {
+        animateScrollTo(destination);
+        return;
+      }
+      if (spineJumpFrameRef.current != null) {
+        cancelAnimationFrame(spineJumpFrameRef.current);
         spineJumpFrameRef.current = null;
       }
-    };
-    spineJumpFrameRef.current = requestAnimationFrame(animate);
-  };
-  const scrollFromSpine = useCallback((top: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (spineJumpFrameRef.current != null) {
-      cancelAnimationFrame(spineJumpFrameRef.current);
-      spineJumpFrameRef.current = null;
-    }
-    const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
-    el.scrollTop = Math.max(0, Math.min(top * el.scrollHeight, maxTop));
-  }, []);
+      const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      el.scrollTop = Math.max(0, Math.min(destination, maxTop));
+    },
+    [animateScrollTo],
+  );
 
   // Spine minimap viewport — the scroller's visible window as 0–1 fractions.
   // Epsilon-gated so 60Hz scroll events don't re-render the pane per frame.

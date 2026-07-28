@@ -100,8 +100,10 @@ export default function ActivitySpine({
 }: {
   turns: SpineTurn[];
   onJump: (id: string) => void;
-  /** Scroll the transcript to a normalized top position (0–1). */
-  onViewportChange?: (top: number) => void;
+  /** Scroll the transcript to a normalized top position (0–1). Pass `smooth`
+   *  for discrete jumps (range dropdown, chevrons, Present) so the transcript
+   *  eases into place; omit it for pill drags that must track the pointer. */
+  onViewportChange?: (top: number, smooth?: boolean) => void;
   viewport?: SpineViewport | null;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -230,7 +232,9 @@ export default function ActivitySpine({
   };
   const goToRange = (nextRange: number) => {
     const bounded = Math.max(0, Math.min(nextRange, rangeCount - 1));
-    pinRangeDuringMotion(bounded, 50);
+    // Hold the target range for the full eased glide (~380ms) so the pill moves
+    // within one range's coordinate system instead of hopping through ranges.
+    pinRangeDuringMotion(bounded, 440);
     // Land just inside the requested range. Scroll positions are pixel-rounded,
     // so targeting the exact fractional boundary can settle a hair below it;
     // once the temporary pin releases, `floor(viewportTop / rangeStep)` would
@@ -238,6 +242,7 @@ export default function ActivitySpine({
     const boundaryInset = bounded === 0 ? 0 : Math.min(0.0005, rangeStep / 10);
     onViewportChange?.(
       Math.min(maxViewportTop, bounded * rangeStep + boundaryInset),
+      true,
     );
   };
 
@@ -447,7 +452,7 @@ export default function ActivitySpine({
                     <Tooltip>
                       <TooltipTrigger
                         onClick={() => {
-                          pinRangeDuringMotion(activeRange);
+                          pinRangeDuringMotion(activeRange, 440);
                           onJump(bucket.first.id);
                         }}
                         aria-label={`Jump to prompt ${index + 1}`}
@@ -489,8 +494,8 @@ export default function ActivitySpine({
             type="button"
             className="cursor-pointer text-[10px] tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
-              pinRangeDuringMotion(rangeCount - 1, 50);
-              onViewportChange?.(1);
+              pinRangeDuringMotion(rangeCount - 1, 440);
+              onViewportChange?.(1, true);
             }}
           >
             Present
