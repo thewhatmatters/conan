@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
+  Folder,
   FolderOpen,
   GitCommitHorizontal,
   GitPullRequestArrow,
@@ -80,6 +81,7 @@ export default function ThreadToolbar({
   token,
   cwd,
   projectId,
+  projectName,
   title,
   onSendPrompt,
   surfacesOpen,
@@ -90,6 +92,9 @@ export default function ThreadToolbar({
   cwd: string | null;
   /** Persisted project id — scopes custom actions. Null for a fresh draft. */
   projectId: string | null;
+  /** Project display name (folder basename) — a breadcrumb crumb before the
+   *  thread title. Null for a fresh draft with no project yet. */
+  projectName: string | null;
   /** The thread's title (null → "New chat"). */
   title: string | null;
   /** Send a prompt into this thread's chat (for prompt-kind actions). Returns
@@ -320,7 +325,17 @@ export default function ThreadToolbar({
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3 text-xs">
-      {/* Left: the chat title (branch lives in the composer context row). */}
+      {/* Left: a project ▸ title breadcrumb (branch lives in the composer
+          context row). The project crumb is muted; the title carries weight. */}
+      {projectName && (
+        <span className="flex min-w-0 shrink items-center gap-1.5 text-muted-foreground">
+          <Folder className="size-3.5 shrink-0" />
+          <span className="truncate" title={projectName}>
+            {projectName}
+          </span>
+          <span className="shrink-0 text-border">/</span>
+        </span>
+      )}
       <span className="min-w-0 truncate font-medium text-foreground" title={title ?? "New chat"}>
         {title ?? "New chat"}
       </span>

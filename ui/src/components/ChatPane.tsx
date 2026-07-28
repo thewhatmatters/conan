@@ -203,6 +203,7 @@ export default function ChatPane({
   token,
   cwd,
   projectId,
+  projectName,
   resume,
   lastSkillFired,
   onState,
@@ -215,6 +216,9 @@ export default function ChatPane({
   /** Persisted project id (US-014) — rides the prompt frame so the gateway
    *  can upsert this thread's chat_thread row at session init. */
   projectId?: string | null;
+  /** Project display name (folder basename) — shown as a breadcrumb crumb
+   *  before the thread title in the toolbar. */
+  projectName?: string | null;
   /** Saved session to reopen (US-015): its transcript is reconstructed above
    *  the live items and the first prompt launches with `--resume`. */
   resume?: ResumeTarget | null;
@@ -289,10 +293,25 @@ export default function ChatPane({
   const [surfaceWidth, setSurfaceWidth] = useState(420);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const spineJumpFrameRef = useRef<number | null>(null);
+  // Frosted composer floats over the transcript, so the scroll content pads
+  // its own foot by the composer's live height to keep the last message clear.
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
   // Whether the view is pinned to the bottom. Scrolling up releases the pin
   // (so streaming doesn't yank the user back down); scrolling back near the
   // bottom re-engages it.
   const pinnedRef = useRef(true);
+
+  // Track the floating composer's height so the transcript can pad its foot by
+  // exactly that amount — messages scroll behind the frosted glass, never under it.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setComposerHeight(el.offsetHeight));
+    ro.observe(el);
+    setComposerHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   // Reopened thread (US-015): reconstruct the saved transcript once. "missing"
   // (JSONL gone) degrades to metadata-only — the next prompt starts a FRESH
@@ -401,6 +420,14 @@ export default function ChatPane({
   // THIS thread's cwd. The inserted `@path` is a reference only; the agent
   // reads the file itself (no content pinning).
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Auto-grow the composer to fit its content (up to max-h-48), so long input
+  // stays readable. Anchored at bottom-0, the composer expands upward.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, [text]);
   const fileSource = useMemo<AutocompleteSource>(
     () => ({
       trigger: "@",
@@ -968,11 +995,12 @@ export default function ChatPane({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 bg-background">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <ThreadToolbar
           token={token}
           cwd={effectiveCwd}
           projectId={projectId ?? null}
+          projectName={projectName ?? null}
           title={title}
           onSendPrompt={sendPrompt}
           surfacesOpen={surfacesOpen}
@@ -992,7 +1020,10 @@ export default function ChatPane({
           className="absolute inset-0 overflow-auto no-native-scrollbar"
         >
           <div className="w-full pl-16">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
+            <div
+              className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
+              style={{ paddingBottom: composerHeight + 24 }}
+            >
           {historyState === "loading" && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
@@ -1066,9 +1097,9 @@ export default function ChatPane({
           footer row on the card chrome (+ · provider/model · permission ·
           effort · send). cwd and branch describe the conversation, so they
           ride inside the input region rather than a separate row above. */}
-        <div className="shrink-0 px-4 pb-4">
+        <div ref={composerRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
         {showFreshDepsHint && (
-          <div className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+          <div className="pointer-events-auto mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">
               Fresh worktree — dependencies not installed
             </span>
@@ -1082,7 +1113,7 @@ export default function ChatPane({
             </button>
           </div>
         )}
-        <div className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-border bg-card shadow-sm focus-within:border-primary/60">
+        <div className="pointer-events-auto relative mx-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-border/70 bg-card/70 shadow-lg backdrop-blur-xl focus-within:border-primary/60">
           {!pendingApproval && <AutocompleteOverlay ac={ac} />}
           {/* Approval UI only where the provider HAS an approval channel
               (US-009): codex/grok never emit permission-requests, and the
@@ -1101,7 +1132,7 @@ export default function ChatPane({
             <>
               {/* Input region — a shade darker than the card chrome, textarea
                   plus the thread-context chips at its foot. */}
-              <div className="flex flex-col rounded-3xl bg-background px-4 pb-3 pt-4">
+              <div className="flex flex-col rounded-3xl bg-background/50 px-4 pb-3 pt-4">
               {/* Pending pasted images — thumbnails, each removable, staged for
                   the next turn (gateway bounds them). */}
               {images.length > 0 && (
@@ -2055,7 +2086,7 @@ function Item({
     case "user":
       return (
         <div className="flex flex-col items-end gap-1">
-          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground dark:border dark:border-border dark:bg-card dark:text-card-foreground dark:shadow-sm">
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-base text-primary-foreground dark:border dark:border-border dark:bg-card dark:text-card-foreground dark:shadow-sm">
             {item.text}
           </div>
           {/* Images sent with this turn — so the transcript shows what the
@@ -2161,12 +2192,12 @@ function Markdown({ text }: { text: string }) {
   return (
     <div
       className={cn(
-        "min-w-0 text-sm leading-relaxed text-foreground",
+        "min-w-0 text-base leading-relaxed text-foreground",
         "[&_p]:my-1.5 first:[&_p]:mt-0 last:[&_p]:mb-0",
         "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5",
-        "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-base [&_h1]:font-semibold",
-        "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-sm [&_h2]:font-semibold",
-        "[&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-medium",
+        "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-lg [&_h1]:font-semibold",
+        "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold",
+        "[&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-base [&_h3]:font-medium",
         "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs",
         "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.85em]",
         "[&_a]:underline [&_a]:underline-offset-2",

@@ -586,6 +586,9 @@ export default function ChatSurface({
   const projectPath = (projectId: string): string | null =>
     projects.find((p) => p.id === projectId)?.path ?? null;
 
+  const projectName = (projectId: string): string | null =>
+    projects.find((p) => p.id === projectId)?.name ?? null;
+
   // US-003: the sidebar gear opens Settings via the same window-event bridge
   // the native menu (⌘,) and the Upgrade CTAs use — App owns the dialog state.
   const openSettings = () =>
@@ -951,6 +954,7 @@ export default function ChatSurface({
               // in-pane at first send via launchedCwd.
               cwd={t.resume?.cwd ?? projectPath(t.projectId) ?? defaultCwd}
               projectId={t.projectId}
+              projectName={projectName(t.projectId)}
               resume={
                 t.resume
                   ? {
