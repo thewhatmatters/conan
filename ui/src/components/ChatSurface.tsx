@@ -9,12 +9,12 @@ import {
   FolderPlus,
   MessageSquarePlus,
   Minus,
+  MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Settings,
   Trash2,
-  X,
   AlertTriangle,
   CheckCircle2,
   Circle,
@@ -30,6 +30,7 @@ import ProjectPicker, { recordRecentProject } from "./ProjectPicker.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -267,6 +268,11 @@ export default function ChatSurface({
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(
     null,
   );
+  /** Thread pending a rename (sidebar context menu). Null = no dialog. */
+  const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string } | null>(
+    null,
+  );
+  const [renameInput, setRenameInput] = useState("");
 
   useEffect(() => {
     try {
@@ -498,6 +504,31 @@ export default function ChatSurface({
       }
     }
     void refreshRef.current();
+  };
+
+  /** Rename a thread's persisted row (sidebar context menu). PATCHes the title;
+   *  an empty title clears back to the first-prompt fallback. */
+  const renameThread = async (sessionId: string, title: string) => {
+    if (token) {
+      try {
+        await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          headers: { "x-conan-token": token, "content-type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+      } catch {
+        /* best-effort — the old title resurfaces on the next refresh if not */
+      }
+    }
+    void refreshRef.current();
+  };
+
+  const copyText = (text: string) => {
+    try {
+      void navigator.clipboard?.writeText(text);
+    } catch {
+      /* clipboard unavailable — nothing to do */
+    }
   };
 
   const closeThread = (id: string) => {
@@ -847,19 +878,35 @@ export default function ChatSurface({
                         </p>
                       ) : (
                         <div className="ml-2.5 border-l border-border pl-1">
-                          {liveRows.map(({ t, title, activity, desc, provider }) => (
-                            <ThreadRow
-                              key={t.id}
-                              title={title}
-                              desc={desc}
-                              when={timeAgo(activity)}
-                              pill={pillOf(states[t.id])}
-                              agent={agentOf(provider, providers)}
-                              active={t.id === activeId}
-                              onSelect={() => setActiveId(t.id)}
-                              onClose={() => closeThread(t.id)}
-                            />
-                          ))}
+                          {liveRows.map(({ t, title, activity, desc, provider }) => {
+                            const sid =
+                              states[t.id]?.sessionId ?? t.resume?.sessionId ?? null;
+                            const path = t.resume?.cwd ?? projectPath(t.projectId);
+                            return (
+                              <ThreadRow
+                                key={t.id}
+                                title={title}
+                                desc={desc}
+                                when={timeAgo(activity)}
+                                pill={pillOf(states[t.id])}
+                                agent={agentOf(provider, providers)}
+                                active={t.id === activeId}
+                                onSelect={() => setActiveId(t.id)}
+                                onNewThread={() => newThreadIn(t.projectId)}
+                                onRename={
+                                  sid
+                                    ? () => {
+                                        setRenameInput(title ?? "");
+                                        setRenameTarget({ sessionId: sid, title: title ?? "" });
+                                      }
+                                    : null
+                                }
+                                onCopyPath={path ? () => copyText(path) : null}
+                                onCopyId={sid ? () => copyText(sid) : null}
+                                onDelete={() => closeThread(t.id)}
+                              />
+                            );
+                          })}
                           {visibleSaved.map((s) => (
                             <ThreadRow
                               key={s.sessionId}
@@ -870,7 +917,14 @@ export default function ChatSurface({
                               agent={agentOf(s.provider, providers)}
                               active={false}
                               onSelect={() => openSavedThread(proj.id, s)}
-                              onClose={() => void deleteSavedRow(s.sessionId)}
+                              onNewThread={() => newThreadIn(proj.id)}
+                              onRename={() => {
+                                setRenameInput(s.title ?? "");
+                                setRenameTarget({ sessionId: s.sessionId, title: s.title ?? "" });
+                              }}
+                              onCopyPath={() => copyText(s.cwd)}
+                              onCopyId={() => copyText(s.sessionId)}
+                              onDelete={() => void deleteSavedRow(s.sessionId)}
                             />
                           ))}
                           {hiddenCount > 0 && (
@@ -1018,6 +1072,54 @@ export default function ChatSurface({
               Remove
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename a thread (sidebar context menu). Empty clears to "New chat". */}
+      <Dialog
+        open={renameTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename thread</DialogTitle>
+            <DialogDescription>
+              A custom title for this chat. Leave empty to fall back to the
+              first-prompt title.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (renameTarget) void renameThread(renameTarget.sessionId, renameInput);
+              setRenameTarget(null);
+            }}
+          >
+            <input
+              autoFocus
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              placeholder="Thread title"
+              className="mb-4 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Rename
+              </button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </section>
@@ -1228,7 +1330,11 @@ function ThreadRow({
   agent,
   active,
   onSelect,
-  onClose,
+  onNewThread,
+  onRename,
+  onCopyPath,
+  onCopyId,
+  onDelete,
 }: {
   title: string | null;
   /** PD-1: description line — last assistant response / prompt preview. */
@@ -1240,7 +1346,13 @@ function ThreadRow({
   agent: { id: string; letter: string; label: string };
   active: boolean;
   onSelect: () => void;
-  onClose: () => void;
+  /** Context-menu actions. Copy/rename are null when the row has no persisted
+   *  session id yet (a fresh, never-sent draft). */
+  onNewThread: () => void;
+  onRename: (() => void) | null;
+  onCopyPath: (() => void) | null;
+  onCopyId: (() => void) | null;
+  onDelete: () => void;
 }) {
   const p = PILL[pill];
   // Attention states (Working / Awaiting) show a badge; settled states show
@@ -1276,7 +1388,7 @@ function ThreadRow({
           {desc ?? "No messages yet"}
         </span>
       </span>
-      {/* Right slot: close-X on hover, else badge (attention) / timestamp. */}
+      {/* Right slot: a kebab menu on hover, else badge (attention) / timestamp. */}
       <span className="relative flex shrink-0 items-center">
         {attention ? (
           <span
@@ -1293,18 +1405,40 @@ function ThreadRow({
             {when}
           </span>
         )}
-        <button
-          type="button"
-          title="Close chat"
-          aria-label="Close chat"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="absolute right-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
-        >
-          <X className="size-3" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            title="Thread actions"
+            aria-label="Thread actions"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-0 rounded p-0.5 opacity-0 outline-none transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
+          >
+            <MoreVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-44"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuItem onSelect={onNewThread}>New thread</DropdownMenuItem>
+            <DropdownMenuItem disabled={!onRename} onSelect={() => onRename?.()}>
+              Rename thread
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!onCopyPath} onSelect={() => onCopyPath?.()}>
+              Copy Path
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!onCopyId} onSelect={() => onCopyId?.()}>
+              Copy Thread ID
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={onDelete}
+            >
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </span>
     </div>
   );
