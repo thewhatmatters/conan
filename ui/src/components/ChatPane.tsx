@@ -18,7 +18,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Brain,
   Paperclip,
   Plus,
   X,
@@ -1113,6 +1112,22 @@ export default function ChatPane({
       />
         </div>
 
+      {/* Jump-to-present pill — surfaces only when the transcript is scrolled up
+          off the bottom, floating just above the composer. Matches the spine's
+          "Present" affordance; re-pins to the bottom via the shared eased glide. */}
+      {canScrollDown && (
+        <button
+          type="button"
+          aria-label="Jump to present"
+          onClick={() => animateScrollTo(scrollRef.current?.scrollHeight ?? 0)}
+          style={{ bottom: composerHeight + 12 }}
+          className="absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronDown className="size-3.5" />
+          Jump to present
+        </button>
+      )}
+
       {/* Composer (Studio redesign, Figma 9:189) — ONE rounded card: a darker
           input region (textarea + thread-context chips INSIDE it) over a
           footer row on the card chrome (+ · provider/model · permission ·
@@ -1296,6 +1311,19 @@ export default function ChatPane({
                     </span>
                   </span>
                 ) : null}
+                {/* Add files — inline with the cwd/branch context chips, not
+                    down in the footer, since it describes what rides along with
+                    this message just like the directory + branch do. */}
+                <PinPicker
+                  token={token}
+                  cwd={effectiveCwd}
+                  disabled={status !== "open"}
+                  onPin={(pin) =>
+                    setPins((prev) =>
+                      prev.some((p) => p.path === pin.path) ? prev : [...prev, pin],
+                    )
+                  }
+                />
                 <div className="flex-1" />
                 {status !== "open" && (
                   <span
@@ -1314,16 +1342,6 @@ export default function ChatPane({
                   per the Studio frame. */}
               <div className="flex items-center justify-between gap-2 px-4 py-2">
                 <div className="flex min-w-0 items-center gap-1.5">
-                <PinPicker
-                  token={token}
-                  cwd={effectiveCwd}
-                  disabled={status !== "open"}
-                  onPin={(pin) =>
-                    setPins((prev) =>
-                      prev.some((p) => p.path === pin.path) ? prev : [...prev, pin],
-                    )
-                  }
-                />
                 {/* Fused provider + model picker (US-008 + model): one popover
                     — a provider rail + the browsed provider's OWN model list —
                     replacing the two separate chips. Each provider's models come
@@ -1351,8 +1369,10 @@ export default function ChatPane({
                   activeProviderName={providerMeta.name}
                   activeProviderLetter={providerMeta.avatarLetter}
                   model={resume ? resume.model ?? undefined : model}
+                  effort={effort}
                   locked={locked}
                   onSelect={selectProviderModel}
+                  onEffortSelect={setEffort}
                 />
                 {/* The active permission mode stays visible here whether or not the
                     dropdown is ever opened — the persistent indicator. Options come
@@ -1388,42 +1408,9 @@ export default function ChatPane({
                     </div>
                   )}
                 </Chip>
-                {/* Reasoning-effort chip (US-008). ABSENT — not disabled — when
-                    the provider has no effort levels; each provider lists its
-                    own vocabulary (claude think/ultrathink, codex/grok
-                    low/medium/high). "Default" means no override. The copy must
-                    not imply this reveals thinking: reasoning TEXT stays
-                    redacted for claude and encrypted for codex (D2). */}
-                {caps.effortModes.length > 0 && (
-                  <>
-                    <Chip
-                      icon={<Brain className="size-3.5" />}
-                      label={
-                        caps.effortModes.find((e) => e.id === effort)?.label ?? "Default effort"
-                      }
-                      locked={locked}
-                    >
-                      <DropdownMenuItem onClick={() => setEffort("")}>
-                        <div className="flex flex-col">
-                          <span>Default effort</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            The provider's usual reasoning
-                          </span>
-                        </div>
-                      </DropdownMenuItem>
-                      {caps.effortModes.map((e) => (
-                        <DropdownMenuItem key={e.id} onClick={() => setEffort(e.id)}>
-                          <div className="flex flex-col">
-                            <span>{e.label}</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {e.description}
-                            </span>
-                          </div>
-                        </DropdownMenuItem>
-                      ))}
-                    </Chip>
-                  </>
-                )}
+                {/* Reasoning effort now folds into the ProviderModelPicker as a
+                    fly-out (provider · model · effort behind one trigger), so
+                    there's no standalone effort chip here anymore. */}
                 </div>
                 {/* Right cluster: the context ring (rich hover card) + send. */}
                 <div className="flex shrink-0 items-center gap-2">
@@ -2060,11 +2047,12 @@ function PinPicker({
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         disabled={disabled}
-        aria-label="Pin a file"
-        title="Pin a file's content to the next message"
-        className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+        aria-label="Add files"
+        title="Add a file's content to the next message"
+        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
       >
-        <Plus className="size-4" />
+        <Plus className="size-3.5 shrink-0" />
+        Add files
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
         <input
