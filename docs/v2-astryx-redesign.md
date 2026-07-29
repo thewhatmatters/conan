@@ -1,6 +1,8 @@
 # Conan v2 — Astryx Redesign · Multi-Agent Build Plan
 
-> **Status:** planning locked, Phase 0 not yet run. Branch: `loop/conan-v2-astryx`.
+> **Status:** **T0 (foundation) landed — T1–T5 are unblocked and can fan out.**
+> Read **§8 (T0 outcomes)** before starting a task; it supersedes the open
+> questions the plan shipped with. Branch: `loop/conan-v2-astryx`.
 > **This doc is the shared brain.** Any agent picking up a v2 task reads this
 > FIRST. It is the single source of truth across machines (it travels via git;
 > per-machine `.claude` memory does not).
@@ -150,10 +152,46 @@ integration pass and runs after they land.
 - **Per-agent onboarding:** point each agent at THIS doc + `docs/chat-v1-qa-backlog.md` for v1 behavior parity, and have it run `npx astryx component <X> --props --json` for the components its slot needs.
 - **Gateway rule still applies:** never run the :3747 gateway from an agent session (it dies on teardown). Browser-QA uses a throwaway port stack; never touch a human's :3747/:5173.
 
-## 8. Open questions / risks
+## 8. T0 outcomes — read before starting T1–T5
 
-- **`xstyle` build plugin** — unknown until T0 renders a customized component. If required, add `unplugin-stylex` to `vite.config` (T0 owns this).
-- **CSS isolation must hold** — if Astryx `reset.css` leaks into v1, v1 restyles. T0 must prove v1 is pixel-unchanged with the flag off.
+T0 landed. The questions §9 opened are answered below; treat these as decided.
+
+| Question | Answer |
+|---|---|
+| **`xstyle` / StyleX plugin** | **Required.** Astryx components ship precompiled, but app-authored `stylex.create()` throws at runtime (`"Unexpected 'stylex.create' call at runtime"`). `unplugin-stylex/vite` is now in `ui/vite.config.ts`; it is a no-op for v1. Use `xstyle` freely. |
+| **CSS isolation** | **Holds, both directions.** Verified on the production build: with the flag off only `index-*.css` loads and zero Astryx stylesheets are fetched. `ui/src/index.css` has no diff. |
+| **Figtree** | Self-hosted in `v2/fonts.css` (400/500/600/700), loaded only from `v2/entry.tsx`. `theme-neutral` already resolves `--font-family-body` to Figtree, so it applies with no extra wiring. v1 keeps Geist. |
+| **Dark mode** | v2 is dark. `entry.tsx` stamps `data-astryx-theme="neutral"` + `data-theme="dark"` on `<html>`; **without the first attribute every Astryx component renders unstyled, silently.** |
+| **Astryx 0.1.9 component names** | `Layout` / `LayoutPanel` / `VStack` / `HStack` all come from `@astryxdesign/core/Layout`. Confirm anything else with `npx astryx component <Name> --props` before use. |
+
+Two things every downstream task must know:
+
+- **v1's Tailwind is still in the document in v2** (`main.tsx` imports
+  `index.css` statically, kept that way so v1 keeps its render-blocking
+  `<link>` and no FOUC). Its layered rules lose to Astryx, but the handful it
+  declares *unlayered* — `:root{color-scheme:light}` and `body{font-family /
+  background / color}` — beat everything, and silently rendered the shell
+  light-mode in Geist until T0 caught it. `v2/tokens.css` ends with a
+  documented block that overrides exactly those three by specificity. **If you
+  hit a style that "won't take" in v2, suspect an unlayered v1 rule first.**
+- **`dist/assets/stylex.css` is emitted as a global `<link>`,** so v1 also
+  loads it (~0.4 kB of atomic classes no v1 element carries — inert, measured).
+
+Sizes Paper owns are marked `@paper-todo` in `tokens.css` — see §3 note below.
+
+## 9. Open questions / risks
+
+- ~~**`xstyle` build plugin**~~ — resolved in T0, see §8.
+- ~~**CSS isolation must hold**~~ — proven in T0, see §8.
+- **Paper access** — the Paper MCP was **not available** in the T0 session, so
+  no per-node colour or bar height could be read. `v2/tokens.css` maps colour
+  by semantic intent onto real `@astryxdesign/theme-neutral` tokens (not
+  guesses, and not copied hex), and parks the four unmeasurable bar/row heights
+  in a `PROVISIONAL` block tagged `@paper-todo` with their node ids. Anyone with
+  Paper access should re-derive those; it is a single-file edit.
 - **Pre-1.0 Astryx (0.1.9)** — component names/props in the task table are *expected* categories; confirm each via the CLI before use (they may differ).
-- **Figtree** — add the font in T0 (v1 uses Geist; v2 uses Figtree per the design).
+- **StyleX compiler version skew** — `unplugin-stylex@0.6.3` pins
+  `@stylexjs/babel-plugin@0.18.x` while the runtime is `@stylexjs/stylex@0.19.0`.
+  Verified working in dev and in the production build; if compiled styles ever
+  go missing after a bump, pin the babel plugin to match the runtime first.
 - **Parity scope** — the shell milestone stops at sidebar+toolbar+empty content; transcript/composer/surfaces are a later phase, planned once the shell UX is validated.

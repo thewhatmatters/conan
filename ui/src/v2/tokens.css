@@ -1,0 +1,199 @@
+/* ---------------------------------------------------------------------------
+ * Conan v2 — design-token bridge layer  (T0, docs/v2-astryx-redesign.md §4)
+ * ---------------------------------------------------------------------------
+ * Every v2 component consumes `--conan-*` from THIS file. Nothing in `v2/`
+ * hard-codes a hex, a px, or a Tailwind class (§6). One indirection layer means
+ * a Paper value change is a one-line edit here, not a sweep through 20 files.
+ *
+ * WHERE THE VALUES COME FROM
+ * --------------------------
+ * 1. `@astryxdesign/theme-neutral` — the real, shipped Astryx token surface
+ *    (`node_modules/@astryxdesign/theme-neutral/dist/theme.css`, verified via
+ *    `npx astryx docs tokens --json`). These are NOT guesses; they are the
+ *    library's own values, and referencing them via `var()` (rather than
+ *    copying hex) keeps light/dark and any future `astryx theme build` in sync.
+ *    Notably theme-neutral ALREADY ships `--font-family-body: Figtree, …` and a
+ *    system monospace stack — exactly the pairing the Paper artboard specifies.
+ * 2. `docs/v2-astryx-redesign.md` §3 — measurements stated in the shared-brain
+ *    doc (sidebar 273px, artboard 1512×982). Doc-sourced, so exact.
+ *
+ * ⚠️ PAPER ACCESS WAS UNAVAILABLE IN THE T0 SESSION.
+ * The Paper MCP (`get_computed_styles` on file 01KYQJ3S5RCDAE0KY87NRFY75F,
+ * artboard `4I-0`) is not connected in this environment, so per-node colours
+ * and bar heights could NOT be read. Rather than invent numbers, values that
+ * Paper owns are either (a) mapped onto the Astryx theme token that carries the
+ * same semantic role, or (b) parked in the PROVISIONAL block at the bottom and
+ * marked `@paper-todo` with the node id to measure. Anyone with Paper access
+ * should re-derive those and delete the marker — no other file needs touching.
+ *
+ * SCOPE
+ * -----
+ * Declared on `[data-astryx-theme="neutral"]`, which `entry.tsx` stamps onto
+ * <html>. That is the same element Astryx's own `@scope` root resolves to, so
+ * the `var()` references below always find their referent — and portalled
+ * content (dialogs, popovers) inherits too. This file is loaded ONLY by the v2
+ * entry, so it can never reach v1.
+ * ------------------------------------------------------------------------- */
+
+[data-astryx-theme="neutral"] {
+  /* -- Colour -------------------------------------------------------------
+   * Semantic roles, mapped by intent onto Astryx tokens (the interop pattern
+   * `astryx docs styling-libraries` prescribes: alias the name, point the
+   * value at the system variable). @paper-todo: confirm each against 4I-0. */
+
+  /* Surfaces */
+  --conan-color-bg: var(--color-background-body);
+  --conan-color-surface: var(--color-background-surface);
+  --conan-color-sidebar: var(--color-background-card);
+  --conan-color-card: var(--color-background-card);
+  --conan-color-popover: var(--color-background-popover);
+  --conan-color-muted: var(--color-background-muted);
+
+  /* Hover / pressed washes — for rows, tabs, and icon buttons */
+  --conan-color-hover: var(--color-overlay-hover);
+  --conan-color-pressed: var(--color-overlay-pressed);
+  --conan-color-scrim: var(--color-overlay);
+
+  /* Text */
+  --conan-color-text: var(--color-text-primary);
+  --conan-color-text-muted: var(--color-text-secondary);
+  --conan-color-text-disabled: var(--color-text-disabled);
+  --conan-color-text-accent: var(--color-text-accent);
+  --conan-color-on-accent: var(--color-on-accent);
+
+  /* Icons */
+  --conan-color-icon: var(--color-icon-primary);
+  --conan-color-icon-muted: var(--color-icon-secondary);
+
+  /* Lines */
+  --conan-color-border: var(--color-border);
+  --conan-color-border-strong: var(--color-border-emphasized);
+
+  /* Accent */
+  --conan-color-accent: var(--color-accent);
+  --conan-color-accent-muted: var(--color-accent-muted);
+
+  /* Status — drives the thread-row status dot (§3, sidebar rows) */
+  --conan-color-running: var(--color-icon-blue);
+  --conan-color-success: var(--color-success);
+  --conan-color-warning: var(--color-warning);
+  --conan-color-error: var(--color-error);
+
+  /* -- Radius ------------------------------------------------------------- */
+  --conan-radius-none: var(--radius-none);
+  --conan-radius-sm: var(--radius-inner);
+  --conan-radius-md: var(--radius-element);
+  --conan-radius-lg: var(--radius-container);
+  --conan-radius-xl: var(--radius-page);
+  --conan-radius-full: var(--radius-full);
+
+  /* -- Spacing ------------------------------------------------------------
+   * Astryx's 4px-base scale. Astryx layout components take a `gap`/`padding`
+   * STEP prop (gap={3}) rather than a length — prefer the prop; reach for
+   * these vars only where a raw length is unavoidable. */
+  --conan-space-0: var(--spacing-0);
+  --conan-space-half: var(--spacing-0-5); /*  2px */
+  --conan-space-1: var(--spacing-1); /*  4px */
+  --conan-space-1-5: var(--spacing-1-5); /*  6px */
+  --conan-space-2: var(--spacing-2); /*  8px */
+  --conan-space-3: var(--spacing-3); /* 12px */
+  --conan-space-4: var(--spacing-4); /* 16px */
+  --conan-space-5: var(--spacing-5); /* 20px */
+  --conan-space-6: var(--spacing-6); /* 24px */
+  --conan-space-8: var(--spacing-8); /* 32px */
+  --conan-space-10: var(--spacing-10); /* 40px */
+  --conan-space-12: var(--spacing-12); /* 48px */
+
+  /* -- Typography ---------------------------------------------------------
+   * Figtree + system monospace, per §3. theme-neutral already resolves
+   * --font-family-body to Figtree; `fonts.css` self-hosts the webfont so the
+   * first family in the stack actually exists. */
+  --conan-font-sans: var(--font-family-body);
+  --conan-font-mono: var(--font-family-code);
+
+  --conan-text-2xs: var(--font-size-2xs); /* 0.500rem */
+  --conan-text-xs: var(--font-size-xs); /* 0.625rem */
+  --conan-text-sm: var(--font-size-sm); /* 0.750rem */
+  --conan-text-base: var(--font-size-base); /* 0.875rem */
+  --conan-text-lg: var(--font-size-lg); /* 1.0625rem */
+  --conan-text-xl: var(--font-size-xl); /* 1.250rem */
+  --conan-text-2xl: var(--font-size-2xl); /* 1.500rem */
+
+  --conan-weight-normal: var(--font-weight-normal); /* 400 */
+  --conan-weight-medium: var(--font-weight-medium); /* 500 */
+  --conan-weight-semibold: var(--font-weight-semibold); /* 600 */
+  --conan-weight-bold: var(--font-weight-bold); /* 700 */
+
+  --conan-leading-tight: var(--text-heading-4-leading);
+  --conan-leading-body: var(--text-body-leading);
+
+  /* -- Elevation & motion -------------------------------------------------- */
+  --conan-shadow-low: var(--shadow-low);
+  --conan-shadow-med: var(--shadow-med);
+  --conan-shadow-high: var(--shadow-high);
+  --conan-duration-fast: var(--duration-fast);
+  --conan-duration-medium: var(--duration-medium);
+  --conan-ease: var(--ease-standard);
+
+  /* -- Shell geometry ------------------------------------------------------
+   * From docs/v2-astryx-redesign.md §3 (doc-stated Paper measurements). */
+  --conan-sidebar-width: 273px; /* Paper 4M-0 */
+  --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
+
+  /* -- PROVISIONAL — @paper-todo -------------------------------------------
+   * Not measurable without Paper. These are NOT invented numbers: each points
+   * at the Astryx control-height / spacing token that plays the same role, so
+   * the shell is coherent today and one edit here retargets it to Paper.
+   * Measure on artboard 4I-0 and replace:
+   *   --conan-toolbar-height        ← node EK-0 (breadcrumb + surface tabs)
+   *   --conan-secondary-bar-height  ← node LN-0 (Actions / Open / Commit&Push)
+   *   --conan-sidebar-row-height    ← nodes OT-0 / PY-0 / PZ-0 (thread rows)
+   *   --conan-sidebar-header-height ← node 70-0 (logo mark + wordmark) */
+  --conan-toolbar-height: var(--size-element-lg); /* @paper-todo EK-0 */
+  --conan-secondary-bar-height: var(--size-element-lg); /* @paper-todo LN-0 */
+  --conan-sidebar-row-height: var(--size-element-lg); /* @paper-todo OT-0 */
+  --conan-sidebar-header-height: var(--size-element-lg); /* @paper-todo 70-0 */
+}
+
+/* ---------------------------------------------------------------------------
+ * v1 cascade neutralization  (found by measuring the T0 smoke render)
+ * ---------------------------------------------------------------------------
+ * `main.tsx` imports v1's `index.css` statically, so Tailwind is in the
+ * document even when v2 is the mounted app. Keeping that static import is
+ * deliberate — making it dynamic would turn v1's render-blocking <link> into a
+ * runtime fetch and hand v1 a flash of unstyled content, and v1 must not
+ * regress (§4.3).
+ *
+ * Almost all of Tailwind is harmless here: its preflight lives in `@layer base`
+ * and Astryx's `@layer reset` is declared later, so Astryx wins, and v2 emits
+ * no utility classes for the rest to attach to. The exception is the handful of
+ * rules index.css declares OUTSIDE any layer, which therefore outrank every
+ * layered Astryx rule no matter what:
+ *
+ *   :root { color-scheme: light }      → forced `light-dark()` to its LIGHT arm,
+ *                                        so the dark artboard rendered white
+ *   body  { font-family: var(--font-sans) }  → Geist, not Figtree
+ *   body  { background / color }       → v1's light surface + near-black text
+ *
+ * The overrides below undo exactly those three. They are written with a
+ * `[data-astryx-theme]` ancestor so they outrank the originals on SPECIFICITY
+ * rather than on source order — stylesheet order differs between the dev server
+ * (injected <style>) and the production build (chunk <link>), and correctness
+ * should not depend on which. Everything else in index.css is left alone.
+ *
+ * This block disappears the day v2 becomes the default and index.css stops
+ * loading; it is scaffolding for the parallel-shell period, not a permanent
+ * layer. Nothing here applies with the flag off — this file loads only from
+ * `v2/entry.tsx`.
+ * ------------------------------------------------------------------------- */
+
+html[data-astryx-theme="neutral"] {
+  /* Re-arm the dark side of every `light-dark()` token value. */
+  color-scheme: dark;
+}
+
+[data-astryx-theme="neutral"] body {
+  font-family: var(--conan-font-sans);
+  background: var(--conan-color-bg);
+  color: var(--conan-color-text);
+}

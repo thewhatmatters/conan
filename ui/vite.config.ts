@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import stylex from "unplugin-stylex/vite";
 
 // Dev server proxies API + WS to the gateway on :3747. Both the gateway port and
 // the dev-server port can be overridden via env (CONAN_PORT / CONAN_UI_PORT) so a
@@ -9,7 +10,13 @@ import tailwindcss from "@tailwindcss/vite";
 const GATEWAY_PORT = process.env.CONAN_PORT || "3747";
 const UI_PORT = Number(process.env.CONAN_UI_PORT) || 5173;
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // StyleX compiler (T0 · docs/v2-astryx-redesign.md §8). Astryx COMPONENTS
+  // ship pre-compiled and need no plugin — but v2 authors its own styles with
+  // `stylex.create()` for the `xstyle` prop, and that throws at runtime unless
+  // a build-time compiler rewrites it ("Unexpected 'stylex.create' call at
+  // runtime"), so the plugin is required, not optional. It is a no-op for v1:
+  // no v1 file calls stylex.
+  plugins: [react(), tailwindcss(), stylex()],
   // Don't clear the screen so Tauri's dev output stays visible when it
   // attaches to this dev server.
   clearScreen: false,

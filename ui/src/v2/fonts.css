@@ -1,0 +1,12 @@
+/* Figtree — the v2 typeface (docs/v2-astryx-redesign.md §3), self-hosted via
+   fontsource in the weights the Astryx type scale uses (400 body / 500 label /
+   600 heading / 700 h3-h4). v1 keeps Geist: this file is reachable only through
+   `v2/entry.tsx`, which is loaded only when the v2 flag is on.
+
+   theme-neutral already declares `--font-family-body: Figtree, …` — these
+   @font-face rules are what make that first family resolve instead of falling
+   through to the system stack. */
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/figtree/700.css";
