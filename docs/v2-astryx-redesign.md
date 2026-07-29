@@ -111,6 +111,14 @@ ui/src/v2/
 
 ## 5. Task graph — sequential foundation → parallel fan-out
 
+> **Executable form:** these tasks are spec'd as stories in
+> [`prd-conan-v2-astryx.json`](../prd-conan-v2-astryx.json) (the Paper design
+> link + per-slot node IDs + acceptance criteria live there). Feed it to
+> `run-tasks.sh` (`PRD=prd-conan-v2-astryx.json ./run-tasks.sh`) or hand each
+> `userStory` to an Orca worktree. Priorities encode the dependency order:
+> **1 = T0 barrier**, **2 = T1–T5 parallel**, **3 = T6 integration**.
+
+
 **T0 — Foundation (SEQUENTIAL, one agent, blocks everything).**
 Install packages; add `v2/entry.tsx` with dynamic Astryx CSS import; add the flag
 to `App.tsx` (v1 default); run `npx astryx init` + commit the generated agent
