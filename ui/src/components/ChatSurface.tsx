@@ -620,6 +620,15 @@ export default function ChatSurface({
   const projectName = (projectId: string): string | null =>
     projects.find((p) => p.id === projectId)?.name ?? null;
 
+  /** The thread's authoritative persisted title (DB `chat_thread.title`) — so a
+   *  sidebar rename shows in the pane's toolbar. Keyed by the live/reopen
+   *  session id; null for a fresh thread with no row yet (pane derives it). */
+  const dbTitle = (t: Thread): string | null => {
+    const sid = states[t.id]?.sessionId ?? t.resume?.sessionId;
+    if (!sid) return null;
+    return saved[t.projectId]?.find((s) => s.sessionId === sid)?.title ?? null;
+  };
+
   // US-003: the sidebar gear opens Settings via the same window-event bridge
   // the native menu (⌘,) and the Upgrade CTAs use — App owns the dialog state.
   const openSettings = () =>
@@ -1013,6 +1022,7 @@ export default function ChatSurface({
               cwd={t.resume?.cwd ?? projectPath(t.projectId) ?? defaultCwd}
               projectId={t.projectId}
               projectName={projectName(t.projectId)}
+              titleOverride={dbTitle(t)}
               resume={
                 t.resume
                   ? {

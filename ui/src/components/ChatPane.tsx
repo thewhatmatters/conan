@@ -203,6 +203,7 @@ export default function ChatPane({
   cwd,
   projectId,
   projectName,
+  titleOverride,
   resume,
   lastSkillFired,
   onState,
@@ -218,6 +219,10 @@ export default function ChatPane({
   /** Project display name (folder basename) — shown as a breadcrumb crumb
    *  before the thread title in the toolbar. */
   projectName?: string | null;
+  /** Persisted thread title (DB `chat_thread.title`) — the authoritative
+   *  display title, so a sidebar rename shows in the toolbar too. Falls back to
+   *  the first-prompt derivation when absent (a fresh, unsaved thread). */
+  titleOverride?: string | null;
   /** Saved session to reopen (US-015): its transcript is reconstructed above
    *  the live items and the first prompt launches with `--resume`. */
   resume?: ResumeTarget | null;
@@ -365,8 +370,11 @@ export default function ChatPane({
   // for a resumed thread (otherwise the toolbar/sidebar read "New chat" on
   // reopen). Capped at 256 so a pasted wall of text can't blow out the bar.
   const titleSource = firstUser ?? history.find((it) => it.role === "user");
-  const title =
+  const derivedTitle =
     titleSource && titleSource.role === "user" ? titleSource.text.slice(0, 256) : null;
+  // A persisted title (incl. a sidebar rename) wins over the first-prompt
+  // derivation, so the toolbar and sidebar never disagree.
+  const title = titleOverride ?? derivedTitle;
   useEffect(() => {
     onState?.({
       status,
