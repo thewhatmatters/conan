@@ -23,6 +23,14 @@ one loopback Node gateway packaged as a Tauri sidecar. That shell is now
 dormant (see the note above). This file is auto-loaded by every Claude Code
 session in this repo — keep it accurate.
 
+> 🚧 **v2 Astryx redesign IN PROGRESS on branch `loop/conan-v2-astryx`.** A
+> parallel, flag-gated v2 UI is being built on Astryx (Meta's React + StyleX
+> library), replacing shadcn/Tailwind **for v2 only**; v1 stays default and
+> untouched until parity. **Any agent doing v2 work reads
+> [docs/v2-astryx-redesign.md](docs/v2-astryx-redesign.md) FIRST** — it is the
+> multi-agent shared brain (setup runbook, design IA, folder contracts, task
+> graph). The v1 sections below still describe the mounted app.
+
 ## Stack
 - **Gateway** (`src/`): TypeScript ESM, Express 4 + `ws` + `better-sqlite3` +
   `node-pty`. Run with `tsx`. Entry `src/gateway/index.ts`, port **3747**,
