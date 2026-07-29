@@ -698,6 +698,7 @@ export default function ChatSurface({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <h1 className="sr-only">Conan — chat with a coding agent</h1>
       <div className="flex min-h-0 min-w-0 flex-1">
       {collapsed ? (
         <div className="flex w-9 shrink-0 flex-col items-center border-r border-border bg-card">
@@ -722,7 +723,10 @@ export default function ChatSurface({
           </div>
         </div>
       ) : (
-        <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card">
+        <nav
+          aria-label="Projects and chats"
+          className="flex w-60 shrink-0 flex-col border-r border-border bg-card"
+        >
           <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-2">
             <span className="flex-1 text-[11px] font-medium text-muted-foreground">
               Projects
@@ -972,11 +976,11 @@ export default function ChatSurface({
               {isDarkTheme ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </IconButton>
           </div>
-        </aside>
+        </nav>
       )}
 
       {/* Thread panes — all mounted, only the active one visible/interactive. */}
-      <div className="relative min-h-0 min-w-0 flex-1">
+      <main className="relative min-h-0 min-w-0 flex-1">
         {threads.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
             <p className="text-sm">
@@ -1025,7 +1029,7 @@ export default function ChatSurface({
             />
           </div>
         ))}
-        </div>
+        </main>
       </div>
 
       {pickingFolder && (
