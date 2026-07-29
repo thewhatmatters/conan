@@ -28,7 +28,7 @@
   "conventions": {
     "astryxOnly": "v2 components use @astryxdesign/core only. Do NOT import shadcn/Radix or Tailwind classes into ui/src/v2/.",
     "tokensOnly": "Consume ui/src/v2/tokens.css CSS variables (created in US-001). No hardcoded hex, no Tailwind utility classes.",
-    "astryxDocs": "Get exact component APIs with `npx astryx component <Name> --props --json`, `npx astryx docs tokens --json`, `npx astryx search <term>`. Component names in these stories are EXPECTED categories (Astryx is pre-1.0 0.1.9) — confirm the real name/props via the CLI before use.",
+    "astryxDocs": "Every story's `notes` lists the Astryx components it needs, each with a doc-page link (https://astryx.atmeta.com/components/<PascalCaseName>) AND the authoritative CLI command (`npx astryx component <Name> --props --json`). The doc URLs are best-effort — Astryx is pre-1.0 (0.1.9) and some exact names/slugs are unconfirmed. If a doc URL 404s or the CLI reports no match, the CLI is the source of truth: browse https://astryx.atmeta.com/components or run `npx astryx search <term>` to find the real component, then use `npx astryx component <RealName> --props --json`. Also: `npx astryx docs tokens --json` for the token surface.",
     "fileOwnership": "US-001 creates every slot's stub file + wires them into Sidebar.tsx / Toolbar.tsx / App.v2.tsx. Each later story implements ONLY its own leaf component file(s) — do NOT edit App.v2.tsx, Sidebar.tsx, Toolbar.tsx, or another story's file (avoids parallel-worktree merge conflicts). Layout/composition edits belong to US-007.",
     "v1Untouched": "No edits to v1 components, ui/src/index.css (Astryx CSS is dynamic-imported in the v2 entry only), or src/ (gateway). v1 must render pixel-unchanged with the flag OFF.",
     "gatewayRule": "Never run a human's :3747 gateway or :5173 Vite from an agent session (dies on teardown). Browser-QA uses a throwaway port stack."
@@ -54,7 +54,7 @@
       ],
       "priority": 1,
       "passes": false,
-      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0 (App artboard 4I-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Suggested skills: automate-browser."
+      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0 (App artboard 4I-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Astryx components: VStack https://astryx.atmeta.com/components/VStack · Button https://astryx.atmeta.com/components/Button — confirm each with `npx astryx component <Name> --props --json`. Suggested skills: automate-browser."
     },
     {
       "id": "US-002",
@@ -71,7 +71,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md first. Suggested skills: automate-browser."
+      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md first. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Text /components/Text · Icon /components/Icon · HStack /components/HStack · a search/text field — try /components/PowerSearch or /components/TextInput, else `npx astryx search search|input`. Suggested skills: automate-browser."
     },
     {
       "id": "US-003",
@@ -89,7 +89,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Parallelizable. The v1 sidebar row (ChatSurface ThreadRow) is the behavior reference for later wiring. Read docs/v2-astryx-redesign.md. Suggested skills: automate-browser."
+      "notes": "Parallelizable. The v1 sidebar row (ChatSurface ThreadRow) is the behavior reference for later wiring. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Collapsible /components/Collapsible · a tree/accordion — try /components/TreeList, else `npx astryx search tree|accordion` · Avatar /components/Avatar · Badge /components/Badge or a status dot — try /components/StatusDot · Text /components/Text. Suggested skills: automate-browser."
     },
     {
       "id": "US-004",
@@ -105,7 +105,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md. Suggested skills: automate-browser."
+      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Button /components/Button · Icon /components/Icon · a menu — try /components/DropdownMenu, else `npx astryx search menu`. Suggested skills: automate-browser."
     },
     {
       "id": "US-005",
@@ -122,7 +122,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Parallelizable. v1 ThreadToolbar breadcrumb is the behavior reference. Read docs/v2-astryx-redesign.md. Suggested skills: automate-browser."
+      "notes": "Parallelizable. v1 ThreadToolbar breadcrumb is the behavior reference. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Breadcrumbs /components/Breadcrumbs · tabs — try /components/TabList or /components/Tabs, else `npx astryx search tab` · Icon /components/Icon. Suggested skills: automate-browser."
     },
     {
       "id": "US-006",
@@ -139,7 +139,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Parallelizable. v1 ThreadToolbar has the real Actions/Open/Commit behavior for later wiring. Read docs/v2-astryx-redesign.md. Suggested skills: automate-browser."
+      "notes": "Parallelizable. v1 ThreadToolbar has the real Actions/Open/Commit behavior for later wiring. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Button /components/Button · a dropdown menu — try /components/DropdownMenu, else `npx astryx search menu` · Icon /components/Icon. Suggested skills: automate-browser."
     },
     {
       "id": "US-007",
@@ -155,7 +155,7 @@
       ],
       "priority": 3,
       "passes": false,
-      "notes": "Runs AFTER US-002..US-006 land. This is the integration/polish pass and is the only story (besides US-001) allowed to edit App.v2.tsx / Sidebar.tsx / Toolbar.tsx. Read docs/v2-astryx-redesign.md §5-6. Suggested skills: automate-browser, build-ui."
+      "notes": "Runs AFTER US-002..US-006 land. This is the integration/polish pass and is the only story (besides US-001) allowed to edit App.v2.tsx / Sidebar.tsx / Toolbar.tsx. Read docs/v2-astryx-redesign.md §5-6. Astryx layout (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): VStack /components/VStack · HStack /components/HStack · Grid /components/Grid. Suggested skills: automate-browser, build-ui."
     }
   ]
 }

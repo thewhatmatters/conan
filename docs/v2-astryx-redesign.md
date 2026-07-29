@@ -108,6 +108,7 @@ ui/src/v2/
 4. **Slots.** `App.v2.tsx` defines named regions (sidebar-header, sidebar-body, sidebar-footer, toolbar-crumb, toolbar-tabs, secondary-bar, content). Each component task fills ONE slot and owns ONLY its own file(s) — no edits to another task's file.
 5. **Data reuse.** Wire to existing hooks via `v2/lib/` adapters; **do not** touch `src/` (gateway) or v1 components.
 6. **Verify against Paper:** screenshot the built component, diff against its Paper node; pull exact values with `get_computed_styles`.
+7. **Every task spec links its Astryx components** — each story's `notes` names the components it needs with a doc-page URL (`https://astryx.atmeta.com/components/<PascalCaseName>`) AND the authoritative CLI (`npx astryx component <Name> --props --json`). URLs are best-effort (0.1.9); if one 404s, `npx astryx search <term>` / the CLI is ground truth.
 
 ## 5. Task graph — sequential foundation → parallel fan-out
 
