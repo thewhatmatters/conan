@@ -122,7 +122,7 @@ export function ProviderModelPicker({
         {triggerLabel}
         <ChevronDown className="size-3 opacity-60" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex h-[26rem] w-auto overflow-hidden gap-0 p-0">
+      <PopoverContent align="start" className="flex h-[26rem] w-80 overflow-hidden gap-0 p-0">
         {/* Provider rail — icon-only (T3), a vertical strip of brand marks. Only
             shown with >1 provider; a single provider needs no rail. */}
         {providers.length > 1 && (
@@ -153,8 +153,9 @@ export function ProviderModelPicker({
 
         {/* Model panel for the browsed provider — its own capabilities.models,
             rows laid out tabular (T3): model name over a provider sub-line.
-            Fixed width; the list scrolls inside the fixed-height menu. */}
-        <div className="flex w-64 shrink-0 flex-col">
+            Flexes to fill the fixed-width menu; the list scrolls inside the
+            fixed-height menu. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           {browsedModels.length > 1 ? (
             <>
               <div className="flex items-center gap-2 border-b border-border px-3 py-2">

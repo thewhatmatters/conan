@@ -94,10 +94,10 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   // sonnet as aliases and `claude-fable-5` as a full name.
   models: [
     { value: null, label: "Default model", description: "Opus 5 · best for everyday, complex tasks" },
-    { value: "opus", label: "Opus", description: "Opus 5 · 1M context" },
-    { value: "fable", label: "Fable", description: "Fable 5 · most capable, longest-running tasks" },
-    { value: "sonnet", label: "Sonnet", description: "Sonnet 5 · efficient for routine tasks" },
-    { value: "haiku", label: "Haiku", description: "Haiku 4.5 · fastest for quick answers" },
+    { value: "opus", label: "Opus 5", description: "1M context" },
+    { value: "fable", label: "Fable 5", description: "Most capable, longest-running tasks" },
+    { value: "sonnet", label: "Sonnet 5", description: "Efficient for routine tasks" },
+    { value: "haiku", label: "Haiku 4.5", description: "Fastest for quick answers" },
   ],
   permissionModes: [
     { id: "plan", label: "Plan", description: "Read-only — ends with a proposed plan" },
