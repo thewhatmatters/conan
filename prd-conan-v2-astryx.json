@@ -1,0 +1,162 @@
+{
+  "project": "Conan",
+  "branchName": "loop/conan-v2-astryx",
+  "generatedAt": "2026-07-29",
+  "sourcePrd": "docs/v2-astryx-redesign.md",
+  "description": "v2 UI redesign on Astryx (React + StyleX), built as a parallel flag-gated shell in the same Tauri/Vite app; v1 stays default and untouched until parity. First milestone: the sidebar + toolbar shell. READ docs/v2-astryx-redesign.md BEFORE any story — it is the shared brain (setup runbook, folder/interface contracts, gates). Backend/gateway is UNCHANGED; v2 is presentation only.",
+  "designFile": {
+    "tool": "Paper",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+    "fileId": "01KYQJ3S5RCDAE0KY87NRFY75F",
+    "pageId": "1-0",
+    "artboard": "App (RJ-0), dark mode, font Figtree + system monospace",
+    "artboardUrl": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+    "nodeMap": {
+      "sidebar": "4M-0",
+      "sidebar_header_logo": "70-0",
+      "search_input": "MU-0",
+      "project_groups": "OT-0 / PY-0 / PZ-0",
+      "sidebar_footer_newchat": "7L-0 (New chat button 7W-0)",
+      "main": "4O-0",
+      "toolbar": "EK-0",
+      "breadcrumb": "EL-0",
+      "surface_tabs": "HL-0",
+      "secondary_bar": "LN-0",
+      "content": "4N-0"
+    },
+    "howToUse": "If the Paper MCP is connected (Paper desktop running with the file open), pull EXACT values with get_computed_styles / get_jsx / get_fill_image on the node id for your slot and get_screenshot to compare — never read sizes/colors off a screenshot. If the Paper MCP is NOT available on this machine, work from the IA + measurements in docs/v2-astryx-redesign.md and this spec, and ping the PM (Claude on the design machine) for exact token values."
+  },
+  "conventions": {
+    "astryxOnly": "v2 components use @astryxdesign/core only. Do NOT import shadcn/Radix or Tailwind classes into ui/src/v2/.",
+    "tokensOnly": "Consume ui/src/v2/tokens.css CSS variables (created in US-001). No hardcoded hex, no Tailwind utility classes.",
+    "astryxDocs": "Every story's `notes` lists the Astryx components it needs, each with a doc-page link (https://astryx.atmeta.com/components/<PascalCaseName>) AND the authoritative CLI command (`npx astryx component <Name> --props --json`). The doc URLs are best-effort — Astryx is pre-1.0 (0.1.9) and some exact names/slugs are unconfirmed. If a doc URL 404s or the CLI reports no match, the CLI is the source of truth: browse https://astryx.atmeta.com/components or run `npx astryx search <term>` to find the real component, then use `npx astryx component <RealName> --props --json`. Also: `npx astryx docs tokens --json` for the token surface.",
+    "fileOwnership": "US-001 creates every slot's stub file + wires them into Sidebar.tsx / Toolbar.tsx / App.v2.tsx. Each later story implements ONLY its own leaf component file(s) — do NOT edit App.v2.tsx, Sidebar.tsx, Toolbar.tsx, or another story's file (avoids parallel-worktree merge conflicts). Layout/composition edits belong to US-007.",
+    "v1Untouched": "No edits to v1 components, ui/src/index.css (Astryx CSS is dynamic-imported in the v2 entry only), or src/ (gateway). v1 must render pixel-unchanged with the flag OFF.",
+    "gatewayRule": "Never run a human's :3747 gateway or :5173 Vite from an agent session (dies on teardown). Browser-QA uses a throwaway port stack."
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "T0 Foundation — Astryx install, v2 entry + flag + CSS isolation, tokens, slot skeleton, smoke render",
+      "description": "As the team, we need a proven Astryx pipeline and an isolated v2 shell skeleton behind a flag, so every later story builds on a working foundation without breaking v1.",
+      "acceptanceCriteria": [
+        "cd ui && npm install @astryxdesign/core @astryxdesign/theme-neutral @astryxdesign/cli @stylexjs/stylex (record installed versions in the commit; Astryx is 0.1.9 pre-1.0)",
+        "Run `npx astryx init` and commit the generated agent docs (AGENTS.md / CLAUDE.md fragment) so worker agents can self-serve component docs",
+        "New ui/src/v2/entry.tsx exports <AppV2/> and DYNAMIC-imports the three Astryx CSS files (@astryxdesign/core/reset.css, @astryxdesign/core/astryx.css, @astryxdesign/theme-neutral/theme.css) so they load ONLY when v2 mounts — never add these to ui/src/index.css",
+        "ui/src/App.tsx mounts <AppV2/> when localStorage.getItem('conan-v2')==='1' OR import.meta.env.VITE_CONAN_V2 is set; otherwise it renders the current app UNCHANGED (v1 is the default)",
+        "ui/src/v2/tokens.css defines the design-token layer as CSS variables (color/background/border, radius, spacing, font sizes/weights, tracking/leading) derived from the Paper App artboard (dark palette + Figtree); Figtree is loaded (fontsource or @font-face)",
+        "ui/src/v2/App.v2.tsx composes Sidebar.tsx + Toolbar.tsx + an empty content region; Sidebar.tsx and Toolbar.tsx import STUB leaf components for every slot: SidebarHeader, SearchInput, ProjectTree, NewChatButton, SettingsFooter (sidebar) and Breadcrumb, SurfaceTabs, SecondaryBar (toolbar) — each stub is a minimal placeholder that renders its own name, created under ui/src/v2/components/",
+        "Smoke-render an Astryx VStack + Button somewhere in v2 to confirm components render under Vite 6 / React 19",
+        "RESOLVE the xstyle question: attempt one component customization via the xstyle prop; if it requires the StyleX build step, add the StyleX Vite plugin (e.g. unplugin-stylex) to ui/vite.config and document it in docs/v2-astryx-redesign.md §8; if not needed, note that",
+        "DECISION GATE: if StyleX + Tailwind v4 coexistence is broken or the Astryx CSS leaks into v1, STOP and write findings to progress.txt instead of proceeding",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "v1 is pixel-unchanged with the flag OFF (screenshot v1 before/after) and the v2 smoke render appears with the flag ON — verify with automate-browser on a throwaway stack, in dark mode"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0 (App artboard RJ-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Astryx components: VStack https://astryx.atmeta.com/components/VStack · Button https://astryx.atmeta.com/components/Button — confirm each with `npx astryx component <Name> --props --json`. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-002",
+      "title": "T1 Sidebar header + search",
+      "description": "As a user, I want the Conan logo/wordmark and a ⌘K search at the top of the sidebar, matching the redesign.",
+      "acceptanceCriteria": [
+        "Implement ui/src/v2/components/SidebarHeader.tsx (logo mark + 'Conan' wordmark) and ui/src/v2/components/SearchInput.tsx (search field with a leading icon and a ⌘K affordance) using @astryxdesign/core components only (confirm names via `npx astryx component <X> --props --json`)",
+        "Match the Paper nodes: sidebar header 70-0 and search input MU-0 (spacing, type, colors) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+        "Styling via ui/src/v2/tokens.css variables + Astryx props/xstyle only — no hardcoded hex, no Tailwind, no shadcn",
+        "Do NOT edit App.v2.tsx / Sidebar.tsx / Toolbar.tsx or any other story's file — only these two leaf files",
+        "Typecheck passes",
+        "cd ui && npm run build passes",
+        "Visually verify against the Paper node (Paper MCP get_screenshot of 70-0/MU-0 if available) and screenshot the rendered v2 header+search with the flag ON (automate-browser, throwaway stack, dark)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md first. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Text /components/Text · Icon /components/Icon · HStack /components/HStack · a search/text field — try /components/PowerSearch or /components/TextInput, else `npx astryx search search|input`. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-003",
+      "title": "T2 Project tree + thread rows",
+      "description": "As a user, I want my projects as collapsible groups with thread rows (avatar + status dot + title + muted subtitle), matching the redesign.",
+      "acceptanceCriteria": [
+        "Implement ui/src/v2/components/ProjectTree.tsx (collapsible project group) and ui/src/v2/components/ThreadRow.tsx (avatar + status dot + title + muted subtitle) using @astryxdesign/core (Collapsible/Tree, Avatar, Badge/status indicator, Text — confirm via CLI)",
+        "Match the Paper project groups OT-0 / PY-0 / PZ-0 and their rows — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+        "Render with realistic placeholder data (2-3 groups, a few rows); wiring to real hooks is a later phase — keep the component data-prop-driven so it can be fed live data later",
+        "Rows form consistent vertical lanes: fixed-width slots for the avatar and any trailing element (do not rely on gap alone)",
+        "tokens.css + Astryx only; no shadcn/Tailwind/hex",
+        "Only these two leaf files — no edits to composition files",
+        "Typecheck passes; cd ui && npm run build passes",
+        "Visually verify against the Paper nodes and screenshot the rendered tree (automate-browser, throwaway stack, dark)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Parallelizable. The v1 sidebar row (ChatSurface ThreadRow) is the behavior reference for later wiring. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Collapsible /components/Collapsible · a tree/accordion — try /components/TreeList, else `npx astryx search tree|accordion` · Avatar /components/Avatar · Badge /components/Badge or a status dot — try /components/StatusDot · Text /components/Text. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-004",
+      "title": "T3 New-chat button + settings footer",
+      "description": "As a user, I want a New-chat action and a Settings entry anchored at the bottom of the sidebar, matching the redesign.",
+      "acceptanceCriteria": [
+        "Implement ui/src/v2/components/NewChatButton.tsx and ui/src/v2/components/SettingsFooter.tsx using @astryxdesign/core (Button, Icon, Menu — confirm via CLI)",
+        "Match the Paper footer node 7L-0 (New chat button 7W-0) and the bottom Settings affordance — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+        "tokens.css + Astryx only; no shadcn/Tailwind/hex",
+        "Only these two leaf files — no edits to composition files",
+        "Typecheck passes; cd ui && npm run build passes",
+        "Visually verify against the Paper node and screenshot the rendered footer (automate-browser, throwaway stack, dark)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Parallelizable. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Button /components/Button · Icon /components/Icon · a menu — try /components/DropdownMenu, else `npx astryx search menu`. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-005",
+      "title": "T4 Toolbar breadcrumb + surface tabs",
+      "description": "As a user, I want the top toolbar with a project/thread breadcrumb and closeable surface tabs (Chat, Browser, Terminal, Diff, Surface), matching the redesign.",
+      "acceptanceCriteria": [
+        "Implement ui/src/v2/components/Breadcrumb.tsx (folder icon + project / thread crumb) and ui/src/v2/components/SurfaceTabs.tsx (a Chat tab + closeable Browser/Terminal/Diff tabs + a Surface entry) using @astryxdesign/core (Breadcrumbs, Tabs with close affordance, Icon — confirm via CLI)",
+        "Match the Paper toolbar EK-0 (breadcrumb EL-0, surface tabs HL-0) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+        "Tabs render as static/placeholder (no surface mounting yet); the close affordance is present per the design",
+        "tokens.css + Astryx only; no shadcn/Tailwind/hex",
+        "Only these two leaf files — no edits to composition files",
+        "Typecheck passes; cd ui && npm run build passes",
+        "Visually verify against the Paper nodes and screenshot the rendered toolbar (automate-browser, throwaway stack, dark)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Parallelizable. v1 ThreadToolbar breadcrumb is the behavior reference. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Breadcrumbs /components/Breadcrumbs · tabs — try /components/TabList or /components/Tabs, else `npx astryx search tab` · Icon /components/Icon. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-006",
+      "title": "T5 Secondary bar (Actions / Open / Commit & Push)",
+      "description": "As a user, I want the secondary action bar under the toolbar with Actions, Open, and Commit & Push, matching the redesign.",
+      "acceptanceCriteria": [
+        "Implement ui/src/v2/components/SecondaryBar.tsx with an 'Actions' dropdown, an 'Open' control, and a 'Commit & Push' action using @astryxdesign/core (Button, Menu/Dropdown, Icon — confirm via CLI)",
+        "Match the Paper secondary bar LN-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+        "Controls are static/placeholder (no wiring yet)",
+        "tokens.css + Astryx only; no shadcn/Tailwind/hex",
+        "Only this leaf file — no edits to composition files",
+        "Typecheck passes; cd ui && npm run build passes",
+        "Visually verify against the Paper node and screenshot the rendered bar (automate-browser, throwaway stack, dark)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Parallelizable. v1 ThreadToolbar has the real Actions/Open/Commit behavior for later wiring. Read docs/v2-astryx-redesign.md. Astryx components (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): Button /components/Button · a dropdown menu — try /components/DropdownMenu, else `npx astryx search menu` · Icon /components/Icon. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-007",
+      "title": "T6 Shell assembly + spacing/responsive polish",
+      "description": "As the team, we need the finished sidebar+toolbar shell composed from the leaf components, polished against the design, so the milestone reads as one coherent screen.",
+      "acceptanceCriteria": [
+        "Compose the real leaf components into Sidebar.tsx / Toolbar.tsx / App.v2.tsx (replacing US-001 stubs); the full App artboard layout (sidebar 273px + main) matches the Paper App node RJ-0 at 1512-wide",
+        "Spacing, alignment, type hierarchy, and dark-mode contrast reviewed against the artboard; vertical lanes in the sidebar rows verified; content region left as an empty placeholder slot (transcript/composer are a later phase)",
+        "Flag path works end-to-end: v2 shows with the flag ON, v1 with it OFF, and v1 remains pixel-unchanged",
+        "tokens.css + Astryx only across the shell; no shadcn/Tailwind/hex introduced",
+        "Typecheck passes; cd ui && npm run build passes",
+        "Full-artboard screenshot of the assembled v2 shell (flag ON) compared side-by-side to the Paper App node RJ-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0 — via automate-browser on a throwaway stack, dark mode"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Runs AFTER US-002..US-006 land. This is the integration/polish pass and is the only story (besides US-001) allowed to edit App.v2.tsx / Sidebar.tsx / Toolbar.tsx. Read docs/v2-astryx-redesign.md §5-6. Astryx layout (base https://astryx.atmeta.com/components/<Name>, confirm via `npx astryx component <Name> --props --json`): VStack /components/VStack · HStack /components/HStack · Grid /components/Grid. Suggested skills: automate-browser, build-ui."
+    }
+  ]
+}

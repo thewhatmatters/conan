@@ -16,7 +16,21 @@ export default defineConfig({
   // a build-time compiler rewrites it ("Unexpected 'stylex.create' call at
   // runtime"), so the plugin is required, not optional. It is a no-op for v1:
   // no v1 file calls stylex.
-  plugins: [react(), tailwindcss(), stylex()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    stylex(),
+    {
+      name: "agent-title",
+      transformIndexHtml(html) {
+        const agent = process.env.VITE_AGENT_NAME;
+        if (agent) {
+          return html.replace("<title>Conan</title>", `<title>Conan-${agent}</title>`);
+        }
+        return html;
+      },
+    },
+  ],
   // Don't clear the screen so Tauri's dev output stays visible when it
   // attaches to this dev server.
   clearScreen: false,
