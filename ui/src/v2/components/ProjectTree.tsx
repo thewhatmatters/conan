@@ -40,6 +40,10 @@ export interface ProjectGroup {
 
 export interface ProjectTreeProps {
   groups?: ProjectGroup[];
+  /** Currently selected thread key (ThreadRow id or title). */
+  selectedKey?: string | null;
+  /** Fired when the user picks a thread row — App.v2 sets activeThread. */
+  onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
 }
 
 const ICON = 16;
@@ -116,14 +120,17 @@ const PLACEHOLDER_GROUPS: ProjectGroup[] = [
     isExpanded: true,
     threads: [
       {
+        id: "analyze",
         title: "Analyze my project",
         subtitle: "Run serverless code...",
-        isSelected: true,
         isRunning: true,
+        provider: "claude",
       },
       {
+        id: "code-validation",
         title: "Code Validation",
         subtitle: "Run the /code-design skill....",
+        provider: "claude",
       },
     ],
   },
@@ -156,7 +163,20 @@ function SectionHeader() {
   );
 }
 
-function Group({ name, isExpanded = false, threads = [] }: ProjectGroup) {
+function threadKey(thread: ThreadRowProps): string {
+  return thread.id ?? thread.title;
+}
+
+function Group({
+  name,
+  isExpanded = false,
+  threads = [],
+  selectedKey,
+  onSelectThread,
+}: ProjectGroup & {
+  selectedKey?: string | null;
+  onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
+}) {
   const [expanded, setExpanded] = useState(isExpanded);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const FolderIcon = expanded ? FolderOpen : Folder;
@@ -195,9 +215,17 @@ function Group({ name, isExpanded = false, threads = [] }: ProjectGroup) {
       </HStack>
       {expanded && threads.length > 0 ? (
         <VStack gap={2}>
-          {threads.map((thread) => (
-            <ThreadRow key={thread.title} {...thread} />
-          ))}
+          {threads.map((thread) => {
+            const key = threadKey(thread);
+            return (
+              <ThreadRow
+                key={key}
+                {...thread}
+                isSelected={selectedKey != null ? selectedKey === key : thread.isSelected}
+                onSelect={() => onSelectThread?.(thread, name)}
+              />
+            );
+          })}
         </VStack>
       ) : null}
     </VStack>
@@ -206,12 +234,24 @@ function Group({ name, isExpanded = false, threads = [] }: ProjectGroup) {
 
 export default function ProjectTree({
   groups = PLACEHOLDER_GROUPS,
+  selectedKey = null,
+  onSelectThread,
 }: ProjectTreeProps) {
+  // Default selection wash for the artboard placeholder when the parent has
+  // not yet set an active thread — keeps the shell looking selected at rest.
+  const effectiveSelected =
+    selectedKey ?? (onSelectThread ? null : "analyze");
+
   return (
     <VStack gap={0} data-slot="project-tree">
       <SectionHeader />
       {groups.map((group) => (
-        <Group key={group.name} {...group} />
+        <Group
+          key={group.name}
+          {...group}
+          selectedKey={effectiveSelected}
+          onSelectThread={onSelectThread}
+        />
       ))}
     </VStack>
   );

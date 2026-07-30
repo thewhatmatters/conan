@@ -9,6 +9,10 @@
  * story allowed back in here. That is what lets five worktrees run in parallel
  * without a merge conflict on the shell.
  *
+ * p2a (US-201) re-enters here for the active-thread wiring seam: App.v2 owns
+ * `activeThread` and passes selection callbacks into the sidebar. The content
+ * well hosts V2ChatView instead of the shell-era placeholder.
+ *
  * WHAT THE ARTBOARD SAYS
  * ----------------------
  * RJ-0 is 1512×1030 in two pieces: a 48px window title bar (RK-0) above a
@@ -36,13 +40,17 @@
  *   - no Tailwind classes, no raw hex, no raw px — anything the props can't
  *     express goes through `xstyle` reading `tokens.css` (contract §4.2/§4.3)
  */
+import { useCallback, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Layout } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Text } from "@astryxdesign/core/Text";
 import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
 import SecondaryBar from "./components/SecondaryBar.tsx";
+import V2ChatView from "./chat/V2ChatView.tsx";
+import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
+import type { ActiveThread, V2Provider } from "./lib/types.ts";
+import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 
 /**
  * `xstyle` is Astryx's per-component style escape hatch, and the reason this app
@@ -68,49 +76,52 @@ const styles = stylex.create({
     minHeight: 0,
     overflow: "clip",
   },
-  // The transcript + composer region. Empty for the shell milestone; a later
-  // phase fills it. `minHeight: 0` keeps it a scroll container, not a pusher.
-  content: {
-    flexGrow: 1,
-    minHeight: 0,
-  },
 });
 
-/**
- * Placeholder for the transcript + composer (Paper 4N-0's body), which land in a
- * later phase. Kept visibly provisional rather than faked: an empty well is an
- * honest statement that the shell is done and the content is not.
- */
-function ContentPlaceholder() {
-  return (
-    <VStack
-      gap={2}
-      padding={6}
-      align="start"
-      isScrollable
-      xstyle={styles.content}
-      data-slot="content"
-    >
-      <Text type="supporting" color="secondary">
-        Transcript and composer land in a later phase.
-      </Text>
-    </VStack>
-  );
+function asProvider(value: ThreadRowProps["provider"]): V2Provider {
+  if (value === "codex" || value === "grok") return value;
+  return "claude";
 }
 
 export default function AppV2() {
+  const config = useGatewayConfig();
+  const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
+
+  const onSelectThread = useCallback(
+    (thread: ThreadRowProps, _projectName: string) => {
+      // Placeholder selection: real project list is p2d. A valid cwd from
+      // /api/config is enough to open a live session for the skeleton.
+      const cwd = config?.cwd ?? "";
+      setActiveThread({
+        key: thread.id ?? thread.title,
+        cwd,
+        provider: asProvider(thread.provider),
+        title: thread.title,
+      });
+    },
+    [config?.cwd],
+  );
+
   return (
     <Layout
       height="fill"
       padding={0}
-      start={<Sidebar />}
+      start={
+        <Sidebar
+          selectedKey={activeThread?.key ?? null}
+          onSelectThread={onSelectThread}
+        />
+      }
       xstyle={styles.shell}
       content={
         <VStack height="100%" gap={0} data-slot="main">
           <Toolbar />
           <VStack gap={0} xstyle={styles.well}>
             <SecondaryBar />
-            <ContentPlaceholder />
+            <V2ChatView
+              token={config?.token ?? null}
+              activeThread={activeThread}
+            />
           </VStack>
         </VStack>
       }

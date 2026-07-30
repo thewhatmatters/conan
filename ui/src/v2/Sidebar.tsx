@@ -22,6 +22,12 @@ import { VStack } from "@astryxdesign/core/VStack";
 import SidebarHeader from "./components/SidebarHeader.tsx";
 import ProjectTree from "./components/ProjectTree.tsx";
 import SettingsFooter from "./components/SettingsFooter.tsx";
+import type { ThreadRowProps } from "./components/ThreadRow.tsx";
+
+export interface SidebarProps {
+  selectedKey?: string | null;
+  onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
+}
 
 const styles = stylex.create({
   panel: {
@@ -45,7 +51,10 @@ const styles = stylex.create({
   },
 });
 
-export default function Sidebar() {
+export default function Sidebar({
+  selectedKey = null,
+  onSelectThread,
+}: SidebarProps) {
   return (
     <LayoutPanel
       width="var(--conan-sidebar-width)"
@@ -59,7 +68,10 @@ export default function Sidebar() {
       <VStack height="100%" gap={0} justify="between" data-slot="sidebar">
         <SidebarHeader />
         <VStack isScrollable padding={4} gap={4} xstyle={styles.body}>
-          <ProjectTree />
+          <ProjectTree
+            selectedKey={selectedKey}
+            onSelectThread={onSelectThread}
+          />
         </VStack>
         <VStack padding={4} gap={4} xstyle={styles.footer}>
           {/* The HStack is load-bearing: it keeps the Settings pill at content

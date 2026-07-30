@@ -33,7 +33,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation / hard barrier for p2a. Reuse v1's useAgentChat — read its return shape first (items, send, status, busy, contextTokens). Astryx: VStack https://astryx.atmeta.com/components/VStack (confirm via `npx astryx component <Name> --props --json`). Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
     },
     {

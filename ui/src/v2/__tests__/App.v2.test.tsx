@@ -12,7 +12,7 @@
  * below so the omission stays a decision instead of decaying into an oversight.
  */
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import AppV2 from "../App.v2.tsx";
 
 describe("AppV2 shell", () => {
@@ -53,13 +53,33 @@ describe("AppV2 shell", () => {
     }
   });
 
-  it("keeps the content well provisional rather than faking a transcript", () => {
+  it("hosts V2ChatView (ChatLayout) in the content well", () => {
     const { container } = render(<AppV2 />);
 
     expect(container.querySelector('[data-slot="content"]')).not.toBeNull();
+    expect(container.querySelector('[data-chat-view="v2"]')).not.toBeNull();
     expect(
-      screen.getByText("Transcript and composer land in a later phase."),
+      screen.getByText("Select a thread to start chatting."),
     ).toBeInTheDocument();
+  });
+
+  it("selecting a sidebar thread updates the chat empty-state copy", () => {
+    render(<AppV2 />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+
+    expect(
+      screen.getByText("Send a message to start this thread."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   it("does not paint a second title bar over the native window chrome", () => {

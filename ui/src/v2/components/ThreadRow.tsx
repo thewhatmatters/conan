@@ -24,6 +24,8 @@ import { Text } from "@astryxdesign/core/Text";
 export type ThreadProvider = "claude" | "codex" | "grok";
 
 export interface ThreadRowProps {
+  /** Stable id for selection wiring (p2a). Falls back to title when omitted. */
+  id?: string;
   title: string;
   /** First line of the thread's opening prompt, truncated by the artboard. */
   subtitle: string;
@@ -32,6 +34,8 @@ export interface ThreadRowProps {
   /** Agent is mid-turn — shows the green status dot on the avatar. */
   isRunning?: boolean;
   provider?: ThreadProvider;
+  /** Sidebar selection — App.v2 owns activeThread and passes this down. */
+  onSelect?: () => void;
 }
 
 const styles = stylex.create({
@@ -129,19 +133,23 @@ function ProviderGlyph({ provider }: { provider: ThreadProvider }) {
 }
 
 export default function ThreadRow({
+  id,
   title,
   subtitle,
   isSelected = false,
   isRunning = false,
   provider = "claude",
+  onSelect,
 }: ThreadRowProps) {
   return (
     <button
       type="button"
       aria-label={`${title}: ${subtitle}`}
       aria-current={isSelected ? "page" : undefined}
+      onClick={onSelect}
       {...stylex.props(styles.row, isSelected && styles.rowSelected)}
       data-slot="thread-row"
+      data-thread-id={id ?? title}
       data-selected={isSelected ? "true" : undefined}
     >
       <HStack align="start" gap={3} padding={3}>
