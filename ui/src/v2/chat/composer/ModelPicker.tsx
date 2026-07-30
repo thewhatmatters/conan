@@ -91,7 +91,11 @@ const styles = stylex.create({
     pointerEvents: "auto",
     width: "406px",
   },
+  // Fills the fixed-height panel so the footer is pinned to the BOTTOM. Without
+  // the grow, a short list (Grok's two models) leaves the footer stranded
+  // mid-panel with dead space beneath it — and the rail's divider stops short.
   columns: {
+    flexGrow: 1,
     minHeight: 0,
   },
   // 14F-1 — the icon rail.
