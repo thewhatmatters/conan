@@ -1,0 +1,104 @@
+{
+  "project": "Conan",
+  "branchName": "loop/conan-v2-astryx",
+  "phase": "Phase 2d — Shell-live wiring",
+  "generatedAt": "2026-07-30",
+  "sourcePrd": "docs/v2-astryx-redesign.md",
+  "description": "Turn the STATIC v2 shell into a real, navigable app: wire the sidebar + toolbar to live data and handlers. Real projects/threads, live per-thread status, thread select → open, breadcrumb from the active thread, new-chat, the thread kebab (rename/copy/delete), project add/remove + sort/group, and the secondary-bar git actions (Actions/Open/Commit & Push). PURE WIRING — the shell is already designed (RJ-0) and built, so NO new pixel design. Reuses v1's existing data + handlers via ui/src/v2/lib adapters (ChatSurface.tsx and ThreadToolbar.tsx are the behavior reference); the gateway and v1 are UNCHANGED. DEPENDS ON p2a (activeThread + the ChatLayout well). Unblocks p2g (the command palette's real search). READ docs/v2-astryx-redesign.md §10 BEFORE any story.",
+  "designFile": {
+    "tool": "Paper",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+    "note": "No new design — the shell nodes are already built (sidebar 4M-0 incl. project groups OT-0/PY-0/PZ-0 + thread rows; toolbar EK-0 breadcrumb EL-0; secondary bar LN-0). This PRD only makes them live. Keep the built components' look; wire data + handlers through props."
+  },
+  "conventions": {
+    "reuseV1": "Reuse v1's data + handlers, don't reinvent. v1 references (READ, don't edit): ui/src/components/ChatSurface.tsx (projects/threads fetch, per-thread state→pill, newThreadIn/draft, openSavedThread, renameThread, deleteSavedRow, removeProject, sort/group, dbTitle) and ui/src/components/ThreadToolbar.tsx (git commit/push/PR, editor open, project actions). Routes already exist: GET/POST /api/agent/projects, DELETE /api/agent/projects/:id, PATCH/DELETE /api/agent/threads/:sessionId, project actions, /api/editor/open, /api/fs/git, /api/fs/branches. Build ui/src/v2/lib adapters that call these; do NOT modify src/ or any v1 component.",
+    "dependsOnP2a": "Extends p2a: the sidebar onSelect + App.v2 activeThread already exist — p2d replaces the placeholder project list with real data feeding them, and enriches selection with the real cwd/projectId/provider.",
+    "compositionOwnership": "p2d is the phase that re-wires the shell composition — App.v2.tsx / Sidebar.tsx / Toolbar.tsx may be edited here (that's the point). Keep the DATA in ui/src/v2/lib hooks so stories parallelize by concern (projects hook vs status hook vs git-actions hook) and the leaf components stay presentational (data via props).",
+    "astryxOnly": "Astryx + ui/src/v2/tokens.css only; no shadcn/Radix/Tailwind/hex. v1 renders pixel-unchanged with the flag OFF.",
+    "gatewayRule": "Live data needs a running gateway — verify on a THROWAWAY stack (CONAN_PORT=3799 CONAN_DATA_DIR=/tmp/conan-v2-qa npm start + VITE_CONAN_V2=1 CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run dev + CONAN_ALLOWED_ORIGINS=http://localhost:5199), NEVER a human's :3747/:5173. Kill by port when done."
+  },
+  "userStories": [
+    {
+      "id": "US-501",
+      "title": "Real projects + threads + thread-select (foundation)",
+      "description": "As a user, I want my real projects and threads in the sidebar, and selecting a thread opens it, so the shell reflects my actual work.",
+      "acceptanceCriteria": [
+        "New ui/src/v2/lib/useV2Projects.ts fetches projects + threads from GET /api/agent/projects (reuse v1's fetch shape from ChatSurface.tsx; a v2/lib adapter, not a copy of ChatSurface)",
+        "ProjectTree renders real project groups (collapsible, sort/group order can stay default for now) and ThreadRow renders real threads (avatar from the registry provider, title, last-message subtitle)",
+        "Selecting a thread sets p2a's activeThread with the thread's REAL cwd/projectId/provider (reopen descriptor) so V2ChatView opens that conversation; empty state when there are no threads",
+        "Astryx + tokens only; owns useV2Projects.ts + the ProjectTree/ThreadRow data-wiring (via props from App.v2/Sidebar); v1 untouched; typecheck + build + vitest pass",
+        "Verify on a throwaway stack: real projects/threads list, select one → its chat opens"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation / barrier for p2d. Reuse ChatSurface.tsx's projects fetch + openSavedThread logic (read it; don't import v1 components). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-502",
+      "title": "Live per-thread status",
+      "description": "As a user, I want each thread's status dot to reflect its live state (working / awaiting approval / ready / idle), so I can see what's active at a glance.",
+      "acceptanceCriteria": [
+        "New ui/src/v2/lib/useV2ThreadState.ts surfaces per-thread ui state (busy / awaitingApproval / status) the same way v1 does (each mounted pane reports state; see ChatSurface pillOf + reportState) — reuse the mechanism, don't add a route",
+        "ThreadRow's status dot maps state→token color (working=primary/pulse, awaiting=amber/destructive, ready=chart-2, idle=muted) matching v1's PILL map; the active/working thread updates live during a turn",
+        "Astryx + tokens only; owns useV2ThreadState.ts + the status-dot wiring; v1 untouched; typecheck + build + vitest pass; verify a status change live (start a turn → dot goes working)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-501 + p2a (panes report state). v1 ref: ChatSurface pillOf/PILL + reportState. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-503",
+      "title": "Breadcrumb + new-chat + thread kebab",
+      "description": "As a user, I want the toolbar breadcrumb to name my active thread, a working New-chat, and a per-thread menu to rename/copy/delete — so the shell is fully operable.",
+      "acceptanceCriteria": [
+        "Toolbar breadcrumb (EL-0) shows 'Project / Thread title' from the active thread (reuse the dbTitle/projectName logic from v1)",
+        "New-chat creates a draft thread in the active project (reuse ChatSurface newThreadIn/draft semantics) and focuses it",
+        "ThreadRow gains a kebab menu (Astryx Menu) — New thread · Rename (PATCH /api/agent/threads/:id) · Copy Path · Copy Thread ID · Delete (DELETE) — mirroring v1's sidebar kebab; disabled items on a never-sent draft",
+        "Astryx + tokens only; owns the breadcrumb/new-chat/kebab wiring; v1 untouched; typecheck + build + vitest pass; verify rename + delete + new-chat on a throwaway stack"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-501. v1 refs: ThreadToolbar breadcrumb, ChatSurface renameThread/deleteSavedRow/newThreadIn + the kebab menu we built. Astryx: Menu (`npx astryx component Menu --json`). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-504",
+      "title": "Project management — add / remove / sort / group",
+      "description": "As a user, I want to add and remove projects and control sidebar sort/grouping, so I can organize my workspace.",
+      "acceptanceCriteria": [
+        "Add-project (the sidebar header + button) opens a folder picker and POSTs /api/agent/projects (reuse v1's ProjectPicker/DirBrowser flow, ported to Astryx or a minimal Astryx dialog)",
+        "Remove-project via a project-header context menu → DELETE /api/agent/projects/:id (metadata-only, folder untouched — keep v1's honest copy + confirm for non-empty projects)",
+        "The sidebar sort/group menu (sort projects/threads, group by repo/path/separate, visible-thread cap) wired to a persisted v2 view state (reuse v1's SidebarView semantics)",
+        "Astryx + tokens only; owns the add/remove + sort/group wiring; v1 untouched; typecheck + build + vitest pass; verify add + remove + a sort change on a throwaway stack"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-501. v1 refs: ChatSurface addProject/removeProject/requestRemoveProject/SortGroupMenu, ProjectPicker.tsx, DirBrowser.tsx. Astryx: Menu/Dialog (`npx astryx search dialog|menu`). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-505",
+      "title": "Secondary-bar git actions — Actions / Open / Commit & Push",
+      "description": "As a user, I want the secondary bar's Actions, Open, and Commit & Push to work against the active thread, so I can run project actions and git from the shell.",
+      "acceptanceCriteria": [
+        "Actions ▾ lists the project's custom actions (GET /api/agent/projects/:id/actions) and runs them; Open ▾ opens the active thread's cwd in a detected editor (/api/editor/open, reuse v1 editor detection); Commit & Push runs the git commit/push flow (reuse ThreadToolbar's commit/push, incl. the message prompt + result toast)",
+        "Controls reflect the active thread's cwd/project; disabled/hidden when there's no active thread; Astryx Menu/Button + tokens only",
+        "Owns the secondary-bar wiring; v1 untouched; typecheck + build + vitest pass; verify Actions + Open + a commit on a throwaway stack (against a fixture repo)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-501. v1 ref: ThreadToolbar.tsx (editors/openIn, commit/push/PR, actions). Routes already exist — wire, don't add. Astryx: Menu/Button. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-506",
+      "title": "Assemble the live shell + verify end-to-end",
+      "description": "As the team, we need the fully-wired shell verified end-to-end, so the v2 app is real, not a mockup.",
+      "acceptanceCriteria": [
+        "The shell composes all wiring: real projects/threads with live status → select opens the chat → breadcrumb updates → new-chat/kebab/add-remove/sort work → git actions run — all from the active thread",
+        "End-to-end on a throwaway stack (automate-browser): open a real project, select a thread, watch its status during a turn, create + rename a thread, run a git action; console clean; v1 untouched",
+        "Astryx + tokens only; typecheck + build + full vitest pass; update docs/v2-astryx-redesign.md §10 with the p2d outcome (and confirm p2g's search can now use the real project/thread data)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Integration story — after US-501..US-505. This makes the shell REAL and unblocks p2g. Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui."
+    }
+  ]
+}

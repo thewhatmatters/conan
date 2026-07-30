@@ -312,7 +312,7 @@ only after it lands.
 | `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **ACTIVE** |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
 | `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model·effort picker, @// input | **READY** (drafted vs `S5-0`) |
-| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, breadcrumb, new-chat/settings, git actions (Actions/Open/Commit&Push) | planned |
+| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
 | `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
 | `prd-v2-p2f-settings.json` | Settings dialog | planned |
 | `prd-v2-p2g-command-palette.json` | ⌘K command palette (Astryx CommandPalette) — search threads/projects + actions; the sidebar Search field opens it. Ties into p2d's data. | **READY** (drafted vs `VC-1`) |
