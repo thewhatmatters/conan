@@ -21,7 +21,6 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import SidebarHeader from "./components/SidebarHeader.tsx";
 import ProjectTree from "./components/ProjectTree.tsx";
-import NewChatButton from "./components/NewChatButton.tsx";
 import SettingsFooter from "./components/SettingsFooter.tsx";
 
 const styles = stylex.create({
@@ -35,8 +34,10 @@ const styles = stylex.create({
     flexGrow: 1,
     minHeight: 0,
   },
-  // 7L-0: the footer band. Its buttons (NewChatButton / SettingsFooter) are
-  // separate leaf files; the band's inset and tone belong here.
+  // 7L-0: the footer band. Settings is the ONLY affordance RJ-0 draws down here
+  // — new chat is not on the artboard, so `NewChatButton` stays unmounted (the
+  // leaf file is kept for a later surface). The band's inset and tone belong
+  // here; the button itself is its own leaf file.
   footer: {
     backgroundColor: "var(--conan-color-sidebar)",
     flexShrink: 0,
@@ -61,8 +62,9 @@ export default function Sidebar() {
           <ProjectTree />
         </VStack>
         <VStack padding={4} gap={4} xstyle={styles.footer}>
+          {/* The HStack is load-bearing: it keeps the Settings pill at content
+              width. Dropping it lets the VStack stretch the pill edge-to-edge. */}
           <HStack align="center" gap={1}>
-            <NewChatButton />
             <SettingsFooter />
           </HStack>
         </VStack>
