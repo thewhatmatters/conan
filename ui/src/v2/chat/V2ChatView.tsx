@@ -52,6 +52,7 @@ export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
       composer={
         <V2Composer
           activeThread={activeThread}
+          token={token}
           busy={busy}
           disabled={status !== "open" || !token}
           send={send}

@@ -43,11 +43,17 @@ describe("V2Composer", () => {
 
     const textbox = typeAndSubmit("ping the agent");
 
-    expect(send).toHaveBeenCalledWith("ping the agent", {
-      cwd: "/tmp/conan-v2-p2a",
-      provider: "claude",
-      projectId: undefined,
-    });
+    expect(send).toHaveBeenCalledWith(
+      "ping the agent",
+      {
+        cwd: "/tmp/conan-v2-p2a",
+        provider: "claude",
+        projectId: undefined,
+      },
+      // p2c: staged pins/images ride the same send (empty with nothing staged).
+      [],
+      [],
+    );
     expect(textbox.textContent).toBe("");
   });
 
