@@ -1,8 +1,12 @@
 # Conan v2 — Astryx Redesign · Multi-Agent Build Plan
 
-> **Status:** **T0 (foundation) landed — T1–T5 are unblocked and can fan out.**
-> Read **§8 (T0 outcomes)** before starting a task; it supersedes the open
-> questions the plan shipped with. Branch: `loop/conan-v2-astryx`.
+> **Status:** **Sidebar+toolbar SHELL MILESTONE COMPLETE** (T0 + all leaf
+> components + assembly landed and verified live against RJ-0). The build stories
+> were pruned from `prd-conan-v2-astryx.json`; the queue now holds only remaining
+> polish (US-101 shell a11y). Functional wiring is a separate Phase 2 PRD (TBD).
+> Read **§8 (T0 outcomes)** for the resolved setup facts. Branch:
+> `loop/conan-v2-astryx`. The §5 task graph below is retained as the historical
+> plan of record.
 > **This doc is the shared brain.** Any agent picking up a v2 task reads this
 > FIRST. It is the single source of truth across machines (it travels via git;
 > per-machine `.claude` memory does not).
