@@ -81,6 +81,49 @@ describe("EffortChip", () => {
     expect(onEffortSelect).toHaveBeenCalledWith("ultrathink");
   });
 
+  it("follows the ACTIVE provider's vocabulary, not a shared list", () => {
+    const codex = provider({
+      id: "codex",
+      name: "Codex CLI",
+      capabilities: {
+        ...provider().capabilities,
+        effortModes: [
+          { id: "high", label: "High", description: "Codex's own word" },
+        ],
+      },
+    } as Partial<ProviderStatus>);
+    render(
+      <EffortChip
+        providers={[provider(), codex]}
+        activeProviderId="codex"
+        effort="high"
+        onEffortSelect={vi.fn()}
+      />,
+    );
+    // Codex's level, NOT Claude's Think/Ultrathink — capability-driven.
+    expect(screen.getByRole("button", { name: /High/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ultrathink/ })).toBeNull();
+  });
+
+  it("has no locked concept — effort is per-turn, so it can never freeze", () => {
+    // The architectural rule, enforced structurally: EffortChip takes no
+    // `locked` prop, so a locked thread (model fixed) still changes effort.
+    const onEffortSelect = vi.fn();
+    render(
+      <EffortChip
+        providers={[provider()]}
+        activeProviderId="claude"
+        effort=""
+        onEffortSelect={onEffortSelect}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: /Default effort/ });
+    expect(trigger).toBeEnabled();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByText("Think"));
+    expect(onEffortSelect).toHaveBeenCalledWith("think");
+  });
+
   it("is ABSENT — not a dead disabled chip — when the provider has no levels", () => {
     const { container } = render(
       <EffortChip

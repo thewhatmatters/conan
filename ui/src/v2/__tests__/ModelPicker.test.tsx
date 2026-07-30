@@ -175,4 +175,68 @@ describe("ModelPicker panel", () => {
       screen.getByRole("button", { name: /Codex CLI — not found on PATH/ }),
     ).toBeDisabled();
   });
+
+  it("renders the keyboard hints the artboard's footer draws", () => {
+    open();
+    expect(screen.getByText("Navigate")).toBeInTheDocument();
+    expect(screen.getByText("Select")).toBeInTheDocument();
+    expect(screen.getByText("Close")).toBeInTheDocument();
+  });
+
+  it("restores the full list when the query is cleared", () => {
+    open();
+    const rows = () => document.querySelectorAll('[data-slot="model-row"]').length;
+    const search = screen.getByPlaceholderText("Search…");
+    expect(rows()).toBe(3);
+    fireEvent.change(search, { target: { value: "fable" } });
+    expect(rows()).toBe(1);
+    fireEvent.change(search, { target: { value: "" } });
+    expect(rows()).toBe(3);
+  });
+
+  // NOT UNIT-TESTED: the panel also resets the rail + query on REOPEN. Astryx's
+  // Popover is built on the native Popover API, which jsdom doesn't implement —
+  // probed it, and neither a trigger re-click nor Escape closes the panel in
+  // this environment, so a "reopen" can't be driven here. Verified in-browser
+  // instead. Don't add a close/reopen assertion; it will pass vacuously.
+});
+
+describe("ModelPicker ⌘N shortcuts", () => {
+  /** The rows advertise ⌘1…⌘9; the chips would be a lie if they didn't fire. */
+  function pressMod(digit: string) {
+    // `mod` is ⌘ on macOS and Ctrl elsewhere — fire both so the test doesn't
+    // depend on the platform the suite happens to run on.
+    fireEvent.keyDown(window, { key: digit, metaKey: true });
+    fireEvent.keyDown(window, { key: digit, ctrlKey: true });
+  }
+
+  it("commits the model whose ⌘N chip is pressed", () => {
+    const onSelect = vi.fn();
+    render(
+      <ModelPicker
+        providers={[provider()]}
+        activeProviderId="claude"
+        model={undefined}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Claude ·/ }));
+    pressMod("3"); // 1 = Default model, 2 = Opus 5, 3 = Fable 5
+    expect(onSelect).toHaveBeenCalledWith("claude", "fable");
+  });
+
+  it("stays silent while locked — the launch config is fixed", () => {
+    const onSelect = vi.fn();
+    render(
+      <ModelPicker
+        providers={[provider()]}
+        activeProviderId="claude"
+        model="opus"
+        locked
+        onSelect={onSelect}
+      />,
+    );
+    pressMod("3");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
