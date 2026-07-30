@@ -74,7 +74,7 @@
         "Browser-verify on a throwaway stack"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Design node: footer chip TY-0 (asterisk UV-0, text U2-0, chevron U3-0). Picker-open state isn't drawn on S5-0 \u2014 use v1 ProviderModelPicker as the behavior spec. Astryx: `npx astryx search menu|popover`, then `npx astryx component <Name> --json`. Suggested skills: automate-browser."
     },
     {

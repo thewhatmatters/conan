@@ -54,6 +54,9 @@ export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
           activeThread={activeThread}
           token={token}
           busy={busy}
+          // One process per session: the launch config (provider/model/effort)
+          // is fixed once the first turn goes out — v1's rule, same reason.
+          locked={items.some((item) => item.role === "user")}
           disabled={status !== "open" || !token}
           send={send}
           interrupt={interrupt}
