@@ -31,6 +31,7 @@ import { useV2Providers } from "../lib/useV2Providers.ts";
 import PinsDrawer from "./composer/PinsDrawer.tsx";
 import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
+import EffortChip from "./composer/EffortChip.tsx";
 
 export interface V2ComposerProps {
   /** Active sidebar selection — supplies cwd/provider for send. */
@@ -167,21 +168,29 @@ export default function V2Composer({
       }
       headerActions={branchChip}
       footerActions={
-        <ModelPicker
-          providers={providers}
-          activeProviderId={providerId}
-          model={model}
-          effort={effort}
-          locked={locked}
-          onSelect={(nextProvider, nextModel) => {
-            setProviderId(nextProvider);
-            setModel(nextModel);
-            // Effort ids are per-provider vocabulary — carrying one across a
-            // provider switch would send a mode the new driver never defined.
-            if (nextProvider !== providerId) setEffort("");
-          }}
-          onEffortSelect={setEffort}
-        />
+        <>
+          {/* provider+model is the thread's identity and LOCKS after turn 1;
+              effort is a per-turn parameter, so its chip never locks. */}
+          <ModelPicker
+            providers={providers}
+            activeProviderId={providerId}
+            model={model}
+            locked={locked}
+            onSelect={(nextProvider, nextModel) => {
+              setProviderId(nextProvider);
+              setModel(nextModel);
+              // Effort ids are per-provider vocabulary — carrying one across a
+              // provider switch would send a mode the new driver never defined.
+              if (nextProvider !== providerId) setEffort("");
+            }}
+          />
+          <EffortChip
+            providers={providers}
+            activeProviderId={providerId}
+            effort={effort}
+            onEffortSelect={setEffort}
+          />
+        </>
       }
       input={
         <ChatComposerInput

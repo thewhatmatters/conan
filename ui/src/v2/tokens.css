@@ -141,6 +141,7 @@
   --conan-space-0: var(--spacing-0); /*  0px */
   --conan-space-hair: var(--spacing-0-5); /*  2px · tab gutter */
   --conan-space-1: var(--spacing-1); /*  4px */
+  --conan-space-1h: var(--spacing-1-5); /*  6px · 122-1 picker rail gutter */
   --conan-space-2: var(--spacing-2); /*  8px */
   --conan-space-3: var(--spacing-3); /* 12px */
   --conan-space-4: var(--spacing-4); /* 16px · every shell inset */

@@ -1,6 +1,9 @@
 /**
- * ModelPicker (p2c US-303) — trigger drawn from S5-0's TY-0, open behaviour
- * ported from v1's ProviderModelPicker.
+ * ModelPicker — trigger drawn from S5-0's TY-0, panel from artboard 122-1.
+ *
+ * Effort is NOT part of this control any more (it moved to EffortChip): the
+ * provider+model pick is the thread's identity and locks after turn 1, while
+ * effort is per-turn and must stay live. These tests hold that separation.
  */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -59,9 +62,7 @@ describe("ModelPicker trigger", () => {
         providers={[provider()]}
         activeProviderId="claude"
         model="fable"
-        effort=""
         onSelect={vi.fn()}
-        onEffortSelect={vi.fn()}
       />,
     );
     expect(
@@ -75,9 +76,7 @@ describe("ModelPicker trigger", () => {
         providers={[provider()]}
         activeProviderId="claude"
         model={undefined}
-        effort=""
         onSelect={vi.fn()}
-        onEffortSelect={vi.fn()}
       />,
     );
     expect(
@@ -85,13 +84,24 @@ describe("ModelPicker trigger", () => {
     ).toBeInTheDocument();
   });
 
-  it("appends effort only once chosen", () => {
-    expect(pickerLabel(provider(), "Claude Code", "opus", "")).toBe(
-      "Claude · Opus 5",
+  it("never shows effort in the trigger — that is EffortChip's job", () => {
+    render(
+      <ModelPicker
+        providers={[provider()]}
+        activeProviderId="claude"
+        model="opus"
+        onSelect={vi.fn()}
+      />,
     );
+    // The util still supports an effort segment (EffortChip owns that concern);
+    // the model trigger must not render one.
     expect(pickerLabel(provider(), "Claude Code", "opus", "think")).toBe(
       "Claude · Opus 5 · Think",
     );
+    expect(screen.queryByRole("button", { name: /Think/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^Claude · Opus 5$/ }),
+    ).toBeInTheDocument();
   });
 
   it("degrades to a static locked indicator, not a dead dropdown", () => {
@@ -100,10 +110,8 @@ describe("ModelPicker trigger", () => {
         providers={[provider()]}
         activeProviderId="claude"
         model="opus"
-        effort=""
         locked
         onSelect={vi.fn()}
-        onEffortSelect={vi.fn()}
       />,
     );
     expect(
@@ -116,20 +124,17 @@ describe("ModelPicker trigger", () => {
 describe("ModelPicker panel", () => {
   function open(props: Partial<React.ComponentProps<typeof ModelPicker>> = {}) {
     const onSelect = vi.fn();
-    const onEffortSelect = vi.fn();
     render(
       <ModelPicker
         providers={[provider(), codex]}
         activeProviderId="claude"
         model={undefined}
-        effort=""
         onSelect={onSelect}
-        onEffortSelect={onEffortSelect}
         {...props}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Claude ·/ }));
-    return { onSelect, onEffortSelect };
+    return { onSelect };
   }
 
   it("commits a provider + model from the model row", () => {
@@ -140,9 +145,7 @@ describe("ModelPicker panel", () => {
 
   it("browsing the rail does not commit — only the model row does", () => {
     const { onSelect } = open();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Codex CLI" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Codex CLI" }));
     expect(onSelect).not.toHaveBeenCalled();
     // Codex exposes only a default → one honest commit row.
     const use = screen.getByRole("button", { name: "Use Codex CLI" });
@@ -150,16 +153,14 @@ describe("ModelPicker panel", () => {
     expect(onSelect).toHaveBeenCalledWith("codex", undefined);
   });
 
-  it("commits an effort from the fly-out", () => {
-    const { onEffortSelect } = open();
-    fireEvent.click(screen.getByRole("button", { name: /Effort: Default/ }));
-    fireEvent.click(screen.getByText("Think"));
-    expect(onEffortSelect).toHaveBeenCalledWith("think");
+  it("has no effort control in the panel", () => {
+    open();
+    expect(screen.queryByRole("button", { name: /Effort/ })).toBeNull();
   });
 
   it("filters the model list", () => {
     open();
-    fireEvent.change(screen.getByPlaceholderText("Search models…"), {
+    fireEvent.change(screen.getByPlaceholderText("Search…"), {
       target: { value: "fable" },
     });
     expect(screen.queryByText("Opus 5")).toBeNull();
