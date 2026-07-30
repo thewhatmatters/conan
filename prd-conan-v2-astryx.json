@@ -52,8 +52,8 @@
         "Verify with automate-browser on a throwaway port (VITE_CONAN_V2=1, dark): Tab through the shell and confirm focus reaches the surface tabs and arrow keys move between them; re-screenshot to confirm no visual regression vs RJ-0"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Follow-up polish after the shell milestone. Astryx tabs: try https://astryx.atmeta.com/components/TabList or https://astryx.atmeta.com/components/Tabs — confirm the real name/props with `npx astryx component <Name> --props --json`. Read docs/v2-astryx-redesign.md. Suggested skills: automate-browser, audit-ui."
+      "passes": true,
+      "notes": "Completed 2026-07-30 and promoted in checkpoint/v2-t101. SurfaceTabs real tablist + arrow-key movement + close-button labels (Claude), sidebar a11y sweep (Codex), toolbar a11y sweep (Grok). Post-merge fixes: title injection across preview stacks, ProjectTree section-header action icon alignment. 46 tests passing; typecheck/build clean. Suggested skills: automate-browser, audit-ui."
     }
   ],
   "completedMilestone": "Shell milestone DONE in the first multi-agent run (commits 4331e92..ea05306). Shipped in ui/src/v2/: the Astryx pipeline + flag + CSS isolation + tokens/fonts (T0), and the full sidebar+toolbar shell — SidebarHeader, SearchInput, ProjectTree, ThreadRow, SettingsFooter, Breadcrumb, SurfaceTabs, SecondaryBar — assembled in App.v2.tsx / Sidebar.tsx / Toolbar.tsx, with a Vitest suite. Verified live against the Paper RJ-0 artboard: renders clean at 1512x982 dark, zero console errors, faithful to the design. The former build stories US-001..US-007 are complete and pruned from the queue (their acceptance criteria live in git history). Remaining polish is below; functional wiring is Phase 2."
