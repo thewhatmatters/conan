@@ -69,11 +69,25 @@ const styles = stylex.create({
     color: "var(--conan-text-muted)",
     height: "var(--conan-control-height)",
   },
+  // Astryx's popover surface pads its content 12px. The artboard's dividers
+  // (rail edge, search rule, footer rule) run EDGE TO EDGE, so that padding has
+  // to go or every rule stops short of the rounded corner.
+  surface: {
+    padding: 0,
+  },
   // 122-1 — fixed width, capped height. A menu that resizes as you browse
-  // providers reads as a glitch, so only the list scrolls.
+  // providers reads as a glitch, so only the list scrolls. It owns the panel
+  // fill + radius now that it sits flush against the popover's edge.
   panel: {
+    backgroundColor: "var(--conan-color-content)",
+    borderRadius: "var(--conan-radius-lg)",
     maxHeight: "480px",
     overflow: "hidden",
+    // The panel renders inside ChatComposer's subtree, so its disabled
+    // `pointer-events: none` cascades here too. The trigger already opts back
+    // in; without the same on the panel you could OPEN the picker while the
+    // socket is down but not click anything in it — worse than not opening.
+    pointerEvents: "auto",
     width: "406px",
   },
   columns: {
@@ -242,6 +256,7 @@ export default function ModelPicker({
       placement="above"
       alignment="start"
       label="Choose provider and model"
+      xstyle={styles.surface}
       content={
         <VStack gap={0} xstyle={styles.panel} data-slot="model-picker-panel">
           <HStack gap={0} xstyle={styles.columns}>
@@ -354,27 +369,35 @@ export default function ModelPicker({
             </VStack>
           </HStack>
 
+          {/* 12W-1 — LEFT aligned, padding 8/16, 16px between groups and 4px
+              inside one. Centring it drifts from the artboard. */}
           <HStack
             align="center"
-            hAlign="center"
-            gap={2}
+            gap={4}
             paddingBlock={2}
+            paddingInline={4}
             xstyle={styles.footer}
             aria-hidden
           >
-            <Kbd keys="up" />
-            <Kbd keys="down" />
-            <Text type="supporting" color="secondary">
-              Navigate
-            </Text>
-            <Kbd keys="enter" />
-            <Text type="supporting" color="secondary">
-              Select
-            </Text>
-            <Kbd keys="escape" />
-            <Text type="supporting" color="secondary">
-              Close
-            </Text>
+            <HStack align="center" gap={1}>
+              <Kbd keys="up" />
+              <Kbd keys="down" />
+              <Text type="supporting" color="secondary">
+                Navigate
+              </Text>
+            </HStack>
+            <HStack align="center" gap={1}>
+              <Kbd keys="enter" />
+              <Text type="supporting" color="secondary">
+                Select
+              </Text>
+            </HStack>
+            <HStack align="center" gap={1}>
+              <Kbd keys="escape" />
+              <Text type="supporting" color="secondary">
+                Close
+              </Text>
+            </HStack>
           </HStack>
         </VStack>
       }
