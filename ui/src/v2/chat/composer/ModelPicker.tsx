@@ -75,13 +75,14 @@ const styles = stylex.create({
   surface: {
     padding: 0,
   },
-  // 122-1 — fixed width, capped height. A menu that resizes as you browse
-  // providers reads as a glitch, so only the list scrolls. It owns the panel
-  // fill + radius now that it sits flush against the popover's edge.
+  // 122-1 — fixed width AND fixed height. The artboard draws the panel at
+  // fit-content, but in use that resizes on every provider switch (Claude's 5
+  // models = 371px, Codex's 8 = 480px), which reads as a glitch. Pinning it to
+  // the five-row Claude height keeps the panel still; longer lists scroll.
   panel: {
     backgroundColor: "var(--conan-color-content)",
     borderRadius: "var(--conan-radius-lg)",
-    maxHeight: "480px",
+    height: "var(--conan-picker-height)",
     overflow: "hidden",
     // The panel renders inside ChatComposer's subtree, so its disabled
     // `pointer-events: none` cascades here too. The trigger already opts back

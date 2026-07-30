@@ -188,6 +188,11 @@
   --conan-secondary-bar-height: 64px; /* LN-0 (16 + 32 + 16) */
 
   --conan-control-height: var(--size-element-md); /* 32px · every control */
+  /* Model picker: FIXED so switching providers never resizes the panel. Sized
+   * to the Claude list — five 56px rows + 8px list inset (288) + the 46px
+   * search row + the 37px footer. Providers with more models scroll; with
+   * fewer, the list keeps its lane. */
+  --conan-picker-height: 371px;
   --conan-icon-size: 16px; /* every icon in RJ-0 */
   --conan-avatar-size: 40px; /* thread avatar */
   --conan-row-height: 68px; /* thread row */
