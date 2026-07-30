@@ -1,133 +1,174 @@
 /* ---------------------------------------------------------------------------
- * Conan v2 — design-token bridge layer  (T0, docs/v2-astryx-redesign.md §4)
+ * Conan v2 — design-token bridge layer  (T0 · docs/v2-astryx-redesign.md §4)
  * ---------------------------------------------------------------------------
- * Every v2 component consumes `--conan-*` from THIS file. Nothing in `v2/`
- * hard-codes a hex, a px, or a Tailwind class (§6). One indirection layer means
- * a Paper value change is a one-line edit here, not a sweep through 20 files.
+ * Every v2 component consumes `--conan-*` from THIS file. Nothing under
+ * `ui/src/v2/` hard-codes a hex, a px, or a Tailwind class (contract §6) — one
+ * indirection layer means an artboard change is a one-line edit here, not a
+ * sweep through a dozen files.
  *
- * WHERE THE VALUES COME FROM
- * --------------------------
- * 1. `@astryxdesign/theme-neutral` — the real, shipped Astryx token surface
- *    (`node_modules/@astryxdesign/theme-neutral/dist/theme.css`, verified via
- *    `npx astryx docs tokens --json`). These are NOT guesses; they are the
- *    library's own values, and referencing them via `var()` (rather than
- *    copying hex) keeps light/dark and any future `astryx theme build` in sync.
- *    Notably theme-neutral ALREADY ships `--font-family-body: Figtree, …` and a
- *    system monospace stack — exactly the pairing the Paper artboard specifies.
- * 2. `docs/v2-astryx-redesign.md` §3 — measurements stated in the shared-brain
- *    doc (sidebar 273px, artboard 1512×982). Doc-sourced, so exact.
+ * SOURCE OF TRUTH: Paper artboard RJ-0 "Application Shell"
+ *   https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0
+ * Every value below was read out of Paper with `get_computed_styles` /
+ * `get_jsx` on the node id named in its comment — not eyeballed off a
+ * screenshot, and not guessed.
  *
- * ⚠️ PAPER ACCESS WAS UNAVAILABLE IN THE T0 SESSION.
- * The Paper MCP (`get_computed_styles` on file 01KYQJ3S5RCDAE0KY87NRFY75F,
- * artboard `4I-0`) is not connected in this environment, so per-node colours
- * and bar heights could NOT be read. Rather than invent numbers, values that
- * Paper owns are either (a) mapped onto the Astryx theme token that carries the
- * same semantic role, or (b) parked in the PROVISIONAL block at the bottom and
- * marked `@paper-todo` with the node id to measure. Anyone with Paper access
- * should re-derive those and delete the marker — no other file needs touching.
+ * THE HAPPY FINDING: RJ-0 was drawn ON the Astryx neutral scale.
+ * `@astryxdesign/theme-neutral`'s DARK arm already carries most of the
+ * artboard verbatim — `--color-background-body` is #1B1B1B, `-surface` is
+ * #262626, `--color-text-primary` is #FAFAFA, `-secondary` is #A3A3A3,
+ * `--color-border-emphasized` is #525252, `--color-success` is #9FE59B,
+ * `--color-accent` is #EBEBEB, `--radius-element` is 10px, `--radius-inner`
+ * is 6px, `--font-size-base` is 14px, `--font-size-sm` is 12px, body leading
+ * is 1.4286 (= the artboard's 142.86%), and `--font-family-body` already
+ * starts with Figtree. So the tokens below mostly ALIAS the theme variable
+ * that already holds the artboard's value: retargeting via `var()` keeps
+ * light/dark and any future `astryx theme build` in sync, where copying the
+ * hex would freeze it. (Aliasing is the interop pattern `astryx docs styling`
+ * prescribes; note that nothing here redefines a `--color-*` token, which
+ * Astryx forbids.)
+ *
+ * A literal hex appears below ONLY where RJ-0 uses a value theme-neutral has
+ * no token for. Each one is labelled `RJ-0 literal` with its node. Those are
+ * the artboard's own numbers, so this file is where they belong.
  *
  * SCOPE
  * -----
  * Declared on `[data-astryx-theme="neutral"]`, which `entry.tsx` stamps onto
- * <html>. That is the same element Astryx's own `@scope` root resolves to, so
- * the `var()` references below always find their referent — and portalled
- * content (dialogs, popovers) inherits too. This file is loaded ONLY by the v2
- * entry, so it can never reach v1.
+ * <html> — the same element Astryx's `@scope` root resolves to, so every
+ * `var()` below finds its referent, and portalled content (dialogs, popovers)
+ * inherits too. This file is imported ONLY by `v2/entry.tsx`, so with the
+ * flag off it never reaches v1.
  * ------------------------------------------------------------------------- */
 
 [data-astryx-theme="neutral"] {
-  /* -- Colour -------------------------------------------------------------
-   * Semantic roles, mapped by intent onto Astryx tokens (the interop pattern
-   * `astryx docs styling-libraries` prescribes: alias the name, point the
-   * value at the system variable). @paper-todo: confirm each against 4I-0. */
+  /* == COLOUR ============================================================ */
 
-  /* Surfaces */
-  --conan-color-bg: var(--color-background-body);
-  --conan-color-surface: var(--color-background-surface);
-  --conan-color-sidebar: var(--color-background-card);
-  --conan-color-card: var(--color-background-card);
-  --conan-color-popover: var(--color-background-popover);
-  --conan-color-muted: var(--color-background-muted);
+  /* -- Surfaces ----------------------------------------------------------
+   * The artboard is a two-tone shell: sidebar and toolbar sit on #1B1B1B, and
+   * the content well (4N-0) is lifted to #262626 with a 24px top-left round.
+   * The search field (RV-0) uses that same lifted tone as an inset field. */
+  --conan-color-bg: var(--color-background-body); /* #1B1B1B · 4I-0 / 4M-0 */
+  --conan-color-sidebar: var(--color-background-card); /* #1B1B1B · 4M-0 */
+  --conan-color-content: var(--color-background-surface); /* #262626 · 4N-0 */
+  --conan-color-field: var(--color-background-surface); /* #262626 · RV-0 */
+  --conan-color-popover: var(--color-background-popover); /* #1B1B1B */
 
-  /* Hover / pressed washes — for rows, tabs, and icon buttons */
-  --conan-color-hover: var(--color-overlay-hover);
-  --conan-color-pressed: var(--color-overlay-pressed);
-  --conan-color-scrim: var(--color-overlay);
+  /* Window chrome — the artboard's title bar (RK-0) sits a shade below the app
+   * so the app body reads as a lifted card inside it. No theme token is that
+   * dark, so this is the artboard's own value. */
+  --conan-color-titlebar: #111111; /* RJ-0 literal · RK-0 */
 
-  /* Text */
-  --conan-color-text: var(--color-text-primary);
-  --conan-color-text-muted: var(--color-text-secondary);
-  --conan-color-text-disabled: var(--color-text-disabled);
-  --conan-color-text-accent: var(--color-text-accent);
-  --conan-color-on-accent: var(--color-on-accent);
+  /* -- Washes ------------------------------------------------------------
+   * RJ-0 states elevation with translucent white/grey washes, never with an
+   * opaque step. Three distinct ones, each on a different node — they are NOT
+   * interchangeable, so they get separate names. */
+  --conan-wash-raised: var(--color-neutral); /* #FFFFFF1A · avatar, ⌘K chips */
+  --conan-wash-row-selected: #a3a3a31a; /* RJ-0 literal · selected thread row */
+  --conan-wash-tab-selected: #dddddd1a; /* RJ-0 literal · selected tab · HL-0 */
+  --conan-wash-hover: var(--color-overlay-hover); /* #FFFFFF0D */
+  --conan-wash-pressed: var(--color-overlay-pressed); /* #FFFFFF1A */
 
-  /* Icons */
-  --conan-color-icon: var(--color-icon-primary);
-  --conan-color-icon-muted: var(--color-icon-secondary);
+  /* -- Text --------------------------------------------------------------
+   * FOUR steps, not three. `strong` (#FFFFFF) is reserved for the two places
+   * the artboard shouts — the "Projects" section label and the breadcrumb LEAF
+   * — while `primary` (#FAFAFA) carries ordinary emphasis (thread titles, tab
+   * labels, Settings). `dim` (#737373) is a fourth, quieter step used for the
+   * breadcrumb's PARENT crumb and its folder icon; theme-neutral has no dark
+   * token at that value, hence the literal. */
+  --conan-text-strong: var(--color-on-dark); /* #FFFFFF · O0-0, EL-0 leaf */
+  --conan-text-primary: var(--color-text-primary); /* #FAFAFA · row titles */
+  --conan-text-muted: var(--color-text-secondary); /* #A3A3A3 · subtitles */
+  --conan-text-dim: #737373; /* RJ-0 literal · EL-0 parent crumb */
+  --conan-text-disabled: var(--color-text-disabled); /* #525252 */
 
-  /* Lines */
-  --conan-color-border: var(--color-border);
-  --conan-color-border-strong: var(--color-border-emphasized);
+  /* -- Icons -------------------------------------------------------------
+   * Icons track the text steps: a row's icon and its label carry the same
+   * weight of voice, which is why the artboard never mixes them. */
+  --conan-icon-strong: var(--color-on-dark); /* #FFFFFF · selected tab */
+  --conan-icon-primary: var(--color-icon-primary); /* #FAFAFA · Settings */
+  --conan-icon-muted: var(--color-icon-secondary); /* #A3A3A3 · most icons */
+  --conan-icon-dim: #737373; /* RJ-0 literal · EL-0, project folder */
 
-  /* Accent */
-  --conan-color-accent: var(--color-accent);
-  --conan-color-accent-muted: var(--color-accent-muted);
+  /* -- Lines -------------------------------------------------------------
+   * RJ-0 draws no 1px rules between shell regions — separation comes from the
+   * surface step and the 24px radius. `border` therefore only appears on the
+   * search field, and `-strong` is the value it uses. */
+  --conan-color-border: var(--color-border); /* #FFFFFF1A */
+  --conan-color-border-strong: var(--color-border-emphasized); /* #525252 · RV-0 */
+  --conan-border-width: 1px; /* RJ-0 literal · RV-0 — the only 1px in the shell */
 
-  /* Status — drives the thread-row status dot (§3, sidebar rows) */
-  --conan-color-running: var(--color-icon-blue);
+  /* -- Accent & status ---------------------------------------------------
+   * The selected thread row carries a 2px bar in the accent tone (#EBEBEB);
+   * the running-agent dot is the theme's success green, ringed in a tone that
+   * reads as the row behind it. */
+  --conan-color-accent: var(--color-accent); /* #EBEBEB · row indicator */
+  --conan-color-status-running: var(--color-success); /* #9FE59B · status dot */
+  --conan-color-status-ring: #292929; /* RJ-0 literal · dot ring */
   --conan-color-success: var(--color-success);
   --conan-color-warning: var(--color-warning);
   --conan-color-error: var(--color-error);
 
-  /* -- Radius ------------------------------------------------------------- */
-  --conan-radius-none: var(--radius-none);
-  --conan-radius-sm: var(--radius-inner);
-  --conan-radius-md: var(--radius-element);
-  --conan-radius-lg: var(--radius-container);
-  --conan-radius-xl: var(--radius-page);
+  /* -- Provider brand ---------------------------------------------------
+   * The thread avatar is the PROVIDER's mark, so its colour is brand, not
+   * theme — it must not drift with the palette. Claude's is the only one the
+   * artboard draws; Codex/Grok land when the rows go live. */
+  --conan-brand-claude: #d97757; /* RJ-0 literal · thread avatar glyph */
+
+  /* -- Window controls --------------------------------------------------- */
+  --conan-control-close: #fe5b5f; /* RJ-0 literal · RM-0 */
+  --conan-control-minimize: #fac800; /* RJ-0 literal · RN-0 */
+  --conan-control-maximize: #34c759; /* RJ-0 literal · RO-0 */
+
+  /* == RADIUS ============================================================
+   * RJ-0's ladder is 4 / 6 / 10 / 16 / 24 / full, and theme-neutral's
+   * `inner` (6px) and `element` (10px) land on it exactly — 10px is the
+   * artboard's workhorse (every row, tab, and control). The theme's `page`
+   * step is 28px where the artboard's big well-corner is 24px, so that one
+   * is a literal. */
+  --conan-radius-xs: var(--radius-none); /* 4px · icon-button hover */
+  --conan-radius-sm: var(--radius-inner); /* 6px · ⌘K chips */
+  --conan-radius-md: var(--radius-element); /* 10px · rows, tabs, field */
+  --conan-radius-lg: var(--radius-container); /* 12px */
+  --conan-radius-pill: 16px; /* RJ-0 literal · 7W-0 Settings */
+  --conan-radius-page: 24px; /* RJ-0 literal · 4N-0 top-left */
+  --conan-radius-window: 16px; /* RJ-0 literal · RK-0 / 4I-0 */
   --conan-radius-full: var(--radius-full);
 
-  /* -- Spacing ------------------------------------------------------------
-   * Astryx's 4px-base scale. Astryx layout components take a `gap`/`padding`
-   * STEP prop (gap={3}) rather than a length — prefer the prop; reach for
-   * these vars only where a raw length is unavoidable. */
-  --conan-space-0: var(--spacing-0);
-  --conan-space-half: var(--spacing-0-5); /*  2px */
+  /* == SPACING ===========================================================
+   * Astryx's 4px scale, which RJ-0 uses without exception (2 / 4 / 8 / 12 /
+   * 16 / 24). Astryx layout components take a spacing STEP (`gap={3}`) rather
+   * than a length — prefer the prop; these vars are for the rare raw length. */
+  --conan-space-0: var(--spacing-0); /*  0px */
+  --conan-space-hair: var(--spacing-0-5); /*  2px · tab gutter */
   --conan-space-1: var(--spacing-1); /*  4px */
-  --conan-space-1-5: var(--spacing-1-5); /*  6px */
   --conan-space-2: var(--spacing-2); /*  8px */
   --conan-space-3: var(--spacing-3); /* 12px */
-  --conan-space-4: var(--spacing-4); /* 16px */
-  --conan-space-5: var(--spacing-5); /* 20px */
+  --conan-space-4: var(--spacing-4); /* 16px · every shell inset */
   --conan-space-6: var(--spacing-6); /* 24px */
-  --conan-space-8: var(--spacing-8); /* 32px */
-  --conan-space-10: var(--spacing-10); /* 40px */
-  --conan-space-12: var(--spacing-12); /* 48px */
 
-  /* -- Typography ---------------------------------------------------------
-   * Figtree + system monospace, per §3. theme-neutral already resolves
-   * --font-family-body to Figtree; `fonts.css` self-hosts the webfont so the
-   * first family in the stack actually exists. */
+  /* == TYPOGRAPHY ========================================================
+   * Figtree + system monospace, exactly as RJ-0 declares. theme-neutral
+   * already resolves `--font-family-body` to a Figtree-first stack and
+   * `--font-family-code` to the artboard's "System Monospace"; `fonts.css`
+   * self-hosts the webfont so that first family actually exists.
+   *
+   * The scale is two sizes. That restraint is the artboard's, not an
+   * omission: 14px does all the work and 12px is the single quiet step. */
   --conan-font-sans: var(--font-family-body);
   --conan-font-mono: var(--font-family-code);
 
-  --conan-text-2xs: var(--font-size-2xs); /* 0.500rem */
-  --conan-text-xs: var(--font-size-xs); /* 0.625rem */
-  --conan-text-sm: var(--font-size-sm); /* 0.750rem */
-  --conan-text-base: var(--font-size-base); /* 0.875rem */
-  --conan-text-lg: var(--font-size-lg); /* 1.0625rem */
-  --conan-text-xl: var(--font-size-xl); /* 1.250rem */
-  --conan-text-2xl: var(--font-size-2xl); /* 1.500rem */
+  --conan-text-body: var(--font-size-base); /* 14px · everything */
+  --conan-text-small: var(--font-size-sm); /* 12px · subtitles, chips */
 
   --conan-weight-normal: var(--font-weight-normal); /* 400 */
-  --conan-weight-medium: var(--font-weight-medium); /* 500 */
-  --conan-weight-semibold: var(--font-weight-semibold); /* 600 */
-  --conan-weight-bold: var(--font-weight-bold); /* 700 */
+  --conan-weight-medium: var(--font-weight-medium); /* 500 · Projects, Settings */
+  --conan-weight-semibold: var(--font-weight-semibold); /* 600 · titles, tabs */
 
-  --conan-leading-tight: var(--text-heading-4-leading);
-  --conan-leading-body: var(--text-body-leading);
+  --conan-leading-body: var(--text-body-leading); /* 1.4286 = RJ-0's 142.86% */
+  --conan-leading-subtitle: 1.1; /* RJ-0 literal · row subtitle 110% */
+  --conan-leading-flush: 1; /* RJ-0 literal · RP-0 wordmark 100% */
 
-  /* -- Elevation & motion -------------------------------------------------- */
+  /* == ELEVATION & MOTION ================================================ */
   --conan-shadow-low: var(--shadow-low);
   --conan-shadow-med: var(--shadow-med);
   --conan-shadow-high: var(--shadow-high);
@@ -135,24 +176,27 @@
   --conan-duration-medium: var(--duration-medium);
   --conan-ease: var(--ease-standard);
 
-  /* -- Shell geometry ------------------------------------------------------
-   * From docs/v2-astryx-redesign.md §3 (doc-stated Paper measurements). */
-  --conan-sidebar-width: 273px; /* Paper 4M-0 */
-  --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
+  /* == SHELL GEOMETRY ====================================================
+   * The fixed dimensions that make the shell read as the artboard. All
+   * measured on RJ-0; the bars are a 16px inset around a 32px control row,
+   * which is why toolbar and secondary bar are both exactly 64px. */
+  --conan-sidebar-width: 273px; /* 4M-0 */
+  --conan-titlebar-height: 48px; /* RK-0 (16 + 16 + 16) */
+  --conan-sidebar-header-height: 64px; /* 70-0 */
+  --conan-toolbar-height: 64px; /* EK-0 (16 + 32 + 16) */
+  --conan-secondary-bar-height: 64px; /* LN-0 (16 + 32 + 16) */
 
-  /* -- PROVISIONAL — @paper-todo -------------------------------------------
-   * Not measurable without Paper. These are NOT invented numbers: each points
-   * at the Astryx control-height / spacing token that plays the same role, so
-   * the shell is coherent today and one edit here retargets it to Paper.
-   * Measure on artboard 4I-0 and replace:
-   *   --conan-toolbar-height        ← node EK-0 (breadcrumb + surface tabs)
-   *   --conan-secondary-bar-height  ← node LN-0 (Actions / Open / Commit&Push)
-   *   --conan-sidebar-row-height    ← nodes OT-0 / PY-0 / PZ-0 (thread rows)
-   *   --conan-sidebar-header-height ← node 70-0 (logo mark + wordmark) */
-  --conan-toolbar-height: var(--size-element-lg); /* @paper-todo EK-0 */
-  --conan-secondary-bar-height: var(--size-element-lg); /* @paper-todo LN-0 */
-  --conan-sidebar-row-height: var(--size-element-lg); /* @paper-todo OT-0 */
-  --conan-sidebar-header-height: var(--size-element-lg); /* @paper-todo 70-0 */
+  --conan-control-height: var(--size-element-md); /* 32px · every control */
+  --conan-icon-size: 16px; /* every icon in RJ-0 */
+  --conan-avatar-size: 40px; /* thread avatar */
+  --conan-row-height: 68px; /* thread row */
+  --conan-chip-size: 20px; /* ⌘ / K chips */
+  --conan-status-dot-size: 12px; /* running dot */
+  --conan-status-ring-width: 2px;
+  --conan-indicator-height: 2px; /* selected-row bar */
+  --conan-window-control-size: 16px; /* RM-0 / RN-0 / RO-0 */
+
+  --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
 }
 
 /* ---------------------------------------------------------------------------
@@ -195,5 +239,5 @@ html[data-astryx-theme="neutral"] {
 [data-astryx-theme="neutral"] body {
   font-family: var(--conan-font-sans);
   background: var(--conan-color-bg);
-  color: var(--conan-color-text);
+  color: var(--conan-text-primary);
 }

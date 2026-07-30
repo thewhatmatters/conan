@@ -16,11 +16,16 @@ lives **beside** the current app (v1) in the same Vite project, behind a flag;
 dogfooded (we run it to build it) and must not break.
 
 - **Design source:** Paper file `01KYQJ3S5RCDAE0KY87NRFY75F`, page `1-0`,
-  artboard **`App` (`4I-0`, 1512×982, dark mode)**.
-  `https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0`
+  artboard **`Application Shell` (`RJ-0`, 1512×1030, dark mode)**.
+  `https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0`
   Pull EXACT values with the Paper MCP (`get_computed_styles`, `get_jsx`,
   `get_fill_image`) — **never read sizes/colors off a screenshot**; screenshots
   are for verifying, not sourcing.
+  ⚠️ `RJ-0` **supersedes** the older `App` artboard (`4I-0`), which is now
+  `RJ-0`'s second child — so `4I-0` is still the 1512×982 app body, but the
+  shell root is `RJ-0`, which adds a 48px window title bar (`RK-0`) above it.
+  Node ids inside the body are unchanged. `prd-conan-v2-astryx.json`'s
+  `nodeMap` has two stale entries; see §8 for the resolved reading.
 - **Backend is unchanged.** v2 is presentation only. It reuses the existing
   gateway, WebSockets, and hooks (`useAgentChat`, `/ws/agent`, `/api/agent/*`).
   No `src/` (gateway) changes for the shell milestone.
@@ -71,19 +76,49 @@ npx astryx docs tokens --json           # the design-token surface
 npx astryx search <term>                # find the right component
 ```
 
-## 3. Design reference — the shell IA (from the Paper `App` artboard)
+## 3. Design reference — the shell IA (from the Paper `RJ-0` artboard)
 
 Dark mode · font **Figtree** + system monospace. Node IDs are for the Paper MCP.
+Measurements below were read with `get_computed_styles` / `get_jsx` in T0 — they
+are exact, not approximate.
 
-- **Sidebar (`4M-0`, 273px):**
-  - Header (`70-0`): Conan logo mark + wordmark.
-  - Search input with `⌘K` (`MU-0`).
-  - Projects tree — collapsible **project groups** (`OT-0`, `PY-0`, `PZ-0`); rows = avatar + status dot + title + muted subtitle.
-  - Footer (`7L-0`): a **New chat** button (`7W-0`); **Settings** at the very bottom.
+- **Window title bar (`RK-0`, 48px, `#111111`):** macOS traffic lights +
+  `Conan` wordmark (14/600) + a sidebar-collapse toggle. **Not rendered** — see
+  §8; the Tauri window is decorated, so this is the artboard's mock of native
+  chrome.
+- **App body (`4I-0`, 1512×982, `#1B1B1B`, 16px bottom corners).**
+- **Sidebar (`4M-0`, 273px, `#1B1B1B`, `space-between`):**
+  - Header (`70-0`, **64px**): holds the **search field only**. The logo/wordmark
+    moved to `RK-0`.
+  - Search input (`MU-0` / `RV-0`): `#262626` on a 1px `#525252` border, 10px
+    radius, 4/8 padding; leading search icon + `Search` placeholder + two `⌘`/`K`
+    key caps (20px, 6px radius, `#FFFFFF1A`, 2px bottom edge).
+  - Projects tree (`OT-0`): a `Projects` section header (14/500 **`#FFFFFF`**,
+    32px row) with sort + add-project icon actions, then collapsible **project
+    groups** (`PY-0` open, `PZ-0` closed). An open group takes the open-flap
+    folder in `#737373`; a closed one takes a plain folder in `#A3A3A3`.
+  - Thread rows (**68px**, 12px padding, 10px radius, 8px apart): 40px provider
+    avatar (`#FFFFFF1A`, 10px radius) + 12px status dot (`#9FE59B`, 2px `#292929`
+    ring, offset off the avatar's top-right) + title (14/600 `#FAFAFA`) + subtitle
+    (12/400 `#A3A3A3`, 110% leading). Selected = `#A3A3A31A` wash **and** a 2px
+    `#EBEBEB` bar on the bottom edge, inset 12px.
+  - Footer (`7L-0`, 16px inset): a `gap: 4` row (`7M-0`) holding pill buttons
+    (32px tall, 16px radius, 8/12 padding) — `7W-0` is **Settings**.
 - **Main (`4O-0`, 1239px):**
-  - **Toolbar (`EK-0`):** breadcrumb `Conan / Analyze my project` (`EL-0`) + closeable **surface tabs** `Chat · Browser · Terminal · Diff · Surface` (`HL-0`).
-  - **Secondary bar (`LN-0`):** `Actions ▾`, `Open ▾`, `Commit & Push`.
-  - **Content (`4N-0`):** transcript/composer region (out of scope for the shell milestone — leave an empty slot).
+  - **Toolbar (`EK-0`, **64px** = 16px inset around a 32px row):** breadcrumb
+    `Conan / Analyze my project` (`EL-0` — parent crumb + folder icon + separator
+    all `#737373`, leaf `#FFFFFF`) + **surface tabs** (`HL-0`, 2px gutter): each
+    32px / 10px radius / 12px inline padding; `Chat` is permanent and selected
+    (`#DDDDDD1A` wash, `#FFFFFF` icon, 14/600 `#FAFAFA`), `Browser · Terminal ·
+    Diff` are closeable (`#A3A3A3` + ✕), then a `Surface ▾` opener at 20% opacity.
+  - **Content well (`4N-0`, `#262626`, 24px **top-left corner only**):** the one
+    lifted surface. Getting that single asymmetric corner right is most of what
+    makes the shell read as the design.
+  - **Secondary bar (`LN-0`, **64px**, inside the well):** `Actions ▾` (14/**600**)
+    left; `Open ▾` and `Commit & Push ▾` (14/400) right — the weight asymmetry is
+    the artboard's, marking Actions as the primary verb.
+  - Transcript/composer fill the rest of the well (out of scope for the shell
+    milestone — leave an empty slot).
 
 This IA is an **evolution of v1's** (breadcrumb, kebab rows, surfaces already
 exist) — a re-skin + tab-model refinement, not a from-scratch app.
@@ -93,21 +128,28 @@ exist) — a re-skin + tab-model refinement, not a from-scratch app.
 ```
 ui/src/v2/
   entry.tsx        # dynamic-imports Astryx CSS; exports <AppV2/>
-  App.v2.tsx       # shell composition — named slots wired to component modules
+  App.v2.tsx       # shell composition  ── T0 + T6 only
+  Sidebar.tsx      # sidebar region      ── T0 + T6 only
+  Toolbar.tsx      # toolbar region      ── T0 + T6 only
   tokens.css       # bridge layer: design values ← Paper, exposed as CSS vars
-  shell/
-    Sidebar.tsx    Toolbar.tsx    SecondaryBar.tsx
-  components/
+  fonts.css        # self-hosted Figtree
+  components/      # ONE leaf per file — each owned by exactly one task
     SidebarHeader.tsx  SearchInput.tsx  ProjectTree.tsx  ThreadRow.tsx
     NewChatButton.tsx  SettingsFooter.tsx  Breadcrumb.tsx  SurfaceTabs.tsx
+    SecondaryBar.tsx
   lib/             # thin adapters reusing v1 hooks (useAgentChat, providers…)
 ```
+
+T0 wires the three composition files to import the leaves **directly** — there is
+no slot-props indirection. A later task implements its leaf in place and the shell
+picks it up with no edit to a shared file, which is the property that makes the
+parallel worktrees safe.
 
 **Contracts every agent honors (to avoid collisions + drift):**
 1. **Flag:** `App.tsx` mounts `<AppV2/>` when `localStorage.conan-v2 === "1"` (or `import.meta.env.VITE_CONAN_V2`); otherwise the current app. v1 is default.
 2. **Tokens only.** Consume `v2/tokens.css` vars (colors, radius, spacing, type). **No hardcoded hex, no Tailwind classes in v2.** Token names come from T0.
 3. **Astryx only.** v2 components are built from `@astryxdesign/core`; do not import shadcn/Radix into `v2/`.
-4. **Slots.** `App.v2.tsx` defines named regions (sidebar-header, sidebar-body, sidebar-footer, toolbar-crumb, toolbar-tabs, secondary-bar, content). Each component task fills ONE slot and owns ONLY its own file(s) — no edits to another task's file.
+4. **One leaf, one owner.** Every region is a file under `v2/components/`, imported directly by `App.v2.tsx` / `Sidebar.tsx` / `Toolbar.tsx`. Each component task rewrites ONLY its own leaf — **no edits to the three composition files** (T0 and T6 own those) and none to another task's leaf. Leaves keep their own `stylex.create` rather than sharing a "shell control" primitive: nicer code would put five worktrees on one file, and duplication is the cheaper trade.
 5. **Data reuse.** Wire to existing hooks via `v2/lib/` adapters; **do not** touch `src/` (gateway) or v1 components.
 6. **Verify against Paper:** screenshot the built component, diff against its Paper node; pull exact values with `get_computed_styles`.
 
@@ -162,7 +204,10 @@ T0 landed. The questions §9 opened are answered below; treat these as decided.
 | **CSS isolation** | **Holds, both directions.** Verified on the production build: with the flag off only `index-*.css` loads and zero Astryx stylesheets are fetched. `ui/src/index.css` has no diff. |
 | **Figtree** | Self-hosted in `v2/fonts.css` (400/500/600/700), loaded only from `v2/entry.tsx`. `theme-neutral` already resolves `--font-family-body` to Figtree, so it applies with no extra wiring. v1 keeps Geist. |
 | **Dark mode** | v2 is dark. `entry.tsx` stamps `data-astryx-theme="neutral"` + `data-theme="dark"` on `<html>`; **without the first attribute every Astryx component renders unstyled, silently.** |
-| **Astryx 0.1.9 component names** | `Layout` / `LayoutPanel` / `VStack` / `HStack` all come from `@astryxdesign/core/Layout`. Confirm anything else with `npx astryx component <Name> --props` before use. |
+| **Astryx 0.1.9 component names** | `Layout` / `LayoutPanel` / `VStack` / `HStack` all come from `@astryxdesign/core/Layout`; every component also has its own subpath (`@astryxdesign/core/Text`, `/HStack`, …). Confirm anything else with `npx astryx component <Name> --props` before use. |
+| **RJ-0 was drawn on the Astryx scale** | The single most useful T0 finding. `theme-neutral`'s **dark** arm already carries most of the artboard verbatim: `--color-background-body` = `#1B1B1B`, `-surface` = `#262626`, `--color-text-primary` = `#FAFAFA`, `-secondary` = `#A3A3A3`, `--color-border-emphasized` = `#525252`, `--color-success` = `#9FE59B`, `--color-accent` = `#EBEBEB`, `--radius-element` = 10px, `--radius-inner` = 6px, `--font-size-base` = 14px, `--font-size-sm` = 12px, body leading = 1.4286 (the artboard's 142.86%). **So `<Text>` needs no typography escapes** — `color="primary"/"secondary"`, `type="body"/"supporting"` and `weight` hit the artboard's values directly. `tokens.css` aliases the theme var via `var()` rather than copying hex, so nothing freezes. |
+| **Icons** | Astryx's `Icon` registry is ~26 semantic names (`close`, `chevronDown`, `search`, …) and does not cover the artboard's set (folder, zap, terminal, git-commit, layers, …). RJ-0's icons **are lucide** — the exported 16-viewBox paths scale 1:1 off lucide's 24-viewBox originals — and `lucide-react` is already a dependency. v2 uses it directly, sized `16` with colour inherited via `currentColor`. This is not a shadcn/Radix import and does not breach the Astryx-only rule. |
+| **Custom tones** | `Text`'s `color` prop has no `#FFFFFF` or `#737373` step, and its `xstyle` is documented as layout-only (`TextXStyleAllowed`). The sanctioned pattern: the wrapping `HStack` sets `color` from a `--conan-*` token via `xstyle`, and the `Text` takes `color="inherit"`. The icon beside it picks up the same value through `currentColor`, so label and icon can never drift. |
 
 Two things every downstream task must know:
 
@@ -177,18 +222,57 @@ Two things every downstream task must know:
 - **`dist/assets/stylex.css` is emitted as a global `<link>`,** so v1 also
   loads it (~0.4 kB of atomic classes no v1 element carries — inert, measured).
 
-Sizes Paper owns are marked `@paper-todo` in `tokens.css` — see §3 note below.
+### Three places T0 deliberately departed from `prd-conan-v2-astryx.json`
+
+The PRD's `nodeMap` predates `RJ-0`. Where it and the artboard disagree, T0
+followed the **artboard** and flagged it rather than inventing UI. Each is
+recorded in the relevant file's header comment too.
+
+1. **No sidebar logo.** The PRD gives `SidebarHeader` as "logo mark + Conan
+   wordmark" (node `70-0`). On RJ-0 the wordmark lives in the title bar `RK-0`
+   and `70-0` holds nothing but the search field. `SidebarHeader.tsx` therefore
+   draws the 64px band and composes `SearchInput`. **T1 should not add a logo.**
+2. **`7W-0` is Settings, not New chat.** The PRD labels it "New chat button
+   `7W-0`"; the artboard's footer holds Settings alone. `NewChatButton.tsx` is
+   drawn in `7W-0`'s exact idiom (32px, 16px pill, 8/12 padding, 16px icon +
+   14/500 label) and seated beside Settings in `7L-0`'s `gap: 4` row — a row
+   built for more than one button. If the artboard later gains a real New-chat
+   treatment, that one file changes.
+3. **The title bar is not rendered.** `src-tauri/tauri.conf.json` sets no
+   `decorations: false`, so the Tauri window already has a native macOS title
+   bar; painting `RK-0`'s traffic lights below it would be a non-functional lie.
+   `--conan-color-titlebar` and `--conan-control-{close,minimize,maximize}` are
+   in `tokens.css` for the day we do go undecorated. `RK-0`'s one piece of real
+   app UI — the sidebar-collapse toggle — is unclaimed; give it to T6 or a
+   follow-up.
+
+### T0 verification actually performed
+
+| Check | Result |
+|---|---|
+| `cd ui && npm run typecheck` / `npm run build` | Clean. |
+| Shell measured in Chromium at 1512×982 | Matches RJ-0 exactly: sidebar 273×982, toolbar 64, secondary bar 64, sidebar header 64, thread rows 241×68, tabs 32/10px, selected wash `rgba(163,163,163,.1)`, tab wash `rgba(221,221,221,.1)`, field `#262626` + 1px `#525252`, well radius `24px 0 0`. Zero console errors. |
+| v1 with the flag off | `data-astryx-theme` absent, **zero** Astryx stylesheets, `--conan-*` unresolved, `color-scheme: light`, Geist. No v2 markup. Zero console errors. |
+| **WebKit 26.4** (Playwright's engine — same family as the WKWebView Tauri uses on macOS 26) | Renders identically. `@scope` and `light-dark()` both supported — the two features the Astryx theme depends on. |
+| `npm run tauri:dev` | ❌ **Could not run.** No Rust toolchain on this machine (`cargo`/`rustc`/`~/.rustup` all absent, no `src-tauri/target`); `tauri dev` exits at `failed to run 'cargo metadata'`. This is an environment gap, not a code defect — the WebKit pass above is the closest available substitute. **Whoever has a Rust toolchain should run the 30-second `tauri:dev` smoke before T6.** |
 
 ## 9. Open questions / risks
 
 - ~~**`xstyle` build plugin**~~ — resolved in T0, see §8.
 - ~~**CSS isolation must hold**~~ — proven in T0, see §8.
-- **Paper access** — the Paper MCP was **not available** in the T0 session, so
-  no per-node colour or bar height could be read. `v2/tokens.css` maps colour
-  by semantic intent onto real `@astryxdesign/theme-neutral` tokens (not
-  guesses, and not copied hex), and parks the four unmeasurable bar/row heights
-  in a `PROVISIONAL` block tagged `@paper-todo` with their node ids. Anyone with
-  Paper access should re-derive those; it is a single-file edit.
+- ~~**Paper access**~~ — resolved. The Paper MCP **was** available for the T0
+  redo: every colour, radius, and bar height in `v2/tokens.css` is now read from
+  `RJ-0` with `get_computed_styles` / `get_jsx` and labelled with its node id.
+  No `@paper-todo` markers remain. (Paper's `get_screenshot` returned no image in
+  that session, so visual comparison was done against the exported node styles
+  plus rendered screenshots of our own build — which is the prescribed direction
+  anyway: never source values from a screenshot.)
+- **Tauri dev shell unverified** — see the §8 table. No Rust toolchain on the
+  build machine, so `npm run tauri:dev` could not run; WebKit 26.4 stands in.
+  Note `src-tauri/tauri.conf.json` hard-codes `devUrl: http://localhost:5173`, so
+  the Tauri smoke test must use **5173** (not a throwaway UI port) and needs
+  `VITE_CONAN_V2=1` in the environment of `npm run tauri:dev` for the flag to be
+  on inside the window.
 - **Pre-1.0 Astryx (0.1.9)** — component names/props in the task table are *expected* categories; confirm each via the CLI before use (they may differ).
 - **StyleX compiler version skew** — `unplugin-stylex@0.6.3` pins
   `@stylexjs/babel-plugin@0.18.x` while the runtime is `@stylexjs/stylex@0.19.0`.
