@@ -57,7 +57,7 @@
         "Browser-verify on a throwaway stack"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Design nodes: TK-0 \u2192 UX-0 (icon V7-0, text V2-0). Astryx: Button/Text/Icon (`npx astryx component <Name> --json`). Suggested skills: automate-browser."
     },
     {

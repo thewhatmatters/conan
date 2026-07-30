@@ -26,7 +26,9 @@ import type {
 } from "../../hooks/useAgentChat.ts";
 import type { ActiveThread } from "../lib/types.ts";
 import { useComposerAttachments } from "../lib/useComposerAttachments.ts";
+import { useThreadGit } from "../lib/useThreadGit.ts";
 import PinsDrawer from "./composer/PinsDrawer.tsx";
+import BranchChip from "./composer/BranchChip.tsx";
 
 export interface V2ComposerProps {
   /** Active sidebar selection — supplies cwd/provider for send. */
@@ -55,6 +57,8 @@ export default function V2Composer({
 }: V2ComposerProps) {
   const [value, setValue] = useState("");
   const attachments = useComposerAttachments(token);
+  // Branch for THIS thread's directory — the same poll v1's status bar uses.
+  const git = useThreadGit(token, activeThread?.cwd ?? null);
 
   const isDisabled = disabled || !activeThread;
 
@@ -120,6 +124,12 @@ export default function V2Composer({
           images={attachments.images}
           onRemovePin={attachments.removePin}
           onRemoveImage={attachments.removeImage}
+        />
+      }
+      headerActions={
+        <BranchChip
+          branch={git?.available ? git.branch : null}
+          dirty={git?.dirty ?? 0}
         />
       }
       input={
