@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { AppV2, isV2Enabled } from "./v2/entry.tsx";
 import { useThemes } from "./hooks/useThemes.ts";
 import { useGateway } from "./hooks/useTasks.ts";
 import { useSessions } from "./hooks/useSessions.ts";
@@ -27,14 +28,42 @@ interface Config {
 }
 
 /**
+ * v2 flag (T0 · docs/v2-astryx-redesign.md §4.1). Read ONCE at module scope,
+ * not per render: v1 and v2 load different global stylesheets, so flipping
+ * `localStorage.conan-v2` takes effect on the next reload rather than
+ * mid-session. With the flag off nothing below `v2/entry.tsx` is fetched —
+ * the Astryx CSS and bundle live in their own dynamic chunk — so v1 is
+ * unchanged, which is the whole point while we dogfood v1 to build v2.
+ */
+const V2 = isV2Enabled();
+
+export default function App() {
+  // Deliberately before any hook: with the flag on, AppV1 never mounts, so
+  // none of its hooks (gateway WS, config poll, native menu) ever run. The
+  // early return is safe because `V2` is a module constant — it cannot change
+  // between renders, so the hook order below is stable.
+  if (V2) {
+    return (
+      <Suspense fallback={null}>
+        <AppV2 />
+      </Suspense>
+    );
+  }
+  return <AppV1 />;
+}
+
+/**
  * Chat-primary shell (US-012): the thread sidebar + chat surface IS Conan's
  * main surface. The terminal-era shell (TerminalPane, the Terminal|Chat
  * SurfaceSwitch, the HUD dock and its widget hooks) was removed from the
  * mount — the pty/gateway terminal code stays in the repo but dormant.
  * Session-scoped concerns now bind to the ACTIVE chat thread's session id
  * (reported up by ChatSurface) instead of pty correlation.
+ *
+ * This is v1, and it stays the default: T0 only moved it behind the flag
+ * router above. Its body is unchanged.
  */
-export default function App() {
+function AppV1() {
   const [config, setConfig] = useState<Config | null>(null);
   // US-008: the read-only Settings view, opened from Conan ▸ Settings (⌘,).
   const [settingsOpen, setSettingsOpen] = useState(false);
