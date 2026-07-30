@@ -59,10 +59,14 @@ export interface ModelPickerProps {
 const styles = stylex.create({
   // TY-0 — the trigger pill. Height/radius/padding are the artboard's; the
   // ghost Button supplies the hover wash.
+  // ChatComposer applies `pointer-events: none` when disabled; the picker must
+  // stay interactive so the user can change provider/model even when the input
+  // is locked.
   trigger: {
     borderRadius: "var(--conan-radius-pill)",
     height: "var(--conan-control-height)",
     paddingInline: "var(--conan-space-3)",
+    pointerEvents: "auto",
   },
   // The locked face: same geometry, no affordance.
   locked: {
