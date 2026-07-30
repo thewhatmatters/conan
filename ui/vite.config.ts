@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
+import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import stylex from "unplugin-stylex/vite";
@@ -9,6 +10,16 @@ import stylex from "unplugin-stylex/vite";
 // throwaway dev instance can run alongside the packaged app without clobbering it.
 const GATEWAY_PORT = process.env.CONAN_PORT || "3747";
 const UI_PORT = Number(process.env.CONAN_UI_PORT) || 5173;
+
+function currentBranch() {
+  if (process.env.VITE_BRANCH_NAME) return process.env.VITE_BRANCH_NAME;
+  try {
+    return execSync("git branch --show-current", { cwd: "..", encoding: "utf-8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 export default defineConfig({
   // StyleX compiler (T0 · docs/v2-astryx-redesign.md §8). Astryx COMPONENTS
   // ship pre-compiled and need no plugin — but v2 authors its own styles with
@@ -23,11 +34,9 @@ export default defineConfig({
     {
       name: "agent-title",
       transformIndexHtml(html) {
-        const agent = process.env.VITE_AGENT_NAME;
-        if (agent) {
-          return html.replace("<title>Conan</title>", `<title>Conan-${agent}</title>`);
-        }
-        return html;
+        const agent = process.env.VITE_AGENT_NAME || "Conan";
+        const branch = currentBranch();
+        return html.replace("<title>Conan</title>", `<title>Conan-${agent} (${branch})</title>`);
       },
     },
   ],
