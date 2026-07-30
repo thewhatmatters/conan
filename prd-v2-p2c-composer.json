@@ -4,7 +4,7 @@
   "phase": "Phase 2c — Full composer",
   "generatedAt": "2026-07-30",
   "sourcePrd": "docs/v2-astryx-redesign.md",
-  "description": "Build the FULL chat composer, extending p2a's minimal ChatComposer. Adds the attachment drawer + pin chips, the branch indicator, the provider·model picker, a SEPARATE effort chip, and ChatComposerInput's @// autocomplete + paste/drop. STATUS: US-301/302/303 are done; the picker was then REBUILT in-chat against Paper artboard 122-1 and effort was SPLIT into its own control (see architecture below), so US-303's original single fused chip no longer describes the code. REMAINING: US-304 (rich input) and US-305 (assemble). DEPENDS ON p2a. Reuses v1's pin/provider logic via ui/src/v2/lib adapters; gateway + v1 UNCHANGED. READ docs/v2-astryx-redesign.md §10 (Astryx chat kit) BEFORE any story.",
+  "description": "Build the FULL chat composer, extending p2a's minimal ChatComposer. Adds the attachment drawer + pin chips, the branch indicator, the provider·model picker, a SEPARATE effort chip, and ChatComposerInput's @// autocomplete + paste/drop. STATUS: US-301/302/303 are done; the picker was then REBUILT in-chat against Paper artboard 122-1 and effort was SPLIT into its own control (see architecture below), so US-303's original single fused chip no longer describes the code. REMAINING: US-304a (rich-input plumbing — assignable now), US-304b (typeahead menu design pass — BLOCKED on an artboard) and US-305 (assemble). US-305 needs the input WORKING, not final-styled, so it does not wait on US-304b. DEPENDS ON p2a. Reuses v1's pin/provider logic via ui/src/v2/lib adapters; gateway + v1 UNCHANGED. READ docs/v2-astryx-redesign.md §10 (Astryx chat kit) BEFORE any story.",
   "designFile": {
     "tool": "Paper",
     "artboard": "S5-0 — 'Chat Composer' (672×284, dark, Figtree). A dedicated artboard; the RJ-0 well is context-only.",
@@ -78,20 +78,23 @@
       "notes": "Design node: footer chip TY-0 (asterisk UV-0, text U2-0, chevron U3-0). Picker-open state isn't drawn on S5-0 — use v1 ProviderModelPicker as the behavior spec. Astryx: `npx astryx search menu|popover`, then `npx astryx component <Name> --json`. Suggested skills: automate-browser."
     },
     {
-      "id": "US-304",
-      "title": "Rich input — @// autocomplete + paste/drop",
-      "description": "As a user, I want @ to reference files, / for commands, $ for skills, and to paste/drop files into the composer, so referencing context is fast — replacing v1's ComposerAutocomplete with ChatComposerInput's built-ins.",
+      "id": "US-304a",
+      "title": "Rich input plumbing — @ / $ / / sources, paste/drop, history",
+      "description": "As a user, I want @ to reference files, / commands and $ skills, and to paste or drop files into the composer, so referencing context is fast — wired to real sources, using ChatComposerInput's DEFAULT typeahead rendering.",
       "acceptanceCriteria": [
-        "ChatComposerInput's trigger menus wired: @ files/folders, / commands, $ skills — sourced from the existing endpoints v1 uses (GET /api/fs/search, skills, commands) via a v2/lib adapter; a chosen item inserts an inline token (ChatComposerTokenElement) or a pin as appropriate",
-        "Paste/drop a file → adds a pin (US-301 drawer); paste an image → staged like v1's image paste",
-        "ArrowUp/Down message history recall works (ChatComposerInput built-in)",
-        "Astryx + tokens only; owns the input wiring in ui/src/v2/chat/composer/ (its own file); v1 untouched; typecheck + build + vitest pass; verify each trigger + a paste on a throwaway stack",
+        "ChatComposerInput's trigger menus wired to real sources via a NEW ui/src/v2/lib adapter: @ files/folders (GET /api/fs/search), $ installed skills, / commands — the same endpoints v1's ComposerAutocomplete uses (read it for WHAT each trigger resolves to; do not import it)",
+        "Choosing an item inserts an inline token (ChatComposerTokenElement) or stages a pin as appropriate, and the pick rides the next turn",
+        "Paste/drop a file → adds a pin to the US-301 drawer; paste an image → staged like v1's image paste. No new UI — the visible result is the existing drawer/chips",
+        "ArrowUp/Down message-history recall works (ChatComposerInput built-in)",
+        "STYLING IS OUT OF SCOPE: use ChatComposerInput's DEFAULT typeahead menu rendering. Do NOT invent a bespoke result-row design — the menu's visual design is US-304b and is being designed now. Do not block on it.",
+        "Astryx + ui/src/v2/tokens.css only; owns its own file(s) under ui/src/v2/chat/composer/ + lib adapter; v1 untouched",
         "Typecheck passes",
-        "Browser-verify on a throwaway stack"
+        "cd ui && npm run build passes; the v2 vitest suite passes (add cases for the adapter + paste/drop)",
+        "Browser-verify on a throwaway stack: each trigger returns real results and a paste stages a pin"
       ],
-      "priority": 4,
+      "priority": 3,
       "passes": false,
-      "notes": "ChatComposerInput has @// typeahead + tokens + history + paste/drop built in (https://astryx.atmeta.com/components/ChatComposerInput) — wire our sources into it; don't rebuild v1's ComposerAutocomplete. v1 ComposerAutocomplete.tsx is the source-of-truth for WHAT @/$// resolve to. Suggested skills: automate-browser."
+      "notes": "Assignable NOW — no design dependency. ChatComposerInput has @// typeahead, tokens, history and paste/drop built in (https://astryx.atmeta.com/components/ChatComposerInput) — wire our sources into it, don't rebuild v1's ComposerAutocomplete. v1 ui/src/components/ComposerAutocomplete.tsx is the source-of-truth for what each trigger resolves to. Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser."
     },
     {
       "id": "US-305",
@@ -107,9 +110,25 @@
         "Browser-verify on a throwaway stack (dark): default, drawer collapsed, picker open, effort menu open, and busy",
         "Update docs/v2-astryx-redesign.md §10 with the p2c outcome"
       ],
-      "priority": 5,
+      "priority": 4,
       "passes": false,
       "notes": "Integration story — runs after US-304. Only this story edits the assembled V2Composer.tsx. Designs: S5-0 (composer body) + 122-1 (picker panel). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui."
+    },
+    {
+      "id": "US-304b",
+      "title": "Typeahead menu design pass (BLOCKED — awaiting artboard)",
+      "description": "As a user, I want the @ / $ / / typeahead menu to match the redesign, so referencing context looks like the rest of the app instead of the library default.",
+      "acceptanceCriteria": [
+        "BLOCKED: do not start until Randy adds the typeahead-menu artboard to the Paper file and this story is updated with its node ids + exact tokens (get_computed_styles). If it is still unspecified, SKIP this story and leave it failing rather than inventing a design.",
+        "Style ChatComposerInput's typeahead result rows to the artboard: row anatomy (icon / label / secondary path or description), grouping across files · folders · skills · commands, selected + empty + loading states",
+        "Reuse the command palette's visual language where they overlap (VC-1) so the two search surfaces read as one system",
+        "Astryx + ui/src/v2/tokens.css only — no raw hex/px; v1 untouched",
+        "Typecheck passes; cd ui && npm run build passes; vitest passes",
+        "Browser-verify on a throwaway stack and compare side-by-side with the artboard"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "HOLD until the design lands — US-304a ships the behaviour with the library's default menu, so nothing else is blocked by this. Likely a sibling frame to the command palette (VC-1); the PM (Claude on the design machine) will pull exact values via the Paper MCP and fill in the node ids before this is assigned. Suggested skills: automate-browser."
     }
   ],
   "architecture": {
