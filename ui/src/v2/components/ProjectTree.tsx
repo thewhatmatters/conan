@@ -61,6 +61,7 @@ const styles = stylex.create({
   },
   // The fixed trailing lane. Present in every row; sometimes invisible.
   actionSlot: {
+    alignItems: "center",
     appearance: "none",
     backgroundColor: "transparent",
     borderStyle: "none",
@@ -70,6 +71,7 @@ const styles = stylex.create({
     display: "flex",
     flexShrink: 0,
     height: "var(--conan-control-height)",
+    justifyContent: "center",
     padding: 0,
     width: "var(--conan-control-height)",
   },
