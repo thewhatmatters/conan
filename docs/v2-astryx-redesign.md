@@ -323,7 +323,12 @@ toggles on stream). Data path: `useV2Chat` → v1 `useAgentChat` → `/ws/agent`
    the socket. Skeleton does not resume old sessions (no history path).
 3. **React dedupe already required** (`vite.config.ts` `resolve.dedupe`) —
    Astryx pre-bundles hooks; a second React copy breaks `useListFocus` and
-   chat context the same way.
+   chat context the same way. **QA gotcha: after ANY dependency change
+   (`npm install` / adding a package), run `rm -rf node_modules/.vite` before
+   starting Vite** — a stale dep-cache doesn't re-apply the dedupe, so Astryx
+   hook components (`ChatLayout`, `SurfaceTabs`, …) re-throw "Invalid hook call —
+   more than one copy of React" until it's cleared. It's a cache issue, not a
+   code bug. (Filed to the vault: `development/vite/`.)
 4. **Composer controlled value** — bind `value`/`onChange` on `ChatComposer`
    only; the input slot reads them from context. Double-binding both breaks
    caret / clear-after-send.
