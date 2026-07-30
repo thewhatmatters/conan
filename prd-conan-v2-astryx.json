@@ -56,8 +56,8 @@
         "v1 is pixel-unchanged with the flag OFF (screenshot v1 before/after) and the v2 smoke render appears with the flag ON — verify with automate-browser on a throwaway stack, in dark mode"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0 (App artboard RJ-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Astryx components: VStack https://astryx.atmeta.com/components/VStack · Button https://astryx.atmeta.com/components/Button — confirm each with `npx astryx component <Name> --props --json`. Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "DONE (T0 checkpoint). Includes the footer fix (removed NewChatButton, kept only SettingsFooter) and the Vitest T0 shell test harness (24 tests). Branch thewhatmatters/v2-t0-claude commit 8d949a3 promoted to loop/conan-v2-astryx; tag checkpoint/v2-t0. US-002..US-006 remain parallel leaf-component work."
     },
     {
       "id": "US-002",
