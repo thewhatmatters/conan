@@ -354,7 +354,7 @@ only after it lands.
 |---|---|---|
 | `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn) |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
-| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model·effort picker, @// input | **READY** (drafted vs `S5-0`) |
+| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **US-301–303 DONE**; US-304/305 open |
 | `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
 | `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
 | `prd-v2-p2f-settings.json` | Settings dialog | planned |
@@ -386,3 +386,30 @@ including things we hand-built in v1 (frosted composer dock, jump-to-present,
 
 The per-story component list + exact links live in
 `prd-v2-p2a-chat-core.json` → `astryxChatComponents`.
+
+### Composer architecture — model vs effort (do not re-fuse)
+
+**provider + model is the thread's IDENTITY.** The gateway relaunches a resumed
+thread on its *saved* provider, so the launch config is fixed once a turn has
+gone out — `ModelPicker` **locks after turn 1**.
+
+**Effort is a PER-TURN parameter.** Every turn is a fresh process (claude's
+think/ultrathink prompt prefix, codex's `-c model_reasoning_effort`, grok's
+`--reasoning-effort`), so `EffortChip` is a **separate sibling control that never
+locks**. v1 fused the two behind one trigger, which wrongly froze effort along
+with the model — that is the bug the split fixes.
+
+Shipped in `ui/src/v2/chat/composer/`: `ModelPicker.tsx` (Paper artboard
+**`122-1`** — 406px panel pinned to `--conan-picker-height` so it doesn't resize
+between providers, icon rail with the real brand marks from
+`src/assets/providers/*`, search, rows with ⌘N chips, selected = wash + 2px
+accent bar, bottom-pinned hint footer), `EffortChip.tsx`, `ProviderGlyph.tsx`.
+
+**⚠️ Deferred gap (Randy: "keep for now"):** the picker's footer advertises
+**↑↓ Navigate · ↵ Select**, but only `Esc` and `⌘1–⌘9` are implemented — arrow
+navigation and Enter-to-select do nothing. Astryx's `CommandPaletteItem` splits
+`isHighlighted` (keyboard cursor) from `isSelected` (committed pick); v2 collapses
+both into "selected", so there is no cursor to move, and rows are
+`<button aria-current>` rather than listbox/option + `aria-selected`. Closing it
+means adding a highlight state, arrow/Enter handling, and listbox roles — its own
+story, **not** part of US-304/305.
