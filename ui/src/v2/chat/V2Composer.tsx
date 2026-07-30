@@ -118,11 +118,16 @@ export default function V2Composer({
   );
 
   // Files pasted or dropped on the input stage as pins — the same content-not-
-  // path serialization v1 uses, so the agent sees the file inline.
+  // path serialization v1 uses, so the agent sees the file inline. An image
+  // only stages where the provider actually accepts one (capability, not
+  // provider name) — never a dead affordance; elsewhere it is ignored, as in v1.
+  const acceptsImages =
+    providers.find((p) => p.id === providerId)?.capabilities.imageInput ?? false;
   const handleFiles = useCallback(
     (files: File[]) => {
       for (const file of files) {
         if (file.type.startsWith("image/")) {
+          if (!acceptsImages) continue;
           const reader = new FileReader();
           reader.onload = () => {
             const url = String(reader.result);
@@ -139,7 +144,7 @@ export default function V2Composer({
         }
       }
     },
-    [attachments],
+    [acceptsImages, attachments],
   );
 
   return (
