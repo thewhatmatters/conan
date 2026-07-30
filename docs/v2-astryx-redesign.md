@@ -320,4 +320,25 @@ only after it lands.
 design for the transcript or composer yet**. p2a is functional-only (token-styled
 minimal). **p2b/p2c need their own Paper frame(s)** (or an explicit decision to
 adapt v1's look) — that's a dependency on Randy before those PRDs can hit real
-fidelity. p2a can proceed without it.
+fidelity. p2a can proceed without it. (The composer design lives in a dedicated
+`Chat Composer` frame — `S5-0` — and is built entirely from Astryx components.)
+
+### Astryx chat kit — COMPOSE, don't hand-roll
+
+Astryx ships a full **Chat** category (15 components, `import … from
+'@astryxdesign/core/Chat'`) that covers our entire transcript + composer —
+including things we hand-built in v1 (frosted composer dock, jump-to-present,
+@//-autocomplete, streaming). Confirm props with `npx astryx component <Name> --json`.
+
+| Astryx | Our feature | Phase |
+|---|---|---|
+| `ChatLayout` (+ `ChatLayoutScrollButton`) | frosted composer dock · auto-scroll · **jump-to-present** | p2a (free) |
+| `ChatMessageList` / `ChatMessage` / `ChatMessageBubble` / `ChatTokenizedText` | transcript rows + streamed body | p2a |
+| `ChatMessageMetadata` / `ChatSystemMessage` | per-turn footer · plan/status separators | p2b |
+| `ChatToolCalls` | tool cards | p2b |
+| `ChatComposer` / `ChatComposerInput` / `ChatSendButton` | composer + rich input (**@// typeahead = our autocomplete**, history, paste/drop) + send/stop | p2a |
+| `ChatComposerDrawer` / `ChatComposerTokenElement` | pins drawer + pin chips | p2c |
+| `ChatDictationButton` | voice dictation (new) | p2c/opt |
+
+The per-story component list + exact links live in
+`prd-v2-p2a-chat-core.json` → `astryxChatComponents`.

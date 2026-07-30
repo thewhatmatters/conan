@@ -28,7 +28,7 @@
         "New ui/src/v2/lib/useV2Chat.ts — a thin adapter that wraps the existing useAgentChat (ui/src/hooks/useAgentChat.ts) and exposes exactly what v2 needs: { items, send, status, busy }. Do NOT reimplement the socket; import and delegate. Do NOT modify useAgentChat or src/.",
         "App.v2.tsx gains an activeThread state (a { cwd, projectId, provider } descriptor, provider defaulting to 'claude'); selecting a sidebar thread sets it. For the skeleton, wiring the REAL project list is out of scope — a placeholder selection that yields a valid cwd (e.g. the current repo root from the existing /api/config or a fixture) is enough to open a live session.",
         "ProjectTree/ThreadRow onSelect is wired to set activeThread (these are the sidebar's own components; App.v2 owns the state + passes a callback down — this is a composition change, allowed here since p2a owns App.v2.tsx/Sidebar.tsx for the wiring seam).",
-        "The content well renders a new ui/src/v2/chat/V2ChatView.tsx placeholder for the active thread (empty is fine this story) instead of the static 'later phase' text.",
+        "The content well renders a new ui/src/v2/chat/V2ChatView.tsx built on Astryx ChatLayout (import from '@astryxdesign/core/Chat') — it docks the composer to the bottom with the frosted blur and gives auto-scroll + jump-to-present for free; empty transcript is fine this story",
         "Astryx-only, tokens-only; v1 untouched; typecheck passes; cd ui && npm run build passes; the existing v2 Vitest suite still passes"
       ],
       "priority": 1,
@@ -40,29 +40,29 @@
       "title": "Streaming transcript (text only) in the content well",
       "description": "As a user, I want to see my prompt and the agent's streamed reply in the content well, so the well is a live conversation, not a placeholder.",
       "acceptanceCriteria": [
-        "New ui/src/v2/chat/V2Transcript.tsx renders useV2Chat().items: user turns and assistant turns as streamed TEXT (deltas append live), plus an honest 'Working…' indicator while busy and no assistant text yet",
+        "New ui/src/v2/chat/V2Transcript.tsx renders useV2Chat().items inside Astryx ChatMessageList using ChatMessage (sender=user|assistant) + ChatMessageBubble, with the body in ChatTokenizedText (all from '@astryxdesign/core/Chat'); assistant text deltas append live, plus an honest 'Working…' state while busy with no assistant text yet",
         "Text-only: a tool/plan/approval item renders as a minimal one-line 'ran a tool' placeholder (NOT a rich card) — rich rendering is p2b",
-        "Auto-scrolls to the newest content while streaming; markdown may render as plain text for now (rich markdown is p2b)",
+        "Auto-scroll + jump-to-present come from ChatLayout/ChatMessageList — don't re-implement them; markdown may render as plain text for now (rich markdown is p2b)",
         "Prefer Astryx's Chat-category messaging components (`npx astryx search chat`) for message rows; style via tokens only",
         "Owns only ui/src/v2/chat/V2Transcript.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Depends on US-201. v1 ChatPane.tsx is the behavior reference for how items stream (streamingDeltas). Astryx Chat components: `npx astryx search chat` then `npx astryx component <Name> --props --json`; Text https://astryx.atmeta.com/components/Text. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
+      "notes": "Depends on US-201. Use Astryx ChatMessage (https://astryx.atmeta.com/components/ChatMessage, import {ChatMessage} from '@astryxdesign/core/Chat') for message rows — confirm props with `npx astryx component ChatMessage --json`. Tool/plan/approval items get a MINIMAL one-line placeholder here; the rich ChatToolCalls (https://astryx.atmeta.com/components/ChatToolCalls) is p2b. v1 ChatPane.tsx is the streaming behavior reference. Read docs/v2-astryx-redesign.md §9-10. Suggested skills: automate-browser."
     },
     {
       "id": "US-203",
       "title": "Minimal composer — send a prompt",
       "description": "As a user, I want a simple input at the foot of the well where I type a message and send it, so I can drive a turn.",
       "acceptanceCriteria": [
-        "New ui/src/v2/chat/V2Composer.tsx: an Astryx multiline text field + a send Button; Enter sends, Shift+Enter newlines; disabled while busy; clears on send",
-        "On send, calls useV2Chat().send(text, { cwd, provider }) using the active thread's cwd/provider (NO model/effort/permission pickers — those are p2c)",
+        "New ui/src/v2/chat/V2Composer.tsx built on Astryx ChatComposer with ChatComposerInput in the input slot and ChatSendButton in sendActions (all from '@astryxdesign/core/Chat'): controlled value/onChange, placeholder 'Ask anything', onSubmit -> send; ChatSendButton auto-toggles send/stop on stream. Do NOT hand-roll a textarea or send button",
+        "onSubmit calls useV2Chat().send(value, { cwd, provider }) using the active thread's cwd/provider (NO model/effort/permission pickers and NO ChatComposerDrawer/pins here — those are p2c)",
         "Auto-grows to content within a sane max (mirror v1's composer behavior); token-styled only",
         "Owns only ui/src/v2/chat/V2Composer.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Depends on US-201; parallel with US-202 (separate files). send signature is send(text, { cwd, provider, model?, effort?, projectId? }) — here pass only cwd + provider. Astryx input: `npx astryx search \"text input\"|composer` then `npx astryx component <Name> --props --json`; Button https://astryx.atmeta.com/components/Button. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
+      "notes": "Depends on US-201; parallel with US-202 (separate files). Use Astryx ChatComposer (https://astryx.atmeta.com/components/ChatComposer, import {ChatComposer} from '@astryxdesign/core/Chat') — it already gives input+send+stop+slots; confirm props with `npx astryx component ChatComposer --json`. The ChatComposerDrawer (https://astryx.atmeta.com/components/ChatComposerDrawer) attachments/pins drawer and the provider/model/effort pickers are p2c. send signature: send(text, { cwd, provider, model?, effort?, projectId? }). Read docs/v2-astryx-redesign.md §9-10. Suggested skills: automate-browser."
     },
     {
       "id": "US-204",
@@ -79,5 +79,33 @@
       "passes": false,
       "notes": "Integration/proof story — runs after US-202 + US-203. This is THE de-risking checkpoint: if the live loop doesn't work cleanly in the Astryx shell, STOP and write findings to progress.txt rather than papering over it. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser, audit-ui."
     }
-  ]
+  ],
+  "astryxChatComponents": {
+    "import": "All from '@astryxdesign/core/Chat'. Confirm props with `npx astryx component <Name> --json`. The full Chat category (15 components) covers our entire transcript+composer — COMPOSE these, don't hand-roll.",
+    "_p2a_use": [
+      "ChatLayout",
+      "ChatMessageList",
+      "ChatMessage",
+      "ChatMessageBubble",
+      "ChatTokenizedText",
+      "ChatComposer",
+      "ChatComposerInput",
+      "ChatSendButton"
+    ],
+    "ChatLayout": "[p2a] Full-page chat shell: messages in flow + composer docked to bottom with frosted-glass blur, built-in auto-scroll + scroll-to-bottom. Wrap ChatMessageList + ChatComposer. https://astryx.atmeta.com/components/ChatLayout",
+    "ChatLayoutScrollButton": "[p2a-free] Floating jump-to-present button; ChatLayout renders it by default (scrollButton prop to override). https://astryx.atmeta.com/components/ChatLayoutScrollButton",
+    "ChatMessageList": "[p2a] Transcript container: role=log, aria-live=polite, infinite scroll, bottom-anchored. https://astryx.atmeta.com/components/ChatMessageList",
+    "ChatMessage": "[p2a] Sender wrapper (sender=user|assistant|system; avatar/name/metadata slots). https://astryx.atmeta.com/components/ChatMessage",
+    "ChatMessageBubble": "[p2a] Bubble container (auto-styles by sender; filled/ghost; group prop). https://astryx.atmeta.com/components/ChatMessageBubble",
+    "ChatTokenizedText": "[p2a] Message body — renders text, turning @mentions/#tags//commands into inline Badges; safe to use unconditionally. https://astryx.atmeta.com/components/ChatTokenizedText",
+    "ChatMessageMetadata": "[p2b] Per-message timestamp/footer/delivery-status row. https://astryx.atmeta.com/components/ChatMessageMetadata",
+    "ChatSystemMessage": "[p2b] Centered system/date-separator/status (not a bubble). https://astryx.atmeta.com/components/ChatSystemMessage",
+    "ChatToolCalls": "[p2b] Tool-call cards: status/name/target/diff/duration, collapses multiples. https://astryx.atmeta.com/components/ChatToolCalls",
+    "ChatComposer": "[p2a] Composer shell: onSubmit, value/onChange, placeholder, isDisabled, slots drawer/header/input/footer/sendActions. https://astryx.atmeta.com/components/ChatComposer",
+    "ChatComposerInput": "[p2a] Rich input for the composer's input slot: @// typeahead (our autocomplete), inline token badges, ArrowUp/Down history, paste/drop files, iOS zoom floor. https://astryx.atmeta.com/components/ChatComposerInput",
+    "ChatSendButton": "[p2a] Circular send/stop toggle; place inside ChatComposer, reads context (send->stop on stream) with no wiring. https://astryx.atmeta.com/components/ChatSendButton",
+    "ChatComposerTokenElement": "[p2c] A single token chip outside the input (pin chips / @-refs). https://astryx.atmeta.com/components/ChatComposerTokenElement",
+    "ChatComposerDrawer": "[p2c] Collapsible attachments/context-chips drawer for the composer's drawer slot (count/label). https://astryx.atmeta.com/components/ChatComposerDrawer",
+    "ChatDictationButton": "[p2c/opt] Voice dictation toggle for the sendActions slot (pairs with useChatDictation). https://astryx.atmeta.com/components/ChatDictationButton"
+  }
 }
