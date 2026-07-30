@@ -44,6 +44,11 @@ export default defineConfig({
   // attaches to this dev server.
   clearScreen: false,
   resolve: {
+    // Force a single React instance. Astryx hooks (e.g. useListFocus in
+    // SurfaceTabs) are pre-bundled from @astryxdesign/core and would otherwise
+    // resolve their own React copy, triggering "Invalid hook call — more than
+    // one copy of React" under Vite dep-optimization + unplugin-stylex.
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
