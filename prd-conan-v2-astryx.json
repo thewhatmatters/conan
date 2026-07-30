@@ -3,13 +3,14 @@
   "branchName": "loop/conan-v2-astryx",
   "generatedAt": "2026-07-29",
   "sourcePrd": "docs/v2-astryx-redesign.md",
-  "description": "v2 UI redesign on Astryx (React + StyleX), built as a parallel flag-gated shell in the same Vite app; v1 stays default and untouched until parity. First milestone: the sidebar + toolbar shell. READ docs/v2-astryx-redesign.md BEFORE any story — it is the shared brain (setup runbook, folder/interface contracts, gates). Backend/gateway is UNCHANGED; v2 is presentation only.",
+  "description": "v2 UI redesign on Astryx (React + StyleX), built as a parallel flag-gated shell in the same Tauri/Vite app; v1 stays default and untouched until parity. First milestone: the sidebar + toolbar shell. READ docs/v2-astryx-redesign.md BEFORE any story — it is the shared brain (setup runbook, folder/interface contracts, gates). Backend/gateway is UNCHANGED; v2 is presentation only.",
   "designFile": {
     "tool": "Paper",
-    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
     "fileId": "01KYQJ3S5RCDAE0KY87NRFY75F",
     "pageId": "1-0",
-    "artboard": "App (4I-0), 1512x982, dark mode, font Figtree + system monospace",
+    "artboard": "App (RJ-0), dark mode, font Figtree + system monospace",
+    "artboardUrl": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
     "nodeMap": {
       "sidebar": "4M-0",
       "sidebar_header_logo": "70-0",
@@ -54,7 +55,7 @@
       ],
       "priority": 1,
       "passes": false,
-      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0 (App artboard 4I-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Astryx components: VStack https://astryx.atmeta.com/components/VStack · Button https://astryx.atmeta.com/components/Button — confirm each with `npx astryx component <Name> --props --json`. Suggested skills: automate-browser."
+      "notes": "Hard barrier — nothing else starts until this passes. Design: https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0 (App artboard RJ-0). Read docs/v2-astryx-redesign.md §2 (setup) + §4 (contracts). Astryx components: VStack https://astryx.atmeta.com/components/VStack · Button https://astryx.atmeta.com/components/Button — confirm each with `npx astryx component <Name> --props --json`. Suggested skills: automate-browser."
     },
     {
       "id": "US-002",
@@ -62,7 +63,7 @@
       "description": "As a user, I want the Conan logo/wordmark and a ⌘K search at the top of the sidebar, matching the redesign.",
       "acceptanceCriteria": [
         "Implement ui/src/v2/components/SidebarHeader.tsx (logo mark + 'Conan' wordmark) and ui/src/v2/components/SearchInput.tsx (search field with a leading icon and a ⌘K affordance) using @astryxdesign/core components only (confirm names via `npx astryx component <X> --props --json`)",
-        "Match the Paper nodes: sidebar header 70-0 and search input MU-0 (spacing, type, colors) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+        "Match the Paper nodes: sidebar header 70-0 and search input MU-0 (spacing, type, colors) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
         "Styling via ui/src/v2/tokens.css variables + Astryx props/xstyle only — no hardcoded hex, no Tailwind, no shadcn",
         "Do NOT edit App.v2.tsx / Sidebar.tsx / Toolbar.tsx or any other story's file — only these two leaf files",
         "Typecheck passes",
@@ -79,7 +80,7 @@
       "description": "As a user, I want my projects as collapsible groups with thread rows (avatar + status dot + title + muted subtitle), matching the redesign.",
       "acceptanceCriteria": [
         "Implement ui/src/v2/components/ProjectTree.tsx (collapsible project group) and ui/src/v2/components/ThreadRow.tsx (avatar + status dot + title + muted subtitle) using @astryxdesign/core (Collapsible/Tree, Avatar, Badge/status indicator, Text — confirm via CLI)",
-        "Match the Paper project groups OT-0 / PY-0 / PZ-0 and their rows — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+        "Match the Paper project groups OT-0 / PY-0 / PZ-0 and their rows — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
         "Render with realistic placeholder data (2-3 groups, a few rows); wiring to real hooks is a later phase — keep the component data-prop-driven so it can be fed live data later",
         "Rows form consistent vertical lanes: fixed-width slots for the avatar and any trailing element (do not rely on gap alone)",
         "tokens.css + Astryx only; no shadcn/Tailwind/hex",
@@ -97,7 +98,7 @@
       "description": "As a user, I want a New-chat action and a Settings entry anchored at the bottom of the sidebar, matching the redesign.",
       "acceptanceCriteria": [
         "Implement ui/src/v2/components/NewChatButton.tsx and ui/src/v2/components/SettingsFooter.tsx using @astryxdesign/core (Button, Icon, Menu — confirm via CLI)",
-        "Match the Paper footer node 7L-0 (New chat button 7W-0) and the bottom Settings affordance — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+        "Match the Paper footer node 7L-0 (New chat button 7W-0) and the bottom Settings affordance — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
         "tokens.css + Astryx only; no shadcn/Tailwind/hex",
         "Only these two leaf files — no edits to composition files",
         "Typecheck passes; cd ui && npm run build passes",
@@ -113,7 +114,7 @@
       "description": "As a user, I want the top toolbar with a project/thread breadcrumb and closeable surface tabs (Chat, Browser, Terminal, Diff, Surface), matching the redesign.",
       "acceptanceCriteria": [
         "Implement ui/src/v2/components/Breadcrumb.tsx (folder icon + project / thread crumb) and ui/src/v2/components/SurfaceTabs.tsx (a Chat tab + closeable Browser/Terminal/Diff tabs + a Surface entry) using @astryxdesign/core (Breadcrumbs, Tabs with close affordance, Icon — confirm via CLI)",
-        "Match the Paper toolbar EK-0 (breadcrumb EL-0, surface tabs HL-0) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+        "Match the Paper toolbar EK-0 (breadcrumb EL-0, surface tabs HL-0) — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
         "Tabs render as static/placeholder (no surface mounting yet); the close affordance is present per the design",
         "tokens.css + Astryx only; no shadcn/Tailwind/hex",
         "Only these two leaf files — no edits to composition files",
@@ -130,7 +131,7 @@
       "description": "As a user, I want the secondary action bar under the toolbar with Actions, Open, and Commit & Push, matching the redesign.",
       "acceptanceCriteria": [
         "Implement ui/src/v2/components/SecondaryBar.tsx with an 'Actions' dropdown, an 'Open' control, and a 'Commit & Push' action using @astryxdesign/core (Button, Menu/Dropdown, Icon — confirm via CLI)",
-        "Match the Paper secondary bar LN-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0",
+        "Match the Paper secondary bar LN-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
         "Controls are static/placeholder (no wiring yet)",
         "tokens.css + Astryx only; no shadcn/Tailwind/hex",
         "Only this leaf file — no edits to composition files",
@@ -146,12 +147,12 @@
       "title": "T6 Shell assembly + spacing/responsive polish",
       "description": "As the team, we need the finished sidebar+toolbar shell composed from the leaf components, polished against the design, so the milestone reads as one coherent screen.",
       "acceptanceCriteria": [
-        "Compose the real leaf components into Sidebar.tsx / Toolbar.tsx / App.v2.tsx (replacing US-001 stubs); the full App artboard layout (sidebar 273px + main) matches the Paper App node 4I-0 at 1512-wide",
+        "Compose the real leaf components into Sidebar.tsx / Toolbar.tsx / App.v2.tsx (replacing US-001 stubs); the full App artboard layout (sidebar 273px + main) matches the Paper App node RJ-0 at 1512-wide",
         "Spacing, alignment, type hierarchy, and dark-mode contrast reviewed against the artboard; vertical lanes in the sidebar rows verified; content region left as an empty placeholder slot (transcript/composer are a later phase)",
         "Flag path works end-to-end: v2 shows with the flag ON, v1 with it OFF, and v1 remains pixel-unchanged",
         "tokens.css + Astryx only across the shell; no shadcn/Tailwind/hex introduced",
         "Typecheck passes; cd ui && npm run build passes",
-        "Full-artboard screenshot of the assembled v2 shell (flag ON) compared side-by-side to the Paper App node 4I-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/4I-0 — via automate-browser on a throwaway stack, dark mode"
+        "Full-artboard screenshot of the assembled v2 shell (flag ON) compared side-by-side to the Paper App node RJ-0 — https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0 — via automate-browser on a throwaway stack, dark mode"
       ],
       "priority": 3,
       "passes": false,
