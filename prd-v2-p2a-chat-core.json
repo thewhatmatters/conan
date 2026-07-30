@@ -49,7 +49,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-201. Use Astryx ChatMessage (https://astryx.atmeta.com/components/ChatMessage, import {ChatMessage} from '@astryxdesign/core/Chat') for message rows — confirm props with `npx astryx component ChatMessage --json`. Tool/plan/approval items get a MINIMAL one-line placeholder here; the rich ChatToolCalls (https://astryx.atmeta.com/components/ChatToolCalls) is p2b. v1 ChatPane.tsx is the streaming behavior reference. Read docs/v2-astryx-redesign.md §9-10. Suggested skills: automate-browser."
     },
     {
