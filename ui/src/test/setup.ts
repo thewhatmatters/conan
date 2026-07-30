@@ -15,6 +15,27 @@ afterEach(() => {
   cleanup();
 });
 
+// jsdom 26+ no longer exposes localStorage as a global in the Vitest jsdom
+// environment, but the app uses it at import time. Provide a minimal in-memory
+// store so tests that call `localStorage.clear()` work without ambient globals.
+if (typeof globalThis.localStorage === "undefined") {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear(),
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() {
+        return store.size;
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
 // jsdom ships no matchMedia; v1's theme module calls it at import time.
 // PLAIN functions, not `vi.fn()` — `restoreMocks` resets mock implementations
 // before every test, which would silently turn these shims back into
