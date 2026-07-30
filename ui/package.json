@@ -12,9 +12,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@astryxdesign/cli": "^0.1.9",
-    "@astryxdesign/core": "^0.1.9",
-    "@astryxdesign/theme-neutral": "^0.1.9",
+    "@astryxdesign/cli": "^0.1.9-canary.ac4a27e",
+    "@astryxdesign/core": "^0.1.9-canary.ac4a27e",
+    "@astryxdesign/theme-neutral": "^0.1.9-canary.ac4a27e",
     "@fontsource/figtree": "^5.3.0",
     "@fontsource/geist-mono": "^5.3.0",
     "@fontsource/geist-sans": "^5.3.0",
