@@ -36,10 +36,18 @@ export interface ThreadRowProps {
 
 const styles = stylex.create({
   row: {
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
     borderRadius: "var(--conan-radius-md)",
+    cursor: "pointer",
+    display: "block",
     flexShrink: 0,
     height: "var(--conan-row-height)",
+    padding: 0,
     position: "relative",
+    textAlign: "start",
+    width: "100%",
   },
   rowSelected: {
     backgroundColor: "var(--conan-wash-row-selected)",
@@ -128,33 +136,35 @@ export default function ThreadRow({
   provider = "claude",
 }: ThreadRowProps) {
   return (
-    <HStack
-      align="start"
-      gap={3}
-      padding={3}
-      xstyle={[styles.row, isSelected && styles.rowSelected]}
+    <button
+      type="button"
+      aria-label={`${title}: ${subtitle}`}
+      aria-current={isSelected ? "page" : undefined}
+      {...stylex.props(styles.row, isSelected && styles.rowSelected)}
       data-slot="thread-row"
       data-selected={isSelected ? "true" : undefined}
     >
-      <HStack align="center" hAlign="center" xstyle={styles.avatar}>
-        <ProviderGlyph provider={provider} />
-        {isRunning ? (
-          <HStack
-            xstyle={styles.statusDot}
-            role="img"
-            aria-label={`${title} is running`}
-          />
-        ) : null}
+      <HStack align="start" gap={3} padding={3}>
+        <HStack align="center" hAlign="center" xstyle={styles.avatar}>
+          <ProviderGlyph provider={provider} />
+          {isRunning ? (
+            <HStack
+              xstyle={styles.statusDot}
+              role="img"
+              aria-label={`${title} is running`}
+            />
+          ) : null}
+        </HStack>
+        <VStack gap={1} xstyle={styles.body}>
+          <Text weight="semibold" color="primary" maxLines={1}>
+            {title}
+          </Text>
+          <Text type="supporting" color="secondary" maxLines={1}>
+            {subtitle}
+          </Text>
+        </VStack>
       </HStack>
-      <VStack gap={1} xstyle={styles.body}>
-        <Text weight="semibold" color="primary" maxLines={1}>
-          {title}
-        </Text>
-        <Text type="supporting" color="secondary" maxLines={1}>
-          {subtitle}
-        </Text>
-      </VStack>
       {isSelected ? <HStack xstyle={styles.indicator} aria-hidden /> : null}
-    </HStack>
+    </button>
   );
 }

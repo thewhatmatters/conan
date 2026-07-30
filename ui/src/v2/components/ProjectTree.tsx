@@ -17,6 +17,7 @@
  * actions and the group rows on one right-hand lane.
  */
 import * as stylex from "@stylexjs/stylex";
+import { useState } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -60,10 +61,16 @@ const styles = stylex.create({
   },
   // The fixed trailing lane. Present in every row; sometimes invisible.
   actionSlot: {
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
     borderRadius: "var(--conan-radius-xs)",
     color: "var(--conan-icon-muted)",
+    cursor: "pointer",
+    display: "flex",
     flexShrink: 0,
     height: "var(--conan-control-height)",
+    padding: 0,
     width: "var(--conan-control-height)",
   },
   actionSlotHidden: {
@@ -84,6 +91,19 @@ const styles = stylex.create({
   },
   groupClosed: {
     color: "var(--conan-icon-muted)",
+  },
+  groupButton: {
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
+    cursor: "pointer",
+    flexGrow: 1,
+    minWidth: 0,
+    padding: 0,
+    textAlign: "start",
+  },
+  groupButtonContent: {
+    width: "100%",
   },
 });
 
@@ -116,35 +136,53 @@ function SectionHeader() {
           Projects
         </Text>
       </HStack>
-      <HStack align="center" hAlign="center" xstyle={styles.actionSlot}>
-        <ArrowDownWideNarrow size={ICON} aria-label="Sort projects" />
-      </HStack>
-      <HStack align="center" hAlign="center" xstyle={styles.actionSlot}>
-        <FolderPlus size={ICON} aria-label="Add project" />
-      </HStack>
+      <button
+        type="button"
+        aria-label="Sort projects"
+        {...stylex.props(styles.actionSlot)}
+      >
+        <ArrowDownWideNarrow size={ICON} aria-hidden />
+      </button>
+      <button
+        type="button"
+        aria-label="Add project"
+        {...stylex.props(styles.actionSlot)}
+      >
+        <FolderPlus size={ICON} aria-hidden />
+      </button>
     </HStack>
   );
 }
 
 function Group({ name, isExpanded = false, threads = [] }: ProjectGroup) {
-  const Chevron = isExpanded ? ChevronDown : ChevronRight;
-  const FolderIcon = isExpanded ? FolderOpen : Folder;
+  const [expanded, setExpanded] = useState(isExpanded);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const FolderIcon = expanded ? FolderOpen : Folder;
   return (
     <VStack gap={0} data-slot="project-group">
       <HStack align="center">
-        <HStack
-          align="center"
-          gap={1}
-          xstyle={[
-            styles.controlRow,
-            styles.groupInset,
-            isExpanded ? styles.groupOpen : styles.groupClosed,
-          ]}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`}
+          onClick={() => setExpanded((value) => !value)}
+          {...stylex.props(styles.groupButton)}
         >
-          <Chevron size={ICON} aria-hidden />
-          <FolderIcon size={ICON} aria-hidden />
-          <Text color="secondary">{name}</Text>
-        </HStack>
+          <HStack
+            align="center"
+            gap={1}
+            xstyle={[
+              styles.controlRow,
+              styles.groupInset,
+              styles.groupButtonContent,
+              expanded ? styles.groupOpen : styles.groupClosed,
+            ]}
+          >
+            <Chevron size={ICON} aria-hidden />
+            <FolderIcon size={ICON} aria-hidden />
+            <Text color="secondary">{name}</Text>
+          </HStack>
+        </button>
         <HStack
           align="center"
           hAlign="center"
@@ -153,7 +191,7 @@ function Group({ name, isExpanded = false, threads = [] }: ProjectGroup) {
           <SquarePen size={ICON} aria-hidden />
         </HStack>
       </HStack>
-      {isExpanded && threads.length > 0 ? (
+      {expanded && threads.length > 0 ? (
         <VStack gap={2}>
           {threads.map((thread) => (
             <ThreadRow key={thread.title} {...thread} />

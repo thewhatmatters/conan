@@ -9,7 +9,7 @@
  * mistake this suite exists to catch.
  */
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import Sidebar from "../Sidebar.tsx";
 
 describe("Sidebar", () => {
@@ -44,5 +44,49 @@ describe("Sidebar", () => {
 
     const last = column?.lastElementChild;
     expect(last?.querySelector('[data-slot="settings-footer"]')).not.toBeNull();
+  });
+
+  it("renders a labelled search input and labelled native action buttons", () => {
+    render(<Sidebar />);
+
+    expect(
+      screen.getByRole("searchbox", { name: "Search projects and threads" }),
+    ).toHaveAttribute("placeholder", "Search");
+    expect(screen.getByRole("button", { name: "Sort projects" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add project" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+  });
+
+  it("exposes and updates project expansion state on native buttons", () => {
+    render(<Sidebar />);
+
+    const conanToggle = screen.getByRole("button", { name: "Collapse Conan" });
+    expect(conanToggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(conanToggle);
+
+    expect(
+      screen.getByRole("button", { name: "Expand Conan" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders thread rows as labelled buttons and conveys selection", () => {
+    render(<Sidebar />);
+
+    expect(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("button", {
+        name: "Code Validation: Run the /code-design skill....",
+      }),
+    ).not.toHaveAttribute("aria-current");
   });
 });
