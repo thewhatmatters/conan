@@ -1,0 +1,83 @@
+{
+  "project": "Conan",
+  "branchName": "loop/conan-v2-astryx",
+  "phase": "Phase 2a — Chat core (walking skeleton)",
+  "generatedAt": "2026-07-30",
+  "sourcePrd": "docs/v2-astryx-redesign.md",
+  "description": "The first Phase 2 PRD: a THIN end-to-end vertical slice that proves the live chat loop works inside the v2 Astryx shell — select a thread -> its live transcript streams into the content well -> type in a minimal composer -> send -> reply streams back. Deliberately minimal (plain text, no tool cards / spine / rich composer pickers — those are p2b/p2c). The GOAL is to de-risk the data/WS integration in the new shell before fanning out. Reuses v1's existing useAgentChat + /ws/agent + /api/agent/* via a NEW ui/src/v2/lib adapter; the gateway and v1 are UNCHANGED. READ docs/v2-astryx-redesign.md (esp. §9 Phase-2 roadmap) BEFORE any story.",
+  "designFile": {
+    "tool": "Paper",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+    "contentWellNode": "4N-0 (#262626, 24px top-left corner) — the transcript + composer live inside this well",
+    "note": "RJ-0 draws the well EMPTY ('Transcript and composer land in a later phase') — there is NO pixel design for the transcript/composer yet. For this skeleton, build FUNCTION first and style to ui/src/v2/tokens.css; the rich visual design of the transcript (p2b) and composer (p2c) needs its own Paper frame (flagged as a dependency in docs §9). v1's ChatPane.tsx is the BEHAVIOR reference (what a turn does), not a style target for v2."
+  },
+  "conventions": {
+    "reuseHooks": "v2 REUSES v1's data layer — import useAgentChat (ui/src/hooks/useAgentChat.ts) and the /api/agent/* fetches through a NEW adapter under ui/src/v2/lib/. Do NOT modify src/ (the gateway), useAgentChat, or any v1 component — only import them. The hook is presentation-agnostic (returns items + send); v2 renders those items with Astryx.",
+    "astryxOnly": "v2 components use @astryxdesign/core only (Chat category has messaging UI — `npx astryx search chat`). No shadcn/Radix, no Tailwind classes, no raw <div> layout, no hardcoded hex/px — component props + ui/src/v2/tokens.css tokens only. Per ui/.claude/CLAUDE.md, discover components via `npx astryx build \"<idea>\"` / `astryx component <Name>` before writing UI.",
+    "scopeDiscipline": "This is a WALKING SKELETON. Plain streamed text + a Working indicator only. NO tool cards, plan cards, approval UI, activity spine, provider/model/effort picker, pins, context meter, or work-log rollups — every one of those is explicitly out of scope here and belongs to p2b/p2c. Keep the surface tiny so the integration is the only variable.",
+    "v1Untouched": "v1 renders pixel-unchanged with the flag OFF. Astryx CSS stays dynamic-imported in the v2 entry.",
+    "liveVerification": "A real turn needs a running gateway + an installed/authed provider. Verify on a THROWAWAY stack, NEVER a human's :3747/:5173: `CONAN_PORT=3799 CONAN_DATA_DIR=/tmp/conan-v2-qa npm start` + `VITE_CONAN_V2=1 CONAN_PORT=3799 CONAN_UI_PORT=5199 npm run dev` + `CONAN_ALLOWED_ORIGINS=http://localhost:5199`, driven with automate-browser. If NO provider is installed/authed on the machine, fall back to asserting the pipeline: the send frame is emitted on /ws/agent and a returned message renders as an assistant item (stub the reply) — and say so honestly in progress.txt.",
+    "gatewayRule": "Never run a human's :3747 gateway or :5173 Vite from an agent session (dies on teardown). Throwaway ports only; kill by port when done."
+  },
+  "userStories": [
+    {
+      "id": "US-201",
+      "title": "v2 chat data adapter + active-thread wiring (foundation)",
+      "description": "As the team, we need a clean seam between the v2 Astryx UI and v1's existing chat data layer, plus an 'active thread' concept, so the content well can host a live session for whatever the sidebar selects.",
+      "acceptanceCriteria": [
+        "New ui/src/v2/lib/useV2Chat.ts — a thin adapter that wraps the existing useAgentChat (ui/src/hooks/useAgentChat.ts) and exposes exactly what v2 needs: { items, send, status, busy }. Do NOT reimplement the socket; import and delegate. Do NOT modify useAgentChat or src/.",
+        "App.v2.tsx gains an activeThread state (a { cwd, projectId, provider } descriptor, provider defaulting to 'claude'); selecting a sidebar thread sets it. For the skeleton, wiring the REAL project list is out of scope — a placeholder selection that yields a valid cwd (e.g. the current repo root from the existing /api/config or a fixture) is enough to open a live session.",
+        "ProjectTree/ThreadRow onSelect is wired to set activeThread (these are the sidebar's own components; App.v2 owns the state + passes a callback down — this is a composition change, allowed here since p2a owns App.v2.tsx/Sidebar.tsx for the wiring seam).",
+        "The content well renders a new ui/src/v2/chat/V2ChatView.tsx placeholder for the active thread (empty is fine this story) instead of the static 'later phase' text.",
+        "Astryx-only, tokens-only; v1 untouched; typecheck passes; cd ui && npm run build passes; the existing v2 Vitest suite still passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation / hard barrier for p2a. Reuse v1's useAgentChat — read its return shape first (items, send, status, busy, contextTokens). Astryx: VStack https://astryx.atmeta.com/components/VStack (confirm via `npx astryx component <Name> --props --json`). Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-202",
+      "title": "Streaming transcript (text only) in the content well",
+      "description": "As a user, I want to see my prompt and the agent's streamed reply in the content well, so the well is a live conversation, not a placeholder.",
+      "acceptanceCriteria": [
+        "New ui/src/v2/chat/V2Transcript.tsx renders useV2Chat().items: user turns and assistant turns as streamed TEXT (deltas append live), plus an honest 'Working…' indicator while busy and no assistant text yet",
+        "Text-only: a tool/plan/approval item renders as a minimal one-line 'ran a tool' placeholder (NOT a rich card) — rich rendering is p2b",
+        "Auto-scrolls to the newest content while streaming; markdown may render as plain text for now (rich markdown is p2b)",
+        "Prefer Astryx's Chat-category messaging components (`npx astryx search chat`) for message rows; style via tokens only",
+        "Owns only ui/src/v2/chat/V2Transcript.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-201. v1 ChatPane.tsx is the behavior reference for how items stream (streamingDeltas). Astryx Chat components: `npx astryx search chat` then `npx astryx component <Name> --props --json`; Text https://astryx.atmeta.com/components/Text. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-203",
+      "title": "Minimal composer — send a prompt",
+      "description": "As a user, I want a simple input at the foot of the well where I type a message and send it, so I can drive a turn.",
+      "acceptanceCriteria": [
+        "New ui/src/v2/chat/V2Composer.tsx: an Astryx multiline text field + a send Button; Enter sends, Shift+Enter newlines; disabled while busy; clears on send",
+        "On send, calls useV2Chat().send(text, { cwd, provider }) using the active thread's cwd/provider (NO model/effort/permission pickers — those are p2c)",
+        "Auto-grows to content within a sane max (mirror v1's composer behavior); token-styled only",
+        "Owns only ui/src/v2/chat/V2Composer.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-201; parallel with US-202 (separate files). send signature is send(text, { cwd, provider, model?, effort?, projectId? }) — here pass only cwd + provider. Astryx input: `npx astryx search \"text input\"|composer` then `npx astryx component <Name> --props --json`; Button https://astryx.atmeta.com/components/Button. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-204",
+      "title": "End-to-end turn — assemble + verify the loop live",
+      "description": "As the team, we need the transcript + composer assembled into V2ChatView and a real turn proven to round-trip inside the v2 shell, so the walking skeleton is validated before we fan out.",
+      "acceptanceCriteria": [
+        "V2ChatView.tsx composes V2Transcript (fills the well) + V2Composer (pinned at its foot) for the active thread, using one useV2Chat instance",
+        "END-TO-END: with the flag ON, selecting a thread and sending a prompt streams a real reply into the transcript — verified on a THROWAWAY stack (see conventions.liveVerification) with automate-browser: screenshot the sent prompt + the streaming/settled reply; report console clean",
+        "If no provider is installed/authed on the machine, fall back to the stubbed-pipeline assertion (send frame on /ws/agent + assistant item renders) and state that explicitly in progress.txt — do NOT claim a live turn that didn't happen",
+        "No console errors during a turn; v1 untouched; typecheck + build + full vitest suite pass",
+        "Update docs/v2-astryx-redesign.md §9 with the p2a outcome (what streamed, any integration gotchas — e.g. dedupe/StyleX/WS quirks) so p2b/p2c start informed"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Integration/proof story — runs after US-202 + US-203. This is THE de-risking checkpoint: if the live loop doesn't work cleanly in the Astryx shell, STOP and write findings to progress.txt rather than papering over it. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser, audit-ui."
+    }
+  ]
+}

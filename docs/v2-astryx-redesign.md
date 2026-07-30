@@ -292,3 +292,32 @@ recorded in the relevant file's header comment too.
   Verified working in dev and in the production build; if compiled styles ever
   go missing after a bump, pin the babel plugin to match the runtime first.
 - **Parity scope** — the shell milestone stops at sidebar+toolbar+empty content; transcript/composer/surfaces are a later phase, planned once the shell UX is validated.
+
+## 10. Phase 2 roadmap & PRD index
+
+The shell is done but **hollow** — everything functional (and the content well
+itself: transcript + composer) is still absent. Phase 2 builds the heart and
+wires the chrome to real data. It reuses v1's existing data layer (`useAgentChat`,
+`/ws/agent`, `/api/agent/*`) through adapters in `ui/src/v2/lib/`; **the gateway
+and v1 stay unchanged** — v2 is still presentation only.
+
+**Sequencing principle:** prove the live loop with the smallest possible slice
+BEFORE fanning out. The biggest unknown isn't "can Astryx render X" (the shell
+settled that) — it's whether the streaming/WS data flow integrates cleanly in the
+new shell. So the first PRD is a **walking skeleton**, and the rest parallelize
+only after it lands.
+
+| PRD | Scope | Status |
+|---|---|---|
+| `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **ACTIVE** |
+| `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
+| `prd-v2-p2c-composer.json` | Full composer — provider·model·effort picker, permission, context meter, add-files/pins | planned |
+| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, breadcrumb, search, new-chat/settings, git actions (Actions/Open/Commit&Push) | planned |
+| `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
+| `prd-v2-p2f-settings.json` | Settings dialog | planned |
+
+**⚠️ Design gap:** `RJ-0` draws the content well EMPTY — there is **no pixel
+design for the transcript or composer yet**. p2a is functional-only (token-styled
+minimal). **p2b/p2c need their own Paper frame(s)** (or an explicit decision to
+adapt v1's look) — that's a dependency on Randy before those PRDs can hit real
+fidelity. p2a can proceed without it.
