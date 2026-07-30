@@ -311,10 +311,11 @@ only after it lands.
 |---|---|---|
 | `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **ACTIVE** |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
-| `prd-v2-p2c-composer.json` | Full composer — provider·model·effort picker, permission, context meter, add-files/pins | planned |
-| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, breadcrumb, search, new-chat/settings, git actions (Actions/Open/Commit&Push) | planned |
+| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model·effort picker, @// input | **READY** (drafted vs `S5-0`) |
+| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, breadcrumb, new-chat/settings, git actions (Actions/Open/Commit&Push) | planned |
 | `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
 | `prd-v2-p2f-settings.json` | Settings dialog | planned |
+| `prd-v2-p2g-command-palette.json` | ⌘K command palette (Astryx CommandPalette) — search threads/projects + actions; the sidebar Search field opens it. Ties into p2d's data. | **READY** (drafted vs `VC-1`) |
 
 **⚠️ Design gap:** `RJ-0` draws the content well EMPTY — there is **no pixel
 design for the transcript or composer yet**. p2a is functional-only (token-styled

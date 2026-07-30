@@ -1,0 +1,105 @@
+{
+  "project": "Conan",
+  "branchName": "loop/conan-v2-astryx",
+  "phase": "Phase 2c — Full composer",
+  "generatedAt": "2026-07-30",
+  "sourcePrd": "docs/v2-astryx-redesign.md",
+  "description": "Build the FULL chat composer to match the dedicated Paper artboard, extending p2a's minimal ChatComposer. Adds the attachment drawer + pin chips, the branch indicator, the provider·model·effort picker, and ChatComposerInput's @// autocomplete + paste/drop. Near-1:1 Astryx port: the design (Chat Composer artboard S5-0) is built entirely from Astryx components and maps directly onto ChatComposer's slots. DEPENDS ON p2a (extends ui/src/v2/chat/V2Composer.tsx). Reuses v1's pin/attachment/provider logic via ui/src/v2/lib adapters; the gateway and v1 are UNCHANGED. READ docs/v2-astryx-redesign.md §10 (Astryx chat kit) BEFORE any story.",
+  "designFile": {
+    "tool": "Paper",
+    "artboard": "S5-0 — 'Chat Composer' (672×284, dark, Figtree). A dedicated artboard; the RJ-0 well is context-only.",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/S5-0",
+    "slotMap": {
+      "drawer (S6-0)": "ChatComposerDrawer — header S7-0 shows count '5' (SA-0) + label 'Items' (SB-0) with a collapse toggle; body SE-0 is a wrapping row of pin chips",
+      "pin chip (e.g. SF-0)": "ChatComposerTokenElement — 24px tall, paddingInline 8px, radius 6px, gap 4px, bg #FFFFFF1A; label SG-0 = Figtree 12px/500 #FAFAFA line-clamp-1; trailing 16px ✕ close button (SH-0)",
+      "header / branch chip (TK-0 → UX-0)": "git-branch icon (V7-0) + branch name (V2-0 'loop/conan-v2-astryx'); pill: 32px tall, radius 16px, padding 8/12, gap 8px",
+      "input (TR-0 → TV-0)": "ChatComposerInput — placeholder 'Ask anything' = Figtree 14px/400 #A3A3A3",
+      "footer / provider·model chip (TW-0 → TY-0)": "brand asterisk (UV-0) + 'Claude Fable 5' (U2-0, Figtree 14px/500 #FAFAFA) + chevron (U3-0); pill: 32px, radius 16px, padding 8/12, gap 8px — the picker TRIGGER",
+      "sendActions (UH-0 → UQ-0)": "ChatSendButton — 32px circle (radius 16px), send/stop toggle; empty state #EBEBEB @ 0.5 opacity"
+    },
+    "tokens": "Font Figtree throughout. Text: primary #FAFAFA, muted #A3A3A3. Pills (branch, provider): 32px h · 16px radius · 8/12 pad · 8 gap. Pin chips: 24px h · 6px radius · 8 pad-inline · 4 gap · bg #FFFFFF1A. Pull any other value with get_computed_styles on the node id — never eyeball a screenshot.",
+    "note": "S5-0 shows ONE state (default, drawer expanded with 5 pins). The picker-OPEN and BUSY/streaming states aren't drawn — build those from v1 behavior (ProviderModelPicker) + the Astryx component specs (ChatSendButton auto-toggles to stop on stream). If Randy adds state frames later, match them."
+  },
+  "conventions": {
+    "dependsOnP2a": "Extends ui/src/v2/chat/V2Composer.tsx from p2a (which established ChatComposer + ChatComposerInput + ChatSendButton). Do not rebuild it — add the slots below.",
+    "astryxChatKit": "Compose the Astryx Chat kit (import from '@astryxdesign/core/Chat'; confirm props with `npx astryx component <Name> --json`): ChatComposer (slots), ChatComposerDrawer, ChatComposerTokenElement, ChatComposerInput, ChatSendButton. See docs §10 + prd-v2-p2a-chat-core.json → astryxChatComponents.",
+    "reuseLogic": "Reuse v1's real logic via ui/src/v2/lib adapters — attachment/pin serialization (src/agent/attachments.ts is server-side; v1 PinPicker + send opts are the client reference), the provider registry (GET /api/agent/providers), and the send opts shape (model/effort/permission). Do NOT modify src/ or v1 components.",
+    "astryxOnly": "Astryx + ui/src/v2/tokens.css only. No shadcn/Radix, no Tailwind, no raw <div>/hex/px. The provider·model·effort picker popover is custom UI — build it from Astryx Menu/Popover/Layout primitives (`npx astryx search menu|popover`), not Radix.",
+    "v1Untouched": "v1 renders pixel-unchanged with the flag OFF.",
+    "gatewayRule": "Never run a human's :3747/:5173 from an agent session. Throwaway ports only; verify with automate-browser (VITE_CONAN_V2=1)."
+  },
+  "userStories": [
+    {
+      "id": "US-301",
+      "title": "Attachment drawer + pin chips",
+      "description": "As a user, I want my attached/pinned files shown as removable chips in a collapsible drawer above the input, so I can see and manage what rides along with my message.",
+      "acceptanceCriteria": [
+        "ChatComposerDrawer in ChatComposer's `drawer` slot: count + label 'Items' with a collapse toggle (matches S6-0/S7-0); collapsed shows the badge, expanded shows the chips",
+        "Each pin is a ChatComposerTokenElement chip (match SF-0: 24px, radius 6px, padInline 8px, gap 4px, bg #FFFFFF1A, label Figtree 12/500 #FAFAFA) with a trailing ✕ that removes it",
+        "Wire to a v2 pin state (ui/src/v2/lib) mirroring v1's PinPicker/attachments — a removed chip drops from the outgoing turn; pins serialize into the send the same way v1 does (content, not path)",
+        "Astryx + tokens only; owns ui/src/v2/chat/composer/PinsDrawer.tsx (+ test); v1 untouched; typecheck + build + vitest pass",
+        "Verify against S5-0 (get_computed_styles) + screenshot on a throwaway stack"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Design nodes: drawer S6-0, chip SF-0/SG-0, close SH-0. Astryx: ChatComposerDrawer https://astryx.atmeta.com/components/ChatComposerDrawer · ChatComposerTokenElement https://astryx.atmeta.com/components/ChatComposerTokenElement (confirm via `npx astryx component <Name> --json`). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-302",
+      "title": "Branch indicator chip (header slot)",
+      "description": "As a user, I want the active thread's branch shown in the composer, so I know which branch my turn runs against.",
+      "acceptanceCriteria": [
+        "A branch chip in ChatComposer's header area (match UX-0: git-branch icon + branch name, pill 32px/radius 16px/pad 8·12/gap 8) driven by the active thread's branch (from the existing git info the toolbar already fetches — reuse, don't add a route)",
+        "Read-only indicator here (the branch PICKER is a shell/toolbar concern, out of scope); Astryx + tokens only",
+        "Owns ui/src/v2/chat/composer/BranchChip.tsx (+ test); v1 untouched; typecheck + build + vitest pass; verify vs S5-0 + screenshot"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Design nodes: TK-0 → UX-0 (icon V7-0, text V2-0). Astryx: Button/Text/Icon (`npx astryx component <Name> --json`). Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-303",
+      "title": "Provider·model·effort picker (footer slot)",
+      "description": "As a user, I want to pick provider, model, and effort from a chip in the composer footer, so I can choose what drives my turn — matching v1's fused picker.",
+      "acceptanceCriteria": [
+        "A trigger chip in ChatComposer's footer (match TY-0: brand asterisk + 'Claude · Model' + chevron, pill 32px/radius 16px/pad 8·12/gap 8, text Figtree 14/500 #FAFAFA) that opens a picker popover",
+        "Picker = provider rail + model list + effort fly-out, ported from v1's ProviderModelPicker BEHAVIOR (see ui/src/components/ProviderModelPicker.tsx: brand·model·effort trigger, model list, effort as a nested fly-out; fixed size, no resize) but built from Astryx Menu/Popover/Layout primitives — NOT Radix",
+        "Providers/models/effort come from the registry (GET /api/agent/providers capabilities) via a v2/lib adapter; the pick flows into send opts (model/effort). Locks after turn 1 like v1",
+        "Astryx + tokens only; owns ui/src/v2/chat/composer/ModelPicker.tsx (+ test); v1 untouched; typecheck + build + vitest pass; verify open + selected states on a throwaway stack",
+        "Fold the trigger's model label to include the version (e.g. 'Claude · Opus 5') consistent with v1's chip"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Design node: footer chip TY-0 (asterisk UV-0, text U2-0, chevron U3-0). Picker-open state isn't drawn on S5-0 — use v1 ProviderModelPicker as the behavior spec. Astryx: `npx astryx search menu|popover`, then `npx astryx component <Name> --json`. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-304",
+      "title": "Rich input — @// autocomplete + paste/drop",
+      "description": "As a user, I want @ to reference files, / for commands, $ for skills, and to paste/drop files into the composer, so referencing context is fast — replacing v1's ComposerAutocomplete with ChatComposerInput's built-ins.",
+      "acceptanceCriteria": [
+        "ChatComposerInput's trigger menus wired: @ files/folders, / commands, $ skills — sourced from the existing endpoints v1 uses (GET /api/fs/search, skills, commands) via a v2/lib adapter; a chosen item inserts an inline token (ChatComposerTokenElement) or a pin as appropriate",
+        "Paste/drop a file → adds a pin (US-301 drawer); paste an image → staged like v1's image paste",
+        "ArrowUp/Down message history recall works (ChatComposerInput built-in)",
+        "Astryx + tokens only; owns the input wiring in ui/src/v2/chat/composer/ (its own file); v1 untouched; typecheck + build + vitest pass; verify each trigger + a paste on a throwaway stack"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "ChatComposerInput has @// typeahead + tokens + history + paste/drop built in (https://astryx.atmeta.com/components/ChatComposerInput) — wire our sources into it; don't rebuild v1's ComposerAutocomplete. v1 ComposerAutocomplete.tsx is the source-of-truth for WHAT @/$// resolve to. Suggested skills: automate-browser."
+    },
+    {
+      "id": "US-305",
+      "title": "Assemble the full composer + verify vs S5-0",
+      "description": "As the team, we need the full composer assembled and matched to the Chat Composer artboard, so it's the real composer, not a partial.",
+      "acceptanceCriteria": [
+        "V2Composer.tsx composes all slots: drawer (pins) · header (branch) · input (@// rich) · footer (provider·model·effort) · sendActions (send/stop) — matching S5-0 layout at 672px",
+        "Full turn still round-trips (send passes model/effort + serialized pins); busy state toggles ChatSendButton to stop; no console errors",
+        "Side-by-side vs the S5-0 artboard (get_screenshot) — spacing/type/colors/tokens match; Astryx + tokens only; v1 untouched",
+        "typecheck + build + full vitest pass; verify assembled composer (default + drawer collapsed + picker open + busy) on a throwaway stack, dark",
+        "Update docs/v2-astryx-redesign.md §10 with the p2c outcome"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Integration story — runs after US-301..US-304. Only this story (besides US-301's shell) edits the assembled V2Composer.tsx. Design: S5-0 artboard. Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui."
+    }
+  ]
+}
