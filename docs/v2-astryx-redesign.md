@@ -1,12 +1,10 @@
 # Conan v2 — Astryx Redesign · Multi-Agent Build Plan
 
-> **Status:** **Sidebar+toolbar SHELL MILESTONE COMPLETE** (T0 + all leaf
-> components + assembly landed and verified live against RJ-0). The build stories
-> were pruned from `prd-conan-v2-astryx.json`; the queue now holds only remaining
-> polish (US-101 shell a11y). Functional wiring is a separate Phase 2 PRD (TBD).
-> Read **§8 (T0 outcomes)** for the resolved setup facts. Branch:
-> `loop/conan-v2-astryx`. The §5 task graph below is retained as the historical
-> plan of record.
+> **Status:** **Shell complete + p2a walking skeleton DONE** (2026-07-30). T0 +
+> leaf components + shell assembly verified against RJ-0; p2a (US-201…US-204)
+> proved live chat in the content well (thread select → stream → composer →
+> Claude reply). Next: p2b/p2c/p2d. Read **§8 (T0)** and **§9 p2a outcome**.
+> Branch: `loop/conan-v2-astryx`. The §5 task graph is historical plan of record.
 > **This doc is the shared brain.** Any agent picking up a v2 task reads this
 > FIRST. It is the single source of truth across machines (it travels via git;
 > per-machine `.claude` memory does not).
@@ -291,15 +289,55 @@ recorded in the relevant file's header comment too.
   `@stylexjs/babel-plugin@0.18.x` while the runtime is `@stylexjs/stylex@0.19.0`.
   Verified working in dev and in the production build; if compiled styles ever
   go missing after a bump, pin the babel plugin to match the runtime first.
-- **Parity scope** — the shell milestone stops at sidebar+toolbar+empty content; transcript/composer/surfaces are a later phase, planned once the shell UX is validated.
+- ~~**Parity scope — hollow shell**~~ — **p2a landed (2026-07-30).** The content
+  well is no longer empty: thread select → streamed transcript → minimal
+  composer → live reply. Rich transcript/composer/surfaces remain later phases.
+
+### p2a outcome (US-201…US-204, 2026-07-30)
+
+Walking skeleton **verified live** on throwaway stack
+`CONAN_PORT=3804` / `CONAN_UI_PORT=5204` / `CONAN_DATA_DIR=/tmp/conan-v2-p2a-grok`
+with `VITE_CONAN_V2=1` and `CONAN_ALLOWED_ORIGINS=http://localhost:5204`.
+
+| Check | Result |
+|---|---|
+| Select placeholder thread | Sets `activeThread` (cwd from `/api/config`, provider `claude`) |
+| Send `"Reply with exactly: p2a-ok"` | User bubble + **Working…** while busy |
+| Live reply | Assistant bubble **`p2a-ok`** (real Claude headless turn) |
+| Console | Clean (no pageerrors; no WS auth failures) |
+| Screenshots | `tmp/p2a-sent.png`, `tmp/p2a-reply.png` |
+
+**What streamed:** plain text only through Astryx `ChatLayout` →
+`ChatMessageList` / `ChatMessage` / `ChatMessageBubble` / `ChatTokenizedText`;
+composer is `ChatComposer` + `ChatComposerInput` + `ChatSendButton` (send/stop
+toggles on stream). Data path: `useV2Chat` → v1 `useAgentChat` → `/ws/agent`
+(gateway untouched).
+
+**Integration gotchas for p2b/p2c:**
+
+1. **`ChatComposerInput` is contenteditable**, not a `<textarea>` — tests and
+   browser automation must set `textContent` + `input`/`Enter` (or Playwright
+   `keyboard.type`), not `input.value` / `getByPlaceholderText` as a native
+   placeholder attribute. Placeholder is a sibling overlay text node.
+2. **One `useV2Chat` per well** — do not mount a second adapter; V2ChatView owns
+   the socket. Skeleton does not resume old sessions (no history path).
+3. **React dedupe already required** (`vite.config.ts` `resolve.dedupe`) —
+   Astryx pre-bundles hooks; a second React copy breaks `useListFocus` and
+   chat context the same way.
+4. **Composer controlled value** — bind `value`/`onChange` on `ChatComposer`
+   only; the input slot reads them from context. Double-binding both breaks
+   caret / clear-after-send.
+5. **No StyleX/WS quirks blocked the loop** — frosted dock + auto-scroll +
+   jump-to-present came free from `ChatLayout`. Tool/plan items intentionally
+   render as one-line placeholders until p2b.
 
 ## 10. Phase 2 roadmap & PRD index
 
-The shell is done but **hollow** — everything functional (and the content well
-itself: transcript + composer) is still absent. Phase 2 builds the heart and
-wires the chrome to real data. It reuses v1's existing data layer (`useAgentChat`,
-`/ws/agent`, `/api/agent/*`) through adapters in `ui/src/v2/lib/`; **the gateway
-and v1 stay unchanged** — v2 is still presentation only.
+The shell is done and **p2a wired a live chat loop into the content well**.
+Phase 2 continues building the heart and wiring the chrome to real data. It
+reuses v1's existing data layer (`useAgentChat`, `/ws/agent`, `/api/agent/*`)
+through adapters in `ui/src/v2/lib/`; **the gateway and v1 stay unchanged** —
+v2 is still presentation only.
 
 **Sequencing principle:** prove the live loop with the smallest possible slice
 BEFORE fanning out. The biggest unknown isn't "can Astryx render X" (the shell
@@ -309,7 +347,7 @@ only after it lands.
 
 | PRD | Scope | Status |
 |---|---|---|
-| `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **ACTIVE** |
+| `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn) |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
 | `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model·effort picker, @// input | **READY** (drafted vs `S5-0`) |
 | `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |

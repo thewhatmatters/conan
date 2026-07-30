@@ -80,7 +80,7 @@
         "Update docs/v2-astryx-redesign.md \u00a79 with the p2a outcome (what streamed, any integration gotchas \u2014 e.g. dedupe/StyleX/WS quirks) so p2b/p2c start informed"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Integration/proof story \u2014 runs after US-202 + US-203. This is THE de-risking checkpoint: if the live loop doesn't work cleanly in the Astryx shell, STOP and write findings to progress.txt rather than papering over it. Read docs/v2-astryx-redesign.md \u00a79. Suggested skills: automate-browser, audit-ui."
     }
   ],
