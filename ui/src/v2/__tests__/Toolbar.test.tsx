@@ -6,12 +6,20 @@
  * that both leaves are mounted and in the artboard's order — rather than
  * re-asserting each leaf's internals, which belong to the leaf's own suite.
  *
+ * US-101 part C also pins breadcrumb + secondary-bar a11y here: real focusable
+ * buttons with accessible names (and menu ARIA on the secondary-bar triggers).
+ * SecondaryBar lives in the content well (App.v2), not the toolbar composition
+ * file — still tested here as the toolbar-region a11y sweep, and via direct
+ * render so the suite stays free of App.v2 coupling.
+ *
  * Queries go through the `data-slot` attributes the components already carry;
  * no test-only markup was added.
  */
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import Toolbar from "../Toolbar.tsx";
+import Breadcrumb from "../components/Breadcrumb.tsx";
+import SecondaryBar from "../components/SecondaryBar.tsx";
 
 describe("Toolbar", () => {
   it("mounts the breadcrumb and the surface tab strip", () => {
@@ -51,5 +59,74 @@ describe("Toolbar", () => {
     ]);
     expect(screen.getByRole("tablist", { name: "Surfaces" })).toBeInTheDocument();
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("Breadcrumb a11y (US-101 C)", () => {
+  it("exposes the parent crumb as a real button named Back to <project>", () => {
+    render(<Breadcrumb project="Conan" thread="Analyze my project" />);
+
+    const parent = screen.getByRole("button", { name: "Back to Conan" });
+    expect(parent).toBeInTheDocument();
+    expect(parent.tagName).toBe("BUTTON");
+    expect(parent).toHaveAttribute("type", "button");
+  });
+
+  it("keeps the leaf thread title as static text, not a button", () => {
+    render(<Breadcrumb project="Conan" thread="Analyze my project" />);
+
+    expect(screen.getByText("Analyze my project").closest("button")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Analyze my project/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the project prop in the accessible name", () => {
+    render(<Breadcrumb project="acme-api" thread="Wire auth" />);
+
+    expect(screen.getByRole("button", { name: "Back to acme-api" })).toBeInTheDocument();
+  });
+});
+
+describe("SecondaryBar a11y (US-101 C)", () => {
+  it("exposes Actions, Open, and Commit & Push as real menu buttons", () => {
+    render(<SecondaryBar />);
+
+    for (const name of ["Actions menu", "Open menu", "Commit and Push menu"]) {
+      const btn = screen.getByRole("button", { name });
+      expect(btn.tagName).toBe("BUTTON");
+      expect(btn).toHaveAttribute("type", "button");
+      expect(btn).toHaveAttribute("aria-haspopup", "menu");
+      expect(btn).toHaveAttribute("aria-expanded", "false");
+    }
+  });
+
+  it("toggles aria-expanded on the clicked menu and collapses the others", () => {
+    render(<SecondaryBar />);
+
+    const actions = screen.getByRole("button", { name: "Actions menu" });
+    const open = screen.getByRole("button", { name: "Open menu" });
+    const commit = screen.getByRole("button", { name: "Commit and Push menu" });
+
+    fireEvent.click(actions);
+    expect(actions).toHaveAttribute("aria-expanded", "true");
+    expect(open).toHaveAttribute("aria-expanded", "false");
+    expect(commit).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(open);
+    expect(actions).toHaveAttribute("aria-expanded", "false");
+    expect(open).toHaveAttribute("aria-expanded", "true");
+    expect(commit).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(open);
+    expect(open).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("still paints the visible labels from RJ-0", () => {
+    render(<SecondaryBar />);
+
+    for (const label of ["Actions", "Open", "Commit & Push"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
   });
 });
