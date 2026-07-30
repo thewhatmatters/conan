@@ -17,27 +17,32 @@ const styles = stylex.create({
   // Measured off 7W-0. Icon and label share one colour declaration so they can
   // never drift apart — the icon inherits it via `currentColor`.
   button: {
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
     borderRadius: "var(--conan-radius-pill)",
     color: "var(--conan-icon-primary)",
+    cursor: "pointer",
     flexShrink: 0,
     height: "var(--conan-control-height)",
+    padding: 0,
   },
 });
 
 export default function SettingsFooter() {
   return (
-    <HStack
-      align="center"
-      gap={2}
-      paddingBlock={2}
-      paddingInline={3}
-      xstyle={styles.button}
+    <button
+      type="button"
+      aria-label="Settings"
+      {...stylex.props(styles.button)}
       data-slot="settings-footer"
     >
-      <Settings size={16} aria-hidden />
-      <Text weight="medium" color="primary" maxLines={1}>
-        Settings
-      </Text>
-    </HStack>
+      <HStack align="center" gap={2} paddingBlock={2} paddingInline={3}>
+        <Settings size={16} aria-hidden />
+        <Text weight="medium" color="primary" maxLines={1}>
+          Settings
+        </Text>
+      </HStack>
+    </button>
   );
 }

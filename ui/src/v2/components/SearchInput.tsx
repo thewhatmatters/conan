@@ -35,6 +35,24 @@ const styles = stylex.create({
     flexGrow: 1,
     minWidth: 0,
   },
+  input: {
+    backgroundColor: "transparent",
+    borderStyle: "none",
+    color: "var(--conan-text-primary)",
+    flexGrow: 1,
+    fontFamily: "var(--conan-font-sans)",
+    fontSize: "var(--conan-text-body)",
+    lineHeight: "var(--conan-leading-body)",
+    minWidth: 0,
+    padding: 0,
+    "::placeholder": {
+      color: "var(--conan-text-muted)",
+      opacity: 1,
+    },
+    "::-webkit-search-cancel-button": {
+      display: "none",
+    },
+  },
   // The label must yield to the chips, not push them out of the field.
   label: {
     flexGrow: 1,
@@ -83,11 +101,14 @@ export default function SearchInput() {
     >
       <HStack align="center" gap={1} xstyle={styles.label}>
         <Search size={ICON} aria-hidden />
-        <Text color="secondary" xstyle={styles.label} maxLines={1}>
-          Search
-        </Text>
+        <input
+          type="search"
+          aria-label="Search projects and threads"
+          placeholder="Search"
+          {...stylex.props(styles.input)}
+        />
       </HStack>
-      <HStack align="center" gap={1}>
+      <HStack align="center" gap={1} aria-hidden>
         <KeyCap>⌘</KeyCap>
         <KeyCap>K</KeyCap>
       </HStack>
