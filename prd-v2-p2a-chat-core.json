@@ -29,7 +29,8 @@
         "App.v2.tsx gains an activeThread state (a { cwd, projectId, provider } descriptor, provider defaulting to 'claude'); selecting a sidebar thread sets it. For the skeleton, wiring the REAL project list is out of scope — a placeholder selection that yields a valid cwd (e.g. the current repo root from the existing /api/config or a fixture) is enough to open a live session.",
         "ProjectTree/ThreadRow onSelect is wired to set activeThread (these are the sidebar's own components; App.v2 owns the state + passes a callback down — this is a composition change, allowed here since p2a owns App.v2.tsx/Sidebar.tsx for the wiring seam).",
         "The content well renders a new ui/src/v2/chat/V2ChatView.tsx built on Astryx ChatLayout (import from '@astryxdesign/core/Chat') — it docks the composer to the bottom with the frosted blur and gives auto-scroll + jump-to-present for free; empty transcript is fine this story",
-        "Astryx-only, tokens-only; v1 untouched; typecheck passes; cd ui && npm run build passes; the existing v2 Vitest suite still passes"
+        "Astryx-only, tokens-only; v1 untouched; cd ui && npm run build passes; the existing v2 Vitest suite still passes",
+        "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
@@ -44,7 +45,8 @@
         "Text-only: a tool/plan/approval item renders as a minimal one-line 'ran a tool' placeholder (NOT a rich card) — rich rendering is p2b",
         "Auto-scroll + jump-to-present come from ChatLayout/ChatMessageList — don't re-implement them; markdown may render as plain text for now (rich markdown is p2b)",
         "Prefer Astryx's Chat-category messaging components (`npx astryx search chat`) for message rows; style via tokens only",
-        "Owns only ui/src/v2/chat/V2Transcript.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
+        "Owns only ui/src/v2/chat/V2Transcript.tsx (+ its test); build + vitest pass; v1 untouched",
+        "Typecheck passes"
       ],
       "priority": 2,
       "passes": false,
@@ -58,9 +60,10 @@
         "New ui/src/v2/chat/V2Composer.tsx built on Astryx ChatComposer with ChatComposerInput in the input slot and ChatSendButton in sendActions (all from '@astryxdesign/core/Chat'): controlled value/onChange, placeholder 'Ask anything', onSubmit -> send; ChatSendButton auto-toggles send/stop on stream. Do NOT hand-roll a textarea or send button",
         "onSubmit calls useV2Chat().send(value, { cwd, provider }) using the active thread's cwd/provider (NO model/effort/permission pickers and NO ChatComposerDrawer/pins here — those are p2c)",
         "Auto-grows to content within a sane max (mirror v1's composer behavior); token-styled only",
-        "Owns only ui/src/v2/chat/V2Composer.tsx (+ its test); typecheck + build + vitest pass; v1 untouched"
+        "Owns only ui/src/v2/chat/V2Composer.tsx (+ its test); build + vitest pass; v1 untouched",
+        "Typecheck passes"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": false,
       "notes": "Depends on US-201; parallel with US-202 (separate files). Use Astryx ChatComposer (https://astryx.atmeta.com/components/ChatComposer, import {ChatComposer} from '@astryxdesign/core/Chat') — it already gives input+send+stop+slots; confirm props with `npx astryx component ChatComposer --json`. The ChatComposerDrawer (https://astryx.atmeta.com/components/ChatComposerDrawer) attachments/pins drawer and the provider/model/effort pickers are p2c. send signature: send(text, { cwd, provider, model?, effort?, projectId? }). Read docs/v2-astryx-redesign.md §9-10. Suggested skills: automate-browser."
     },
@@ -72,10 +75,11 @@
         "V2ChatView.tsx composes V2Transcript (fills the well) + V2Composer (pinned at its foot) for the active thread, using one useV2Chat instance",
         "END-TO-END: with the flag ON, selecting a thread and sending a prompt streams a real reply into the transcript — verified on a THROWAWAY stack (see conventions.liveVerification) with automate-browser: screenshot the sent prompt + the streaming/settled reply; report console clean",
         "If no provider is installed/authed on the machine, fall back to the stubbed-pipeline assertion (send frame on /ws/agent + assistant item renders) and state that explicitly in progress.txt — do NOT claim a live turn that didn't happen",
-        "No console errors during a turn; v1 untouched; typecheck + build + full vitest suite pass",
+        "No console errors during a turn; v1 untouched; build + full vitest suite pass",
+        "Typecheck passes",
         "Update docs/v2-astryx-redesign.md §9 with the p2a outcome (what streamed, any integration gotchas — e.g. dedupe/StyleX/WS quirks) so p2b/p2c start informed"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": false,
       "notes": "Integration/proof story — runs after US-202 + US-203. This is THE de-risking checkpoint: if the live loop doesn't work cleanly in the Astryx shell, STOP and write findings to progress.txt rather than papering over it. Read docs/v2-astryx-redesign.md §9. Suggested skills: automate-browser, audit-ui."
     }
