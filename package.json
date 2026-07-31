@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Conan \u2014 an always-on web UI/control layer that observes and drives Claude Code.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22 <23"
   },
   "scripts": {
     "dev": "tsx watch src/gateway/index.ts",
