@@ -3,6 +3,75 @@
 Deferred UI/UX polish surfaced during dogfooding — not blocking, batched for a
 future "UI round". Newest first.
 
+## Edit/Write approvals show the path, never the change
+
+**Raised:** 2026-07-31, during the US-604 approval-card verification on the
+isolated QA stack. Deferred to after p2d — not blocking US-604, which passed its
+behavioural AC.
+
+**The defect.** In v2's approval card (`V2ApprovalPanel.tsx`), a blocked `Edit`
+or `Write` shows the tool name and the file path and nothing else:
+
+```
+Permission needed
+Edit · calc.js
+/private/tmp/…/fixture/calc.js
+[Approve once] [Always allow this session] [Decline] [Cancel turn]
+```
+
+"Approve once" and especially "Always allow this session" are therefore decided
+without seeing a single byte of what will be written. Observed live, not
+inferred.
+
+**Where the content is lost.** `permissionDetail()` (`src/agent/claude.ts:573`)
+returns `inputTarget()` — `command` / `file_path` / `path` / `pattern` — and only
+falls back to the full input JSON when there is *no* target. `Edit` has a
+`file_path`, so its `old_string`/`new_string` are dropped. The emitted
+`permission-request` event (`src/agent/driver.ts:183`) carries only `summary`,
+`detail`, `toolName`, `toolUseId` — the raw `input` stays server-side in the
+driver's `pendingPermissions` map and never reaches the client.
+
+Worth naming the inversion: `ExitPlanMode` has no `file_path`, so it gets the
+**full** input JSON and the UI hides it; `Edit` has its full input available and
+the formatter throws it away.
+
+**This is smaller than it first looks — the rendering is already built.**
+`buildFileDiff(name, input)` (`ui/src/lib/diff.ts:143`) is a pure client-side
+function that already parses `Edit` (`old_string`/`new_string`), `Write`
+(`content`), and `MultiEdit` (hunks) straight out of the raw tool input and
+returns a renderable `FileDiff`. `DiffView` (`ui/src/components/DiffView.tsx`)
+already renders it as red/green rows. v1 wires the pair at
+`ChatPane.tsx:2391`.
+
+The "safe disclosure of large or sensitive inputs" problem is therefore already
+solved twice in this repo, with settled policy:
+
+- `buildFileDiff` degrades to counts-only (`lines: null`) on binary content or
+  `chars > MAX_DIFF_CHARS` (200k) — `ui/src/lib/diff.ts:29`.
+- `DiffView` caps rendered rows at `MAX_DIFF_ROWS = 600`.
+- The gateway's own patch path caps at `MAX_PATCH_BYTES = 128 KiB` via
+  `capPatch()` (`src/fs/diff.ts:38`).
+
+**Shape of the work:**
+
+1. Gateway — carry the raw tool `input` (or a diff-ready payload) on the
+   `permission-request` event. This is the only server-side change and it is
+   additive.
+2. v2 UI — call `buildFileDiff(toolName, input)` in `V2ApprovalPanel` and render
+   the result; fall back to today's mono block when it returns `null` (Bash,
+   MCP tools, anything unrecognised).
+3. v2 needs an **Astryx/StyleX `DiffView`** — the existing one is v1 Tailwind
+   (`cn` + `text-emerald-600`). v2's own Diff surface will want the same
+   primitive, so build it as a shared v2 component rather than inlining it in
+   the approval card. This is the bulk of the effort.
+
+**Open product decisions (Randy):** default expanded vs. collapsed-behind-a-
+summary; whether the action buttons stay pinned when the diff is long; whether
+any path/content redaction is wanted at all; v2-only or v1 too. See the
+2026-07-31 thread in #conan.
+
+**Size:** M — mostly the Astryx diff primitive, not the plumbing.
+
 ## Provider icon avatars (replace the C/X/G letters)
 
 **Raised:** 2026-07-24. User has real brand SVGs for the three providers and
