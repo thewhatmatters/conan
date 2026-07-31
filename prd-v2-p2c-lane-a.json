@@ -117,7 +117,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Integration story — runs after US-304. Only this story edits the assembled V2Composer.tsx. Designs: S5-0 (composer body) + 122-1 (picker panel). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui."
     }
   ]

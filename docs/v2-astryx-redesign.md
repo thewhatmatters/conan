@@ -354,7 +354,7 @@ only after it lands.
 |---|---|---|
 | `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn) |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
-| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **US-301–303 DONE**; US-304/305 open |
+| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **DONE** (2026-07-31; US-301–305 assembled and browser-verified) |
 | `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
 | `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
 | `prd-v2-p2f-settings.json` | Settings dialog | planned |
@@ -404,6 +404,13 @@ Shipped in `ui/src/v2/chat/composer/`: `ModelPicker.tsx` (Paper artboard
 between providers, icon rail with the real brand marks from
 `src/assets/providers/*`, search, rows with ⌘N chips, selected = wash + 2px
 accent bar, bottom-pinned hint footer), `EffortChip.tsx`, `ProviderGlyph.tsx`.
+
+Phase 2c Lane A is complete (2026-07-31): `V2Composer` assembles the attachment
+drawer, branch header, rich @/$// input, separate ModelPicker and EffortChip,
+and send/stop action. Picks flow through the live send options with staged pin
+content and images; the model control locks after turn one while effort remains
+interactive for every turn. The complete composer was browser-verified in dark
+mode on an isolated throwaway stack against S5-0 and 122-1.
 
 **⚠️ Deferred gap (Randy: "keep for now"):** the picker's footer advertises
 **↑↓ Navigate · ↵ Select**, but only `Esc` and `⌘1–⌘9` are implemented — arrow

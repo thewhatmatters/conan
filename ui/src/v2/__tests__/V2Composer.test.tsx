@@ -9,6 +9,26 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import V2Composer from "../chat/V2Composer.tsx";
 import type { ActiveThread } from "../lib/types.ts";
 
+vi.mock("../lib/useV2Providers.ts", async (importOriginal) => {
+  const original = await importOriginal<
+    typeof import("../lib/useV2Providers.ts")
+  >();
+  return {
+    ...original,
+    useV2Providers: () => [
+      {
+        id: "claude",
+        name: "Claude Code",
+        installed: true,
+        capabilities: {
+          models: [],
+          effortModes: [{ id: "think", label: "Think" }],
+        },
+      },
+    ],
+  };
+});
+
 const thread: ActiveThread = {
   key: "analyze",
   cwd: "/tmp/conan-v2-p2a",
@@ -78,5 +98,18 @@ describe("V2Composer", () => {
     typeAndSubmit("wait");
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("locks provider/model after turn one while effort stays interactive", () => {
+    const { container } = render(
+      <V2Composer activeThread={thread} send={vi.fn()} locked />,
+    );
+
+    expect(
+      container.querySelector('[data-slot="model-picker-locked"]'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Default effort/ }),
+    ).toBeEnabled();
   });
 });
