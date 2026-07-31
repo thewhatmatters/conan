@@ -5,6 +5,7 @@
  * ChatMessageBubble + ChatTokenizedText. Tool/plan/approval items get a
  * one-line placeholder (rich cards are p2b). Auto-scroll lives in ChatLayout.
  */
+import * as stylex from "@stylexjs/stylex";
 import {
   ChatMessage,
   ChatMessageBubble,
@@ -57,6 +58,19 @@ function hasAssistantText(items: ChatItem[]): boolean {
   );
 }
 
+const styles = stylex.create({
+  // The chat column's measure — the SAME axis the composer sits on, so message
+  // text and the input line up. Applied to ChatMessageList itself rather than a
+  // wrapper: ChatLayout expects the list as its direct child (it owns the flex
+  // spacer that pins messages to the bottom), and wrapping it strands the
+  // messages above the viewport.
+  measure: {
+    marginInline: "auto",
+    maxWidth: "var(--conan-chat-measure)",
+    width: "100%",
+  },
+});
+
 export default function V2Transcript({
   items,
   busy = false,
@@ -68,6 +82,7 @@ export default function V2Transcript({
       data-slot="v2-transcript"
       isStreaming={busy}
       density="balanced"
+      xstyle={styles.measure}
     >
       {items.map((item) => {
         if (isRenderableText(item)) {

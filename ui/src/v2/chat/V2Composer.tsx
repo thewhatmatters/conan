@@ -14,7 +14,9 @@
  * caret and clear-after-send, docs §9 gotcha 4).
  */
 import { useCallback, useEffect, useState } from "react";
+import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
+import { VStack } from "@astryxdesign/core/VStack";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type {
   OutgoingFileAttachment,
@@ -29,6 +31,14 @@ import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
 import EffortChip from "./composer/EffortChip.tsx";
 import RichInput from "./composer/RichInput.tsx";
+
+const styles = stylex.create({
+  // TS-0 — the input region's floor, so the composer has room to compose in.
+  inputSlot: {
+    justifyContent: "center",
+    minHeight: "var(--conan-composer-input-min)",
+  },
+});
 
 export interface V2ComposerProps {
   /** Active sidebar selection — supplies cwd/provider for send. */
@@ -190,11 +200,17 @@ export default function V2Composer({
         </>
       }
       input={
-        <RichInput
-          token={token}
-          cwd={activeThread?.cwd ?? null}
-          onFiles={handleFiles}
-        />
+        // S5-0's input region (TS-0) is min-height 84px. ChatComposerInput has
+        // maxRows but no minRows, so the floor lives on the slot wrapper —
+        // without it the input collapses to a single 30px row and the composer
+        // reads cramped against the artboard.
+        <VStack gap={0} xstyle={styles.inputSlot}>
+          <RichInput
+            token={token}
+            cwd={activeThread?.cwd ?? null}
+            onFiles={handleFiles}
+          />
+        </VStack>
       }
       sendButton={<ChatSendButton />}
     />

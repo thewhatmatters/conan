@@ -93,8 +93,8 @@
         "Browser-verify on a throwaway stack: each trigger returns real results and a paste stages a pin"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Assignable NOW — no design dependency. ChatComposerInput has @// typeahead, tokens, history and paste/drop built in (https://astryx.atmeta.com/components/ChatComposerInput) — wire our sources into it, don't rebuild v1's ComposerAutocomplete. v1 ui/src/components/ComposerAutocomplete.tsx is the source-of-truth for what each trigger resolves to. Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Assignable NOW — no design dependency. ChatComposerInput has @// typeahead, tokens, history and paste/drop built in (https://astryx.atmeta.com/components/ChatComposerInput) — wire our sources into it, don't rebuild v1's ComposerAutocomplete. v1 ui/src/components/ComposerAutocomplete.tsx is the source-of-truth for what each trigger resolves to. Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser. DONE (Codex, Lane A): all three triggers verified live against real sources (@ files, / commands, $ skills), token insertion, paste/drop → pins, history recall. Console clean."
     },
     {
       "id": "US-305",
@@ -112,8 +112,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Integration story — runs after US-304. Only this story edits the assembled V2Composer.tsx. Designs: S5-0 (composer body) + 122-1 (picker panel). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui."
+      "passes": true,
+      "notes": "Integration story — runs after US-304. Only this story edits the assembled V2Composer.tsx. Designs: S5-0 (composer body) + 122-1 (picker panel). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser, audit-ui. DONE (Codex, Lane A) + PM follow-up: composer/transcript were full-bleed (1215px) and the input collapsed to one row; fixed to the shared 672px measure and TS-0's 84px input floor."
     },
     {
       "id": "US-304b",
