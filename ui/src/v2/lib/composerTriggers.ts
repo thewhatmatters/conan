@@ -57,11 +57,14 @@ export function createFileSource(
       `/api/fs/search?path=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`,
       token,
     );
-    return (data?.hits ?? []).slice(0, 25).map((h) => ({
-      id: h.rel,
-      label: `${h.rel}${h.isDir ? "/" : ""}`,
-      auxiliaryData: { kind: h.isDir ? ("dir" as const) : ("file" as const) },
-    }));
+    return (data?.hits ?? []).slice(0, 25).map((h) => {
+      const rel = `${h.rel}${h.isDir ? "/" : ""}`;
+      return {
+        id: `@${rel}`,
+        label: rel,
+        auxiliaryData: { kind: h.isDir ? ("dir" as const) : ("file" as const) },
+      };
+    });
   };
   return { search, bootstrap: () => search("") };
 }

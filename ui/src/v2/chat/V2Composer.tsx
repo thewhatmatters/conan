@@ -14,11 +14,7 @@
  * caret and clear-after-send, docs §9 gotcha 4).
  */
 import { useCallback, useEffect, useState } from "react";
-import {
-  ChatComposer,
-  ChatComposerInput,
-  ChatSendButton,
-} from "@astryxdesign/core/Chat";
+import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type {
   OutgoingFileAttachment,
@@ -32,6 +28,7 @@ import PinsDrawer from "./composer/PinsDrawer.tsx";
 import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
 import EffortChip from "./composer/EffortChip.tsx";
+import RichInput from "./composer/RichInput.tsx";
 
 export interface V2ComposerProps {
   /** Active sidebar selection — supplies cwd/provider for send. */
@@ -193,10 +190,9 @@ export default function V2Composer({
         </>
       }
       input={
-        <ChatComposerInput
-          maxRows={8}
-          hasHistory={false}
-          label="Message input"
+        <RichInput
+          token={token}
+          cwd={activeThread?.cwd ?? null}
           onFiles={handleFiles}
         />
       }

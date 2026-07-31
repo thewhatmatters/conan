@@ -17,7 +17,7 @@ const thread: ActiveThread = {
 };
 
 function typeAndSubmit(text: string) {
-  const textbox = screen.getByRole("textbox", { name: "Message input" });
+  const textbox = screen.getByLabelText("Message input");
   textbox.textContent = text;
   fireEvent.input(textbox);
   fireEvent.keyDown(textbox, { key: "Enter" });
@@ -33,7 +33,7 @@ describe("V2Composer", () => {
     expect(container.querySelector('[data-slot="v2-composer"]')).not.toBeNull();
     expect(screen.getByText("Ask anything")).toBeInTheDocument();
     expect(
-      screen.getByRole("textbox", { name: "Message input" }),
+      screen.getByLabelText("Message input"),
     ).toBeInTheDocument();
   });
 
@@ -61,7 +61,7 @@ describe("V2Composer", () => {
     const send = vi.fn();
     render(<V2Composer activeThread={null} send={send} />);
 
-    const textbox = screen.getByRole("textbox", { name: "Message input" });
+    const textbox = screen.getByLabelText("Message input");
     // Disabled → contenteditable false; still attempt Enter for safety.
     expect(textbox).toHaveAttribute("contenteditable", "false");
     textbox.textContent = "nope";

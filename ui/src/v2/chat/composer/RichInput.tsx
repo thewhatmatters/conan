@@ -28,14 +28,10 @@ import type {
   ChatComposerToken,
   ChatComposerTrigger,
 } from "@astryxdesign/core/Chat";
-import { HStack } from "@astryxdesign/core/HStack";
-import { Text } from "@astryxdesign/core/Text";
-import { FileText, Folder, SquareSlash, Sparkles } from "lucide-react";
 import {
   createCommandSource,
   createFileSource,
   createSkillSource,
-  type TriggerAux,
 } from "../../lib/composerTriggers.ts";
 import type { SearchableItem } from "@astryxdesign/core/Typeahead";
 
@@ -45,38 +41,6 @@ export interface RichInputProps {
   cwd: string | null;
   /** Pasted or dropped files (images and text alike). */
   onFiles: (files: File[]) => void;
-}
-
-const ICON = 14;
-
-function aux(item: SearchableItem): TriggerAux | undefined {
-  return item.auxiliaryData as TriggerAux | undefined;
-}
-
-function TriggerRow({ item }: { item: SearchableItem }) {
-  const kind = aux(item)?.kind;
-  const hint = aux(item)?.hint;
-  const Glyph =
-    kind === "dir"
-      ? Folder
-      : kind === "skill"
-        ? Sparkles
-        : kind === "command"
-          ? SquareSlash
-          : FileText;
-  return (
-    <HStack align="center" gap={2} width="100%">
-      <Glyph size={ICON} aria-hidden />
-      <Text type="supporting" color="primary" maxLines={1}>
-        {item.label}
-      </Text>
-      {hint ? (
-        <Text type="supporting" color="secondary" maxLines={1}>
-          {hint}
-        </Text>
-      ) : null}
-    </HStack>
-  );
 }
 
 /** A selected item becomes an inline chip whose serialized value is v1's
@@ -91,7 +55,6 @@ export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
       {
         character: "@",
         searchSource: createFileSource(token, cwd),
-        renderItem: (item) => <TriggerRow item={item} />,
         onSelect: toToken,
         emptySearchResultsText: "No matching files",
         menuLabel: "Files and folders",
@@ -99,7 +62,6 @@ export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
       {
         character: "$",
         searchSource: createSkillSource(token),
-        renderItem: (item) => <TriggerRow item={item} />,
         onSelect: toToken,
         emptySearchResultsText: "No matching skills",
         menuLabel: "Skills",
@@ -107,7 +69,6 @@ export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
       {
         character: "/",
         searchSource: createCommandSource(token, cwd),
-        renderItem: (item) => <TriggerRow item={item} />,
         onSelect: toToken,
         emptySearchResultsText: "No matching commands",
         menuLabel: "Commands",

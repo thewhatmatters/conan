@@ -1,0 +1,3 @@
+[2026-07-31 08:30:00] Lane A restarted with corrected Codex wrapper; targeting US-304a then US-305.
+[2026-07-31] US-304a: wired Astryx rich input to real file/skill/command sources, history, and paste/drop attachment staging; verified on :3812/:5212.
+[2026-07-31 08:35:50] iteration 1 → US-305: Assemble the full composer + verify
