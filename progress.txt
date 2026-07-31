@@ -2,3 +2,6 @@
 [2026-07-31] US-304a: wired Astryx rich input to real file/skill/command sources, history, and paste/drop attachment staging; verified on :3812/:5212.
 [2026-07-31 08:35:50] iteration 1 → US-305: Assemble the full composer + verify
 [2026-07-31] US-305: assembled and verified the full Astryx composer; model locks after turn one while effort remains interactive, with send options, pins, busy state, docs, build, and 99/99 tests passing.
+[2026-07-31 13:31:06] iteration 1 → US-501: Real projects + threads + thread-select (foundation)
+[2026-07-31 13:37:06] iteration 2 → US-501: Real projects + threads + thread-select (foundation)
+[2026-07-31] US-501: wired the v2 sidebar to real projects/threads via new lib/useV2Projects.ts; selecting a thread now hands the well a full reopen descriptor (real cwd/projectId/provider/model/effort) that restores the saved transcript and resumes the session. Verified live on :3820/:5220 — a resumed turn recalled its earlier context. 109/109 tests.

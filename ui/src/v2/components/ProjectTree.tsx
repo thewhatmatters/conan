@@ -1,9 +1,10 @@
 /**
  * ProjectTree — Paper RJ-0 nodes OT-0 (section) / PY-0 · PZ-0 (project groups).
  *
- * T0 STUB (owned by US-003). Data-prop-driven with a placeholder default so the
- * shell has something honest to show; wiring to the real `/api/agent/projects`
- * hooks is a later phase.
+ * Data-prop-driven and PRESENTATIONAL — p2d (US-501) feeds it the real
+ * `/api/agent/projects` rows from `App.v2` via `lib/useV2Projects.ts`. The
+ * placeholder default below is what a prop-less render shows (the artboard's
+ * own copy); the shell never uses it.
  *
  * The artboard's shape: a "Projects" section header carrying two icon actions,
  * then one collapsible group per project. RJ-0 draws BOTH states, and the
@@ -33,6 +34,8 @@ import {
 import ThreadRow, { type ThreadRowProps } from "./ThreadRow.tsx";
 
 export interface ProjectGroup {
+  /** Stable project id (US-501). Falls back to `name` when absent. */
+  id?: string;
   name: string;
   isExpanded?: boolean;
   threads?: ThreadRowProps[];
@@ -44,6 +47,12 @@ export interface ProjectTreeProps {
   selectedKey?: string | null;
   /** Fired when the user picks a thread row — App.v2 sets activeThread. */
   onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
+  /**
+   * What an EMPTY `groups` array means. "not fetched yet" and "you really have
+   * no projects" look identical in the data and must not look identical on
+   * screen — a boot flash of "No projects yet" reads as data loss.
+   */
+  emptyState?: "loading" | "empty" | "error";
 }
 
 const ICON = 16;
@@ -110,6 +119,12 @@ const styles = stylex.create({
   },
   groupButtonContent: {
     width: "100%",
+  },
+  // Empty/loading copy sits on the thread rows' text lane, not the chevron's,
+  // so it reads as "inside this group" rather than as another group header.
+  emptyLine: {
+    paddingBlock: "var(--conan-space-2)",
+    paddingInlineStart: "var(--conan-space-3)",
   },
 });
 
@@ -213,29 +228,48 @@ function Group({
           <SquarePen size={ICON} aria-hidden />
         </HStack>
       </HStack>
-      {expanded && threads.length > 0 ? (
-        <VStack gap={2}>
-          {threads.map((thread) => {
-            const key = threadKey(thread);
-            return (
-              <ThreadRow
-                key={key}
-                {...thread}
-                isSelected={selectedKey != null ? selectedKey === key : thread.isSelected}
-                onSelect={() => onSelectThread?.(thread, name)}
-              />
-            );
-          })}
-        </VStack>
+      {expanded ? (
+        threads.length > 0 ? (
+          <VStack gap={2}>
+            {threads.map((thread) => {
+              const key = threadKey(thread);
+              return (
+                <ThreadRow
+                  key={key}
+                  {...thread}
+                  isSelected={
+                    selectedKey != null ? selectedKey === key : thread.isSelected
+                  }
+                  onSelect={() => onSelectThread?.(thread, name)}
+                />
+              );
+            })}
+          </VStack>
+        ) : (
+          // v1's copy verbatim — an expanded project with nothing in it must
+          // say so, or it reads as a tree that failed to load.
+          <VStack gap={0} xstyle={styles.emptyLine} data-slot="project-empty">
+            <Text type="supporting" color="secondary">
+              No chats yet.
+            </Text>
+          </VStack>
+        )
       ) : null}
     </VStack>
   );
 }
 
+const EMPTY_COPY: Record<NonNullable<ProjectTreeProps["emptyState"]>, string> = {
+  loading: "Loading projects…",
+  empty: "No projects yet.",
+  error: "Couldn't reach the gateway.",
+};
+
 export default function ProjectTree({
   groups = PLACEHOLDER_GROUPS,
   selectedKey = null,
   onSelectThread,
+  emptyState = "empty",
 }: ProjectTreeProps) {
   // Default selection wash for the artboard placeholder when the parent has
   // not yet set an active thread — keeps the shell looking selected at rest.
@@ -245,14 +279,22 @@ export default function ProjectTree({
   return (
     <VStack gap={0} data-slot="project-tree">
       <SectionHeader />
-      {groups.map((group) => (
-        <Group
-          key={group.name}
-          {...group}
-          selectedKey={effectiveSelected}
-          onSelectThread={onSelectThread}
-        />
-      ))}
+      {groups.length === 0 ? (
+        <VStack gap={0} xstyle={styles.emptyLine} data-slot="project-tree-empty">
+          <Text type="supporting" color="secondary">
+            {EMPTY_COPY[emptyState]}
+          </Text>
+        </VStack>
+      ) : (
+        groups.map((group) => (
+          <Group
+            key={group.id ?? group.name}
+            {...group}
+            selectedKey={effectiveSelected}
+            onSelectThread={onSelectThread}
+          />
+        ))
+      )}
     </VStack>
   );
 }

@@ -51,6 +51,9 @@ export interface V2ComposerProps {
   /** A turn has already gone out (or the thread was resumed): the launch
    *  config is fixed for this session, so the picker shows its locked face. */
   locked?: boolean;
+  /** Saved session to continue (US-501) — sent as `resume` so the driver
+   *  relaunches with the conversation's context. Null = fresh session. */
+  resumeSessionId?: string | null;
   send: (
     text: string,
     opts: AgentOpts,
@@ -66,6 +69,7 @@ export default function V2Composer({
   busy = false,
   disabled = false,
   locked = false,
+  resumeSessionId = null,
   send,
   interrupt,
 }: V2ComposerProps) {
@@ -77,15 +81,21 @@ export default function V2Composer({
   // selection changes, since each thread launches its own process.
   const threadProvider = activeThread?.provider ?? "claude";
   const [providerId, setProviderId] = useState<string>(threadProvider);
-  const [model, setModel] = useState<string | undefined>(undefined);
-  const [effort, setEffort] = useState("");
+  // A reopened thread starts on the config it was SAVED with (US-501), so a
+  // continued conversation doesn't silently switch model mid-thread.
+  const [model, setModel] = useState<string | undefined>(
+    activeThread?.model ?? undefined,
+  );
+  const [effort, setEffort] = useState(activeThread?.effort ?? "");
   const threadKey = activeThread?.key ?? null;
+  const threadModel = activeThread?.model ?? undefined;
+  const threadEffort = activeThread?.effort ?? "";
   useEffect(() => {
     setProviderId(threadProvider);
-    setModel(undefined);
-    setEffort("");
-    // Only the SELECTION changing resets the config — `threadProvider` rides
-    // along because it is a property of that selection.
+    setModel(threadModel);
+    setEffort(threadEffort);
+    // Only the SELECTION changing resets the config — the provider/model/effort
+    // ride along because they are properties of that selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadKey]);
   // Branch for THIS thread's directory — the same poll v1's status bar uses.
@@ -115,6 +125,9 @@ export default function V2Composer({
           // Undefined, never "" — an empty string would be a real `-m ""`.
           model,
           effort: effort || undefined,
+          // Continue the saved conversation. Already gated upstream on the
+          // history actually reconstructing, so this is never a dead id.
+          resume: resumeSessionId ?? undefined,
         },
         outgoing.attachments,
         outgoing.images,
@@ -122,7 +135,16 @@ export default function V2Composer({
       attachments.clearAfterSend();
       setValue("");
     },
-    [activeThread, attachments, busy, effort, model, providerId, send],
+    [
+      activeThread,
+      attachments,
+      busy,
+      effort,
+      model,
+      providerId,
+      resumeSessionId,
+      send,
+    ],
   );
 
   // Files pasted or dropped on the input stage as pins — the same content-not-

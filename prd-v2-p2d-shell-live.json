@@ -32,7 +32,7 @@
         "Browser-verify on a throwaway stack in dark mode"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation / barrier for p2d. Reuse ChatSurface.tsx's projects fetch + openSavedThread logic (read it; don't import v1 components). Read docs/v2-astryx-redesign.md §10. Suggested skills: automate-browser."
     },
     {

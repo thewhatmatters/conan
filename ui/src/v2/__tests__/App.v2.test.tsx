@@ -10,10 +10,70 @@
  * Note the title bar: RJ-0 draws one (RK-0) and `App.v2.tsx` deliberately does
  * not render it, because Conan's Tauri window keeps its native chrome. Asserted
  * below so the omission stays a decision instead of decaying into an oversight.
+ *
+ * p2d (US-501) adds the LIVE-DATA half: with the gateway stubbed, the tree is
+ * the user's real projects/threads and selecting one hands the chat a full
+ * reopen descriptor. The unreachable-gateway suite below is the shell's
+ * cold-boot behaviour (no fetch resolves), which is why it still has to render
+ * every region.
  */
-import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AppV2 from "../App.v2.tsx";
+
+const CONFIG = { token: "tok", cwd: "/repo/conan", port: 3800 };
+
+const PROJECTS = [
+  {
+    id: "p1",
+    path: "/repo/conan",
+    name: "conan",
+    createdAt: 1,
+    threads: [
+      {
+        sessionId: "s-analyze",
+        cwd: "/repo/conan/ui",
+        model: "opus",
+        provider: "claude",
+        effort: "think",
+        title: "Analyze my project",
+        lastMessage: "Run serverless code...",
+        createdAt: 1,
+        lastActivity: 9,
+      },
+    ],
+  },
+  {
+    id: "p2",
+    path: "/repo/empty",
+    name: "empty",
+    createdAt: 2,
+    threads: [],
+  },
+];
+
+/** Stub only the routes the shell reads; anything else 404s honestly. */
+function stubGateway(projects: unknown = PROJECTS) {
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    const body = (data: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
+    if (url.includes("/api/config")) return body(CONFIG);
+    if (url.includes("/api/agent/projects")) return body({ projects });
+    if (url.includes("/transcript")) return body({ found: false, items: [] });
+    return Promise.resolve({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    } as Response);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("AppV2 shell", () => {
   it("renders the sidebar and the toolbar", () => {
@@ -63,23 +123,13 @@ describe("AppV2 shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("selecting a sidebar thread updates the chat empty-state copy", () => {
-    render(<AppV2 />);
+  it("says loading, not 'no projects', while the gateway is unreachable", () => {
+    const { container } = render(<AppV2 />);
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Analyze my project: Run serverless code...",
-      }),
-    );
-
-    expect(
-      screen.getByText("Send a message to start this thread."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: "Analyze my project: Run serverless code...",
-      }),
-    ).toHaveAttribute("aria-current", "page");
+    // Cold boot with nothing answering: an "add your first project" prompt
+    // here would be a lie about the user's data.
+    expect(container.querySelector('[data-slot="thread-row"]')).toBeNull();
+    expect(screen.getByText("Loading projects…")).toBeInTheDocument();
   });
 
   it("does not paint a second title bar over the native window chrome", () => {
@@ -87,5 +137,106 @@ describe("AppV2 shell", () => {
 
     // RK-0's traffic lights + wordmark are the artboard's mock of macOS chrome.
     expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppV2 live projects (US-501)", () => {
+  it("renders the real projects and their threads", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    await screen.findByRole("button", { name: "Collapse conan" });
+    expect(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    ).toBeInTheDocument();
+    // A project with no threads says so rather than looking like a failure.
+    expect(screen.getByRole("button", { name: "Collapse empty" })).toBeInTheDocument();
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument();
+  });
+
+  it("falls back to v1's copy for a thread with no title or preview", async () => {
+    stubGateway([
+      {
+        id: "p1",
+        path: "/repo/conan",
+        name: "conan",
+        createdAt: 1,
+        threads: [
+          {
+            sessionId: "s-blank",
+            cwd: "/repo/conan",
+            model: null,
+            provider: null,
+            effort: null,
+            title: null,
+            lastMessage: null,
+            createdAt: 1,
+            lastActivity: 1,
+          },
+        ],
+      },
+    ]);
+    render(<AppV2 />);
+
+    expect(
+      await screen.findByRole("button", { name: "New chat: No messages yet" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says 'no projects' only once an empty list actually came back", async () => {
+    stubGateway([]);
+    render(<AppV2 />);
+
+    expect(await screen.findByText("No projects yet.")).toBeInTheDocument();
+  });
+
+  it("selecting a thread opens it — the row goes current and the chat follows", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    const row = await screen.findByRole("button", {
+      name: "Analyze my project: Run serverless code...",
+    });
+    // The row's identity is the saved session id — the same key the reopen
+    // descriptor resumes on.
+    expect(row).toHaveAttribute("data-thread-id", "s-analyze");
+
+    fireEvent.click(row);
+
+    expect(row).toHaveAttribute("aria-current", "page");
+    // Transcript reconstruction is stubbed `found: false`, so the well states
+    // the honest degrade instead of implying the history is loaded.
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "This thread's history couldn't be found — sending starts a fresh session.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("resolves the selected thread's own cwd, not just the project path", async () => {
+    const fetchMock = stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+
+    // The composer's branch poll is the observable proof the descriptor
+    // carried the THREAD's cwd (/repo/conan/ui) rather than the project's.
+    await waitFor(() => {
+      const gitCalls = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => url.includes("/api/fs/git"));
+      expect(gitCalls.length).toBeGreaterThan(0);
+      expect(gitCalls.some((url) => url.includes(encodeURIComponent("/repo/conan/ui")))).toBe(
+        true,
+      );
+    });
   });
 });

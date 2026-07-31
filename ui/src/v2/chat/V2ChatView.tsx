@@ -5,12 +5,16 @@
  * US-204: composes one useV2Chat with V2Transcript (message area) +
  * V2Composer (docked foot). Auto-scroll / jump-to-present come free from
  * ChatLayout.
+ * US-501: a selected thread REOPENS — its saved transcript is restored above
+ * the live items and the next turn resumes that session.
  */
+import { useMemo } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useV2Chat } from "../lib/useV2Chat.ts";
+import { useV2ThreadHistory } from "../lib/useV2ThreadHistory.ts";
 import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
@@ -39,12 +43,33 @@ const styles = stylex.create({
 });
 
 export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
-  const { items, send, status, busy, interrupt } = useV2Chat(token);
+  // No selection → no socket. Opening /ws/agent for a well that has nothing to
+  // chat with holds an agent session open for nothing, and (because App.v2
+  // keys this view by the selection) the first click would tear that socket
+  // down mid-handshake — a "closed before the connection is established"
+  // warning in the console for no gain.
+  const { items: live, send, status, busy, interrupt } = useV2Chat(
+    activeThread ? token : null,
+  );
+  const history = useV2ThreadHistory(token, activeThread?.sessionId ?? null);
+  // Restored turns first, then this run's. The live socket never replays what
+  // the JSONL already holds, so there is nothing to dedupe.
+  const items = useMemo(
+    () => (history.items.length > 0 ? [...history.items, ...live] : live),
+    [history.items, live],
+  );
   const hasItems = items.length > 0;
 
-  const emptyLabel = activeThread
-    ? "Send a message to start this thread."
-    : "Select a thread to start chatting.";
+  const emptyLabel = !activeThread
+    ? "Select a thread to start chatting."
+    : history.state === "loading"
+      ? "Opening this thread…"
+      : history.state === "missing"
+        ? // Honest, and v1's behaviour: the JSONL is gone (or the thread ran on
+          // a provider whose history we can't reconstruct), so the next prompt
+          // starts a fresh session in the same folder.
+          "This thread's history couldn't be found — sending starts a fresh session."
+        : "Send a message to start this thread.";
 
   return (
     <ChatLayout
@@ -64,9 +89,17 @@ export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
             activeThread={activeThread}
             token={token}
             busy={busy}
+            // Only pass --resume when the history actually reconstructed; a
+            // missing JSONL resumes nothing and would fail the launch.
+            resumeSessionId={history.resumeSessionId}
             // Provider/model identify the session and lock after the first turn.
+            // A REOPENED thread is locked from the start — the gateway
+            // relaunches it on its saved provider regardless of the chip.
             // Effort is deliberately separate and remains a per-turn choice.
-            locked={items.some((item) => item.role === "user")}
+            locked={
+              history.resumeSessionId != null ||
+              items.some((item) => item.role === "user")
+            }
             disabled={status !== "open" || !token}
             send={send}
             interrupt={interrupt}

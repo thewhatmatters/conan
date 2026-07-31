@@ -20,13 +20,19 @@ import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import SidebarHeader from "./components/SidebarHeader.tsx";
-import ProjectTree from "./components/ProjectTree.tsx";
+import ProjectTree, {
+  type ProjectGroup,
+  type ProjectTreeProps,
+} from "./components/ProjectTree.tsx";
 import SettingsFooter from "./components/SettingsFooter.tsx";
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 
 export interface SidebarProps {
   selectedKey?: string | null;
   onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
+  /** Real project groups (p2d US-501). Omitted → ProjectTree's own default. */
+  groups?: ProjectGroup[];
+  emptyState?: ProjectTreeProps["emptyState"];
 }
 
 const styles = stylex.create({
@@ -54,6 +60,8 @@ const styles = stylex.create({
 export default function Sidebar({
   selectedKey = null,
   onSelectThread,
+  groups,
+  emptyState,
 }: SidebarProps) {
   return (
     <LayoutPanel
@@ -69,6 +77,8 @@ export default function Sidebar({
         <SidebarHeader />
         <VStack isScrollable padding={4} gap={4} xstyle={styles.body}>
           <ProjectTree
+            groups={groups}
+            emptyState={emptyState}
             selectedKey={selectedKey}
             onSelectThread={onSelectThread}
           />

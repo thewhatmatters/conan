@@ -60,6 +60,20 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
 
+// jsdom ships no ResizeObserver. Astryx's Chat list observes its content to
+// drive the new-messages affordance, and the ReferenceError lands in a PASSIVE
+// EFFECT — React tears the whole tree down, so the failure surfaces as an
+// unrelated "element not found" in the NEXT test rather than as itself.
+// A no-op class is the honest shim: jsdom never lays anything out, so there is
+// no resize to report.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 /**
  * Two known jsdom gaps that log walls of stderr but break nothing:
  *   - its CSS parser predates `@layer`/`@scope`, which Astryx's stylesheets are
