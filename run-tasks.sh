@@ -55,21 +55,22 @@ target() {
   python3 -c "import json;s=sorted((x for x in json.load(open('$PRD')).get('userStories',[]) if not x.get('passes')),key=lambda x:x.get('priority',0));print(f\"{s[0].get('id','?')}: {s[0].get('title','?')}\" if s else '')"
 }
 
-read -r -d '' PROMPT <<'EOF' || true
+read -r -d '' PROMPT_TEMPLATE <<'EOF' || true
 You are ONE iteration of an autonomous build loop with no memory of prior runs.
-The source of truth is prd.json and progress.txt in the current directory.
+The source of truth is __PRD_FILE__ and progress.txt in the current directory.
 
-1. Read prd.json. Pick the lowest-`priority` user story whose `passes` is false.
+1. Read __PRD_FILE__. Pick the lowest-`priority` user story whose `passes` is false.
    If every story already passes, say so and stop without changing anything.
 2. Implement exactly that ONE story. Satisfy every item in its
    acceptanceCriteria. Use the skills named in its criteria/notes (for example,
    verify UI changes with the automate-browser skill).
 3. Verify: the typecheck — plus any tests or browser checks the criteria call
    for — must actually pass.
-4. Only once it genuinely passes: set that story's "passes" to true in prd.json,
+4. Only once it genuinely passes: set that story's "passes" to true in __PRD_FILE__,
    append one line to progress.txt summarising what you did, and commit.
 Do not start a second story. Never mark a story passing that you did not verify.
 EOF
+PROMPT="${PROMPT_TEMPLATE//__PRD_FILE__/$PRD}"
 
 for ((i = 1; i <= MAX_ITER; i++)); do
   if all_pass; then
