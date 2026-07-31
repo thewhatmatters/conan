@@ -23,6 +23,10 @@ vi.mock("../lib/useV2Providers.ts", async (importOriginal) => {
         capabilities: {
           models: [],
           effortModes: [{ id: "think", label: "Think" }],
+          permissionModes: [
+            { id: "default", label: "Supervised", description: "Ask first" },
+            { id: "plan", label: "Plan", description: "Plan first" },
+          ],
         },
       },
     ],
@@ -69,6 +73,7 @@ describe("V2Composer", () => {
         cwd: "/tmp/conan-v2-p2a",
         provider: "claude",
         projectId: undefined,
+        permissionMode: undefined,
       },
       // p2c: staged pins/images ride the same send (empty with nothing staged).
       [],
@@ -111,5 +116,24 @@ describe("V2Composer", () => {
     expect(
       screen.getByRole("button", { name: /Default effort/ }),
     ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Supervised" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the provider-defined permission mode selected for a fresh session", () => {
+    const send = vi.fn();
+    render(<V2Composer activeThread={thread} send={send} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    typeAndSubmit("propose a plan");
+
+    expect(send).toHaveBeenCalledWith(
+      "propose a plan",
+      expect.objectContaining({ permissionMode: "plan" }),
+      [],
+      [],
+    );
   });
 });

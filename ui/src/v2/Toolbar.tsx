@@ -16,6 +16,7 @@ import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import Breadcrumb from "./components/Breadcrumb.tsx";
 import SurfaceTabs from "./components/SurfaceTabs.tsx";
+import type { BreadcrumbProps } from "./components/Breadcrumb.tsx";
 
 const styles = stylex.create({
   toolbar: {
@@ -33,7 +34,10 @@ const styles = stylex.create({
   },
 });
 
-export default function Toolbar() {
+export interface ToolbarProps
+  extends Pick<BreadcrumbProps, "project" | "thread"> {}
+
+export default function Toolbar({ project, thread }: ToolbarProps) {
   return (
     <HStack
       align="center"
@@ -43,7 +47,7 @@ export default function Toolbar() {
       xstyle={styles.toolbar}
       data-slot="toolbar"
     >
-      <Breadcrumb />
+      <Breadcrumb project={project} thread={thread} />
       <HStack align="center" gap={6} xstyle={styles.tabGroup}>
         <SurfaceTabs />
       </HStack>

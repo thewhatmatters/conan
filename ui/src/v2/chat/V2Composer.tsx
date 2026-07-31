@@ -30,6 +30,7 @@ import PinsDrawer from "./composer/PinsDrawer.tsx";
 import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
 import EffortChip from "./composer/EffortChip.tsx";
+import PermissionModeChip from "./composer/PermissionModeChip.tsx";
 import RichInput from "./composer/RichInput.tsx";
 
 const styles = stylex.create({
@@ -87,6 +88,7 @@ export default function V2Composer({
     activeThread?.model ?? undefined,
   );
   const [effort, setEffort] = useState(activeThread?.effort ?? "");
+  const [permissionMode, setPermissionMode] = useState("");
   const threadKey = activeThread?.key ?? null;
   const threadModel = activeThread?.model ?? undefined;
   const threadEffort = activeThread?.effort ?? "";
@@ -94,6 +96,7 @@ export default function V2Composer({
     setProviderId(threadProvider);
     setModel(threadModel);
     setEffort(threadEffort);
+    setPermissionMode("");
     // Only the SELECTION changing resets the config — the provider/model/effort
     // ride along because they are properties of that selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,6 +128,7 @@ export default function V2Composer({
           // Undefined, never "" — an empty string would be a real `-m ""`.
           model,
           effort: effort || undefined,
+          permissionMode: permissionMode || undefined,
           // Continue the saved conversation. Already gated upstream on the
           // history actually reconstructing, so this is never a dead id.
           resume: resumeSessionId ?? undefined,
@@ -142,6 +146,7 @@ export default function V2Composer({
       effort,
       model,
       providerId,
+      permissionMode,
       resumeSessionId,
       send,
     ],
@@ -211,6 +216,7 @@ export default function V2Composer({
               // Effort ids are per-provider vocabulary — carrying one across a
               // provider switch would send a mode the new driver never defined.
               if (nextProvider !== providerId) setEffort("");
+              if (nextProvider !== providerId) setPermissionMode("");
             }}
           />
           <EffortChip
@@ -219,6 +225,14 @@ export default function V2Composer({
             effort={effort}
             onEffortSelect={setEffort}
           />
+          {!locked ? (
+            <PermissionModeChip
+              providers={providers}
+              activeProviderId={providerId}
+              permissionMode={permissionMode}
+              onPermissionModeSelect={setPermissionMode}
+            />
+          ) : null}
         </>
       }
       input={

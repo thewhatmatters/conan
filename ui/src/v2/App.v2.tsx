@@ -62,6 +62,9 @@ import {
 import type { ActiveThread, V2Provider } from "./lib/types.ts";
 import type { ProjectGroup, ProjectTreeProps } from "./components/ProjectTree.tsx";
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
+import { pillOf, useV2ThreadState } from "./lib/useV2ThreadState.ts";
+import { writeClipboardText } from "./lib/writeClipboardText.ts";
+import { apiBase } from "../lib/gateway.ts";
 
 /**
  * `xstyle` is Astryx's per-component style escape hatch, and the reason this app
@@ -100,22 +103,81 @@ function asProvider(value: string | null | undefined): V2Provider {
 const UNTITLED = "New chat";
 const NO_PREVIEW = "No messages yet";
 
-function toRow(thread: V2SavedThread): ThreadRowProps {
-  return {
-    // The session id IS the selection key — stable across reloads, and the
-    // same id the reopen descriptor resumes on.
-    id: thread.sessionId,
-    title: thread.title ?? UNTITLED,
-    subtitle: thread.lastMessage ?? NO_PREVIEW,
-    provider: asProvider(thread.provider),
-  };
+interface V2Draft {
+  id: string;
+  projectId: string;
 }
 
 export default function AppV2() {
   const config = useGatewayConfig();
   const token = config?.token ?? null;
-  const { projects, loaded, error } = useV2Projects(token);
+  const { projects, loaded, error, refresh } = useV2Projects(token);
   const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
+  const [drafts, setDrafts] = useState<V2Draft[]>([]);
+  const { states, reportState } = useV2ThreadState();
+
+  const copyText = useCallback((value: string) => {
+    void writeClipboardText(value);
+  }, []);
+
+  const newThreadIn = useCallback(
+    (projectId: string) => {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      if (!project) return;
+      const existing = drafts.find((draft) => draft.projectId === projectId);
+      const id = existing?.id ?? `draft-${crypto.randomUUID()}`;
+      if (!existing) setDrafts((current) => [...current, { id, projectId }]);
+      setActiveThread({
+        key: id,
+        cwd: project.path,
+        projectId,
+        projectName: project.name,
+        provider: "claude",
+        title: UNTITLED,
+      });
+    },
+    [drafts, projects],
+  );
+
+  const deleteThread = useCallback(
+    async (row: ThreadRowProps) => {
+      const id = row.id;
+      if (!id) return;
+      if (id.startsWith("draft-")) {
+        setDrafts((current) => current.filter((draft) => draft.id !== id));
+      } else if (token) {
+        await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { "x-conan-token": token },
+        });
+        await refresh();
+      }
+      setActiveThread((current) => (current?.key === id ? null : current));
+    },
+    [refresh, token],
+  );
+
+  const renameThread = useCallback(
+    async (row: ThreadRowProps) => {
+      if (!row.id || row.id.startsWith("draft-") || !token) return;
+      const id = row.id;
+      const title = window.prompt("Rename thread", row.title);
+      if (title == null) return;
+      await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: {
+          "x-conan-token": token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title }),
+      });
+      setActiveThread((current) =>
+        current?.key === id ? { ...current, title: title || UNTITLED } : current,
+      );
+      await refresh();
+    },
+    [refresh, token],
+  );
 
   // Presentational shape for the sidebar. Groups open by default: the gateway
   // already returns projects newest-activity-first, so the top of the tree is
@@ -126,9 +188,47 @@ export default function AppV2() {
         id: p.id,
         name: p.name,
         isExpanded: true,
-        threads: p.threads.map(toRow),
+        onNewThread: () => newThreadIn(p.id),
+        threads: [
+          ...drafts
+            .filter((draft) => draft.projectId === p.id)
+            .map((draft): ThreadRowProps => ({
+              id: draft.id,
+              title: UNTITLED,
+              subtitle: NO_PREVIEW,
+              provider: "claude",
+              status: pillOf(states[draft.id]),
+              onNewThread: () => newThreadIn(p.id),
+              onRename: null,
+              onCopyPath: null,
+              onCopyId: null,
+              onDelete: () =>
+                void deleteThread({
+                  id: draft.id,
+                  title: UNTITLED,
+                  subtitle: NO_PREVIEW,
+                }),
+            })),
+          ...p.threads.map((thread): ThreadRowProps => {
+            const row: ThreadRowProps = {
+              id: thread.sessionId,
+              title: thread.title ?? UNTITLED,
+              subtitle: thread.lastMessage ?? NO_PREVIEW,
+              provider: asProvider(thread.provider),
+              status: pillOf(states[thread.sessionId]),
+            };
+            return {
+              ...row,
+              onNewThread: () => newThreadIn(p.id),
+              onRename: () => void renameThread(row),
+              onCopyPath: () => copyText(thread.cwd || p.path),
+              onCopyId: () => copyText(thread.sessionId),
+              onDelete: () => void deleteThread(row),
+            };
+          }),
+        ],
       })),
-    [projects],
+    [copyText, deleteThread, drafts, newThreadIn, projects, renameThread, states],
   );
 
   // sessionId → its project + row, so a click can build the FULL reopen
@@ -152,6 +252,13 @@ export default function AppV2() {
     : loaded
       ? "empty"
       : "loading";
+
+  const onActiveState = useCallback(
+    (state: Parameters<typeof reportState>[1]) => {
+      if (activeThread) reportState(activeThread.key, state);
+    },
+    [activeThread?.key, reportState],
+  );
 
   const onSelectThread = useCallback(
     (row: ThreadRowProps, projectName: string) => {
@@ -203,7 +310,10 @@ export default function AppV2() {
       xstyle={styles.shell}
       content={
         <VStack height="100%" gap={0} data-slot="main">
-          <Toolbar />
+          <Toolbar
+            project={activeThread?.projectName ?? "Conan"}
+            thread={activeThread?.title ?? "Select a thread"}
+          />
           <VStack gap={0} xstyle={styles.well}>
             <SecondaryBar />
             {/* Keyed by the selection: one useV2Chat per well (docs §9 gotcha
@@ -214,6 +324,7 @@ export default function AppV2() {
               key={activeThread?.key ?? "no-thread"}
               token={token}
               activeThread={activeThread}
+              onState={activeThread ? onActiveState : undefined}
             />
           </VStack>
         </VStack>

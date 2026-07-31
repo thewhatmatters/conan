@@ -54,7 +54,7 @@ const PROJECTS = [
 
 /** Stub only the routes the shell reads; anything else 404s honestly. */
 function stubGateway(projects: unknown = PROJECTS) {
-  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     const body = (data: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
@@ -193,7 +193,7 @@ describe("AppV2 live projects (US-501)", () => {
   });
 
   it("selecting a thread opens it — the row goes current and the chat follows", async () => {
-    stubGateway();
+    const fetchMock = stubGateway();
     render(<AppV2 />);
 
     const row = await screen.findByRole("button", {
@@ -206,14 +206,82 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(row);
 
     expect(row).toHaveAttribute("aria-current", "page");
-    // Transcript reconstruction is stubbed `found: false`, so the well states
-    // the honest degrade instead of implying the history is loaded.
+    expect(screen.getAllByText("conan")).toHaveLength(2);
+    expect(screen.getAllByText("Analyze my project").length).toBeGreaterThan(1);
+    // The selected session id drives the history request; this is the durable
+    // proof the chat followed the row rather than merely repainting selection.
     await waitFor(() =>
       expect(
-        screen.getByText(
-          "This thread's history couldn't be found — sending starts a fresh session.",
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).endsWith("/api/agent/threads/s-analyze/transcript"),
         ),
-      ).toBeInTheDocument(),
+      ).toBe(true),
+    );
+  });
+
+  it("creates one reusable draft in the selected project", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "New chat in conan" }));
+    expect(screen.getByRole("button", { name: "New chat: No messages yet" })).toBeInTheDocument();
+    expect(screen.getAllByText("New chat").length).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat in conan" }));
+    expect(screen.getAllByRole("button", { name: "New chat: No messages yet" })).toHaveLength(1);
+  });
+
+  it("exposes the saved-thread kebab without nesting it in the select target", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    const row = await screen.findByRole("button", {
+      name: "Analyze my project: Run serverless code...",
+    });
+    const menu = screen.getByRole("button", { name: "Actions for Analyze my project" });
+    expect(row.contains(menu)).toBe(false);
+    expect(row.parentElement?.contains(menu)).toBe(true);
+  });
+
+  it("round-trips rename through the existing thread route", async () => {
+    const fetchMock = stubGateway();
+    vi.spyOn(window, "prompt").mockReturnValue("Renamed thread");
+    render(<AppV2 />);
+
+    const actions = await screen.findByRole("button", {
+      name: "Actions for Analyze my project",
+    });
+    fireEvent.click(actions);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/api/agent/threads/s-analyze") &&
+            (init as RequestInit | undefined)?.method === "PATCH",
+        ),
+      ).toBe(true),
+    );
+
+  });
+
+  it("round-trips delete through the existing thread route", async () => {
+    const fetchMock = stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/api/agent/threads/s-analyze") &&
+            (init as RequestInit | undefined)?.method === "DELETE",
+        ),
+      ).toBe(true),
     );
   });
 

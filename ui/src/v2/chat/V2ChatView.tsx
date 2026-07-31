@@ -8,7 +8,7 @@
  * US-501: a selected thread REOPENS — its saved transcript is restored above
  * the live items and the next turn resumes that session.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Text } from "@astryxdesign/core/Text";
@@ -18,12 +18,18 @@ import { useV2ThreadHistory } from "../lib/useV2ThreadHistory.ts";
 import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
+import V2ApprovalPanel from "./V2ApprovalPanel.tsx";
 
 export interface V2ChatViewProps {
   /** Gateway auth token; null until /api/config resolves — no socket then. */
   token: string | null;
   /** Sidebar selection; null until the user picks a thread. */
   activeThread: ActiveThread | null;
+  onState?: (state: {
+    status: "connecting" | "open" | "closed";
+    busy: boolean;
+    awaitingApproval: boolean;
+  }) => void;
 }
 
 const styles = stylex.create({
@@ -42,14 +48,33 @@ const styles = stylex.create({
   },
 });
 
-export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
+export default function V2ChatView({ token, activeThread, onState }: V2ChatViewProps) {
   // No selection → no socket. Opening /ws/agent for a well that has nothing to
   // chat with holds an agent session open for nothing, and (because App.v2
   // keys this view by the selection) the first click would tear that socket
   // down mid-handshake — a "closed before the connection is established"
   // warning in the console for no gain.
-  const { items: live, send, status, busy, interrupt } = useV2Chat(
-    activeThread ? token : null,
+  const {
+    items: live,
+    send,
+    status,
+    busy,
+    awaitingApproval,
+    pendingApproval,
+    pendingApprovals,
+    respondToApproval,
+    interrupt,
+  } = useV2Chat(activeThread ? token : null);
+  useEffect(() => {
+    if (activeThread) onState?.({ status, busy, awaitingApproval });
+  }, [activeThread, awaitingApproval, busy, onState, status]);
+  useEffect(
+    () => () => {
+      if (activeThread) {
+        onState?.({ status: "closed", busy: false, awaitingApproval: false });
+      }
+    },
+    [activeThread?.key, onState],
   );
   const history = useV2ThreadHistory(token, activeThread?.sessionId ?? null);
   // Restored turns first, then this run's. The live socket never replays what
@@ -85,25 +110,33 @@ export default function V2ChatView({ token, activeThread }: V2ChatViewProps) {
       }
       composer={
         <VStack gap={0} xstyle={styles.measure}>
-          <V2Composer
-            activeThread={activeThread}
-            token={token}
-            busy={busy}
-            // Only pass --resume when the history actually reconstructed; a
-            // missing JSONL resumes nothing and would fail the launch.
-            resumeSessionId={history.resumeSessionId}
-            // Provider/model identify the session and lock after the first turn.
-            // A REOPENED thread is locked from the start — the gateway
-            // relaunches it on its saved provider regardless of the chip.
-            // Effort is deliberately separate and remains a per-turn choice.
-            locked={
-              history.resumeSessionId != null ||
-              items.some((item) => item.role === "user")
-            }
-            disabled={status !== "open" || !token}
-            send={send}
-            interrupt={interrupt}
-          />
+          {pendingApproval ? (
+            <V2ApprovalPanel
+              approval={pendingApproval}
+              count={pendingApprovals.length}
+              respond={respondToApproval}
+            />
+          ) : (
+            <V2Composer
+              activeThread={activeThread}
+              token={token}
+              busy={busy}
+              // Only pass --resume when the history actually reconstructed; a
+              // missing JSONL resumes nothing and would fail the launch.
+              resumeSessionId={history.resumeSessionId}
+              // Provider/model identify the session and lock after the first turn.
+              // A REOPENED thread is locked from the start — the gateway
+              // relaunches it on its saved provider regardless of the chip.
+              // Effort is deliberately separate and remains a per-turn choice.
+              locked={
+                history.resumeSessionId != null ||
+                items.some((item) => item.role === "user")
+              }
+              disabled={status !== "open" || !token}
+              send={send}
+              interrupt={interrupt}
+            />
+          )}
         </VStack>
       }
     >

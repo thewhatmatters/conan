@@ -39,6 +39,7 @@ export interface ProjectGroup {
   name: string;
   isExpanded?: boolean;
   threads?: ThreadRowProps[];
+  onNewThread?: () => void;
 }
 
 export interface ProjectTreeProps {
@@ -72,6 +73,15 @@ const styles = stylex.create({
   groupInset: {
     paddingInlineEnd: "var(--conan-space-3)",
   },
+  groupHeader: {
+    "--project-compose-opacity": 0,
+    ":hover": {
+      "--project-compose-opacity": 1,
+    },
+    ":focus-within": {
+      "--project-compose-opacity": 1,
+    },
+  },
   // The fixed trailing lane. Present in every row; sometimes invisible.
   actionSlot: {
     alignItems: "center",
@@ -90,6 +100,13 @@ const styles = stylex.create({
   },
   actionSlotHidden: {
     opacity: 0,
+  },
+  composeAction: {
+    opacity: "var(--project-compose-opacity)",
+    transition: "opacity var(--conan-duration-fast) ease",
+    "@media (prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
   },
   // The section label is the one place in the sidebar RJ-0 goes to full white
   // (#FFFFFF, a step above `primary`) — it anchors the whole tree. That tone is
@@ -138,7 +155,7 @@ const PLACEHOLDER_GROUPS: ProjectGroup[] = [
         id: "analyze",
         title: "Analyze my project",
         subtitle: "Run serverless code...",
-        isRunning: true,
+        status: "working",
         provider: "claude",
       },
       {
@@ -188,6 +205,7 @@ function Group({
   threads = [],
   selectedKey,
   onSelectThread,
+  onNewThread,
 }: ProjectGroup & {
   selectedKey?: string | null;
   onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
@@ -197,7 +215,11 @@ function Group({
   const FolderIcon = expanded ? FolderOpen : Folder;
   return (
     <VStack gap={0} data-slot="project-group">
-      <HStack align="center">
+      <HStack
+        align="center"
+        data-slot="project-group-header"
+        {...stylex.props(styles.groupHeader)}
+      >
         <button
           type="button"
           aria-expanded={expanded}
@@ -220,13 +242,19 @@ function Group({
             <Text color="secondary">{name}</Text>
           </HStack>
         </button>
-        <HStack
-          align="center"
-          hAlign="center"
-          xstyle={[styles.actionSlot, styles.actionSlotHidden]}
+        <button
+          type="button"
+          aria-label={`New chat in ${name}`}
+          onClick={onNewThread}
+          data-slot="project-compose-action"
+          {...stylex.props(
+            styles.actionSlot,
+            styles.composeAction,
+            !onNewThread && styles.actionSlotHidden,
+          )}
         >
           <SquarePen size={ICON} aria-hidden />
-        </HStack>
+        </button>
       </HStack>
       {expanded ? (
         threads.length > 0 ? (

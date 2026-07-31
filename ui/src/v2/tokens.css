@@ -103,6 +103,10 @@
    * reads as the row behind it. */
   --conan-color-accent: var(--color-accent); /* #EBEBEB · row indicator */
   --conan-color-status-running: var(--color-success); /* #9FE59B · status dot */
+  --conan-color-status-working: var(--color-accent);
+  --conan-color-status-awaiting: var(--color-warning);
+  --conan-color-status-ready: var(--color-success);
+  --conan-color-status-idle: var(--color-text-disabled);
   --conan-color-status-ring: #292929; /* RJ-0 literal · dot ring */
   --conan-color-success: var(--color-success);
   --conan-color-warning: var(--color-warning);
@@ -188,12 +192,12 @@
   --conan-secondary-bar-height: 64px; /* LN-0 (16 + 32 + 16) */
 
   --conan-control-height: var(--size-element-md); /* 32px · every control */
-  /* The chat column's measure. S5-0 draws the composer at 672px, and the
+  /* The chat column's measure. The composer is 800px wide, and the
    * transcript shares it so message text and the composer sit on ONE axis —
    * a full-bleed 1200px+ line is unreadable and puts the send button a screen
    * away from the caret. The frosted dock still spans the well; only the
    * CONTENT is constrained. */
-  --conan-chat-measure: 672px;
+  --conan-chat-measure: 800px;
   /* S5-0's input region (TS-0) is min-height 84px — enough to compose a few
    * lines before it grows. Without it the input collapses to one 30px row and
    * the composer reads cramped. */
@@ -213,6 +217,39 @@
   --conan-window-control-size: 16px; /* RM-0 / RN-0 / RO-0 */
 
   --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
+}
+
+@keyframes conan-status-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+[data-thread-status="working"],
+[data-thread-status="awaiting"] {
+  animation: conan-status-pulse 1.5s ease-in-out infinite;
+}
+
+[data-slot="thread-actions"] {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+[data-slot="thread-row"]:hover [data-slot="thread-actions"],
+[data-slot="thread-row"]:focus-within [data-slot="thread-actions"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-thread-status="working"],
+  [data-thread-status="awaiting"] {
+    animation: none;
+  }
+
+  [data-slot="thread-actions"] {
+    transition: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------

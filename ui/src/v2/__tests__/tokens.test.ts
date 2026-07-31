@@ -55,4 +55,8 @@ describe("v2 tokens.css", () => {
       expect(css, `${token} is missing from tokens.css`).toContain(`${token}:`);
     }
   });
+
+  it("keeps the transcript and composer on the 800px chat measure", () => {
+    expect(injectedCss()).toContain("--conan-chat-measure: 800px");
+  });
 });
