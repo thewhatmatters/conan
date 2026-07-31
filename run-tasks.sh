@@ -83,7 +83,7 @@ for ((i = 1; i <= MAX_ITER; i++)); do
   fi
   echo "── iteration $i ──────────────────────────────" >&2
   printf '[%s] iteration %d → %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$i" "$(target)" >> "$PROGRESS"
-  printf '%s\n' "$PROMPT" | $AGENT_CMD
+  printf '%s\n' "$PROMPT" | $AGENT_CMD || true
 done
 
 echo "⚠ hit MAX_ITER=$MAX_ITER without all stories passing" >&2
