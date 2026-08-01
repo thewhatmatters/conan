@@ -3,6 +3,49 @@
 Deferred UI/UX polish surfaced during dogfooding — not blocking, batched for a
 future "UI round". Newest first.
 
+## No thread/project navigation below 960px
+
+**Raised:** 2026-08-01, verifying US-506's narrow-shell fix (`dd0f8f0`) on the
+isolated QA stack. Not a regression — the fix is a strict improvement on the
+~207px chat column it replaced — but it introduces a gap that is easy to
+rediscover as a bug.
+
+**What happens.** `ui/src/v2/tokens.css:257` sets `display: none` on
+`[data-slot="sidebar-panel"]` under `@media (max-width: 959px)`, mirroring
+`--conan-shell-min-width: 960px`. That removes the rail from the layout **and
+from the accessibility tree**. There is no toggle, no overlay drawer, and no
+other affordance that brings it back.
+
+So below 960px a user can keep working in the thread they already have open,
+but cannot switch threads, start a new one, or reach a project. For a screen
+reader the navigation is not merely off-screen — it is absent.
+
+**Measured** at 480px on `dd0f8f0`: 0 visible thread rows, and the 13 visible
+controls are `Back to Conan · Close Browser/Terminal/Diff tab · Surface ·
+Actions menu · Open menu · Commit and Push menu · Scroll to bottom ·
+provider·model · effort · permission mode · Send`. None reveals the sidebar;
+`Back to Conan` was tried and does not.
+
+**Three ways to close it**, in ascending cost:
+
+1. **Explicit decision that v2 is desktop-only below 960px** — cheapest, and
+   legitimate for a Tauri desktop app. Needs to be written down here and in
+   `docs/v2-astryx-redesign.md`, not just assumed.
+2. **A rail toggle in the toolbar** — smallest real UI. Reuses the existing
+   sidebar; needs a persisted open/closed state and a visible focus target.
+3. **An overlay drawer** — the conventional narrow-width pattern, and the most
+   work: focus trap, dismissal (Escape / scrim / route change), scroll lock,
+   and its own browser pass. Astryx ships `Dialog` and `Overlay`.
+
+Whichever is chosen, it is a **new interaction surface**, which is why it was
+deliberately kept out of `dd0f8f0` rather than improvised inside a CSS fix.
+
+**Related:** US-506 stays `passes: false` in `prd-v2-p2d-shell-live.json` for a
+different reason (US-504/US-505 are deferred), so a green US-506 later will not
+imply this gap is closed.
+
+**Size:** S for option 1, S/M for option 2, M for option 3.
+
 ## Edit/Write approvals show the path, never the change
 
 **Raised:** 2026-07-31, during the US-604 approval-card verification on the
