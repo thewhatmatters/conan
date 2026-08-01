@@ -108,10 +108,18 @@ solved twice in this repo, with settled policy:
    primitive, so build it as a shared v2 component rather than inlining it in
    the approval card. This is the bulk of the effort.
 
-**Open product decisions (Randy):** default expanded vs. collapsed-behind-a-
-summary; whether the action buttons stay pinned when the diff is long; whether
-any path/content redaction is wanted at all; v2-only or v1 too. See the
-2026-07-31 thread in #conan.
+**Settled 2026-08-01** (#conan thread; supersedes the open questions that stood
+here):
+
+1. **Collapsed by default** — a 12-row preview, then `Show full diff (+N −M)`.
+2. **Action buttons stay pinned.** Approve/Decline hold their position whether
+   the diff is collapsed or expanded; the diff region scrolls inside the card
+   rather than pushing the buttons down the page.
+3. **No redaction.** Full paths and full content — this is a local loopback UI
+   and a truncated path is the defect being fixed.
+4. **v2 only.** v1 (`ChatPane.tsx:2551`) deliberately keeps the bare-path card;
+   v1 is frozen at parity and is not receiving the diff work. This section's
+   heading reads as product-wide, so do not treat a green v2 as v1 also fixed.
 
 **Size:** M — mostly the Astryx diff primitive, not the plumbing.
 
