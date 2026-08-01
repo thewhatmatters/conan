@@ -22,9 +22,12 @@ export default mergeConfig(
       // so `npm run typecheck` sees the same symbols the runner does.
       globals: false,
       setupFiles: ["./src/test/setup.ts"],
-      // v2 only for now. v1 has no tests; widening this later is a one-line
-      // change, and until then a stray v1 spec won't silently go unrun.
-      include: ["src/v2/__tests__/**/*.test.{ts,tsx}"],
+      // Component suites for both mounted shells. Keeping the roots explicit
+      // means a misplaced spec cannot silently look covered.
+      include: [
+        "src/components/__tests__/**/*.test.{ts,tsx}",
+        "src/v2/__tests__/**/*.test.{ts,tsx}",
+      ],
       // Real CSS processing: `tokens.test.ts` asserts that the v2 entry actually
       // injects `tokens.css`, which only happens when Vitest handles CSS instead
       // of stubbing it out.

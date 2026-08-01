@@ -268,6 +268,14 @@ export default function ChatSurface({
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(
     null,
   );
+  /** Chat pending a destructive close confirmation (WHA-65). Live panes and
+   *  saved history both delete their persisted row, so every close-X routes
+   *  through the same guard instead of making identical controls disagree. */
+  const [closeTarget, setCloseTarget] = useState<
+    | { kind: "live"; id: string; title: string; busy: boolean }
+    | { kind: "saved"; sessionId: string; title: string }
+    | null
+  >(null);
   /** Thread pending a rename (sidebar context menu). Null = no dialog. */
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string } | null>(
     null,
@@ -551,6 +559,37 @@ export default function ChatSurface({
     });
   };
 
+  const requestCloseThread = (id: string) => {
+    const thread = threads.find((t) => t.id === id);
+    if (!thread) return;
+    const sessionId = states[id]?.sessionId ?? thread.resume?.sessionId;
+    const persistedTitle = sessionId
+      ? saved[thread.projectId]?.find((s) => s.sessionId === sessionId)?.title
+      : null;
+    setCloseTarget({
+      kind: "live",
+      id,
+      title:
+        states[id]?.title ?? persistedTitle ?? thread.resume?.title ?? "New chat",
+      busy: states[id]?.busy === true,
+    });
+  };
+
+  const requestCloseSavedThread = (thread: SavedThread) => {
+    setCloseTarget({
+      kind: "saved",
+      sessionId: thread.sessionId,
+      title: thread.title ?? "New chat",
+    });
+  };
+
+  const confirmCloseThread = () => {
+    if (!closeTarget) return;
+    if (closeTarget.kind === "live") closeThread(closeTarget.id);
+    else void deleteSavedRow(closeTarget.sessionId);
+    setCloseTarget(null);
+  };
+
   /** Remove a project from Conan (metadata-only — the folder on disk is never
    *  touched). Drops its open live panes, then its sidebar/DB rows; the
    *  gateway cascades threads/actions and prunes clean managed worktrees. */
@@ -598,7 +637,7 @@ export default function ChatSurface({
   useEffect(() => {
     const onNew = () => newThreadSomewhere();
     const onClose = () => {
-      if (activeId) closeThread(activeId);
+      if (activeId) requestCloseThread(activeId);
     };
     window.addEventListener("conan:new-chat", onNew);
     window.addEventListener("conan:close-chat", onClose);
@@ -916,7 +955,7 @@ export default function ChatSurface({
                                 }
                                 onCopyPath={path ? () => copyText(path) : null}
                                 onCopyId={sid ? () => copyText(sid) : null}
-                                onDelete={() => closeThread(t.id)}
+                                onDelete={() => requestCloseThread(t.id)}
                               />
                             );
                           })}
@@ -937,7 +976,7 @@ export default function ChatSurface({
                               }}
                               onCopyPath={() => copyText(s.cwd)}
                               onCopyId={() => copyText(s.sessionId)}
-                              onDelete={() => void deleteSavedRow(s.sessionId)}
+                              onDelete={() => requestCloseSavedThread(s)}
                             />
                           ))}
                           {hiddenCount > 0 && (
@@ -1084,6 +1123,41 @@ export default function ChatSurface({
               className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Remove
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={closeTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setCloseTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Close “{closeTarget?.title}”?</DialogTitle>
+            <DialogDescription>
+              {closeTarget?.kind === "live" && closeTarget.busy
+                ? "The agent is still working. Closing this chat stops the current run and removes it from Conan."
+                : "This removes the chat from Conan. This action can’t be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setCloseTarget(null)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmCloseThread}
+              className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              Close chat
             </button>
           </DialogFooter>
         </DialogContent>
