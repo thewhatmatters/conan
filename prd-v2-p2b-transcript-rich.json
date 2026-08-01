@@ -84,10 +84,14 @@
     {
       "item": "Plan region scrolls at 320px with no affordance",
       "detail": "A long plan is silently cut with no fade or visible scrollbar, so it can be approved having read only the top third."
-    },
+    }
+  ],
+  "resolvedFollowUps": [
     {
       "item": "Defect 2 — Edit/Write approvals show only the file path",
-      "detail": "Top of docs/ui-improvements-backlog.md. permissionDetail (src/agent/claude.ts) returns the target and the raw tool input still does not ride the permission-request event (src/agent/driver.ts). Six UI/UX decisions outstanding."
+      "resolvedAt": "2026-08-01",
+      "commit": "a5afdad",
+      "note": "Shipped as a5afdad on loop/conan-v2-astryx: the permission-request event now carries the raw tool `input` (src/agent/driver.ts, src/agent/claude.ts) and V2ApprovalPanel renders Edit/Write as a real diff via V2DiffView. The six UI/UX decisions this entry called outstanding were settled in #conan on 2026-08-01 and are recorded in docs/ui-improvements-backlog.md. Linear WHA-7 / WHA-57."
     }
   ]
 }
