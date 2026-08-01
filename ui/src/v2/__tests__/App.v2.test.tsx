@@ -17,11 +17,23 @@
  * cold-boot behaviour (no fetch resolves), which is why it still has to render
  * every region.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AppV2 from "../App.v2.tsx";
 
 const CONFIG = { token: "tok", cwd: "/repo/conan", port: 3800 };
+
+beforeAll(() => {
+  window.scrollTo = vi.fn();
+  HTMLDialogElement.prototype.showModal = vi.fn(function (
+    this: HTMLDialogElement,
+  ) {
+    this.setAttribute("open", "");
+  });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  });
+});
 
 const PROJECTS = [
   {
@@ -53,14 +65,23 @@ const PROJECTS = [
 ];
 
 /** Stub only the routes the shell reads; anything else 404s honestly. */
-function stubGateway(projects: unknown = PROJECTS) {
-  const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+function stubGateway(projects: unknown = PROJECTS, patchOk = true) {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = (data: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
     if (url.includes("/api/config")) return body(CONFIG);
     if (url.includes("/api/agent/projects")) return body({ projects });
     if (url.includes("/transcript")) return body({ found: false, items: [] });
+    if (init?.method === "PATCH") {
+      return patchOk
+        ? body({ ok: true })
+        : Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({}),
+          } as Response);
+    }
     return Promise.resolve({
       ok: false,
       status: 404,
@@ -243,9 +264,28 @@ describe("AppV2 live projects (US-501)", () => {
     expect(row.parentElement?.contains(menu)).toBe(true);
   });
 
+  it("keeps the thread kebab visibly anchored while its menu owns focus", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    const trigger = await screen.findByRole("button", {
+      name: "Actions for Analyze my project",
+    });
+    const actions = trigger.closest('[data-slot="thread-actions"]');
+    expect(actions).not.toHaveAttribute("data-menu-open");
+
+    fireEvent.click(trigger);
+
+    const firstItem = await screen.findByRole("menuitem", { name: "New thread" });
+    await waitFor(() => expect(firstItem).toHaveFocus());
+    fireEvent.keyDown(firstItem, { key: "ArrowDown" });
+
+    expect(screen.getByRole("menuitem", { name: "Rename thread" })).toHaveFocus();
+    expect(actions).toHaveAttribute("data-menu-open", "true");
+  });
+
   it("round-trips rename through the existing thread route", async () => {
     const fetchMock = stubGateway();
-    vi.spyOn(window, "prompt").mockReturnValue("Renamed thread");
     render(<AppV2 />);
 
     const actions = await screen.findByRole("button", {
@@ -253,6 +293,21 @@ describe("AppV2 live projects (US-501)", () => {
     });
     fireEvent.click(actions);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Rename thread" });
+    const input = screen.getByRole("textbox", { name: "Thread title" });
+    expect(input).toHaveValue("Analyze my project");
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+      expect(input).toHaveProperty("selectionStart", 0);
+      expect(input).toHaveProperty("selectionEnd", "Analyze my project".length);
+    });
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Renamed thread" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() =>
       expect(
@@ -263,7 +318,51 @@ describe("AppV2 live projects (US-501)", () => {
         ),
       ).toBe(true),
     );
+    expect(dialog).not.toBeInTheDocument();
+    const patchCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith("/api/agent/threads/s-analyze") &&
+        (init as RequestInit | undefined)?.method === "PATCH",
+    );
+    expect(JSON.parse(String((patchCall?.[1] as RequestInit).body))).toEqual({
+      title: "Renamed thread",
+    });
+  });
 
+  it("keeps a failed rename open with a recoverable inline error", async () => {
+    stubGateway(PROJECTS, false);
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
+    const input = await screen.findByRole("textbox", { name: "Thread title" });
+    fireEvent.change(input, { target: { value: "Still open" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Couldn't rename this thread. Try again."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Rename thread" })).toBeInTheDocument();
+    expect(input).toHaveValue("Still open");
+  });
+
+  it("cancels rename with Escape without sending a PATCH", async () => {
+    const fetchMock = stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rename thread" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(
+      fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "PATCH"),
+    ).toBe(false);
   });
 
   it("round-trips delete through the existing thread route", async () => {

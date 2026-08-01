@@ -237,8 +237,17 @@
 }
 
 [data-slot="thread-row"]:hover [data-slot="thread-actions"],
-[data-slot="thread-row"]:focus-within [data-slot="thread-actions"] {
+[data-slot="thread-row"]:focus-within [data-slot="thread-actions"],
+[data-slot="thread-actions"][data-menu-open="true"] {
   opacity: 1;
+}
+
+/* Astryx moves pointer focus into portalled menu items, so pointer and keyboard
+ * navigation share one visible highlight treatment. Keep this override scoped
+ * to the v2 theme and use the shell's existing interaction wash. */
+[data-astryx-theme="neutral"] [role="menuitem"]:hover,
+[data-astryx-theme="neutral"] [role="menuitem"]:focus {
+  background: var(--conan-wash-row-selected);
 }
 
 @media (prefers-reduced-motion: reduce) {

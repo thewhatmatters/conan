@@ -16,6 +16,7 @@
  * corner, which is why the avatar is the positioning context.
  */
 import * as stylex from "@stylexjs/stylex";
+import { useState } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -143,6 +144,8 @@ export default function ThreadRow({
   onCopyId,
   onDelete,
 }: ThreadRowProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   return (
     <HStack
       align="center"
@@ -190,9 +193,12 @@ export default function ThreadRow({
         <HStack
           xstyle={styles.menu}
           data-slot="thread-actions"
+          data-menu-open={isMenuOpen ? "true" : undefined}
           onClick={(event) => event.stopPropagation()}
         >
           <DropdownMenu
+            isMenuOpen={isMenuOpen}
+            onOpenChange={setIsMenuOpen}
             button={{
               label: `Actions for ${title}`,
               icon: <MoreVertical size={16} aria-hidden />,

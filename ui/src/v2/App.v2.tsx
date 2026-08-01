@@ -52,6 +52,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
 import SecondaryBar from "./components/SecondaryBar.tsx";
+import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
 import {
@@ -114,6 +115,7 @@ export default function AppV2() {
   const { projects, loaded, error, refresh } = useV2Projects(token);
   const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
   const [drafts, setDrafts] = useState<V2Draft[]>([]);
+  const [renameTarget, setRenameTarget] = useState<ThreadRowProps | null>(null);
   const { states, reportState } = useV2ThreadState();
 
   const copyText = useCallback((value: string) => {
@@ -157,26 +159,30 @@ export default function AppV2() {
     [refresh, token],
   );
 
-  const renameThread = useCallback(
-    async (row: ThreadRowProps) => {
-      if (!row.id || row.id.startsWith("draft-") || !token) return;
-      const id = row.id;
-      const title = window.prompt("Rename thread", row.title);
-      if (title == null) return;
-      await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: {
-          "x-conan-token": token,
-          "content-type": "application/json",
+  const saveThreadTitle = useCallback(
+    async (title: string) => {
+      const id = renameTarget?.id;
+      if (!id || id.startsWith("draft-") || !token) {
+        throw new Error("Thread is not renameable");
+      }
+      const response = await fetch(
+        apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "x-conan-token": token,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ title }),
         },
-        body: JSON.stringify({ title }),
-      });
+      );
+      if (!response.ok) throw new Error(`Rename failed (${response.status})`);
       setActiveThread((current) =>
-        current?.key === id ? { ...current, title: title || UNTITLED } : current,
+        current?.key === id ? { ...current, title } : current,
       );
       await refresh();
     },
-    [refresh, token],
+    [refresh, renameTarget?.id, token],
   );
 
   // Presentational shape for the sidebar. Groups open by default: the gateway
@@ -220,7 +226,7 @@ export default function AppV2() {
             return {
               ...row,
               onNewThread: () => newThreadIn(p.id),
-              onRename: () => void renameThread(row),
+              onRename: () => setRenameTarget(row),
               onCopyPath: () => copyText(thread.cwd || p.path),
               onCopyId: () => copyText(thread.sessionId),
               onDelete: () => void deleteThread(row),
@@ -228,7 +234,7 @@ export default function AppV2() {
           }),
         ],
       })),
-    [copyText, deleteThread, drafts, newThreadIn, projects, renameThread, states],
+    [copyText, deleteThread, drafts, newThreadIn, projects, states],
   );
 
   // sessionId → its project + row, so a click can build the FULL reopen
@@ -296,39 +302,51 @@ export default function AppV2() {
   );
 
   return (
-    <Layout
-      height="fill"
-      padding={0}
-      start={
-        <Sidebar
-          groups={groups}
-          emptyState={emptyState}
-          selectedKey={activeThread?.key ?? null}
-          onSelectThread={onSelectThread}
-        />
-      }
-      xstyle={styles.shell}
-      content={
-        <VStack height="100%" gap={0} data-slot="main">
-          <Toolbar
-            project={activeThread?.projectName ?? "Conan"}
-            thread={activeThread?.title ?? "Select a thread"}
+    <>
+      <Layout
+        height="fill"
+        padding={0}
+        start={
+          <Sidebar
+            groups={groups}
+            emptyState={emptyState}
+            selectedKey={activeThread?.key ?? null}
+            onSelectThread={onSelectThread}
           />
-          <VStack gap={0} xstyle={styles.well}>
-            <SecondaryBar />
-            {/* Keyed by the selection: one useV2Chat per well (docs §9 gotcha
-                2), so switching threads must tear the socket down and open the
-                new thread's session rather than replaying the old one's items
-                under a new descriptor. */}
-            <V2ChatView
-              key={activeThread?.key ?? "no-thread"}
-              token={token}
-              activeThread={activeThread}
-              onState={activeThread ? onActiveState : undefined}
+        }
+        xstyle={styles.shell}
+        content={
+          <VStack height="100%" gap={0} data-slot="main">
+            <Toolbar
+              project={activeThread?.projectName ?? "Conan"}
+              thread={activeThread?.title ?? "Select a thread"}
             />
+            <VStack gap={0} xstyle={styles.well}>
+              <SecondaryBar />
+              {/* Keyed by the selection: one useV2Chat per well (docs §9 gotcha
+                  2), so switching threads must tear the socket down and open the
+                  new thread's session rather than replaying the old one's items
+                  under a new descriptor. */}
+              <V2ChatView
+                key={activeThread?.key ?? "no-thread"}
+                token={token}
+                activeThread={activeThread}
+                onState={activeThread ? onActiveState : undefined}
+              />
+            </VStack>
           </VStack>
-        </VStack>
-      }
-    />
+        }
+      />
+      {renameTarget ? (
+        <RenameThreadDialog
+          isOpen
+          currentTitle={renameTarget.title}
+          onOpenChange={(open) => {
+            if (!open) setRenameTarget(null);
+          }}
+          onSave={saveThreadTitle}
+        />
+      ) : null}
+    </>
   );
 }
