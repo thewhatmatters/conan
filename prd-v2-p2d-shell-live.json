@@ -63,8 +63,8 @@
         "Browser-verify on a throwaway stack in dark mode"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Depends on US-501. v1 refs: ThreadToolbar breadcrumb, ChatSurface renameThread/deleteSavedRow/newThreadIn + the kebab menu we built. Astryx: Menu (`npx astryx component Menu --json`). Suggested skills: automate-browser."
+      "passes": true,
+      "notes": "Depends on US-501. v1 refs: ThreadToolbar breadcrumb, ChatSurface renameThread/deleteSavedRow/newThreadIn + the kebab menu we built. Astryx: Menu (`npx astryx component Menu --json`). Suggested skills: automate-browser. PASSES set 2026-08-01: shipped in af23281 (breadcrumb, new-chat, kebab) and completed by 8c8e420 (rename dialog replacing window.prompt). Verified live by Nash on :5230 — empty/whitespace disables Save, Enter issues a real PATCH with sidebar + breadcrumb updating, Esc/Cancel close with zero PATCHes, focus lands with the title selected and stays trapped in the native <dialog>, an injected 500 keeps the dialog open with aria-invalid and a resolving aria-describedby, draft rows stay non-renameable, clean at a 480px viewport, zero page errors. Randy approved visually."
     },
     {
       "id": "US-504",

@@ -1,0 +1,93 @@
+{
+  "project": "Conan",
+  "branchName": "loop/conan-v2-astryx",
+  "phase": "Phase 2b — Rich transcript + approval UI",
+  "generatedAt": "2026-08-01",
+  "sourcePrd": "docs/v2-astryx-redesign.md",
+  "reconstructed": "WRITTEN AFTER THE FACT. p2b shipped without a PRD file — docs/v2-astryx-redesign.md line 356 reserved the name `prd-v2-p2b-transcript-rich.json` and left it 'planned', so the work landed with its record living only in commit messages and docs/v2-p2b-checkpoint-2026-07-31.md. This file reconstructs that record from the commits and from Nash's live verification runs so the `passes` flags have somewhere to live. Story IDs are the ones actually used in the commits and channel history; where p2b's planned scope shipped WITHOUT a story ID, it is recorded as such rather than given an invented one. Nothing here is a plan for future work.",
+  "description": "Turn the p2a plain-text transcript into the real reading surface: fold adjacent tool activity into Astryx ChatToolCalls rollups, give messages timestamps and the AI-chat bubble treatment, and build the blocking approval card that a supervised turn stops on. Delivered on top of p2a's ChatLayout well; the gateway's permission seam already existed (v1's useAgentChat), so this is presentation plus one narrow gateway change to the ExitPlanMode detail payload.",
+  "designFile": {
+    "tool": "Paper",
+    "url": "https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/RJ-0",
+    "note": "docs/v2-astryx-redesign.md line 365 flagged that p2b/p2c needed their own Paper frame(s) or an explicit decision to go without. p2b went WITHOUT one — the transcript and approval card were built from the Astryx Chat kit's own patterns against RJ-0's tokens, not from a drawn frame. Recording that as the decision it turned out to be."
+  },
+  "conventions": {
+    "astryxOnly": "Astryx + ui/src/v2/tokens.css only; no shadcn/Radix/Tailwind/hex. v1 renders pixel-unchanged with the flag OFF.",
+    "reuseV1": "Reuse v1's data + handlers. The approval seam is v1's useAgentChat (pendingApproval / pendingApprovals / respondToApproval) surfaced through ui/src/v2/lib/useV2Chat.ts — no new socket protocol. react-markdown + remark-gfm were already dependencies (v1 ChatPane.tsx:30).",
+    "gatewayRule": "Approval UI cannot be verified from jsdom — the card only exists while a turn is blocked. Verify on a THROWAWAY stack with an isolated CONAN_DATA_DIR, driving a real PLAN-mode session: claude.ts passes --allow-dangerously-skip-permissions on every launch, so an ordinary tool call raises no approval. ExitPlanMode is the reliable trigger."
+  },
+  "userStories": [
+    {
+      "id": "US-601",
+      "title": "Rich transcript — tool rollups, timestamps, bubble treatment",
+      "description": "As a user, I want the transcript to read like a conversation with foldable tool activity, not a list of 'ran a tool' placeholders.",
+      "acceptanceCriteria": [
+        "Adjacent tool + approval items fold into one Astryx ChatToolCalls rollup with a per-call target and expandable Input/Result detail",
+        "User prose in a filled bubble; assistant prose unbubbled; both carry a ChatMessageMetadata timestamp",
+        "--conan-chat-measure constrains the transcript and composer to one axis",
+        "Astryx + tokens only; v1 untouched; typecheck + build + vitest pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Landed in af23281. Flag left FALSE deliberately: the rollups have unit coverage and were seen incidentally during the US-604 runs, but nobody has done a browser pass against this story's own criteria. Code shipped; behaviour unproven at the story level. Do not flip without a live pass."
+    },
+    {
+      "id": "US-604",
+      "title": "Blocking approval card for supervised turns",
+      "description": "As a user, I want a turn that needs my approval to stop and ask me in the chat surface, with enough context to decide.",
+      "acceptanceCriteria": [
+        "The card replaces the composer while a permission request is pending and restores it on decision",
+        "Plan-specific copy for ExitPlanMode; the four standard decisions otherwise; no session-widening on the plan card",
+        "Approving continues the SAME turn rather than starting a new one",
+        "The transcript records the resolution",
+        "The proposed plan is rendered INSIDE the card, not left in a collapsed tool group",
+        "Zero page errors; verified on a throwaway stack against a real plan-mode session"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Landed in af23281; completed by 611c894 (plan markdown rendered in the card, copy corrected from 'Review the plan above', aria-live added). VERIFIED LIVE by Nash on :3830/:5230 against an isolated CONAN_DATA_DIR: card in 21.5s, plan rendered as real markdown (6 headings / 7 paragraphs / 4 pre / 23 code), no JSON leak, composer swapped out, 'Proceed in build' restored the composer in 0.1s and the same turn continued into a genuine Write/Edit request, decline wrote 'Approval decline', zero page errors across three sessions."
+    },
+    {
+      "id": "US-605",
+      "title": "Permission-mode chip (capability-driven)",
+      "description": "As a user, I want to choose a permission mode before the first prompt, from the active provider's own vocabulary.",
+      "acceptanceCriteria": [
+        "Choices come only from the active provider's capabilities.permissionModes; no provider-name branching",
+        "A fresh session defaults to the provider's own default label without sending an override",
+        "Selecting Plan sends permissionMode through the existing AgentOpts seam",
+        "The chip clears on provider switch and disappears once the session locks"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Landed in af23281. Not in the original p2b scope — added because without it a plan-mode session could not be started from v2 at all, which is what made US-604 testable on real traffic. Verified live as part of the US-604 run (chip label Supervised -> Plan, options from capabilities)."
+    }
+  ],
+  "notDelivered": [
+    {
+      "item": "Markdown rendering across the transcript",
+      "note": "docs/v2-astryx-redesign.md line 356 lists markdown in p2b's scope. Only the approval card renders markdown (react-markdown in V2ApprovalPanel). Assistant prose still goes through ChatTokenizedText."
+    },
+    {
+      "item": "The fused activity spine",
+      "note": "Listed in p2b's scope at line 356. Not built. The transcript has tool rollups, not a spine."
+    },
+    {
+      "item": "Work-log rollups",
+      "note": "Listed in p2b's scope at line 356. Not built."
+    }
+  ],
+  "openFollowUps": [
+    {
+      "item": "Approval panel aria-live is inserted, not mutated",
+      "detail": "V2ChatView.tsx:113 swaps the composer OUT for the panel, so the live region is inserted rather than updated and screen readers likely never announce it; assertive+atomic would also read the whole plan. Wants a persistent polite status node plus a focus move. NOT screen-reader tested — mechanism and DOM evidence only."
+    },
+    {
+      "item": "Plan region scrolls at 320px with no affordance",
+      "detail": "A long plan is silently cut with no fade or visible scrollbar, so it can be approved having read only the top third."
+    },
+    {
+      "item": "Defect 2 — Edit/Write approvals show only the file path",
+      "detail": "Top of docs/ui-improvements-backlog.md. permissionDetail (src/agent/claude.ts) returns the target and the raw tool input still does not ride the permission-request event (src/agent/driver.ts). Six UI/UX decisions outstanding."
+    }
+  ]
+}

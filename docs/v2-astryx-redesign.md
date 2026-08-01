@@ -353,7 +353,7 @@ only after it lands.
 | PRD | Scope | Status |
 |---|---|---|
 | `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn) |
-| `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | planned |
+| `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | **PARTIAL** (2026-08-01; tool rollups + approval card + permission-mode chip shipped and the PRD written retroactively — markdown across the transcript, the activity spine and work-log rollups were NOT built, see the file's `notDelivered`) |
 | `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **DONE** (2026-07-31; US-301–305 assembled and browser-verified) |
 | `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
 | `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
