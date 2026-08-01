@@ -39,6 +39,11 @@ const AUTH_TOKEN = getAuthToken();
  * to WS connections (the root cause of CVE-2025-52882), so we validate Origin
  * ourselves. Defaults cover the gateway itself and the Vite dev server; extend
  * via CONAN_ALLOWED_ORIGINS (comma-separated).
+ *
+ * This list is no longer the whole rule: `isLoopbackOrigin` below also accepts
+ * any http(s) loopback origin, so a dev/preview stack on a non-5173 port works
+ * without configuration. The entries here still matter for the non-loopback
+ * `tauri://` schemes and for anything an operator adds explicitly.
  */
 function allowedOrigins(): Set<string> {
   const defaults = [
@@ -65,6 +70,50 @@ function allowedOrigins(): Set<string> {
 
 const ALLOWED = allowedOrigins();
 
+/**
+ * True for an `http(s)` origin whose host is loopback (WHA-8). The explicit list
+ * above pins the Vite dev origin to :5173, so every preview or review stack on
+ * any other port failed the upgrade — the page loaded (HTTP is proxied) but
+ * `/ws/agent` was refused and the UI painted "connection lost". That cost real
+ * debugging time more than once.
+ *
+ * Widening to *any* loopback port does not lower the CVE-2025-52882 floor. That
+ * attack is a REMOTE page opening a socket to localhost, and a browser sets
+ * `Origin` itself — a page on evil.com cannot claim `http://127.0.0.1:5230`, so
+ * it is still refused here. What now passes is only a page already served from
+ * this machine's loopback interface, which the token check gates a second time
+ * (`/api/config` sends no CORS headers, so a cross-origin page cannot read it).
+ *
+ * Host matching is exact, via the URL parser rather than a prefix test, so
+ * lookalikes like `http://127.0.0.1.evil.com` and `http://localhost.evil.com`
+ * do not match. The scheme is restricted to http(s) so the `tauri://` origins
+ * keep going through the explicit list above and nothing else rides in on a
+ * custom scheme that happens to use a loopback host.
+ */
+function isLoopbackOrigin(origin: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false; // not a parseable origin — no opinion, so no access
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+
+  const host = url.hostname;
+  if (host === "localhost" || host === "[::1]") return true;
+
+  // The whole 127.0.0.0/8 block is loopback, not just 127.0.0.1.
+  const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!octets) return false;
+  const parts = octets.slice(1).map(Number);
+  return parts[0] === 127 && parts.every((n) => n <= 255);
+}
+
+/** The one Origin decision both the WS upgrade and the CORS reflector use. */
+function originAllowed(origin: string): boolean {
+  return ALLOWED.has(origin) || isLoopbackOrigin(origin);
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -88,7 +137,7 @@ export interface AuthResult {
  */
 export function isAllowedOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true;
-  return ALLOWED.has(origin);
+  return originAllowed(origin);
 }
 
 /**
@@ -101,7 +150,7 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
  */
 export function verifyUpgradeOrigin(req: IncomingMessage): AuthResult {
   const origin = req.headers.origin;
-  if (origin !== undefined && !ALLOWED.has(origin)) {
+  if (origin !== undefined && !originAllowed(origin)) {
     return { ok: false, reason: `origin not allowed: ${origin}` };
   }
   return { ok: true };
