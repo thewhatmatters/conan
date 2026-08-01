@@ -188,6 +188,10 @@ export type AgentEvent =
       /** The thing itself — the command / file path / raw input — for the
        *  approval panel's mono block. */
       detail: string;
+      /** The raw tool arguments object, so the approval UI can show what will
+       *  actually run (an Edit/Write renders as a diff) instead of only the
+       *  `detail` string. Additive: `detail` remains the fallback rendering. */
+      input: unknown;
       toolName: string;
       /** The tool_use id this request gates — lets the UI pin the approval to
        *  its transcript card (the plan card's proceed buttons, US-022). */

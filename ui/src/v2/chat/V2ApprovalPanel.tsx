@@ -13,10 +13,43 @@ import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { buildFileDiff } from "../../lib/diff.ts";
+import V2DiffView from "../components/V2DiffView.tsx";
 import type {
   PendingApproval,
   PermissionDecision,
 } from "../lib/useV2Chat.ts";
+
+/** Max rows in the non-file-tool structured summary. */
+const MAX_SUMMARY_ROWS = 6;
+/** Per-value truncation in the structured summary. */
+const MAX_SUMMARY_VALUE = 200;
+
+/** Distill a non-file tool's raw input into label/value rows (Randy's
+ *  decision #4 — "a short structured summary" instead of raw JSON). Keeps
+ *  only primitive top-level fields; returns null when nothing usable
+ *  survives, and the card falls back to the `detail` mono block. */
+export function summarizeToolInput(
+  input: unknown,
+): { label: string; value: string }[] | null {
+  if (input == null || typeof input !== "object" || Array.isArray(input)) return null;
+  const rows: { label: string; value: string }[] = [];
+  for (const [key, raw] of Object.entries(input as Record<string, unknown>)) {
+    if (rows.length >= MAX_SUMMARY_ROWS) break;
+    let value: string;
+    if (typeof raw === "string") {
+      if (!raw.trim()) continue;
+      value = raw;
+    } else if (typeof raw === "number" || typeof raw === "boolean") {
+      value = String(raw);
+    } else {
+      continue; // nested objects/arrays stay out of the "short" summary
+    }
+    if (value.length > MAX_SUMMARY_VALUE) value = `${value.slice(0, MAX_SUMMARY_VALUE)}…`;
+    rows.push({ label: key, value });
+  }
+  return rows.length > 0 ? rows : null;
+}
 
 const styles = stylex.create({
   detail: {
@@ -28,6 +61,18 @@ const styles = stylex.create({
     padding: "var(--conan-space-3)",
     whiteSpace: "pre-wrap",
     width: "100%",
+  },
+  diffWrap: {
+    boxSizing: "border-box",
+    padding: "var(--conan-space-3)",
+    width: "100%",
+  },
+  summaryValue: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: 11,
+    margin: 0,
+    overflowWrap: "anywhere",
+    whiteSpace: "pre-wrap",
   },
   plan: {
     boxSizing: "border-box",
@@ -64,6 +109,10 @@ export default function V2ApprovalPanel({
   const decide = (decision: PermissionDecision) =>
     respond(approval.id, decision);
   const isPlan = approval.toolName === "ExitPlanMode";
+  // Defect 2: a file edit renders as a real diff; other tools get a short
+  // structured summary of their input; anything else keeps the mono block.
+  const diff = isPlan ? null : buildFileDiff(approval.toolName, approval.input);
+  const summary = isPlan || diff ? null : summarizeToolInput(approval.input);
 
   return (
     <Card
@@ -110,6 +159,25 @@ export default function V2ApprovalPanel({
                 {approval.detail}
               </ReactMarkdown>
             </div>
+          </Card>
+        ) : diff ? (
+          <Card variant="muted" padding={0} width="100%">
+            <div {...stylex.props(styles.diffWrap)}>
+              <V2DiffView diff={diff} />
+            </div>
+          </Card>
+        ) : summary ? (
+          <Card variant="muted" padding={0} width="100%">
+            <VStack gap={1} data-slot="v2-tool-summary" xstyle={styles.diffWrap}>
+              {summary.map((row) => (
+                <VStack key={row.label} gap={0}>
+                  <Text type="supporting" color="secondary">
+                    {row.label}
+                  </Text>
+                  <pre {...stylex.props(styles.summaryValue)}>{row.value}</pre>
+                </VStack>
+              ))}
+            </VStack>
           </Card>
         ) : (
           <Card variant="muted" padding={0} width="100%">

@@ -112,6 +112,15 @@
   --conan-color-warning: var(--color-warning);
   --conan-color-error: var(--color-error);
 
+  /* -- Diff rows (Defect 2) ----------------------------------------------
+   * The approval card's Edit/Write disclosure — red/green rows matching v1
+   * DiffView's treatment, mapped onto the theme's success/error pair so the
+   * wash and text track the palette instead of hard-coding emerald/red. */
+  --conan-diff-add-bg: var(--color-success-muted);
+  --conan-diff-add-text: var(--color-success);
+  --conan-diff-del-bg: var(--color-error-muted);
+  --conan-diff-del-text: var(--color-error);
+
   /* -- Provider brand ---------------------------------------------------
    * The thread avatar is the PROVIDER's mark, so its colour is brand, not
    * theme — it must not drift with the palette. Claude's is the only one the

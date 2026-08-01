@@ -328,6 +328,7 @@ export class ClaudeDriver implements AgentDriver {
       toolKind,
       summary: permissionSummary(toolName, r.input, r.description),
       detail: permissionDetail(toolName, r.input),
+      input: r.input,
       toolName,
       toolUseId: r.toolUseId,
     });

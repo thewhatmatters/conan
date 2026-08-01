@@ -10,6 +10,7 @@ const approval: PendingApproval = {
   toolUseId: "tool-1",
   summary: "Run the test suite",
   detail: "npm test",
+  input: { command: "npm test" },
 };
 
 describe("V2ApprovalPanel", () => {
@@ -57,5 +58,86 @@ describe("V2ApprovalPanel", () => {
     expect(
       screen.queryByRole("button", { name: "Always allow this session" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders an Edit as a real diff with the full path (Defect 2)", () => {
+    render(
+      <V2ApprovalPanel
+        approval={{
+          ...approval,
+          toolKind: "file-change",
+          toolName: "Edit",
+          detail: "/tmp/project/calc.js",
+          input: {
+            file_path: "/tmp/project/calc.js",
+            old_string: "const a = 1;",
+            new_string: "const a = 2;",
+          },
+        }}
+        count={1}
+        respond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("/tmp/project/calc.js")).toBeInTheDocument();
+    expect(screen.getByText("const a = 1;")).toBeInTheDocument();
+    expect(screen.getByText("const a = 2;")).toBeInTheDocument();
+    // A one-hunk edit fits the preview — no expand control.
+    expect(
+      screen.queryByRole("button", { name: /Show full diff/ }),
+    ).not.toBeInTheDocument();
+    // The action row is still present alongside the diff.
+    expect(screen.getByRole("button", { name: "Approve once" })).toBeEnabled();
+  });
+
+  it("previews a long Write and expands to the full diff on demand", () => {
+    const content = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n");
+    render(
+      <V2ApprovalPanel
+        approval={{
+          ...approval,
+          toolKind: "file-change",
+          toolName: "Write",
+          detail: "/tmp/project/big.txt",
+          input: { file_path: "/tmp/project/big.txt", content },
+        }}
+        count={1}
+        respond={vi.fn()}
+      />,
+    );
+
+    // Preview: first rows visible, later rows behind the expand control.
+    expect(screen.getByText("line 1")).toBeInTheDocument();
+    expect(screen.queryByText("line 40")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Show full diff \(\+40 −0\)/ }));
+    expect(screen.getByText("line 40")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+    expect(screen.queryByText("line 40")).not.toBeInTheDocument();
+  });
+
+  it("shows a structured summary for non-file tools instead of raw JSON", () => {
+    render(<V2ApprovalPanel approval={approval} count={1} respond={vi.fn()} />);
+
+    expect(screen.getByText("command")).toBeInTheDocument();
+    expect(screen.getByText("npm test")).toBeInTheDocument();
+  });
+
+  it("falls back to the detail mono block when input has no summarizable fields", () => {
+    render(
+      <V2ApprovalPanel
+        approval={{
+          ...approval,
+          toolName: "SomeMcpTool",
+          detail: '{"nested": {"deep": true}}',
+          input: { nested: { deep: true } },
+        }}
+        count={1}
+        respond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('{"nested": {"deep": true}}')).toBeInTheDocument();
   });
 });

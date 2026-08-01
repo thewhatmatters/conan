@@ -98,6 +98,9 @@ export interface PendingApproval {
   toolKind: ToolPermissionKind;
   summary: string;
   detail: string;
+  /** Raw tool arguments from the event — lets the approval card render an
+   *  Edit/Write as a real diff (`buildFileDiff`) instead of only `detail`. */
+  input: unknown;
   toolName: string;
   toolUseId: string | null;
 }
@@ -274,7 +277,7 @@ export function useAgentChat(token: string | null): AgentChat {
     } else if (e.kind === "permission-request") {
       setPendingApprovals((prev) => [
         ...prev,
-        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, toolName: e.toolName, toolUseId: e.toolUseId },
+        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, input: e.input, toolName: e.toolName, toolUseId: e.toolUseId },
       ]);
     } else if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
       // The turn is over — any unanswered request was settled driver-side.
