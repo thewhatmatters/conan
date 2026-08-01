@@ -16,6 +16,7 @@ import {
   claudePromptFor,
   claudeModeFor,
   classifyTool,
+  permissionDetail,
   type ControlRequest,
   type ControlResponse,
 } from "./claude.js";
@@ -335,6 +336,12 @@ test("control_request without a callback (and malformed) is ignored safely", () 
     [],
   );
   assert.deepEqual(p.push(j({ type: "control_request" })), []);
+});
+
+test("ExitPlanMode approval detail is the proposed plan markdown", () => {
+  const plan = "# Ship it\n\n- Add the UI\n- Verify the flow";
+  assert.equal(permissionDetail("ExitPlanMode", { plan }), plan);
+  assert.equal(permissionDetail("Bash", { command: "npm test" }), "npm test");
 });
 
 test("classifyTool groups tools into the approval kinds", () => {

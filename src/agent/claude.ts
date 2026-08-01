@@ -570,7 +570,11 @@ function permissionSummary(
 
 /** The thing being approved — command / path / raw input — for the panel's
  *  mono block. */
-function permissionDetail(toolName: string, input: unknown): string {
+export function permissionDetail(toolName: string, input: unknown): string {
+  if (toolName === "ExitPlanMode" && input && typeof input === "object") {
+    const plan = (input as Record<string, unknown>).plan;
+    if (typeof plan === "string" && plan.trim()) return plan;
+  }
   const target = inputTarget(input);
   if (target) return target;
   try {

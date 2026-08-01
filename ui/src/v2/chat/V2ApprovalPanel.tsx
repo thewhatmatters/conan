@@ -6,6 +6,8 @@
  * state or duplicate the socket protocol owned by useAgentChat.
  */
 import * as stylex from "@stylexjs/stylex";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -26,6 +28,22 @@ const styles = stylex.create({
     padding: "var(--conan-space-3)",
     whiteSpace: "pre-wrap",
     width: "100%",
+  },
+  plan: {
+    boxSizing: "border-box",
+    maxHeight: 320,
+    overflow: "auto",
+    overflowWrap: "anywhere",
+    padding: "var(--conan-space-3)",
+    width: "100%",
+  },
+  planHeading: {
+    fontSize: "inherit",
+    fontWeight: 600,
+    marginBlock: "var(--conan-space-2)",
+  },
+  planParagraph: {
+    marginBlock: "var(--conan-space-2)",
   },
   actions: {
     flexWrap: "wrap",
@@ -52,6 +70,8 @@ export default function V2ApprovalPanel({
       data-slot="v2-approval-panel"
       role="region"
       aria-label={isPlan ? "Plan approval" : "Permission needed"}
+      aria-live="assertive"
+      aria-atomic="true"
       padding={4}
       width="100%"
     >
@@ -63,7 +83,7 @@ export default function V2ApprovalPanel({
             </Text>
             <Text type="supporting" color="secondary">
               {isPlan
-                ? "Review the plan above, then choose whether the agent should continue."
+                ? "Review the proposed plan, then choose whether the agent should continue."
                 : `${approval.toolName} · ${approval.summary}`}
             </Text>
           </VStack>
@@ -74,11 +94,28 @@ export default function V2ApprovalPanel({
           ) : null}
         </HStack>
 
-        {!isPlan ? (
+        {isPlan ? (
+          <Card variant="muted" padding={0} width="100%">
+            <div {...stylex.props(styles.plan)}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: (props) => <h2 {...props} {...stylex.props(styles.planHeading)} />,
+                  h2: (props) => <h3 {...props} {...stylex.props(styles.planHeading)} />,
+                  h3: (props) => <h4 {...props} {...stylex.props(styles.planHeading)} />,
+                  p: (props) => <p {...props} {...stylex.props(styles.planParagraph)} />,
+                  a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+                }}
+              >
+                {approval.detail}
+              </ReactMarkdown>
+            </div>
+          </Card>
+        ) : (
           <Card variant="muted" padding={0} width="100%">
             <pre {...stylex.props(styles.detail)}>{approval.detail}</pre>
           </Card>
-        ) : null}
+        )}
 
         <HStack gap={2} align="center" xstyle={styles.actions}>
           <Button

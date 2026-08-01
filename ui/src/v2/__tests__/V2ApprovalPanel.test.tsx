@@ -36,13 +36,22 @@ describe("V2ApprovalPanel", () => {
   it("uses plan language without widening all other tools", () => {
     render(
       <V2ApprovalPanel
-        approval={{ ...approval, toolKind: "other", toolName: "ExitPlanMode" }}
+        approval={{
+          ...approval,
+          toolKind: "other",
+          toolName: "ExitPlanMode",
+          detail: "# Proposed approach\n\n- Render the plan\n- Verify the flow",
+        }}
         count={1}
         respond={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("region", { name: "Plan approval" })).toBeInTheDocument();
+    const panel = screen.getByRole("region", { name: "Plan approval" });
+    expect(panel).toHaveAttribute("aria-live", "assertive");
+    expect(panel).toHaveAttribute("aria-atomic", "true");
+    expect(screen.getByRole("heading", { name: "Proposed approach" })).toBeInTheDocument();
+    expect(screen.getByText("Render the plan")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Proceed in build" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Keep planning" })).toBeEnabled();
     expect(
