@@ -125,22 +125,24 @@ here):
 
 ## Provider icon avatars (replace the C/X/G letters)
 
-**Raised:** 2026-07-24. User has real brand SVGs for the three providers and
-wants them in the sidebar avatar so the driving provider is unmistakable,
-instead of the current letter initial.
+**Raised:** 2026-07-24.
 
-- SVGs live in **`ui/src/assets/providers/`**, named by provider id:
-  `claude.svg` / `codex.svg` / `grok.svg` (see the README there).
-- `AgentAvatar` (`ChatSurface.tsx`) currently renders `agentOf(provider)` → a
-  letter (C/X/G). Swap to the SVG per provider id, keeping the status-badge
-  overlay and **falling back to the letter** for any provider without an icon.
-- The future unified provider/model picker (below) should use the same icons in
-  its rail.
-- Author/keep the SVGs color-inheriting (`currentColor`, no hard-coded hex) so
-  they read in light + dark. UI/browser task — Claude round, not the Codex
-  backend round.
+**SHIPPED.** `d232abf` (2026-07-24) put brand icons in the sidebar avatar;
+`ded21b6` (2026-07-25) added `ProviderMark.tsx` and Kimi as a fourth provider.
+Brand SVGs are live in both shells:
 
-**Size:** S.
+- v1: `AgentAvatar` in `ChatSurface.tsx` resolves the provider id through
+  `ProviderMark.tsx` / `PROVIDER_ICON` and inlines the SVG from
+  `ui/src/assets/providers/`. Letter fallback is only for unknown providers.
+- v2: `ProviderGlyph.tsx` (`ui/src/v2/chat/composer/ProviderGlyph.tsx`) uses the
+  same shared assets.
+- The unified provider/model picker also uses `ProviderMark.tsx` / `PROVIDER_ICON`,
+  so the rail, trigger, and sidebar all share one source of truth.
+
+Assets are `currentColor`-aware (`?raw` inline, not `<img>`) and include
+`claude.svg`, `openai.svg` (used for Codex), `grok.svg`, and `kimi.svg`.
+
+**Size:** S — closed, kept for provenance.
 
 ## Paste-to-attach (images) + rethink the paperclip (T3-2)
 
