@@ -202,7 +202,7 @@ export default function V2Composer({
       }
       headerActions={branchChip}
       footerActions={
-        <>
+        <div data-slot="composer-controls">
           {/* provider+model is the thread's identity and LOCKS after turn 1;
               effort is a per-turn parameter, so its chip never locks. */}
           <ModelPicker
@@ -233,7 +233,7 @@ export default function V2Composer({
               onPermissionModeSelect={setPermissionMode}
             />
           ) : null}
-        </>
+        </div>
       }
       input={
         // S5-0's input region (TS-0) is min-height 84px. ChatComposerInput has

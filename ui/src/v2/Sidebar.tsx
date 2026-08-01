@@ -72,6 +72,7 @@ export default function Sidebar({
       role="navigation"
       label="Projects and threads"
       xstyle={styles.panel}
+      data-slot="sidebar-panel"
     >
       <VStack height="100%" gap={0} justify="between" data-slot="sidebar">
         <SidebarHeader />

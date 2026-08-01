@@ -59,4 +59,24 @@ describe("v2 tokens.css", () => {
   it("keeps the transcript and composer on the 800px chat measure", () => {
     expect(injectedCss()).toContain("--conan-chat-measure: 800px");
   });
+
+  it("collapses the fixed sidebar below the shell breakpoint (US-506)", () => {
+    const css = injectedCss();
+    expect(css).toContain("--conan-shell-min-width: 960px");
+    expect(css).toMatch(/@media\s*\(max-width:\s*959px\)/);
+    expect(css).toMatch(/\[data-slot=["']sidebar-panel["']\]\s*{[^}]*display:\s*none/s);
+  });
+
+  it("lets composer controls yield space to the send action at narrow widths", () => {
+    const css = injectedCss();
+    expect(css).toMatch(
+      /\[data-slot=["']composer-controls["']\]\s*{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/s,
+    );
+    expect(css).toMatch(
+      /:has\(> \[data-slot=["']composer-controls["']\]\)\s*{[^}]*min-width:\s*0/s,
+    );
+    expect(css).toMatch(
+      /\[data-slot=["']composer-controls["']\] button\s*{[^}]*min-width:\s*0/s,
+    );
+  });
 });

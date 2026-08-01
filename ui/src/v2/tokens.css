@@ -250,6 +250,40 @@
   background: var(--conan-wash-row-selected);
 }
 
+/* US-506: below the shell's 960px breakpoint, release the fixed 273px rail
+ * so the conversation remains usable instead of collapsing to ~207px at a
+ * 480px viewport. Media queries cannot consume custom properties, so this
+ * boundary mirrors --conan-shell-min-width above. */
+@media (max-width: 959px) {
+  [data-slot="sidebar-panel"] {
+    display: none;
+  }
+}
+
+/* Keep the composer controls compressible before the send action. Astryx's
+ * footer correctly reserves the send button, but the three trigger wrappers
+ * otherwise use their content width as a floor and push that primary action
+ * outside the composer at narrow widths. Labels already ellipsize internally. */
+[data-slot="composer-controls"] {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-slot="v2-composer"] *:has(> [data-slot="composer-controls"]) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-slot="composer-controls"] > * {
+  min-width: 0;
+}
+
+[data-slot="composer-controls"] button {
+  max-width: 100%;
+  min-width: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-thread-status="working"],
   [data-thread-status="awaiting"] {

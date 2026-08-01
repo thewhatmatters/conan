@@ -19,6 +19,9 @@ describe("Sidebar", () => {
     expect(
       screen.getByRole("navigation", { name: "Projects and threads" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Projects and threads" }),
+    ).toHaveAttribute("data-slot", "sidebar-panel");
   });
 
   it("mounts the header, the project tree and the settings footer", () => {
