@@ -339,6 +339,7 @@ export default function AppV2() {
               subtitle: thread.lastMessage ?? NO_PREVIEW,
               provider: asProvider(thread.provider),
               status: pillOf(states[thread.sessionId]),
+              lastActivity: thread.lastActivity,
             };
             return {
               ...row,

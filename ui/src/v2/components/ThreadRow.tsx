@@ -22,6 +22,11 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { MoreVertical } from "lucide-react";
+import {
+  formatAbsoluteTime,
+  formatRelativeTime,
+  toDateTimeAttribute,
+} from "../lib/relativeTime.ts";
 // The shared brand marks (src/assets/providers/*). The row and the composer's
 // picker now render the SAME glyph, so a provider looks identical everywhere.
 import ProviderGlyph from "../chat/composer/ProviderGlyph.tsx";
@@ -47,6 +52,11 @@ export interface ThreadRowProps {
   onCopyPath?: (() => void) | null;
   onCopyId?: (() => void) | null;
   onDelete?: () => void;
+  /**
+   * Epoch ms of the thread's last activity — rendered as `2d ago` in the
+   * trailing slot. Omitted for drafts, which have no activity to report yet.
+   */
+  lastActivity?: number;
 }
 
 const styles = stylex.create({
@@ -121,6 +131,43 @@ const styles = stylex.create({
     flexShrink: 0,
     height: "var(--conan-control-height)",
   },
+  // ONE SLOT, TWO OCCUPANTS (WHA-75): the timestamp at rest, the kebab on
+  // hover/focus. Only the timestamp is in flow; the kebab is taken out of it and
+  // pinned to the slot's trailing edge, so revealing either one cannot move the
+  // row. Measured at 1512px: row, slot and title boxes are byte-identical at
+  // rest, on hover and on keyboard focus. `flexShrink: 0` is the artboard's rule
+  // that this lane never compresses — the title/subtitle truncate instead.
+  trailing: {
+    alignItems: "center",
+    display: "flex",
+    flexShrink: 0,
+    height: "var(--conan-control-height)",
+    justifyContent: "flex-end",
+    marginInlineEnd: "var(--conan-space-3)",
+    // A MINIMUM, not a content-sized box: without it "now" and "11mo ago" give
+    // their rows different lane widths and every title truncates at a different
+    // x, which is exactly the raggedness the vertical-lane rule exists to stop.
+    minWidth: "var(--conan-thread-time-lane)",
+    position: "relative",
+  },
+  // Fades out as the kebab fades in. Reduced-motion drops the transition only;
+  // the swap itself still happens, because it is an affordance, not decoration.
+  timestamp: {
+    color: "var(--conan-text-muted)",
+    fontSize: "var(--conan-text-small)",
+    transition: "opacity var(--conan-duration-fast) ease",
+    whiteSpace: "nowrap",
+    "@media (prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  // Out of flow so revealing it costs no layout. Anchored to the slot's trailing
+  // edge, which is where the artboard draws it.
+  menuOverlay: {
+    insetBlockStart: 0,
+    insetInlineEnd: 0,
+    position: "absolute",
+  },
 });
 
 const STATUS_LABEL: Record<ThreadStatus, string> = {
@@ -143,8 +190,10 @@ export default function ThreadRow({
   onCopyPath,
   onCopyId,
   onDelete,
+  lastActivity,
 }: ThreadRowProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const hasTimestamp = typeof lastActivity === "number" && Number.isFinite(lastActivity);
 
   return (
     <HStack
@@ -189,36 +238,55 @@ export default function ThreadRow({
           </VStack>
         </HStack>
       </button>
-      {onNewThread ? (
-        <HStack
-          xstyle={styles.menu}
-          data-slot="thread-actions"
-          data-menu-open={isMenuOpen ? "true" : undefined}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <DropdownMenu
-            isMenuOpen={isMenuOpen}
-            onOpenChange={setIsMenuOpen}
-            button={{
-              label: `Actions for ${title}`,
-              icon: <MoreVertical size={16} aria-hidden />,
-              isIconOnly: true,
-              variant: "ghost",
-              size: "sm",
-            }}
-            hasChevron={false}
-            placement="below"
-            items={[
-              { label: "New thread", onClick: onNewThread },
-              { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
-              { label: "Copy Path", onClick: onCopyPath ?? undefined, isDisabled: !onCopyPath },
-              { label: "Copy Thread ID", onClick: onCopyId ?? undefined, isDisabled: !onCopyId },
-              { type: "divider" },
-              { label: "Delete", onClick: onDelete },
-            ]}
-          />
-        </HStack>
-      ) : null}
+      {/* `data-menu-open` rides the WRAPPER as well as the kebab: the timestamp
+          has to stay hidden for the menu's whole lifetime, and it sits BEFORE
+          the kebab in the DOM, so a sibling combinator can't reach it. */}
+      <HStack
+        xstyle={styles.trailing}
+        data-slot="thread-trailing"
+        data-menu-open={isMenuOpen ? "true" : undefined}
+      >
+        {hasTimestamp ? (
+          <time
+            dateTime={toDateTimeAttribute(lastActivity)}
+            title={formatAbsoluteTime(lastActivity)}
+            data-slot="thread-timestamp"
+            {...stylex.props(styles.timestamp)}
+          >
+            {formatRelativeTime(lastActivity)}
+          </time>
+        ) : null}
+        {onNewThread ? (
+          <HStack
+            xstyle={[styles.menu, styles.menuOverlay]}
+            data-slot="thread-actions"
+            data-menu-open={isMenuOpen ? "true" : undefined}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <DropdownMenu
+              isMenuOpen={isMenuOpen}
+              onOpenChange={setIsMenuOpen}
+              button={{
+                label: `Actions for ${title}`,
+                icon: <MoreVertical size={16} aria-hidden />,
+                isIconOnly: true,
+                variant: "ghost",
+                size: "sm",
+              }}
+              hasChevron={false}
+              placement="below"
+              items={[
+                { label: "New thread", onClick: onNewThread },
+                { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
+                { label: "Copy Path", onClick: onCopyPath ?? undefined, isDisabled: !onCopyPath },
+                { label: "Copy Thread ID", onClick: onCopyId ?? undefined, isDisabled: !onCopyId },
+                { type: "divider" },
+                { label: "Delete", onClick: onDelete },
+              ]}
+            />
+          </HStack>
+        ) : null}
+      </HStack>
       {isSelected ? <HStack xstyle={styles.indicator} aria-hidden /> : null}
     </HStack>
   );

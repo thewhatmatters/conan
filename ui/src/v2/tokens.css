@@ -219,6 +219,13 @@
   --conan-icon-size: 16px; /* every icon in RJ-0 */
   --conan-avatar-size: 40px; /* thread avatar */
   --conan-row-height: 68px; /* thread row */
+  /* The thread row's trailing lane (WHA-87). Sized to the widest label the
+   * relative formatter produces in English ("11mo ago" measured at 48px) and to
+   * the 32px kebab that shares the slot. It is a MINIMUM, not a fixed width: a
+   * locale with wider narrow-form units grows the lane rather than clipping the
+   * time. Without it the lane is content-sized and every row's title truncates
+   * at a different x — which breaks this file's vertical-lane rule. */
+  --conan-thread-time-lane: 48px;
   --conan-chip-size: 20px; /* ⌘ / K chips */
   --conan-status-dot-size: 12px; /* running dot */
   --conan-status-ring-width: 2px;
@@ -249,6 +256,23 @@
 [data-slot="thread-row"]:focus-within [data-slot="thread-actions"],
 [data-slot="thread-actions"][data-menu-open="true"] {
   opacity: 1;
+}
+
+/* The trailing lane's other occupant (WHA-87). Time at rest, actions on intent:
+ * the timestamp fades out under exactly the conditions that fade the kebab in,
+ * so the slot never shows both. It is only ever hidden VISUALLY — it keeps its
+ * box (which is what sizes the lane) and stays in the a11y tree, so a screen
+ * reader still gets the thread's last activity while a pointer user sees the
+ * kebab. */
+[data-slot="thread-timestamp"] {
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+[data-slot="thread-row"]:hover [data-slot="thread-timestamp"],
+[data-slot="thread-row"]:focus-within [data-slot="thread-timestamp"],
+[data-slot="thread-trailing"][data-menu-open="true"] [data-slot="thread-timestamp"] {
+  opacity: 0;
 }
 
 /* Astryx moves pointer focus into portalled menu items, so pointer and keyboard
@@ -299,7 +323,8 @@
     animation: none;
   }
 
-  [data-slot="thread-actions"] {
+  [data-slot="thread-actions"],
+  [data-slot="thread-timestamp"] {
     transition: none;
   }
 }

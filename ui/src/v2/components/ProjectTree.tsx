@@ -158,7 +158,42 @@ const styles = stylex.create({
     paddingBlock: "var(--conan-space-2)",
     paddingInlineStart: "var(--conan-space-3)",
   },
+  // The dense-list escape hatch. Sits on the thread rows' text lane so it reads
+  // as the last item IN the group rather than a new group header.
+  moreRow: {
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
+    borderRadius: "var(--conan-radius-md)",
+    color: "var(--conan-text-muted)",
+    cursor: "pointer",
+    fontSize: "var(--conan-text-small)",
+    height: "var(--conan-control-height)",
+    paddingInlineStart: "var(--conan-space-3)",
+    textAlign: "start",
+    width: "100%",
+    ":hover": {
+      backgroundColor: "var(--conan-wash-row-selected)",
+      color: "var(--conan-text-primary)",
+    },
+    ":focus-visible": {
+      backgroundColor: "var(--conan-wash-row-selected)",
+      color: "var(--conan-text-primary)",
+    },
+  },
 });
+
+/**
+ * How many threads a project shows before it collapses behind a "more" control
+ * (Randy, 2026-08-02: "collapse and show more if there's a considerable amount
+ * of threads").
+ *
+ * 8 is chosen so the common case never sees the control — a project with a
+ * handful of threads renders exactly as it does today — while a 50-thread
+ * project stops turning the sidebar into a log file. It is one constant on
+ * purpose: tuning this is a one-line change, not a refactor.
+ */
+export const THREAD_COLLAPSE_THRESHOLD = 8;
 
 /** Placeholder content — realistic shapes, drawn from the artboard's own copy. */
 const PLACEHOLDER_GROUPS: ProjectGroup[] = [
@@ -232,8 +267,17 @@ function Group({
 }) {
   const [expanded, setExpanded] = useState(isExpanded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Dense-list collapse is per group and independent of the group's own
+  // expand/collapse — reopening a project should not re-expand a list the user
+  // deliberately left short.
+  const [showAllThreads, setShowAllThreads] = useState(false);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const FolderIcon = expanded ? FolderOpen : Folder;
+  const isTruncated = !showAllThreads && threads.length > THREAD_COLLAPSE_THRESHOLD;
+  const visibleThreads = isTruncated
+    ? threads.slice(0, THREAD_COLLAPSE_THRESHOLD)
+    : threads;
+  const hiddenCount = threads.length - visibleThreads.length;
   return (
     <VStack gap={0} data-slot="project-group">
       <HStack
@@ -301,7 +345,7 @@ function Group({
       {expanded ? (
         threads.length > 0 ? (
           <VStack gap={2}>
-            {threads.map((thread) => {
+            {visibleThreads.map((thread) => {
               const key = threadKey(thread);
               return (
                 <ThreadRow
@@ -314,6 +358,23 @@ function Group({
                 />
               );
             })}
+            {/* One-way on purpose: this reveals the rest and then gets out of
+                the way. A "show less" that can hide the thread you are looking
+                at is worse than a slightly longer list. */}
+            {isTruncated ? (
+              <button
+                type="button"
+                aria-expanded={false}
+                aria-label={`Show ${hiddenCount} more ${
+                  hiddenCount === 1 ? "thread" : "threads"
+                } in ${name}`}
+                data-slot="thread-show-more"
+                onClick={() => setShowAllThreads(true)}
+                {...stylex.props(styles.moreRow)}
+              >
+                {`Show ${hiddenCount} more`}
+              </button>
+            ) : null}
           </VStack>
         ) : (
           // v1's copy verbatim — an expanded project with nothing in it must
