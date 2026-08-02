@@ -40,9 +40,9 @@ provider·model · effort · permission mode · Send`. None reveals the sidebar;
 Whichever is chosen, it is a **new interaction surface**, which is why it was
 deliberately kept out of `dd0f8f0` rather than improvised inside a CSS fix.
 
-**Related:** US-506 stays `passes: false` in `prd-v2-p2d-shell-live.json` for a
-different reason (US-504/US-505 are deferred), so a green US-506 later will not
-imply this gap is closed.
+**Related:** US-506 (WHA-62, end-to-end live shell verification) stays open for a
+different reason — US-504/US-505 (WHA-60/WHA-61) are deferred — so a green
+WHA-62 later will not imply this gap is closed.
 
 **Size:** S for option 1, S/M for option 2, M for option 3.
 

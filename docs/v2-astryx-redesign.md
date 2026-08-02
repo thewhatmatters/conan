@@ -342,7 +342,7 @@ toggles on stream). Data path: `useV2Chat` → v1 `useAgentChat` → `/ws/agent`
    jump-to-present came free from `ChatLayout`. Tool/plan items intentionally
    render as one-line placeholders until p2b.
 
-## 10. Phase 2 roadmap & PRD index
+## 10. Phase 2 roadmap & ticket index
 
 The shell is done and **p2a wired a live chat loop into the content well**.
 Phase 2 continues building the heart and wiring the chrome to real data. It
@@ -353,23 +353,33 @@ v2 is still presentation only.
 **Sequencing principle:** prove the live loop with the smallest possible slice
 BEFORE fanning out. The biggest unknown isn't "can Astryx render X" (the shell
 settled that) — it's whether the streaming/WS data flow integrates cleanly in the
-new shell. So the first PRD is a **walking skeleton**, and the rest parallelize
+new shell. So the first phase is a **walking skeleton**, and the rest parallelize
 only after it lands.
 
-| PRD | Scope | Status |
-|---|---|---|
-| p2a — chat core | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn; PRD file retired in the 2026-08-02 cleanup) |
-| `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | **PARTIAL** (2026-08-01; tool rollups + approval card + permission-mode chip shipped and the PRD written retroactively — markdown across the transcript, the activity spine and work-log rollups were NOT built, see the file's `notDelivered`) |
-| `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **DONE** (2026-07-31; US-301–305 assembled and browser-verified) |
-| `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
-| `prd-v2-p2e-surfaces.json` | Browser · Terminal · Diff · Files in the tab model | planned |
-| `prd-v2-p2f-settings.json` | Settings dialog | planned |
-| `prd-v2-p2g-command-palette.json` | ⌘K command palette (Astryx CommandPalette) — search threads/projects + actions; the sidebar Search field opens it. Ties into p2d's data. | **READY** (drafted vs `VC-1`) |
+> **Linear is the source of truth** (Randy, 2026-08-02). The `Tickets` column
+> below is authoritative for open work; the `prd-v2-*.json` files that remain in
+> the repo root are a record of already-written acceptance criteria, kept only
+> until their tickets ship. Do not treat a PRD file as a queue.
+
+| Phase | Scope | Tickets (open) | Status |
+|---|---|---|---|
+| **p2a** — chat core | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | — | **DONE** (2026-07-30; live Claude turn) |
+| **p2b** — transcript rich | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | WHA-51 rollups/bubbles · WHA-52 markdown · WHA-53 activity spine · WHA-54 work-log rollups | **PARTIAL** (2026-08-01; tool rollups + approval card + permission-mode chip shipped — markdown, the activity spine and work-log rollups were **never built**, hence the four tickets) |
+| **p2c** — composer | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | WHA-58 typeahead menu design pass | **DONE apart from WHA-58** (2026-07-31; US-301–305 assembled and browser-verified) |
+| **p2d** — shell live | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | WHA-59 per-thread status · WHA-60 project add/remove/sort · WHA-61 secondary-bar git actions · WHA-62 end-to-end verification | **IN PROGRESS** (pure wiring, no new design) |
+| **p2e** — surfaces | Browser · Terminal · Diff · Files in the tab model | WHA-35 Files · WHA-36 Diff · WHA-37 Terminal · WHA-38 Browser | planned |
+| **p2f** — settings | Settings dialog | none — **unticketed** (WHA-13 shipped the first in-UI affordance, not the dialog) | planned |
+| **p2g** — command palette | ⌘K command palette (Astryx CommandPalette) — search threads/projects + actions; the sidebar Search field opens it. Ties into p2d's data. | WHA-70 shell + ⌘K · WHA-71 search source · WHA-72 commands/actions · WHA-73 assemble + verify vs `VC-1` | **READY** (drafted vs `VC-1`) |
+
+No `prd-v2-p2e-*.json` or `prd-v2-p2f-*.json` file has ever existed — those were
+reserved names in an earlier draft of this table, never written. The p2a and
+shell PRD files were retired in the 2026-08-02 cleanup; p2b/p2c/p2d/p2g still
+have theirs until the tickets above ship.
 
 **⚠️ Design gap:** `RJ-0` draws the content well EMPTY — there is **no pixel
 design for the transcript or composer yet**. p2a is functional-only (token-styled
 minimal). **p2b/p2c need their own Paper frame(s)** (or an explicit decision to
-adapt v1's look) — that's a dependency on Randy before those PRDs can hit real
+adapt v1's look) — that's a dependency on Randy before those phases can hit real
 fidelity. p2a can proceed without it. (The composer design lives in a dedicated
 `Chat Composer` frame — `S5-0` — and is built entirely from Astryx components.)
 

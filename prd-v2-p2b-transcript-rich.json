@@ -4,7 +4,7 @@
   "phase": "Phase 2b — Rich transcript + approval UI",
   "generatedAt": "2026-08-01",
   "sourcePrd": "docs/v2-astryx-redesign.md",
-  "reconstructed": "WRITTEN AFTER THE FACT. p2b shipped without a PRD file — docs/v2-astryx-redesign.md line 356 reserved the name `prd-v2-p2b-transcript-rich.json` and left it 'planned', so the work landed with its record living only in commit messages and a dated checkpoint note (retired in the 2026-08-02 cleanup). This file reconstructs that record from the commits and from Nash's live verification runs so the `passes` flags have somewhere to live. Story IDs are the ones actually used in the commits and channel history; where p2b's planned scope shipped WITHOUT a story ID, it is recorded as such rather than given an invented one. Nothing here is a plan for future work.",
+  "reconstructed": "WRITTEN AFTER THE FACT. p2b shipped without a PRD file — docs/v2-astryx-redesign.md §10 reserved the name `prd-v2-p2b-transcript-rich.json` and left it 'planned', so the work landed with its record living only in commit messages and a dated checkpoint note (retired in the 2026-08-02 cleanup). This file reconstructs that record from the commits and from Nash's live verification runs so the `passes` flags have somewhere to live. Story IDs are the ones actually used in the commits and channel history; where p2b's planned scope shipped WITHOUT a story ID, it is recorded as such rather than given an invented one. Nothing here is a plan for future work.",
   "description": "Turn the p2a plain-text transcript into the real reading surface: fold adjacent tool activity into Astryx ChatToolCalls rollups, give messages timestamps and the AI-chat bubble treatment, and build the blocking approval card that a supervised turn stops on. Delivered on top of p2a's ChatLayout well; the gateway's permission seam already existed (v1's useAgentChat), so this is presentation plus one narrow gateway change to the ExitPlanMode detail payload.",
   "designFile": {
     "tool": "Paper",
@@ -65,15 +65,15 @@
   "notDelivered": [
     {
       "item": "Markdown rendering across the transcript",
-      "note": "docs/v2-astryx-redesign.md line 356 lists markdown in p2b's scope. Only the approval card renders markdown (react-markdown in V2ApprovalPanel). Assistant prose still goes through ChatTokenizedText."
+      "note": "docs/v2-astryx-redesign.md §10 lists markdown in p2b's scope. Only the approval card renders markdown (react-markdown in V2ApprovalPanel). Assistant prose still goes through ChatTokenizedText."
     },
     {
       "item": "The fused activity spine",
-      "note": "Listed in p2b's scope at line 356. Not built. The transcript has tool rollups, not a spine."
+      "note": "Listed in p2b's scope in §10. Not built. The transcript has tool rollups, not a spine."
     },
     {
       "item": "Work-log rollups",
-      "note": "Listed in p2b's scope at line 356. Not built."
+      "note": "Listed in p2b's scope in §10. Not built."
     }
   ],
   "openFollowUps": [
