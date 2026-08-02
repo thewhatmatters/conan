@@ -4,7 +4,8 @@
 > leaf components + shell assembly verified against RJ-0; p2a (US-201…US-204)
 > proved live chat in the content well (thread select → stream → composer →
 > Claude reply). Next: p2b/p2c/p2d. Read **§8 (T0)** and **§9 p2a outcome**.
-> Branch: `loop/conan-v2-astryx`. The §5 task graph is historical plan of record.
+> Branch: `main-v2` (renamed from `loop/conan-v2-astryx` 2026-08-02). The §5
+> task graph is historical plan of record.
 > **This doc is the shared brain.** Any agent picking up a v2 task reads this
 > FIRST. It is the single source of truth across machines (it travels via git;
 > per-machine `.claude` memory does not).
@@ -195,11 +196,14 @@ integration pass and runs after they land.
 - **v1 untouched:** no diffs to `ui/src/index.css` Astryx-wise, no v1 component edits, no `src/` (gateway) edits.
 - v2 uses **Astryx components + `v2/tokens.css` only** (no shadcn, no raw hex).
 - **Visual check:** screenshot the component, compare to its Paper node; exact values via `get_computed_styles`.
-- Commit on the task's worktree; target branch `loop/conan-v2-astryx`.
+- Commit on the task's worktree; target branch `main-v2`.
 
 ## 7. Orca / Hermes orchestration notes
 
-- **Base branch:** `loop/conan-v2-astryx`. All worktrees branch from it and merge back to it; **cut over to `main` only after v2 parity** (mirrors the repo's loop→main pattern).
+- **Base branch:** `main-v2` (was `loop/conan-v2-astryx`; renamed 2026-08-02 —
+  the loop→main framing stopped matching how the work is actually run). All
+  worktrees branch from it and merge back to it; **cut over to `main` only after
+  v2 parity**.
 - **Order:** run **T0 alone first** (it's a hard barrier — the pipeline, flag, tokens, and slots must exist). Then fan **T1–T5** across worktrees. Then **T6** integrates.
 - **Conflict avoidance:** the only shared files are `App.tsx` (flag, T0) and `App.v2.tsx` (slots defined in T0, filled in T6) — keep T1–T5 in their own component files so parallel worktrees don't touch the same file. See the `orca-cli` skill for worktree/terminal ops.
 - **Per-agent onboarding:** point each agent at THIS doc + `docs/chat-v1-qa-backlog.md` for v1 behavior parity, and have it run `npx astryx component <X> --props --json` for the components its slot needs.

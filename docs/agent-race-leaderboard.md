@@ -2,6 +2,11 @@
 
 Running tally for head-to-head Astryx v2 build rounds.
 
+> The promote target was renamed `loop/conan-v2-astryx` → **`main-v2`** on
+> 2026-08-02. Rows below keep the old name on purpose: they record where each
+> round actually landed at the time, and the commits and tags they cite are
+> unchanged. Only the *current* target moved.
+
 | Round | Story | Winner | Branch / commit | Base commit after promotion | Preview | Notes |
 |-------|-------|--------|-----------------|-----------------------------|---------|-------|
 | p2b + US-503 | US-601/604/605 rich transcript + approval card; US-503 rename dialog | — (not a race: single-agent, Booker) | `booker/plan-approval-card` @ `8c8e420` | `loop/conan-v2-astryx` @ `8c8e420` / tags `checkpoint/v2-p2b-us-604`, `checkpoint/v2-p2b-us-503` | http://127.0.0.1:5220 | Sequential single-agent build with Nash as verification gate, not a head-to-head round — **no point scored**. Landed over af23281 → 611c894 → 8c8e420: tool rollups, timestamps, 800px measure, four-state thread status, approval card with the plan rendered inside it, permission-mode chip, and the rename dialog replacing v2's last `window.prompt`. UI 129/129, root 207/207, typechecks + build clean at the tip. US-604 and US-503 verified live on throwaway stacks; US-601/US-502 flags deliberately left false — code landed, no story-level browser pass. Known caveat: the flyout hover highlight was approved visually by Randy; Nash's headless pixel comparison could not detect it. |

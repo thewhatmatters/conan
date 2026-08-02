@@ -23,7 +23,7 @@ one loopback Node gateway packaged as a Tauri sidecar. That shell is now
 dormant (see the note above). This file is auto-loaded by every Claude Code
 session in this repo — keep it accurate.
 
-> 🚧 **v2 Astryx redesign IN PROGRESS on branch `loop/conan-v2-astryx`.** A
+> 🚧 **v2 Astryx redesign IN PROGRESS on branch `main-v2`.** A
 > parallel, flag-gated v2 UI is being built on Astryx (Meta's React + StyleX
 > library), replacing shadcn/Tailwind **for v2 only**; v1 stays default and
 > untouched until parity. **Any agent doing v2 work reads

@@ -1,6 +1,6 @@
 {
   "project": "Conan",
-  "branchName": "loop/conan-v2-astryx",
+  "branchName": "main-v2",
   "generatedAt": "2026-07-29",
   "sourcePrd": "docs/v2-astryx-redesign.md",
   "description": "v2 UI redesign on Astryx (React + StyleX), a parallel flag-gated shell in the same Vite app; v1 stays default and untouched until parity. THE SIDEBAR+TOOLBAR SHELL MILESTONE IS COMPLETE (see completedMilestone) — this queue now tracks remaining v2 polish only; the functional wire-up is a separate Phase 2 PRD (TBD). READ docs/v2-astryx-redesign.md BEFORE any story. Backend/gateway is UNCHANGED; v2 is presentation only.",
