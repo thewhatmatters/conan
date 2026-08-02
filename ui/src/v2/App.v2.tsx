@@ -48,6 +48,7 @@
 import { useCallback, useMemo, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Layout } from "@astryxdesign/core/Layout";
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { VStack } from "@astryxdesign/core/VStack";
 import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
@@ -116,6 +117,9 @@ export default function AppV2() {
   const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
   const [drafts, setDrafts] = useState<V2Draft[]>([]);
   const [renameTarget, setRenameTarget] = useState<ThreadRowProps | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ThreadRowProps | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
   const { states, reportState } = useV2ThreadState();
 
   const copyText = useCallback((value: string) => {
@@ -148,16 +152,39 @@ export default function AppV2() {
       if (id.startsWith("draft-")) {
         setDrafts((current) => current.filter((draft) => draft.id !== id));
       } else if (token) {
-        await fetch(apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-          headers: { "x-conan-token": token },
-        });
+        const response = await fetch(
+          apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`,
+          {
+            method: "DELETE",
+            headers: { "x-conan-token": token },
+          },
+        );
+        if (!response.ok) throw new Error(`Delete failed (${response.status})`);
         await refresh();
       }
       setActiveThread((current) => (current?.key === id ? null : current));
     },
     [refresh, token],
   );
+
+  const requestDeleteThread = useCallback((row: ThreadRowProps) => {
+    setDeleteError(false);
+    setDeleteTarget(row);
+  }, []);
+
+  const confirmDeleteThread = useCallback(async () => {
+    if (!deleteTarget || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(false);
+    try {
+      await deleteThread(deleteTarget);
+      setDeleteTarget(null);
+    } catch {
+      setDeleteError(true);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteTarget, deleteThread, isDeleting]);
 
   const saveThreadTitle = useCallback(
     async (title: string) => {
@@ -209,7 +236,7 @@ export default function AppV2() {
               onCopyPath: null,
               onCopyId: null,
               onDelete: () =>
-                void deleteThread({
+                requestDeleteThread({
                   id: draft.id,
                   title: UNTITLED,
                   subtitle: NO_PREVIEW,
@@ -229,12 +256,12 @@ export default function AppV2() {
               onRename: () => setRenameTarget(row),
               onCopyPath: () => copyText(thread.cwd || p.path),
               onCopyId: () => copyText(thread.sessionId),
-              onDelete: () => void deleteThread(row),
+              onDelete: () => requestDeleteThread(row),
             };
           }),
         ],
       })),
-    [copyText, deleteThread, drafts, newThreadIn, projects, states],
+    [copyText, drafts, newThreadIn, projects, requestDeleteThread, states],
   );
 
   // sessionId → its project + row, so a click can build the FULL reopen
@@ -345,6 +372,29 @@ export default function AppV2() {
             if (!open) setRenameTarget(null);
           }}
           onSave={saveThreadTitle}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <AlertDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open && !isDeleting) {
+              setDeleteTarget(null);
+              setDeleteError(false);
+            }
+          }}
+          title={`Delete “${deleteTarget.title}”?`}
+          description={
+            deleteError
+              ? "The thread could not be deleted. Try again."
+              : deleteTarget.status === "working"
+                ? "The agent is still working. Deleting this thread stops the current run and removes it from Conan. This action can’t be undone."
+                : "This removes the thread from Conan. This action can’t be undone."
+          }
+          cancelLabel="Cancel"
+          actionLabel="Delete thread"
+          isActionLoading={isDeleting}
+          onAction={() => void confirmDeleteThread()}
         />
       ) : null}
     </>
