@@ -3,10 +3,10 @@
  *
  * T0 STUB (owned by US-002).
  *
- * ⚠️ DESIGN CHANGED UNDER THE PRD. `prd-conan-v2-astryx.json` still describes
- * this slot as "logo mark + Conan wordmark" — that was true of the earlier
- * artboard. On RJ-0 the wordmark has MOVED to the window title bar (RK-0,
- * alongside the traffic lights), and node 70-0 now holds nothing but the search
+ * ⚠️ DESIGN CHANGED UNDER THE PRD. The shell PRD (retired in the 2026-08-02
+ * cleanup) described this slot as "logo mark + Conan wordmark" — that was true
+ * of the earlier artboard. On RJ-0 the wordmark has MOVED to the window title
+ * bar (RK-0, alongside the traffic lights), and node 70-0 holds nothing but the search
  * field. This component therefore draws the 64px band and composes
  * `SearchInput`; it does not invent a logo the artboard no longer has. See the
  * title-bar note in `App.v2.tsx` for why RK-0 itself is not rendered.

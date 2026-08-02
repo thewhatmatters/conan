@@ -168,7 +168,7 @@ commits on pass; decompose backlogs with the `decompose-prd` skill).
   local-app preview; gateway header probe in `src/browser/probe.ts` powers
   an honest framing-refusal state — most public sites send
   `frame-ancestors`/XFO and cannot render; full browsing = the Tauri
-  child-webview v2 spike in `prd-conan-surfaces.md`). ⚠ The transcript's
+  child-webview v2 spike). ⚠ The transcript's
   themed scrollbar rides `aside.overflow-auto` (selector extended beyond
   descendants); the F8 composer-axis balance lives INSIDE the scroller as
   a `pr-16` content wrapper — moving it back outside un-flushes the

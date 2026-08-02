@@ -11,11 +11,11 @@ Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
    working state lives in Claude's project memory (checkpoint entry).
 2. **`WORKFLOW.md`** — how the team (Randy, Hermes, Booker, Nash, Barkley) moves
    a ticket from assignment to promotion. Read this before any ticket work.
-3. **`prd.json`** — the round currently being built. Its `description` carries
-   the run/QA rules inline, and every story's `acceptanceCriteria` are the
-   contract. The matching `prd-*.md` beside it is the source PRD with the
-   reasoning and the verified probe results behind each decision.
-3. Task lists: `docs/t3-port-backlog.md` (feature wishlist; T3-1/5/11/6/3 done),
+3. **Linear** — the task source of truth. Tickets are `WHA-…`; the agent MCP
+   cannot reach the workspace, so Hermes syncs status and quotes the acceptance
+   criteria into the channel. The remaining `prd-v2-*.json` files are the
+   source-of-record for their open stories until those tickets ship.
+4. Task lists: `docs/t3-port-backlog.md` (feature wishlist; T3-1/5/11/6/3 done),
    `docs/ui-improvements-backlog.md` (deferred UI polish — the next likely
    round: image paste + paperclip rethink, a unified provider/model picker,
    context-window default fix), and `docs/chat-v1-qa-backlog.md` (older QA).
@@ -41,8 +41,8 @@ automate-browser). Owner hints live in each story's `notes`.
 **If you are NOT Claude Code:** the checkpoint entry named above lives in
 Claude's project memory (`~/.claude/projects/…`), outside this repo — you
 cannot read it. Everything you need is in the repo instead: `CLAUDE.md` for
-architecture, `prd.json` + its `prd-*.md` for the current round, `docs/` for
-backlogs and QA state, and `git log` for what just changed. Treat those as the
+architecture, `WORKFLOW.md` for the ticket lifecycle, `docs/` for backlogs and
+QA state, and `git log` for what just changed. Treat those as the
 source of truth and don't assume there's hidden context you're missing.
 
 ## The one-line orientation

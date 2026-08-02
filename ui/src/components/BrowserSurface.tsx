@@ -10,8 +10,7 @@ import { Button } from "./ui/button.tsx";
  * even on blocked frames (anti-probing), so refusal is detected via the
  * gateway header probe (GET /api/browser/probe); the iframe load-timeout
  * heuristic is the fallback when the probe route is unavailable (stale
- * gateway). The full-site child-webview browser is v2 — see the decision
- * appendix in prd-conan-surfaces.md.
+ * gateway). The full-site child-webview browser is v2.
  *
  * Entered-URL state is plain component state: ChatPanes (and their surface
  * windows) are hidden, never unmounted, on thread switch, so the URL and the

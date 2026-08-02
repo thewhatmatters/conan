@@ -22,7 +22,7 @@
   },
   "conventions": {
     "dependsOnP2a": "Extends ui/src/v2/chat/V2Composer.tsx from p2a (which established ChatComposer + ChatComposerInput + ChatSendButton). Do not rebuild it — add the slots below.",
-    "astryxChatKit": "Compose the Astryx Chat kit (import from '@astryxdesign/core/Chat'; confirm props with `npx astryx component <Name> --json`): ChatComposer (slots), ChatComposerDrawer, ChatComposerTokenElement, ChatComposerInput, ChatSendButton. See docs §10 + prd-v2-p2a-chat-core.json → astryxChatComponents.",
+    "astryxChatKit": "Compose the Astryx Chat kit (import from '@astryxdesign/core/Chat'; confirm props with `npx astryx component <Name> --json`): ChatComposer (slots), ChatComposerDrawer, ChatComposerTokenElement, ChatComposerInput, ChatSendButton. See docs/v2-astryx-redesign.md §10 (Astryx chat kit) — the p2a PRD file was retired in the 2026-08-02 cleanup.",
     "reuseLogic": "Reuse v1's real logic via ui/src/v2/lib adapters — attachment/pin serialization (src/agent/attachments.ts is server-side; v1 PinPicker + send opts are the client reference), the provider registry (GET /api/agent/providers), and the send opts shape (model/effort/permission). Do NOT modify src/ or v1 components.",
     "astryxOnly": "Astryx + ui/src/v2/tokens.css only. No shadcn/Radix, no Tailwind, no raw <div>/hex/px. The provider·model·effort picker popover is custom UI — build it from Astryx Menu/Popover/Layout primitives (`npx astryx search menu|popover`), not Radix.",
     "v1Untouched": "v1 renders pixel-unchanged with the flag OFF.",

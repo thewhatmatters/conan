@@ -27,8 +27,9 @@ dogfooded (we run it to build it) and must not break.
   ⚠️ `RJ-0` **supersedes** the older `App` artboard (`4I-0`), which is now
   `RJ-0`'s second child — so `4I-0` is still the 1512×982 app body, but the
   shell root is `RJ-0`, which adds a 48px window title bar (`RK-0`) above it.
-  Node ids inside the body are unchanged. `prd-conan-v2-astryx.json`'s
-  `nodeMap` has two stale entries; see §8 for the resolved reading.
+  Node ids inside the body are unchanged. The retired shell PRD's `nodeMap`
+  had two stale entries; see §8 for the resolved reading, and §3 below for the
+  authoritative slot → node mapping.
 - **Backend is unchanged.** v2 is presentation only. It reuses the existing
   gateway, WebSockets, and hooks (`useAgentChat`, `/ws/agent`, `/api/agent/*`).
   No `src/` (gateway) changes for the shell milestone.
@@ -110,7 +111,8 @@ are exact, not approximate.
 - **Main (`4O-0`, 1239px):**
   - **Toolbar (`EK-0`, **64px** = 16px inset around a 32px row):** breadcrumb
     `Conan / Analyze my project` (`EL-0` — parent crumb + folder icon + separator
-    all `#737373`, leaf `#FFFFFF`) + **surface tabs** (`HL-0`, 2px gutter): each
+    all `#737373`, leaf `#FFFFFF`) + **surface tabs** (`HL-0`, in group `G7-0`,
+    2px gutter): each
     32px / 10px radius / 12px inline padding; `Chat` is permanent and selected
     (`#DDDDDD1A` wash, `#FFFFFF` icon, 14/600 `#FAFAFA`), `Browser · Terminal ·
     Diff` are closeable (`#A3A3A3` + ✕), then a `Surface ▾` opener at 20% opacity.
@@ -159,11 +161,11 @@ parallel worktrees safe.
 
 ## 5. Task graph — sequential foundation → parallel fan-out
 
-> **Executable form:** these tasks are spec'd as stories in
-> [`prd-conan-v2-astryx.json`](../prd-conan-v2-astryx.json) (the Paper design
-> link + per-slot node IDs + acceptance criteria live there). Feed it to
-> `run-tasks.sh` (`PRD=prd-conan-v2-astryx.json ./run-tasks.sh`) or hand each
-> `userStory` to an Orca worktree. Priorities encode the dependency order:
+> **Historical.** T0–T6 below shipped in the first multi-agent run
+> (`4331e92..ea05306`) and the shell PRD that drove them has been retired —
+> Linear is the task source now. The Paper link, the per-slot node IDs, and the
+> Astryx-only / tokens-only rules all live in this document (§1, §3, §4);
+> nothing was lost with the file. Priorities encoded the dependency order:
 > **1 = T0 barrier**, **2 = T1–T5 parallel**, **3 = T6 integration**.
 
 
@@ -237,10 +239,10 @@ Two things every downstream task must know:
 - **`dist/assets/stylex.css` is emitted as a global `<link>`,** so v1 also
   loads it (~0.4 kB of atomic classes no v1 element carries — inert, measured).
 
-### Three places T0 deliberately departed from `prd-conan-v2-astryx.json`
+### Three places T0 deliberately departed from the shell PRD
 
-The PRD's `nodeMap` predates `RJ-0`. Where it and the artboard disagree, T0
-followed the **artboard** and flagged it rather than inventing UI. Each is
+The retired shell PRD's `nodeMap` predated `RJ-0`. Where it and the artboard
+disagreed, T0 followed the **artboard** and flagged it rather than inventing UI. Each is
 recorded in the relevant file's header comment too.
 
 1. **No sidebar logo.** The PRD gives `SidebarHeader` as "logo mark + Conan
@@ -356,7 +358,7 @@ only after it lands.
 
 | PRD | Scope | Status |
 |---|---|---|
-| `prd-v2-p2a-chat-core.json` | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn) |
+| p2a — chat core | **Walking skeleton** — thread select → live streamed text transcript → minimal composer → send → reply, verified end-to-end | **DONE** (2026-07-30; live Claude turn; PRD file retired in the 2026-08-02 cleanup) |
 | `prd-v2-p2b-transcript-rich.json` | Rich transcript — tool cards, plan/approval UI, markdown, the activity spine, work-log rollups | **PARTIAL** (2026-08-01; tool rollups + approval card + permission-mode chip shipped and the PRD written retroactively — markdown across the transcript, the activity spine and work-log rollups were NOT built, see the file's `notDelivered`) |
 | `prd-v2-p2c-composer.json` | Full composer — attachment drawer/pins, branch chip, provider·model picker + separate effort chip, @// input | **DONE** (2026-07-31; US-301–305 assembled and browser-verified) |
 | `prd-v2-p2d-shell-live.json` | Wire the chrome — real projects/threads + live WS status, thread-select, breadcrumb, new-chat/kebab, project add/remove/sort, git actions (Actions/Open/Commit&Push) | **READY** (pure wiring, no new design) |
@@ -388,8 +390,10 @@ including things we hand-built in v1 (frosted composer dock, jump-to-present,
 | `ChatComposerDrawer` / `ChatComposerTokenElement` | pins drawer + pin chips | p2c |
 | `ChatDictationButton` | voice dictation (new) | p2c/opt |
 
-The per-story component list + exact links live in
-`prd-v2-p2a-chat-core.json` → `astryxChatComponents`.
+The table above is the component list. Doc-page URLs
+(`https://astryx.atmeta.com/components/<PascalCaseName>`) are best-effort —
+Astryx is pre-1.0, so `npx astryx component <Name> --props --json` (or
+`npx astryx search <term>`) is the ground truth for props and exact names.
 
 ### Composer architecture — model vs effort (do not re-fuse)
 
