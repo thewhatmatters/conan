@@ -56,8 +56,19 @@ describe("Sidebar", () => {
       screen.getByRole("searchbox", { name: "Search projects and threads" }),
     ).toHaveAttribute("placeholder", "Search");
     expect(screen.getByRole("button", { name: "Sort projects" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Add project" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+  });
+
+  // WHA-74: Add project used to render enabled with no handler, so clicking it
+  // silently did nothing — the state Randy got stuck in. Disabled without a
+  // callback is the honest rendering; the shell always supplies one.
+  it("disables Add project until the shell supplies a handler", () => {
+    const { unmount } = render(<Sidebar />);
+    expect(screen.getByRole("button", { name: "Add project" })).toBeDisabled();
+    unmount();
+
+    render(<Sidebar onAddProject={() => {}} />);
+    expect(screen.getByRole("button", { name: "Add project" })).toBeEnabled();
   });
 
   it("exposes and updates project expansion state on native buttons", () => {

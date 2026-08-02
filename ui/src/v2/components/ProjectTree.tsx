@@ -22,6 +22,8 @@ import { useState } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
+import { Button } from "@astryxdesign/core/Button";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import {
   ArrowDownWideNarrow,
   ChevronDown,
@@ -29,7 +31,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  SquarePen,
+  MoreVertical,
 } from "lucide-react";
 import ThreadRow, { type ThreadRowProps } from "./ThreadRow.tsx";
 
@@ -40,6 +42,8 @@ export interface ProjectGroup {
   isExpanded?: boolean;
   threads?: ThreadRowProps[];
   onNewThread?: () => void;
+  /** Remove the project from Conan (metadata only) — WHA-74. */
+  onRemove?: () => void;
 }
 
 export interface ProjectTreeProps {
@@ -54,6 +58,8 @@ export interface ProjectTreeProps {
    * screen — a boot flash of "No projects yet" reads as data loss.
    */
   emptyState?: "loading" | "empty" | "error";
+  /** Opens the add-project dialog (WHA-74). Omitted → the control is inert. */
+  onAddProject?: () => void;
 }
 
 const ICON = 16;
@@ -74,12 +80,12 @@ const styles = stylex.create({
     paddingInlineEnd: "var(--conan-space-3)",
   },
   groupHeader: {
-    "--project-compose-opacity": 0,
+    "--project-actions-opacity": 0,
     ":hover": {
-      "--project-compose-opacity": 1,
+      "--project-actions-opacity": 1,
     },
     ":focus-within": {
-      "--project-compose-opacity": 1,
+      "--project-actions-opacity": 1,
     },
   },
   // The fixed trailing lane. Present in every row; sometimes invisible.
@@ -101,12 +107,21 @@ const styles = stylex.create({
   actionSlotHidden: {
     opacity: 0,
   },
-  composeAction: {
-    opacity: "var(--project-compose-opacity)",
+  // The kebab occupies the same trailing lane the compose icon used to, and
+  // still rides the header's hover/focus reveal. An OPEN menu pins it visible:
+  // the pointer has to leave the row to reach the flyout, and a control that
+  // fades out from under its own open menu reads as a glitch.
+  menuSlot: {
+    flexShrink: 0,
+    height: "var(--conan-control-height)",
+    opacity: "var(--project-actions-opacity)",
     transition: "opacity var(--conan-duration-fast) ease",
     "@media (prefers-reduced-motion: reduce)": {
       transition: "none",
     },
+  },
+  menuSlotOpen: {
+    opacity: 1,
   },
   // The section label is the one place in the sidebar RJ-0 goes to full white
   // (#FFFFFF, a step above `primary`) — it anchors the whole tree. That tone is
@@ -169,7 +184,7 @@ const PLACEHOLDER_GROUPS: ProjectGroup[] = [
   { name: ".claude", isExpanded: false },
 ];
 
-function SectionHeader() {
+function SectionHeader({ onAddProject }: { onAddProject?: () => void }) {
   return (
     <HStack align="center" xstyle={styles.controlRow}>
       <HStack align="center" xstyle={styles.sectionLabel}>
@@ -177,6 +192,8 @@ function SectionHeader() {
           Projects
         </Text>
       </HStack>
+      {/* Sort is still inert — US-504 owns it and is deferred. Left as-is
+          rather than half-wired, so it doesn't read as shipped. */}
       <button
         type="button"
         aria-label="Sort projects"
@@ -187,6 +204,8 @@ function SectionHeader() {
       <button
         type="button"
         aria-label="Add project"
+        onClick={onAddProject}
+        disabled={!onAddProject}
         {...stylex.props(styles.actionSlot)}
       >
         <FolderPlus size={ICON} aria-hidden />
@@ -206,11 +225,13 @@ function Group({
   selectedKey,
   onSelectThread,
   onNewThread,
+  onRemove,
 }: ProjectGroup & {
   selectedKey?: string | null;
   onSelectThread?: (thread: ThreadRowProps, projectName: string) => void;
 }) {
   const [expanded, setExpanded] = useState(isExpanded);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const FolderIcon = expanded ? FolderOpen : Folder;
   return (
@@ -242,19 +263,40 @@ function Group({
             <Text color="secondary">{name}</Text>
           </HStack>
         </button>
-        <button
-          type="button"
-          aria-label={`New chat in ${name}`}
-          onClick={onNewThread}
-          data-slot="project-compose-action"
-          {...stylex.props(
-            styles.actionSlot,
-            styles.composeAction,
-            !onNewThread && styles.actionSlotHidden,
-          )}
-        >
-          <SquarePen size={ICON} aria-hidden />
-        </button>
+        {onNewThread || onRemove ? (
+          <HStack
+            xstyle={[styles.menuSlot, isMenuOpen && styles.menuSlotOpen]}
+            data-slot="project-actions"
+            data-menu-open={isMenuOpen ? "true" : undefined}
+          >
+            <DropdownMenu
+              isMenuOpen={isMenuOpen}
+              onOpenChange={setIsMenuOpen}
+              button={{
+                label: `Actions for ${name}`,
+                icon: <MoreVertical size={ICON} aria-hidden />,
+                isIconOnly: true,
+                variant: "ghost",
+                size: "sm",
+              }}
+              hasChevron={false}
+              placement="below"
+              items={[
+                {
+                  label: "New chat",
+                  onClick: onNewThread ?? undefined,
+                  isDisabled: !onNewThread,
+                },
+                { type: "divider" },
+                {
+                  label: "Remove project",
+                  onClick: onRemove ?? undefined,
+                  isDisabled: !onRemove,
+                },
+              ]}
+            />
+          </HStack>
+        ) : null}
       </HStack>
       {expanded ? (
         threads.length > 0 ? (
@@ -298,6 +340,7 @@ export default function ProjectTree({
   selectedKey = null,
   onSelectThread,
   emptyState = "empty",
+  onAddProject,
 }: ProjectTreeProps) {
   // Default selection wash for the artboard placeholder when the parent has
   // not yet set an active thread — keeps the shell looking selected at rest.
@@ -306,12 +349,24 @@ export default function ProjectTree({
 
   return (
     <VStack gap={0} data-slot="project-tree">
-      <SectionHeader />
+      <SectionHeader onAddProject={onAddProject} />
       {groups.length === 0 ? (
-        <VStack gap={0} xstyle={styles.emptyLine} data-slot="project-tree-empty">
+        <VStack gap={2} xstyle={styles.emptyLine} data-slot="project-tree-empty">
           <Text type="supporting" color="secondary">
             {EMPTY_COPY[emptyState]}
           </Text>
+          {/* The header's icon is a 32px target most people never look at with
+              zero rows on screen. An empty tree gets a named way out. */}
+          {emptyState === "empty" && onAddProject ? (
+            <HStack>
+              <Button
+                label="Add your first project"
+                variant="secondary"
+                size="sm"
+                onClick={onAddProject}
+              />
+            </HStack>
+          ) : null}
         </VStack>
       ) : (
         groups.map((group) => (

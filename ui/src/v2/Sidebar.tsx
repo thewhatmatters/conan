@@ -33,6 +33,8 @@ export interface SidebarProps {
   /** Real project groups (p2d US-501). Omitted → ProjectTree's own default. */
   groups?: ProjectGroup[];
   emptyState?: ProjectTreeProps["emptyState"];
+  /** Opens the add-project dialog (WHA-74) — the shell owns the dialog. */
+  onAddProject?: () => void;
 }
 
 const styles = stylex.create({
@@ -62,6 +64,7 @@ export default function Sidebar({
   onSelectThread,
   groups,
   emptyState,
+  onAddProject,
 }: SidebarProps) {
   return (
     <LayoutPanel
@@ -82,6 +85,7 @@ export default function Sidebar({
             emptyState={emptyState}
             selectedKey={selectedKey}
             onSelectThread={onSelectThread}
+            onAddProject={onAddProject}
           />
         </VStack>
         <VStack padding={4} gap={4} xstyle={styles.footer}>

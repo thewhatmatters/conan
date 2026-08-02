@@ -54,6 +54,7 @@ import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
 import SecondaryBar from "./components/SecondaryBar.tsx";
 import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
+import AddProjectDialog from "./components/AddProjectDialog.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
 import {
@@ -110,6 +111,30 @@ interface V2Draft {
   projectId: string;
 }
 
+/** The project behind an open "Remove project?" confirmation (WHA-74). */
+interface V2RemoveTarget {
+  id: string;
+  name: string;
+}
+
+/**
+ * A client-only id for an unsent draft.
+ *
+ * `crypto.randomUUID` only exists in a SECURE CONTEXT. Tauri and localhost
+ * qualify; a plain-http LAN origin (`http://192.168.x.x:5250` — how review
+ * previews are actually opened) does not, and calling it there throws
+ * "crypto.randomUUID is not a function" and kills the New chat click. Found
+ * during WHA-74 browser QA. The fallback only has to be unique within one
+ * session's draft list, so counter + timestamp is enough — this is never
+ * persisted or used as a security value.
+ */
+let draftSeq = 0;
+function draftId(): string {
+  if (typeof crypto?.randomUUID === "function") return `draft-${crypto.randomUUID()}`;
+  draftSeq += 1;
+  return `draft-${Date.now().toString(36)}-${draftSeq}`;
+}
+
 export default function AppV2() {
   const config = useGatewayConfig();
   const token = config?.token ?? null;
@@ -120,6 +145,10 @@ export default function AppV2() {
   const [deleteTarget, setDeleteTarget] = useState<ThreadRowProps | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<V2RemoveTarget | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState(false);
+  const [isAddingProject, setIsAddingProject] = useState(false);
   const { states, reportState } = useV2ThreadState();
 
   const copyText = useCallback((value: string) => {
@@ -131,7 +160,7 @@ export default function AppV2() {
       const project = projects.find((candidate) => candidate.id === projectId);
       if (!project) return;
       const existing = drafts.find((draft) => draft.projectId === projectId);
-      const id = existing?.id ?? `draft-${crypto.randomUUID()}`;
+      const id = existing?.id ?? draftId();
       if (!existing) setDrafts((current) => [...current, { id, projectId }]);
       setActiveThread({
         key: id,
@@ -186,6 +215,66 @@ export default function AppV2() {
     }
   }, [deleteTarget, deleteThread, isDeleting]);
 
+  // WHA-74. The gateway's DELETE is metadata-only (`src/gateway/index.ts:603`):
+  // it drops the project row and cascades its threads/actions, and never touches
+  // the folder on disk. Drafts are client-only, so they are dropped here.
+  const removeProject = useCallback(
+    async ({ id }: V2RemoveTarget) => {
+      if (!token) throw new Error("No gateway token");
+      const response = await fetch(
+        apiBase() + `/api/agent/projects/${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+          headers: { "x-conan-token": token },
+        },
+      );
+      if (!response.ok) throw new Error(`Remove failed (${response.status})`);
+      setDrafts((current) => current.filter((draft) => draft.projectId !== id));
+      // The open thread may have belonged to the project that just went away.
+      setActiveThread((current) => (current?.projectId === id ? null : current));
+      await refresh();
+    },
+    [refresh, token],
+  );
+
+  // WHA-74 recovery path. Upsert is idempotent by path (`gateway/index.ts:585`),
+  // so re-adding a folder returns its existing row rather than duplicating it.
+  const addProject = useCallback(
+    async (path: string) => {
+      if (!token) throw new Error("No gateway token");
+      const response = await fetch(apiBase() + "/api/agent/projects", {
+        method: "POST",
+        headers: {
+          "x-conan-token": token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ path }),
+      });
+      if (!response.ok) throw new Error(`Add failed (${response.status})`);
+      await refresh();
+    },
+    [refresh, token],
+  );
+
+  const requestRemoveProject = useCallback((target: V2RemoveTarget) => {
+    setRemoveError(false);
+    setRemoveTarget(target);
+  }, []);
+
+  const confirmRemoveProject = useCallback(async () => {
+    if (!removeTarget || isRemoving) return;
+    setIsRemoving(true);
+    setRemoveError(false);
+    try {
+      await removeProject(removeTarget);
+      setRemoveTarget(null);
+    } catch {
+      setRemoveError(true);
+    } finally {
+      setIsRemoving(false);
+    }
+  }, [isRemoving, removeProject, removeTarget]);
+
   const saveThreadTitle = useCallback(
     async (title: string) => {
       const id = renameTarget?.id;
@@ -222,6 +311,7 @@ export default function AppV2() {
         name: p.name,
         isExpanded: true,
         onNewThread: () => newThreadIn(p.id),
+        onRemove: () => requestRemoveProject({ id: p.id, name: p.name }),
         threads: [
           ...drafts
             .filter((draft) => draft.projectId === p.id)
@@ -261,7 +351,15 @@ export default function AppV2() {
           }),
         ],
       })),
-    [copyText, drafts, newThreadIn, projects, requestDeleteThread, states],
+    [
+      copyText,
+      drafts,
+      newThreadIn,
+      projects,
+      requestDeleteThread,
+      requestRemoveProject,
+      states,
+    ],
   );
 
   // sessionId → its project + row, so a click can build the FULL reopen
@@ -339,6 +437,7 @@ export default function AppV2() {
             emptyState={emptyState}
             selectedKey={activeThread?.key ?? null}
             onSelectThread={onSelectThread}
+            onAddProject={token ? () => setIsAddingProject(true) : undefined}
           />
         }
         xstyle={styles.shell}
@@ -395,6 +494,39 @@ export default function AppV2() {
           actionLabel="Delete thread"
           isActionLoading={isDeleting}
           onAction={() => void confirmDeleteThread()}
+        />
+      ) : null}
+      {removeTarget ? (
+        <AlertDialog
+          isOpen
+          onOpenChange={(open) => {
+            if (!open && !isRemoving) {
+              setRemoveTarget(null);
+              setRemoveError(false);
+            }
+          }}
+          title={`Remove “${removeTarget.name}”?`}
+          // Says both halves on purpose: what goes (the project and its threads,
+          // from Conan) and what does not (the folder on disk). A destructive
+          // confirmation that only names the deletion invites the worse reading.
+          description={
+            removeError
+              ? "The project could not be removed. Try again."
+              : "This removes the project and its threads from Conan. The folder on disk is not deleted. This action can’t be undone."
+          }
+          cancelLabel="Cancel"
+          actionLabel="Remove project"
+          isActionLoading={isRemoving}
+          onAction={() => void confirmRemoveProject()}
+        />
+      ) : null}
+      {isAddingProject ? (
+        <AddProjectDialog
+          isOpen
+          token={token}
+          start={config?.cwd ?? ""}
+          onOpenChange={setIsAddingProject}
+          onAdd={addProject}
         />
       ) : null}
     </>
