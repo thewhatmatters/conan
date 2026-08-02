@@ -143,10 +143,39 @@ describe("V2Transcript", () => {
   });
 
   it("exposes completed tool output as expandable detail", () => {
-    render(<V2Transcript items={[tool]} />);
+    const { container } = render(<V2Transcript items={[tool]} />);
 
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByText(/file contents/)).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="assistant-code-block"]')).toBeNull();
+  });
+
+  it("renders fenced tool output through the shared Astryx CodeBlock path", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const code = '{  "status": "ok", "items": [1,  2] }\n';
+    const jsonTool: ChatItem = {
+      ...tool,
+      id: "t-json",
+      name: "Bash",
+      input: { command: "read-json" },
+      result: `Payload follows:\n\n\`\`\`json\n${code}\`\`\``,
+    };
+    const { container } = render(<V2Transcript items={[jsonTool]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Bash read-json/i }));
+    expect(
+      container.querySelector('[data-slot="assistant-message-content"]'),
+    ).toHaveTextContent("Payload follows:");
+    expect(container.querySelector('[data-slot="assistant-code-block"]')).not.toBeNull();
+    expect(screen.getByRole("group", { name: "json" })).toBeInTheDocument();
+    expect(container.textContent).not.toContain("```json");
+
+    fireEvent.click(screen.getByRole("button", { name: /copy code/i }));
+    expect(writeText).toHaveBeenCalledWith(code);
   });
 
   it("keeps long commands out of the scan row and preserves them in detail", () => {

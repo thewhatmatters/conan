@@ -198,11 +198,7 @@ function toolCall(item: ToolActivity): ChatToolCallItem {
     target: toolTarget(item.input),
     status: item.result == null ? "running" : item.isError ? "error" : "complete",
     errorMessage: item.isError ? item.result ?? "Tool call failed" : undefined,
-    resultDetail: detail ? (
-      <Text type="supporting" color="secondary" xstyle={styles.toolResult}>
-        {detail}
-      </Text>
-    ) : undefined,
+    resultDetail: detail ? <V2AssistantContent text={detail} /> : undefined,
   };
 }
 
@@ -222,10 +218,6 @@ const styles = stylex.create({
     marginInline: "auto",
     maxWidth: "var(--conan-chat-measure)",
     width: "100%",
-  },
-  toolResult: {
-    overflowWrap: "anywhere",
-    whiteSpace: "pre-wrap",
   },
   toolCalls: {
     maxWidth: "100%",
