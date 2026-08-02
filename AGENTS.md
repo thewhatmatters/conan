@@ -9,7 +9,9 @@ Code reads `CLAUDE.md`; this file mirrors the essentials for other agents.
    **chat-primary** (the long "Architecture (DORMANT…)" body describes the
    removed terminal/HUD era — history only). `HANDOFF.md` is retired; live
    working state lives in Claude's project memory (checkpoint entry).
-2. **`prd.json`** — the round currently being built. Its `description` carries
+2. **`WORKFLOW.md`** — how the team (Randy, Hermes, Booker, Nash, Barkley) moves
+   a ticket from assignment to promotion. Read this before any ticket work.
+3. **`prd.json`** — the round currently being built. Its `description` carries
    the run/QA rules inline, and every story's `acceptanceCriteria` are the
    contract. The matching `prd-*.md` beside it is the source PRD with the
    reasoning and the verified probe results behind each decision.
