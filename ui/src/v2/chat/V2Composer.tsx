@@ -55,6 +55,17 @@ export interface V2ComposerProps {
   /** Saved session to continue (US-501) — sent as `resume` so the driver
    *  relaunches with the conversation's context. Null = fresh session. */
   resumeSessionId?: string | null;
+  /**
+   * The guided-input gate (WHA-86), rendered ABOVE the pins drawer when the
+   * driver is blocked on a decision. It is passed in rather than built here so
+   * the composer keeps knowing nothing about the approval protocol — it only
+   * knows it has a drawer slot and something wants it.
+   *
+   * `gate` receives the live composer text so a decline can carry the user's
+   * typed guidance as the following turn, and a callback to clear the input
+   * once that text has been sent.
+   */
+  gate?: (args: { text: string; clear: () => void }) => React.ReactNode;
   send: (
     text: string,
     opts: AgentOpts,
@@ -71,6 +82,7 @@ export default function V2Composer({
   disabled = false,
   locked = false,
   resumeSessionId = null,
+  gate,
   send,
   interrupt,
 }: V2ComposerProps) {
@@ -193,12 +205,20 @@ export default function V2Composer({
       placeholder="Ask anything"
       isDisabled={isDisabled}
       drawer={
-        <PinsDrawer
-          pins={attachments.pins}
-          images={attachments.images}
-          onRemovePin={attachments.removePin}
-          onRemoveImage={attachments.removeImage}
-        />
+        // Two occupants, and the gate goes first: when the agent is blocked,
+        // that is the thing demanding an answer. Pins stay visible underneath
+        // rather than vanishing — the composer is still typeable and still
+        // holds whatever the user staged, and hiding it would read as loss.
+        // PinsDrawer returns null when empty, so the common case is unchanged.
+        <>
+          {gate?.({ text: value, clear: () => setValue("") })}
+          <PinsDrawer
+            pins={attachments.pins}
+            images={attachments.images}
+            onRemovePin={attachments.removePin}
+            onRemoveImage={attachments.removeImage}
+          />
+        </>
       }
       headerActions={branchChip}
       footerActions={

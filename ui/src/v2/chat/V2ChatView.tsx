@@ -18,7 +18,7 @@ import { useV2ThreadHistory } from "../lib/useV2ThreadHistory.ts";
 import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
-import V2ApprovalPanel from "./V2ApprovalPanel.tsx";
+import V2ApprovalGate from "./V2ApprovalGate.tsx";
 
 export interface V2ChatViewProps {
   /** Gateway auth token; null until /api/config resolves — no socket then. */
@@ -110,17 +110,33 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
       }
       composer={
         <VStack gap={0} xstyle={styles.measure}>
-          {pendingApproval ? (
-            <V2ApprovalPanel
-              approval={pendingApproval}
-              count={pendingApprovals.length}
-              respond={respondToApproval}
-            />
-          ) : (
-            <V2Composer
+          {/* WHA-86: the composer is ALWAYS mounted. A pending approval no
+              longer swaps it out — the gate rides its drawer slot, so the live
+              region is mutated rather than inserted (WHA-55) and the user can
+              keep typing while the agent waits. */}
+          <V2Composer
               activeThread={activeThread}
               token={token}
               busy={busy}
+              gate={
+                pendingApproval
+                  ? ({ text, clear }) => (
+                      <V2ApprovalGate
+                        approval={pendingApproval}
+                        count={pendingApprovals.length}
+                        respond={respondToApproval}
+                        guidance={text}
+                        sendGuidance={(guidance) => {
+                          send(guidance, {
+                            cwd: activeThread?.cwd ?? undefined,
+                            resume: history.resumeSessionId ?? undefined,
+                          });
+                          clear();
+                        }}
+                      />
+                    )
+                  : undefined
+              }
               // Only pass --resume when the history actually reconstructed; a
               // missing JSONL resumes nothing and would fail the launch.
               resumeSessionId={history.resumeSessionId}
@@ -135,8 +151,7 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
               disabled={status !== "open" || !token}
               send={send}
               interrupt={interrupt}
-            />
-          )}
+          />
         </VStack>
       }
     >

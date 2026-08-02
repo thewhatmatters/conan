@@ -1,24 +1,28 @@
 /**
- * Supervised-mode permission prompt (p2b US-604).
+ * Approval CONTENT — what the agent is asking about (p2b US-604, reshaped by
+ * WHA-86).
  *
- * Replaces the composer while the driver is blocked. The four actions map
- * directly to PermissionDecision; this component does not invent approval
- * state or duplicate the socket protocol owned by useAgentChat.
+ * This used to be the whole prompt: a Card that replaced the composer, owning
+ * its own live region and action row. WHA-86 moved the container and the
+ * actions into `V2ApprovalGate` (a drawer that rises out of a composer which
+ * stays mounted), and what is left here is the part that was always the point —
+ * rendering WHAT is being approved: a plan, a file diff, a structured tool
+ * summary, or the raw detail.
+ *
+ * It deliberately no longer carries `aria-live`. The gate owns announcement now,
+ * because a region that is inserted rather than mutated is exactly the defect
+ * WHA-55 describes.
  */
 import * as stylex from "@stylexjs/stylex";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { buildFileDiff } from "../../lib/diff.ts";
 import V2DiffView from "../components/V2DiffView.tsx";
-import type {
-  PendingApproval,
-  PermissionDecision,
-} from "../lib/useV2Chat.ts";
+import type { PendingApproval } from "../lib/useV2Chat.ts";
 
 /** Max rows in the non-file-tool structured summary. */
 const MAX_SUMMARY_ROWS = 6;
@@ -90,24 +94,18 @@ const styles = stylex.create({
   planParagraph: {
     marginBlock: "var(--conan-space-2)",
   },
-  actions: {
-    flexWrap: "wrap",
-  },
 });
 
-export interface V2ApprovalPanelProps {
+export interface V2ApprovalContentProps {
   approval: PendingApproval;
+  /** Queue depth — shown as "1 of N" when more than one is waiting. */
   count: number;
-  respond: (id: string, decision: PermissionDecision) => void;
 }
 
-export default function V2ApprovalPanel({
+export default function V2ApprovalContent({
   approval,
   count,
-  respond,
-}: V2ApprovalPanelProps) {
-  const decide = (decision: PermissionDecision) =>
-    respond(approval.id, decision);
+}: V2ApprovalContentProps) {
   const isPlan = approval.toolName === "ExitPlanMode";
   // Defect 2: a file edit renders as a real diff; other tools get a short
   // structured summary of their input; anything else keeps the mono block.
@@ -115,16 +113,7 @@ export default function V2ApprovalPanel({
   const summary = isPlan || diff ? null : summarizeToolInput(approval.input);
 
   return (
-    <Card
-      data-slot="v2-approval-panel"
-      role="region"
-      aria-label={isPlan ? "Plan approval" : "Permission needed"}
-      aria-live="assertive"
-      aria-atomic="true"
-      padding={4}
-      width="100%"
-    >
-      <VStack gap={3}>
+    <VStack gap={3} data-slot="v2-approval-content">
         <HStack gap={2} align="center" justify="between">
           <VStack gap={1}>
             <Text type="body" weight="medium">
@@ -185,35 +174,6 @@ export default function V2ApprovalPanel({
           </Card>
         )}
 
-        <HStack gap={2} align="center" xstyle={styles.actions}>
-          <Button
-            label={isPlan ? "Proceed in build" : "Approve once"}
-            variant="primary"
-            size="sm"
-            onClick={() => decide("accept")}
-          />
-          {!isPlan ? (
-            <Button
-              label="Always allow this session"
-              variant="secondary"
-              size="sm"
-              onClick={() => decide("acceptForSession")}
-            />
-          ) : null}
-          <Button
-            label={isPlan ? "Keep planning" : "Decline"}
-            variant="secondary"
-            size="sm"
-            onClick={() => decide("decline")}
-          />
-          <Button
-            label="Cancel turn"
-            variant="destructive"
-            size="sm"
-            onClick={() => decide("cancel")}
-          />
-        </HStack>
-      </VStack>
-    </Card>
+    </VStack>
   );
 }

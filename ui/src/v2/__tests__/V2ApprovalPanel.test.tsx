@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+/**
+ * V2ApprovalContent — WHAT is being approved.
+ *
+ * The decision buttons moved to `V2ApprovalGate` in WHA-86, so the
+ * action-mapping test moved with them (see V2ApprovalGate.test.tsx). What
+ * belongs here is the content contract: plan wording, the Defect-2 diff, the
+ * structured summary, and the raw-detail fallback.
+ */
+import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import V2ApprovalPanel from "../chat/V2ApprovalPanel.tsx";
+import V2ApprovalContent from "../chat/V2ApprovalPanel.tsx";
 import type { PendingApproval } from "../lib/useV2Chat.ts";
 
 const approval: PendingApproval = {
@@ -13,30 +21,27 @@ const approval: PendingApproval = {
   input: { command: "npm test" },
 };
 
-describe("V2ApprovalPanel", () => {
-  it("maps every permission action to the driver decision", () => {
-    const respond = vi.fn();
-    render(
-      <V2ApprovalPanel approval={approval} count={2} respond={respond} />,
-    );
+describe("V2ApprovalContent", () => {
+  it("renders the tool's detail and the queue depth", () => {
+    render(<V2ApprovalContent approval={approval} count={2} />);
 
     expect(screen.getByText("npm test")).toBeInTheDocument();
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
 
-    for (const [label, decision] of [
-      ["Approve once", "accept"],
-      ["Always allow this session", "acceptForSession"],
-      ["Decline", "decline"],
-      ["Cancel turn", "cancel"],
-    ] as const) {
-      fireEvent.click(screen.getByRole("button", { name: label }));
-      expect(respond).toHaveBeenLastCalledWith("approval-1", decision);
-    }
+  it("carries no live region — the gate owns announcement now (WHA-55)", () => {
+    const { container } = render(
+      <V2ApprovalContent approval={approval} count={1} />,
+    );
+
+    // The old panel was inserted WITH aria-live, which is why screen readers
+    // never announced it. Announcement belongs to the always-mounted gate.
+    expect(container.querySelector("[aria-live]")).toBeNull();
   });
 
   it("uses plan language without widening all other tools", () => {
     render(
-      <V2ApprovalPanel
+      <V2ApprovalContent
         approval={{
           ...approval,
           toolKind: "other",
@@ -44,25 +49,18 @@ describe("V2ApprovalPanel", () => {
           detail: "# Proposed approach\n\n- Render the plan\n- Verify the flow",
         }}
         count={1}
-        respond={vi.fn()}
       />,
     );
 
-    const panel = screen.getByRole("region", { name: "Plan approval" });
-    expect(panel).toHaveAttribute("aria-live", "assertive");
-    expect(panel).toHaveAttribute("aria-atomic", "true");
+    expect(screen.getByText("Plan ready")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Proposed approach" })).toBeInTheDocument();
     expect(screen.getByText("Render the plan")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Proceed in build" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Keep planning" })).toBeEnabled();
-    expect(
-      screen.queryByRole("button", { name: "Always allow this session" }),
-    ).not.toBeInTheDocument();
+    // The option set for a plan (no "always allow") is the gate's contract now.
   });
 
   it("renders an Edit as a real diff with the full path (Defect 2)", () => {
     render(
-      <V2ApprovalPanel
+      <V2ApprovalContent
         approval={{
           ...approval,
           toolKind: "file-change",
@@ -75,7 +73,6 @@ describe("V2ApprovalPanel", () => {
           },
         }}
         count={1}
-        respond={vi.fn()}
       />,
     );
 
@@ -86,14 +83,12 @@ describe("V2ApprovalPanel", () => {
     expect(
       screen.queryByRole("button", { name: /Show full diff/ }),
     ).not.toBeInTheDocument();
-    // The action row is still present alongside the diff.
-    expect(screen.getByRole("button", { name: "Approve once" })).toBeEnabled();
   });
 
   it("previews a long Write and expands to the full diff on demand", () => {
     const content = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n");
     render(
-      <V2ApprovalPanel
+      <V2ApprovalContent
         approval={{
           ...approval,
           toolKind: "file-change",
@@ -102,7 +97,6 @@ describe("V2ApprovalPanel", () => {
           input: { file_path: "/tmp/project/big.txt", content },
         }}
         count={1}
-        respond={vi.fn()}
       />,
     );
 
@@ -118,7 +112,7 @@ describe("V2ApprovalPanel", () => {
   });
 
   it("shows a structured summary for non-file tools instead of raw JSON", () => {
-    render(<V2ApprovalPanel approval={approval} count={1} respond={vi.fn()} />);
+    render(<V2ApprovalContent approval={approval} count={1} />);
 
     expect(screen.getByText("command")).toBeInTheDocument();
     expect(screen.getByText("npm test")).toBeInTheDocument();
@@ -126,7 +120,7 @@ describe("V2ApprovalPanel", () => {
 
   it("falls back to the detail mono block when input has no summarizable fields", () => {
     render(
-      <V2ApprovalPanel
+      <V2ApprovalContent
         approval={{
           ...approval,
           toolName: "SomeMcpTool",
@@ -134,7 +128,6 @@ describe("V2ApprovalPanel", () => {
           input: { nested: { deep: true } },
         }}
         count={1}
-        respond={vi.fn()}
       />,
     );
 
