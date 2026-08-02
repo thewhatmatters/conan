@@ -1,5 +1,8 @@
 # Conan — project context for Claude Code
 
+> 🏗 **Process first:** before working on a ticket, read [`WORKFLOW.md`](WORKFLOW.md)
+> for the team workflow (assignment, handoff, QA, promotion, and closeout).
+>
 > ⚠️ **CURRENT ARCHITECTURE (2026-07-24): Conan is CHAT-PRIMARY, not
 > terminal-primary — and MERGED TO `main`.** Conan drives Claude Code, Codex,
 > and Grok **headlessly** (stream-json/JSONL child processes normalized through
