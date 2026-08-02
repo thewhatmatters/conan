@@ -53,12 +53,16 @@ Backlog
 
 1. **One owner per ticket.** Give exactly one builder primary ownership unless
    Randy explicitly asks for a deliberate race.
-2. **Name both roles.** If the ticket needs an independent verification gate,
+2. **Hermes picks the owner when Randy delegates.** If Randy assigns Hermes
+   multiple tickets to staff, Hermes selects the builder (and independent
+   verifier, when needed) based on current workload, queue depth, and skill fit,
+   then publishes the choice in the channel. Randy can override at any time.
+3. **Name both roles.** If the ticket needs an independent verification gate,
    the assignment names both the builder and the verifier.
-3. **Hermes produces the acceptance checklist** from the Linear ticket and the
+4. **Hermes produces the acceptance checklist** from the Linear ticket and the
    `prd.json`/`prd-*.md` acceptance criteria before work starts. This checklist
    is the contract for both the builder and QA.
-4. **Cite the Linear ID** as `WHA-…` in every channel message about the ticket.
+5. **Cite the Linear ID** as `WHA-…` in every channel message about the ticket.
    Hermes syncs the actual Linear status because the agent MCP cannot reach the
    workspace.
 
