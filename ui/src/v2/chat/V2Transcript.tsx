@@ -21,6 +21,7 @@ import {
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import type { ChatItem } from "../lib/useV2Chat.ts";
+import V2AssistantContent from "./V2AssistantContent.tsx";
 
 export interface V2TranscriptProps {
   items: ChatItem[];
@@ -231,13 +232,6 @@ const styles = stylex.create({
     minWidth: 0,
     width: "100%",
   },
-  assistantContent: {
-    display: "block",
-    maxWidth: "100%",
-    minWidth: 0,
-    overflowWrap: "anywhere",
-    width: "100%",
-  },
 });
 
 export default function V2Transcript({
@@ -290,12 +284,7 @@ export default function V2Transcript({
               sender="assistant"
               metadata={<ChatMessageMetadata timestamp={timestamp(item.ts)} />}
             >
-              <ChatTokenizedText
-                data-slot="assistant-message-content"
-                xstyle={styles.assistantContent}
-              >
-                {item.text}
-              </ChatTokenizedText>
+              <V2AssistantContent text={item.text} />
             </ChatMessage>
           );
         }
