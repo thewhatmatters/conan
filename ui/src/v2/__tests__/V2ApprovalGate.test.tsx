@@ -191,3 +191,9 @@ describe("V2ApprovalGate", () => {
     ).not.toBeNull();
   });
 });
+
+/**
+ * The announcer is asserted in V2ChatView's own suite rather than here: what
+ * matters is that the node exists BEFORE any approval does, which is a property
+ * of the view, not of the gate.
+ */

@@ -46,6 +46,19 @@ const styles = stylex.create({
     maxWidth: "var(--conan-chat-measure)",
     width: "100%",
   },
+  // Available to assistive tech, absent from the visual layout. Clip-based
+  // rather than `display:none` or `visibility:hidden` — both of those remove
+  // the node from the a11y tree, which would defeat the whole point.
+  announcer: {
+    border: 0,
+    clipPath: "inset(50%)",
+    height: 1,
+    overflow: "hidden",
+    padding: 0,
+    position: "absolute",
+    whiteSpace: "nowrap",
+    width: 1,
+  },
 });
 
 export default function V2ChatView({ token, activeThread, onState }: V2ChatViewProps) {
@@ -110,10 +123,36 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
       }
       composer={
         <VStack gap={0} xstyle={styles.measure}>
+          {/* WHA-55, and the reason the architecture change was worth making:
+              this status node is ALWAYS mounted and only its TEXT changes when
+              an approval arrives. The old panel shipped `aria-live` on a node
+              that was inserted at the same moment it got content, which is the
+              one shape screen readers reliably do NOT announce.
+
+              `polite`, not `assertive`, and a one-line summary rather than the
+              node wrapping the gate: `assertive` + `atomic` on the whole card
+              read the entire plan aloud, which was the second half of the
+              complaint. The plan itself stays reachable by navigation.
+
+              NOT screen-reader tested — this is the correct mechanism, not a
+              confirmed announcement. Verified only that the node is mounted
+              before the approval exists and mutates in place when it arrives. */}
+          <VStack
+            gap={0}
+            role="status"
+            aria-live="polite"
+            data-slot="v2-approval-announcer"
+            xstyle={styles.announcer}
+          >
+            {pendingApproval
+              ? pendingApproval.toolName === "ExitPlanMode"
+                ? "Plan ready — your decision is needed."
+                : `Permission needed for ${pendingApproval.toolName}.`
+              : ""}
+          </VStack>
           {/* WHA-86: the composer is ALWAYS mounted. A pending approval no
-              longer swaps it out — the gate rides its drawer slot, so the live
-              region is mutated rather than inserted (WHA-55) and the user can
-              keep typing while the agent waits. */}
+              longer swaps it out — the gate rides its drawer slot, so the user
+              can keep typing while the agent waits. */}
           <V2Composer
               activeThread={activeThread}
               token={token}
