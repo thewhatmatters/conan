@@ -41,7 +41,8 @@
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2"
+    "tailwind-variants": "^3.2.2",
+    "thinking-orbs": "^0.1.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

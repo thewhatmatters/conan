@@ -195,15 +195,47 @@ describe("V2Transcript", () => {
     expect(screen.getByText((text) => text.includes(command))).toBeInTheDocument();
   });
 
-  it("shows Working… while busy with no assistant text yet", () => {
-    render(<V2Transcript items={[user]} busy />);
+  // WHA-90 replaced the "Working…" string with the thinking orb. The BEHAVIOUR
+  // these two guard is unchanged and is the streaming handoff itself: the
+  // indicator occupies the next assistant slot until the first token lands,
+  // then the real message takes that slot with no jump. Asserting the slot
+  // rather than the copy keeps the guard while letting the copy escalate.
+  it("shows the thinking orb while busy with no assistant text yet", () => {
+    const { container } = render(<V2Transcript items={[user]} busy />);
 
-    expect(screen.getByText("Working…")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="v2-working"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="v2-thinking-orb"]')).not.toBeNull();
   });
 
-  it("hides Working… once assistant text is present", () => {
-    render(<V2Transcript items={[user, assistant]} busy />);
+  it("hides the thinking orb once assistant text is present", () => {
+    const { container } = render(<V2Transcript items={[user, assistant]} busy />);
 
-    expect(screen.queryByText("Working…")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="v2-working"]')).toBeNull();
+    expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
+  });
+});
+
+describe("V2Transcript thinking state across turns (WHA-90)", () => {
+  // REGRESSION. `hasAssistantText` scanned the WHOLE item list, so once a
+  // thread contained any assistant reply the indicator could never show again:
+  // the thinking state appeared on a thread's FIRST turn and never afterwards.
+  // The old "Working…" line was quiet enough that nobody caught it.
+  it("shows the orb on a SECOND turn, not just the first", () => {
+    const { container } = render(
+      <V2Transcript items={[user, assistant, { ...user, id: "u2" }]} busy />,
+    );
+
+    expect(container.querySelector('[data-slot="v2-thinking-orb"]')).not.toBeNull();
+  });
+
+  it("still hides it once THIS turn has produced text", () => {
+    const { container } = render(
+      <V2Transcript
+        items={[user, assistant, { ...user, id: "u2" }, { ...assistant, id: "a2" }]}
+        busy
+      />,
+    );
+
+    expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
   });
 });
