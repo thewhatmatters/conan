@@ -65,7 +65,11 @@ const PROJECTS = [
 ];
 
 /** Stub only the routes the shell reads; anything else 404s honestly. */
-function stubGateway(projects: unknown = PROJECTS, patchOk = true) {
+function stubGateway(
+  projects: unknown = PROJECTS,
+  patchOk = true,
+  deleteOk = true,
+) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = (data: unknown) =>
@@ -75,6 +79,15 @@ function stubGateway(projects: unknown = PROJECTS, patchOk = true) {
     if (url.includes("/transcript")) return body({ found: false, items: [] });
     if (init?.method === "PATCH") {
       return patchOk
+        ? body({ ok: true })
+        : Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({}),
+          } as Response);
+    }
+    if (init?.method === "DELETE") {
+      return deleteOk
         ? body({ ok: true })
         : Promise.resolve({
             ok: false,
@@ -365,7 +378,7 @@ describe("AppV2 live projects (US-501)", () => {
     ).toBe(false);
   });
 
-  it("round-trips delete through the existing thread route", async () => {
+  it("guards deletion until the named confirmation is accepted", async () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
@@ -373,6 +386,20 @@ describe("AppV2 live projects (US-501)", () => {
       await screen.findByRole("button", { name: "Actions for Analyze my project" }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+    expect(
+      await screen.findByRole("alertdialog", { name: "Delete “Analyze my project”?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("This removes the thread from Conan. This action can’t be undone."),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
+      ),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete thread" }));
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some(
@@ -382,6 +409,74 @@ describe("AppV2 live projects (US-501)", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("keeps the thread when deletion is cancelled", async () => {
+    const fetchMock = stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete “Analyze my project”?",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Analyze my project: Run serverless code..." }),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps the thread when deletion is dismissed with Escape", async () => {
+    const fetchMock = stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete “Analyze my project”?",
+    });
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Analyze my project: Run serverless code..." }),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a failed deletion open with recovery copy", async () => {
+    stubGateway(PROJECTS, true, false);
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete thread" }));
+
+    expect(
+      await screen.findByText("The thread could not be deleted. Try again."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("alertdialog", { name: "Delete “Analyze my project”?" }),
+    ).toBeInTheDocument();
   });
 
   it("resolves the selected thread's own cwd, not just the project path", async () => {
