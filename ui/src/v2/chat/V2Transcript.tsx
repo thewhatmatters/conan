@@ -22,6 +22,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import type { ChatItem } from "../lib/useV2Chat.ts";
 import V2AssistantContent from "./V2AssistantContent.tsx";
+import V2ThinkingOrb from "./V2ThinkingOrb.tsx";
 
 export interface V2TranscriptProps {
   items: ChatItem[];
@@ -202,8 +203,31 @@ function toolCall(item: ToolActivity): ChatToolCallItem {
   };
 }
 
+/**
+ * Has THIS turn produced assistant text yet?
+ *
+ * Scoped to everything after the last user message on purpose. The original
+ * scanned the whole list with `.some()`, which meant that once a thread held
+ * any assistant reply the thinking indicator could never show again — it
+ * appeared on a thread's first turn and never afterwards. The old "Working…"
+ * line was quiet enough that the gap went unnoticed; an orb would have made it
+ * obvious. Found while verifying WHA-90 in the browser: the indicator never
+ * rendered on a resumed thread, and a MutationObserver confirmed it was absent
+ * rather than merely brief.
+ */
 function hasAssistantText(items: ChatItem[]): boolean {
-  return items.some(
+  // Walk back to the last user message rather than `findLastIndex`, which this
+  // project's TS lib target does not include (vitest runs it fine; tsc does not
+  // — widening the lib for one call would be a repo-wide change for no gain).
+  let lastUser = -1;
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (items[i]?.role === "user") {
+      lastUser = i;
+      break;
+    }
+  }
+  const thisTurn = lastUser === -1 ? items : items.slice(lastUser + 1);
+  return thisTurn.some(
     (item) => item.role === "assistant" && Boolean(item.text?.length),
   );
 }
@@ -318,10 +342,14 @@ export default function V2Transcript({
         return null;
       })}
 
+      {/* WHA-90: the thinking state occupies the NEXT assistant-message slot,
+          so when the first token lands the real message replaces it in place
+          and nothing jumps. `showWorking` already expressed that handoff — this
+          only changes what renders inside it. */}
       {showWorking ? (
         <ChatMessage sender="assistant" data-slot="v2-working">
           <ChatMessageBubble variant="ghost">
-            <Text type="supporting" color="secondary">Working…</Text>
+            <V2ThinkingOrb />
           </ChatMessageBubble>
         </ChatMessage>
       ) : null}
