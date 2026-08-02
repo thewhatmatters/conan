@@ -62,6 +62,69 @@ describe("V2Transcript", () => {
     expect(container.querySelector('[data-format="date_time"]')).not.toBeNull();
   });
 
+  it("adds quiet Astryx date landmarks at local day boundaries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 31, 15, 0));
+    const yesterday: ChatItem = {
+      ...assistant,
+      id: "a-yesterday",
+      ts: new Date(2026, 6, 30, 16, 22).getTime(),
+    };
+    const earlier: ChatItem = {
+      ...user,
+      id: "u-earlier",
+      text: "Earlier this week",
+      ts: new Date(2026, 6, 28, 9, 0).getTime(),
+    };
+
+    render(<V2Transcript items={[earlier, yesterday, user, assistant]} />);
+
+    const dividers = screen.getAllByRole("separator");
+    expect(dividers[0]).toHaveAccessibleName("Jul 28");
+    expect(dividers[1]).toHaveAccessibleName("Yesterday");
+    expect(dividers[2]).toHaveAccessibleName("Today");
+    expect(screen.getAllByText("Today")).toHaveLength(1);
+  });
+
+  it("includes the year on absolute divider labels outside the current year", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 2, 12, 0));
+    const lastYear: ChatItem = {
+      ...assistant,
+      id: "a-last-year",
+      ts: new Date(2025, 11, 31, 16, 22).getTime(),
+    };
+
+    render(<V2Transcript items={[lastYear]} />);
+
+    expect(screen.getByRole("separator")).toHaveAccessibleName(/Dec 31.*2025/);
+  });
+
+  it("splits a tool rollup when live activity crosses local midnight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 1, 0, 5));
+    const beforeMidnight: ChatItem = {
+      ...tool,
+      id: "t-before",
+      name: "Read",
+      ts: new Date(2026, 6, 31, 23, 59).getTime(),
+    };
+    const afterMidnight: ChatItem = {
+      ...tool,
+      id: "t-after",
+      name: "Bash",
+      input: { command: "date" },
+      ts: new Date(2026, 7, 1, 0, 1).getTime(),
+    };
+
+    render(<V2Transcript items={[beforeMidnight, afterMidnight]} busy />);
+
+    const dividers = screen.getAllByRole("separator");
+    expect(dividers[0]).toHaveAccessibleName("Yesterday");
+    expect(dividers[1]).toHaveAccessibleName("Today");
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
   it("groups adjacent tool activity into an expandable Astryx rollup", () => {
     const secondTool: ChatItem = {
       ...tool,

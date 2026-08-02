@@ -13,6 +13,7 @@ import {
   ChatMessageBubble,
   ChatMessageList,
   ChatMessageMetadata,
+  ChatSystemMessage,
   ChatTokenizedText,
   ChatToolCalls,
   type ChatToolCallItem,
@@ -32,6 +33,16 @@ type TranscriptEntry =
   | Exclude<ChatItem, ToolActivity>
   | { id: string; role: "tools"; items: ToolActivity[] };
 
+type TranscriptRow =
+  | TranscriptEntry
+  | { id: string; role: "date-divider"; label: string };
+
+function localDayKey(ts?: number | null): string | null {
+  if (ts == null) return null;
+  const value = new Date(ts);
+  return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
+}
+
 function groupToolActivity(items: ChatItem[]): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   for (const item of items) {
@@ -40,13 +51,70 @@ function groupToolActivity(items: ChatItem[]): TranscriptEntry[] {
       continue;
     }
     const previous = entries[entries.length - 1];
-    if (previous?.role === "tools") {
+    if (
+      previous?.role === "tools" &&
+      localDayKey(previous.items[previous.items.length - 1]?.ts) ===
+        localDayKey(item.ts)
+    ) {
       previous.items.push(item);
     } else {
       entries.push({ id: `tools-${item.id}`, role: "tools", items: [item] });
     }
   }
   return entries;
+}
+
+function entryTimestamp(item: TranscriptEntry): number | null | undefined {
+  return item.role === "tools" ? item.items[0]?.ts : item.ts;
+}
+
+function isVisibleEntry(item: TranscriptEntry): boolean {
+  if (
+    item.role === "user" ||
+    item.role === "assistant" ||
+    item.role === "reasoning"
+  ) {
+    return Boolean(item.text);
+  }
+  return item.role === "tools" || item.role === "error";
+}
+
+function calendarDayNumber(value: Date): number {
+  return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function dateDividerLabel(ts: number, now: Date): string {
+  const value = new Date(ts);
+  const dayDifference =
+    (calendarDayNumber(now) - calendarDayNumber(value)) / 86_400_000;
+  if (dayDifference === 0) return "Today";
+  if (dayDifference === 1) return "Yesterday";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(value.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  }).format(value);
+}
+
+function transcriptRows(items: ChatItem[], now = new Date()): TranscriptRow[] {
+  const rows: TranscriptRow[] = [];
+  let previousDay: string | null = null;
+
+  for (const item of groupToolActivity(items).filter(isVisibleEntry)) {
+    const ts = entryTimestamp(item);
+    const day = localDayKey(ts);
+    if (ts != null && day != null && day !== previousDay) {
+      rows.push({
+        id: `date-${day}-${item.id}`,
+        role: "date-divider",
+        label: dateDividerLabel(ts, now),
+      });
+      previousDay = day;
+    }
+    rows.push(item);
+  }
+
+  return rows;
 }
 
 function timestamp(ts?: number | null) {
@@ -177,7 +245,7 @@ export default function V2Transcript({
   busy = false,
 }: V2TranscriptProps) {
   const showWorking = busy && !hasAssistantText(items);
-  const entries = groupToolActivity(items);
+  const rows = transcriptRows(items);
 
   return (
     <ChatMessageList
@@ -186,7 +254,19 @@ export default function V2Transcript({
       density="balanced"
       xstyle={styles.measure}
     >
-      {entries.map((item) => {
+      {rows.map((item) => {
+        if (item.role === "date-divider") {
+          return (
+            <ChatSystemMessage
+              key={item.id}
+              variant="divider"
+              data-slot="date-divider"
+            >
+              {item.label}
+            </ChatSystemMessage>
+          );
+        }
+
         if (item.role === "user") {
           if (!item.text) return null;
           return (
