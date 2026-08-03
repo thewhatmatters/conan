@@ -213,6 +213,32 @@ describe("V2Transcript", () => {
     expect(container.querySelector('[data-slot="v2-working"]')).toBeNull();
     expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
   });
+
+  it("removes a completed turn's stale reasoning row", () => {
+    const reasoning: ChatItem = {
+      id: "r1",
+      role: "reasoning",
+      text: "private reasoning text",
+      ts: Date.UTC(2026, 6, 31, 18, 0, 30),
+    };
+    render(<V2Transcript items={[user, reasoning, assistant]} />);
+
+    expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+    expect(screen.getByText("Hello human")).toBeInTheDocument();
+  });
+
+  it("does not let a later turn hide an earlier in-flight reasoning row", () => {
+    const reasoning: ChatItem = {
+      id: "r2",
+      role: "reasoning",
+      text: "current reasoning",
+    };
+    render(
+      <V2Transcript items={[user, reasoning, { ...user, id: "u2", text: "Next turn" }]} />,
+    );
+
+    expect(screen.getByText("Thinking…")).toBeInTheDocument();
+  });
 });
 
 describe("V2Transcript thinking state across turns (WHA-90)", () => {

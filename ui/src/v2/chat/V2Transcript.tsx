@@ -102,7 +102,17 @@ function transcriptRows(items: ChatItem[], now = new Date()): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   let previousDay: string | null = null;
 
-  for (const item of groupToolActivity(items).filter(isVisibleEntry)) {
+  const visibleItems = items.filter((item, index) => {
+    if (item.role !== "reasoning") return true;
+    for (let cursor = index + 1; cursor < items.length; cursor += 1) {
+      const later = items[cursor];
+      if (later?.role === "user") return true;
+      if (later?.role === "assistant" && later.text) return false;
+    }
+    return true;
+  });
+
+  for (const item of groupToolActivity(visibleItems).filter(isVisibleEntry)) {
     const ts = entryTimestamp(item);
     const day = localDayKey(ts);
     if (ts != null && day != null && day !== previousDay) {

@@ -5,6 +5,23 @@ import V2AssistantContent, {
 } from "../chat/V2AssistantContent.tsx";
 
 describe("V2AssistantContent", () => {
+  it("renders assistant prose through Astryx Markdown", () => {
+    const { container } = render(
+      <V2AssistantContent
+        text={"# Release notes\n\nThis is **ready** with `inline code`.\n\n- First\n- Second\n\nhttps://example.com"}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Release notes", level: 2 })).toBeInTheDocument();
+    expect(screen.getByText("ready").tagName).toBe("STRONG");
+    expect(container.querySelector("code")).toHaveTextContent("inline code");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "https://example.com" })).toHaveAttribute(
+      "href",
+      "https://example.com",
+    );
+  });
+
   it("renders labeled JSON through Astryx CodeBlock with a language label", () => {
     const { container } = render(
       <V2AssistantContent text={'Result:\n\n```json\n{"ok":true}\n```'} />,

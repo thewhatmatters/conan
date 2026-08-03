@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
-import { ChatTokenizedText } from "@astryxdesign/core/Chat";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Markdown } from "@astryxdesign/core/Markdown";
 
 type ContentPart =
   | { kind: "prose"; key: string; text: string }
@@ -107,29 +107,54 @@ const styles = stylex.create({
   },
 });
 
+function AssistantCodeBlock({
+  code,
+  language = "plaintext",
+}: {
+  code: string;
+  language?: string;
+}) {
+  return (
+    <CodeBlock
+      data-slot="assistant-code-block"
+      code={code}
+      language={language}
+      hasCopyButton
+      hasLanguageLabel
+      isCollapsible
+      collapsibleThreshold={12}
+      isWrapped={false}
+      width="100%"
+      xstyle={styles.code}
+    />
+  );
+}
+
+const markdownComponents = { code: AssistantCodeBlock };
+
 export default function V2AssistantContent({ text }: { text: string }) {
   return (
     <div data-slot="assistant-message-content" {...stylex.props(styles.root)}>
       {parseAssistantContent(text).map((part) =>
         part.kind === "prose" ? (
           part.text ? (
-            <ChatTokenizedText key={part.key} xstyle={styles.prose}>
+            <Markdown
+              key={part.key}
+              density="compact"
+              headingLevelStart={2}
+              autolink="gfm"
+              contentWidth="100%"
+              components={markdownComponents}
+              xstyle={styles.prose}
+            >
               {part.text}
-            </ChatTokenizedText>
+            </Markdown>
           ) : null
         ) : (
-          <CodeBlock
+          <AssistantCodeBlock
             key={part.key}
-            data-slot="assistant-code-block"
             code={part.code}
             language={part.language}
-            hasCopyButton
-            hasLanguageLabel
-            isCollapsible
-            collapsibleThreshold={12}
-            isWrapped={false}
-            width="100%"
-            xstyle={styles.code}
           />
         ),
       )}
