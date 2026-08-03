@@ -21,6 +21,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { buildFileDiff } from "../../lib/diff.ts";
+import V2BashView, { bashCommand } from "../components/V2BashView.tsx";
 import V2DiffView from "../components/V2DiffView.tsx";
 import type { PendingApproval } from "../lib/useV2Chat.ts";
 
@@ -113,10 +114,11 @@ export default function V2ApprovalContent({
   count,
 }: V2ApprovalContentProps) {
   const isPlan = approval.toolName === "ExitPlanMode";
+  const command = approval.toolName === "Bash" ? bashCommand(approval.input) : null;
   // Defect 2: a file edit renders as a real diff; other tools get a short
   // structured summary of their input; anything else keeps the mono block.
   const diff = isPlan ? null : buildFileDiff(approval.toolName, approval.input);
-  const summary = isPlan || diff ? null : summarizeToolInput(approval.input);
+  const summary = isPlan || command || diff ? null : summarizeToolInput(approval.input);
 
   return (
     <VStack gap={3} data-slot="v2-approval-content">
@@ -156,6 +158,8 @@ export default function V2ApprovalContent({
               </ReactMarkdown>
             </div>
           </Card>
+        ) : command ? (
+          <V2BashView command={command} />
         ) : diff ? (
           <Card variant="muted" padding={0} width="100%">
             <div {...stylex.props(styles.diffWrap)}>

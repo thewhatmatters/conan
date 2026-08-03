@@ -21,6 +21,7 @@ import {
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import type { ChatItem } from "../lib/useV2Chat.ts";
+import V2BashView, { bashCommand } from "../components/V2BashView.tsx";
 import V2AssistantContent from "./V2AssistantContent.tsx";
 import V2ThinkingOrb from "./V2ThinkingOrb.tsx";
 
@@ -179,6 +180,24 @@ function toolDetail(input: unknown, result: string | null): string | undefined {
   return sections.length ? sections.join("\n\n") : undefined;
 }
 
+function bashToolDetail(item: Extract<ChatItem, { role: "tool" }>) {
+  const command = bashCommand(item.input);
+  if (!command) return null;
+
+  return (
+    <div data-slot="v2-bash-tool-detail" {...stylex.props(styles.bashDetail)}>
+      <ChatTokenizedText xstyle={styles.bashHeading}>Input</ChatTokenizedText>
+      <V2BashView command={command} />
+      {item.result ? (
+        <div {...stylex.props(styles.bashResult)}>
+          <ChatTokenizedText xstyle={styles.bashHeading}>Result</ChatTokenizedText>
+          <V2AssistantContent text={item.result} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function toolCall(item: ToolActivity): ChatToolCallItem {
   if (item.role === "approval") {
     return {
@@ -202,14 +221,16 @@ function toolCall(item: ToolActivity): ChatToolCallItem {
     };
   }
 
-  const detail = toolDetail(item.input, item.result);
+  const richBashDetail = item.name === "Bash" ? bashToolDetail(item) : null;
+  const detail = richBashDetail ? undefined : toolDetail(item.input, item.result);
   return {
     key: item.id,
     name: item.name,
     target: toolTarget(item.input),
     status: item.result == null ? "running" : item.isError ? "error" : "complete",
     errorMessage: item.isError ? item.result ?? "Tool call failed" : undefined,
-    resultDetail: detail ? <V2AssistantContent text={detail} /> : undefined,
+    resultDetail:
+      richBashDetail ?? (detail ? <V2AssistantContent text={detail} /> : undefined),
   };
 }
 
@@ -256,6 +277,27 @@ function liveAssistantId(items: ChatItem[]): string | null {
 }
 
 const styles = stylex.create({
+  bashDetail: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--conan-space-2)",
+    maxWidth: "100%",
+    minWidth: 0,
+    width: "100%",
+  },
+  bashHeading: {
+    color: "var(--conan-text-muted)",
+    fontSize: 11,
+    fontWeight: 600,
+  },
+  bashResult: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--conan-space-2)",
+    maxWidth: "100%",
+    minWidth: 0,
+    width: "100%",
+  },
   // The chat column's measure — the SAME axis the composer sits on, so message
   // text and the input line up. Applied to ChatMessageList itself rather than a
   // wrapper: ChatLayout expects the list as its direct child (it owns the flex
