@@ -19,6 +19,19 @@ Sprint 1 items **WHA-96**, **WHA-97**, and **WHA-98** were merged to `main-v2` v
 
 All gates were re-verified by independent QA before merge. `WHA-101` is now unblocked.
 
+## Round closure — WHA-101 (2026-08-03)
+
+Sprint 1 item **WHA-101** was merged to `main-v2` via fast-forward:
+
+| Ticket | PR | Merge commit | Author | Independent QA |
+|---|---|---|---|---|
+| WHA-101 | #15 | `ade3d245` | Barkley | Nash |
+
+**Checkpoint tag:** `checkpoint/v2-wha-101` @ `ade3d245942c9d3f09f3ff761338facf8f982964`  
+**`main-v2` HEAD:** `ade3d245942c9d3f09f3ff761338facf8f982964`
+
+All gates were re-verified by independent QA before merge.
+
 ## Overall verdict
 
 The refactor is structurally sound. The transcript fold is a pure reducer, the chat domain model is consolidated, and the `ProviderId` union now catches provider-drift errors at compile time. All three reviewers rate **migration risk as low** for existing code; the v2 aliases remain compatibility names and do not need a migration.
@@ -116,7 +129,7 @@ All assigned to you (Randy) in Linear. **Sprint placement (Conan Sprint 1, Aug 3
 || [WHA-98](https://linear.app/whatmatters/issue/WHA-98/s-extract-v1-composer-launch-opts-into-buildlaunchopts-and-table-test) | Claude / UI agent | S | `buildLaunchOpts()` extraction + table tests | **Merged** #13 @ `80f3eae` |
 || [WHA-99](https://linear.app/whatmatters/issue/WHA-99/s-reducer-dismiss-pending-approval-transcript-entries-on-connection) | Claude / UI agent | S | Reducer connection-lost dismissal + test | Todo |
 || [WHA-100](https://linear.app/whatmatters/issue/WHA-100/s-tighten-provider-union-seam-icon-typing-set-equality-v1-routing-and) | Claude / UI agent | S | Provider-seam type tightening + v1 `asProviderId` routing | Todo |
-|| [WHA-101](https://linear.app/whatmatters/issue/WHA-101/m-build-v2-context-meter-component) | Claude / UI agent | M | v2 context meter | **Unblocked** — ready to pick up |
+|| [WHA-101](https://linear.app/whatmatters/issue/WHA-101/m-build-v2-context-meter-component) | Claude / UI agent | M | v2 context meter | **Merged** #15 @ `ade3d245` |
 
 
 ---
