@@ -714,7 +714,9 @@ export default function ChatPane({
       send(t, {
         model: resume ? resume.model ?? undefined : model,
         permissionMode: effectiveMode,
-        effort: resume?.effort ?? undefined,
+        // Same resume-vs-fresh split as model: a resumed thread keeps its
+        // saved effort; a fresh one sends the chip's selection ("" = none).
+        effort: resume ? resume.effort ?? undefined : effort || undefined,
         cwd: launchCwd,
         projectId: projectId ?? undefined,
         resume: resume && historyState === "found" ? resume.sessionId : undefined,
