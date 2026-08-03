@@ -38,6 +38,19 @@ test("registry lists exactly claude/codex/grok/kimi with their avatar letters", 
   assert.equal(getProvider("nope"), undefined);
 });
 
+// WHA-100: PROVIDERS ids must stay set-equal to the UI's PROVIDER_IDS (the
+// compile-time Record in ui/src/chat/model.ts). Hard-coded here so the gateway
+// suite never imports the UI program; the UI suite asserts the same set via
+// PROVIDER_IDS and PROVIDER_ICON keys.
+test("PROVIDERS ids cover the ProviderId union (≡ UI PROVIDER_IDS)", () => {
+  assert.deepEqual(PROVIDERS.map((p) => p.id).slice().sort(), [
+    "claude",
+    "codex",
+    "grok",
+    "kimi",
+  ]);
+});
+
 test("context-window lookup returns only verified model sizes", () => {
   assert.equal(contextWindowFor("claude"), 200_000);
   assert.equal(contextWindowFor("claude", "sonnet"), 200_000);

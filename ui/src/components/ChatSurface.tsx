@@ -54,8 +54,14 @@ import {
 import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
-import { PROVIDER_ICON } from "./ProviderMark.tsx";
-import { pillOf, type Pill, type Project, type SavedThread } from "../chat/model.ts";
+import { providerIconOf } from "./ProviderMark.tsx";
+import {
+  asProviderId,
+  pillOf,
+  type Pill,
+  type Project,
+  type SavedThread,
+} from "../chat/model.ts";
 import { useThemes } from "../hooks/useThemes.ts";
 
 /**
@@ -1242,14 +1248,14 @@ const STATUS_ICON: Record<Pill, { Icon: LucideIcon; cls: string; spin?: boolean 
 
 /** The coding agent behind a thread (US-011): the persisted provider id
  *  resolved against the registry (`GET /api/agent/providers`). No stored
- *  provider (pre-migration rows) → Claude; an id the registry hasn't served
- *  yet falls back to its capitalized first letter, mirroring ChatPane's
- *  provider-chip fallback. */
+ *  provider (pre-migration rows) → Claude via `asProviderId`; unknown free
+ *  strings also coalesce to Claude so the sidebar never paints a typo as a
+ *  first-class agent. */
 function agentOf(
   provider: string | null | undefined,
   registry: ProviderStatus[],
 ): { id: string; letter: string; label: string } {
-  const id = provider ?? "claude";
+  const id = asProviderId(provider);
   const entry = registry.find((p) => p.id === id);
   if (entry) return { id, letter: entry.avatarLetter, label: entry.name };
   if (id === "claude") return { id, letter: "C", label: "Claude Code" };
@@ -1271,7 +1277,7 @@ function AgentAvatar({
   agent: { id: string; letter: string; label: string };
 }) {
   const s = STATUS_ICON[pill];
-  const icon = PROVIDER_ICON[agent.id];
+  const icon = providerIconOf(agent.id);
   return (
     <span
       className="relative mt-0.5 shrink-0"

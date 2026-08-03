@@ -19,9 +19,12 @@ import * as stylex from "@stylexjs/stylex";
 import { Text } from "@astryxdesign/core/Text";
 // The one brand-mark map both trees share (v1's ProviderMark renders the same
 // module) — re-exported for this tree's existing importers.
-import { PROVIDER_ICON } from "../../../chat/providerIcons.ts";
+import {
+  PROVIDER_ICON,
+  providerIconOf,
+} from "../../../chat/providerIcons.ts";
 
-export { PROVIDER_ICON };
+export { PROVIDER_ICON, providerIconOf };
 
 const styles = stylex.create({
   // `currentColor` marks read as icon-primary; self-coloured ones ignore it.
@@ -48,7 +51,7 @@ export default function ProviderGlyph({
   letter,
   size = 16,
 }: ProviderGlyphProps) {
-  const icon = PROVIDER_ICON[providerId];
+  const icon = providerIconOf(providerId);
   if (!icon) {
     return (
       <Text type="supporting" weight="semibold" color="primary">
