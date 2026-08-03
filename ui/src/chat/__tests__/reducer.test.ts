@@ -280,6 +280,8 @@ describe("local intents and connection lifecycle", () => {
     expect(s.status).toBe("closed");
     expect(s.busy).toBe(false);
     expect(s.pendingApprovals).toEqual([]);
+    expect(s.items[0]).toMatchObject({ role: "approval", resolution: "dismissed" });
+    expect(s.items.some((item) => item.role === "approval" && item.resolution === "pending")).toBe(false);
     const last = s.items[s.items.length - 1];
     expect(last).toEqual({
       id: "i1",
