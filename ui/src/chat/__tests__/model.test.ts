@@ -23,6 +23,9 @@ describe("asProviderId", () => {
     ["typo-provider", "claude"],
     ["Claude", "claude"],
     ["", "claude"],
+    // Prototype keys must not pass via `in` — Object.hasOwn only.
+    ["toString", "claude"],
+    ["__proto__", "claude"],
   ] as const)("asProviderId(%j) → %j", (input, expected) => {
     expect(asProviderId(input)).toBe(expected);
   });
