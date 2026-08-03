@@ -32,6 +32,19 @@ Sprint 1 item **WHA-101** was merged to `main-v2` via fast-forward:
 
 All gates were re-verified by independent QA before merge.
 
+## Round closure — WHA-102 (2026-08-03)
+
+Sprint 1 follow-up **WHA-102** was merged to `main-v2` via fast-forward:
+
+| Ticket | PR | Merge commit | Author | Independent QA |
+|---|---|---|---|---|
+| WHA-102 | #16 | `552f3c0` | Nash | Barkley |
+
+**Checkpoint tag:** `checkpoint/v2-wha-102` @ `552f3c092284c7d00778d88b073688357a44540f`  
+**`main-v2` HEAD:** `552f3c092284c7d00778d88b073688357a44540f`
+
+All gates were re-verified by independent QA before merge.
+
 ## Overall verdict
 
 The refactor is structurally sound. The transcript fold is a pure reducer, the chat domain model is consolidated, and the `ProviderId` union now catches provider-drift errors at compile time. All three reviewers rate **migration risk as low** for existing code; the v2 aliases remain compatibility names and do not need a migration.
@@ -130,6 +143,7 @@ All assigned to you (Randy) in Linear. **Sprint placement (Conan Sprint 1, Aug 3
 || [WHA-99](https://linear.app/whatmatters/issue/WHA-99/s-reducer-dismiss-pending-approval-transcript-entries-on-connection) | Claude / UI agent | S | Reducer connection-lost dismissal + test | **Merged** #10 @ `49f51b5` |
 || [WHA-100](https://linear.app/whatmatters/issue/WHA-100/s-tighten-provider-union-seam-icon-typing-set-equality-v1-routing-and) | Claude / UI agent | S | Provider-seam type tightening + v1 `asProviderId` routing | **Merged** #11 @ `5a14ddf` |
 || [WHA-101](https://linear.app/whatmatters/issue/WHA-101/m-build-v2-context-meter-component) | Claude / UI agent | M | v2 context meter | **Merged** #15 @ `ade3d245` |
+|| [WHA-102](https://linear.app/whatmatters/issue/WHA-102/xs-remove-dead-registry-contextwindowtokens-fallback-in-v2composer) | Nash | XS | Dead registry `contextWindowTokens` fallback cleanup | **Merged** #16 @ `552f3c0` |
 
 
 ---
