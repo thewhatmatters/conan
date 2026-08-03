@@ -41,7 +41,7 @@ Sprint 1 follow-up **WHA-102** was merged to `main-v2` via fast-forward:
 | WHA-102 | #16 | `552f3c0` | Nash | Barkley |
 
 **Checkpoint tag:** `checkpoint/v2-wha-102` @ `552f3c092284c7d00778d88b073688357a44540f`  
-**`main-v2` HEAD:** `552f3c092284c7d00778d88b073688357a44540f`
+**`main-v2` HEAD:** moved past the checkpoint tag with the subsequent plan-doc update; the code merge remains `552f3c092284c7d00778d88b073688357a44540f`
 
 All gates were re-verified by independent QA before merge.
 
