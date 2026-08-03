@@ -28,7 +28,7 @@ Sprint 1 item **WHA-101** was merged to `main-v2` via fast-forward:
 | WHA-101 | #15 | `ade3d245` | Barkley | Nash |
 
 **Checkpoint tag:** `checkpoint/v2-wha-101` @ `ade3d245942c9d3f09f3ff761338facf8f982964`  
-**`main-v2` HEAD:** `401f613` (plan update after the code merge; tag remains on the merge commit `ade3d245`)
+**`main-v2` HEAD:** `da2b808` (plan update after the code merge; tag remains on the merge commit `ade3d245`)
 
 All gates were re-verified by independent QA before merge.
 
