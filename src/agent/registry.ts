@@ -152,11 +152,10 @@ const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, numbe
 export function contextWindowFor(provider: ProviderId, model?: string): number | null {
   const table = CONTEXT_WINDOWS[provider];
   // Normalize Claude's bracketed window hints (e.g. `claude-opus-5[1m]`) so the
-  // lookup operates on the base model slug. Keep the original model for any
-  // provider-specific fallback below.
+  // lookup operates on the base model slug. Keep the original `model` for the
+  // early "no reported model" guard below.
   const normalized = (model ?? "default").replace(/\[[^\]]*\]$/, "");
-  const key = normalized ?? "default";
-  const exact = table[key];
+  const exact = table[normalized];
   if (exact != null) return exact;
   if (!model || model === "default") return null;
   // Claude reports date-suffixed model variants (e.g. claude-opus-5-20241022).

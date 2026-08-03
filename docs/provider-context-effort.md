@@ -10,6 +10,16 @@ Grok 0.2.111. The live probes ran from throwaway directories with the prompt
 |---|---|---:|---|
 | Claude | Standard Claude models | 200,000 | Product limit recorded by the daily-driver PRD probe |
 | Claude | Long-context Claude models | 1,000,000 | Product limit recorded by the daily-driver PRD probe |
+| Claude | `opus` (v2 picker alias) | 1,000,000 | v2 model picker advertises "Opus 5 · 1M context"; corrected from 200k after live CLI probe |
+| Claude | `fable` (v2 picker alias) | 1,000,000 | v2 model picker advertises "Fable 5 · 1M context" |
+| Claude | `sonnet` (v2 picker alias) | 200,000 | v2 model picker advertises "Sonnet 5 · 200k context" |
+| Claude | `haiku` (v2 picker alias) | 200,000 | v2 model picker advertises "Haiku 4.5 · 200k context" |
+| Claude | `claude-opus-5` | 1,000,000 | Live CLI `system/init` reports `claude-opus-5[1m]`; bracket suffix denotes the 1M window |
+| Claude | `claude-sonnet-5` | 200,000 | Inferred from bracket suffix `[200k]` and matching v2 picker label |
+| Claude | `claude-fable-5` | 1,000,000 | v2 model picker advertises "Fable 5 · 1M context" |
+| Claude | `claude-haiku-4-5` | 200,000 | v2 model picker advertises "Haiku 4.5 · 200k context" |
+| Claude | `claude-3-opus-20240229` | 200,000 | Anthropic Claude 3 Opus product limit |
+| Claude | `claude-3-5-sonnet-20241022` | 200,000 | Anthropic Claude 3.5 Sonnet product limit |
 | Codex | `gpt-5.6-sol` | 272,000 | CLI model cache; the CLI exposes 258,400 usable tokens after its 95% allowance |
 | Codex | `gpt-5.6-terra` | 272,000 | CLI model cache; 95% usable |
 | Codex | `gpt-5.6-luna` | 272,000 | CLI model cache; 95% usable |
