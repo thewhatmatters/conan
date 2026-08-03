@@ -61,6 +61,11 @@ test("context-window lookup returns only verified model sizes", () => {
   assert.equal(contextWindowFor("claude", "claude-sonnet-5"), 200_000);
   assert.equal(contextWindowFor("claude", "claude-3-opus-20240229"), 200_000);
   assert.equal(contextWindowFor("claude", "claude-3-5-sonnet-20241022"), 200_000);
+  // Date/build suffixes fall back to the longest matching verified base slug.
+  assert.equal(contextWindowFor("claude", "claude-opus-5-20241022"), 1_000_000);
+  assert.equal(contextWindowFor("claude", "claude-fable-5-20241022"), 1_000_000);
+  assert.equal(contextWindowFor("claude", "claude-sonnet-5-20241022"), 200_000);
+  assert.equal(contextWindowFor("claude", "claude-opus-4-7-20241022"), null);
   assert.equal(contextWindowFor("codex", "gpt-5.6-sol"), 272_000);
   assert.equal(contextWindowFor("codex", "gpt-5.3-codex-spark"), 128_000);
   assert.equal(contextWindowFor("grok"), 500_000);

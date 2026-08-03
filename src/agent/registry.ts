@@ -150,7 +150,27 @@ const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, numbe
 };
 
 export function contextWindowFor(provider: ProviderId, model?: string): number | null {
-  return CONTEXT_WINDOWS[provider][model ?? "default"] ?? null;
+  const table = CONTEXT_WINDOWS[provider];
+  const key = model ?? "default";
+  const exact = table[key];
+  if (exact != null) return exact;
+  if (!model || model === "default") return null;
+  // Claude reports date-suffixed model variants (e.g. claude-opus-5-20241022).
+  // For that provider only, fall back to the longest matching verified base slug
+  // so the meter corrects after the CLI reports the resolved model name.
+  if (provider === "claude") {
+    let bestValue: number | null = null;
+    let bestKeyLen = -1;
+    for (const [k, v] of Object.entries(table)) {
+      if (k === "default") continue;
+      if (model.startsWith(`${k}-`) && k.length > bestKeyLen) {
+        bestValue = v;
+        bestKeyLen = k.length;
+      }
+    }
+    return bestValue;
+  }
+  return null;
 }
 
 /** Resolve the launch-specific denominator without mutating the driver's
