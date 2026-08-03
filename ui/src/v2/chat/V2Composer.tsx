@@ -72,8 +72,9 @@ export interface V2ComposerProps {
    */
   contextTokens?: number | null;
   /**
-   * Session driver capabilities (WHA-97/101). When null, the meter falls back
-   * to the active provider's registry descriptor for window size (v1 shape).
+   * Session driver capabilities (WHA-97/101) — the ONLY source of the context
+   * meter's window size (WHA-102). Null until the driver is built, in which
+   * case the meter shows the raw token count with no percentage.
    */
   sessionCapabilities?: AgentCapabilities | null;
   /**
@@ -167,13 +168,16 @@ export default function V2Composer({
 
   const isDisabled = disabled || !activeThread;
 
-  // Window size: prefer the live session capabilities frame (WHA-96 may refine
-  // it); fall back to the registry row for the active provider (v1 shape).
-  const registryWindow =
-    providers.find((p) => p.id === providerId)?.capabilities.contextWindowTokens ??
-    null;
-  const windowTokens =
-    sessionCapabilities?.contextWindowTokens ?? registryWindow;
+  // Window size comes ONLY from the live session capabilities frame (WHA-102).
+  // There is deliberately no registry fallback: `GET /api/agent/providers`
+  // serves each driver's STATIC descriptor, and every one of them declares
+  // `contextWindowTokens: null` — the real denominator is resolved per session
+  // from the launch model in `src/agent/index.ts` and only ever reaches the UI
+  // over the WS frame. A registry fallback could therefore never fire, and it
+  // would not be missed if it could: the meter also needs `contextTokens`,
+  // which arrives with the first turn's result — by which point the
+  // capabilities frame has long since landed.
+  const windowTokens = sessionCapabilities?.contextWindowTokens ?? null;
 
   const handleSubmit = useCallback(
     (raw: string) => {
