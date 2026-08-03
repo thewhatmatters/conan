@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { getActiveCwd } from "../cwd/index.js";
-import type { AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
+import type { AgentCapabilities, AgentDriver, AgentEvent, AgentLaunchOpts } from "./driver.js";
 import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
 import { prepareImageAttachments } from "./imageStaging.js";
 import {
@@ -52,11 +52,42 @@ import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
  *   {type:"busy",  busy: boolean}       composer enable/disable
  *   {type:"error", message}             handler-level failure
  *   {type:"capabilities", provider, capabilities: AgentCapabilities}   sent
- *     once when the session's driver is built (first prompt) so the UI adapts
- *     to what this provider can actually do (US-007) — never re-sent.
+ *     when the session's driver is built (first prompt) so the UI adapts to
+ *     what this provider can actually do (US-007), and re-sent on every
+ *     `system` event so the model the provider actually launched can refine
+ *     the context-window denominator (see `refineCapabilities`).
  */
 
 const active = new Set<AgentDriver>();
+
+/** Fold the reported-model capabilities over the launch-time ones (WHA-96).
+ *
+ *  The `system` frame re-send exists so a provider that reports its resolved
+ *  model can correct the denominator the launch selection only guessed —
+ *  claude launched on "Default model" resolves to `claude-fable-5`, moving the
+ *  meter from a wrong 200k to the real 1M.
+ *
+ *  But most providers report a model the registry can't price: codex and kimi
+ *  report none at all, grok reports a build name (`grok-4.5-build`). Those
+ *  resolved to `null` and WIPED a denominator the launch model had already
+ *  established, so the ring went neutral one frame after the session started.
+ *
+ *  Rule: a reported model may REFINE the denominator, never erase it. An
+ *  unresolvable reported model falls back to the launch value rather than
+ *  null. When the reported model DOES resolve it wins outright, in either
+ *  direction — it names the model that actually ran, so a smaller window is a
+ *  correction, not a regression. Every other capability comes from the
+ *  reported descriptor unchanged. */
+export function refineCapabilities(
+  launch: AgentCapabilities | null,
+  reported: AgentCapabilities,
+): AgentCapabilities {
+  return {
+    ...reported,
+    contextWindowTokens:
+      reported.contextWindowTokens ?? launch?.contextWindowTokens ?? null,
+  };
+}
 
 export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   const send = (obj: unknown): void => {
@@ -81,16 +112,24 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
    *  provider default) — persisted and re-applied on resume, unlike the model
    *  a provider reports. Captured on the first prompt, like launchEffort. */
   let launchModel: string | null = null;
+  /** The descriptor sent when the driver was built — the launch model's
+   *  denominator, which a reported model may refine but never erase (WHA-96).
+   *  Null until the first prompt builds the driver. */
+  let launchCapabilities: AgentCapabilities | null = null;
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
     if (e.kind === "system") {
-      // Init is authoritative: launch selection may be absent or only an
-      // alias. Unknown reported models stay null rather than falling back.
+      // Every system frame, not just the first: claude re-emits init after a
+      // set_permission_mode switch, and that re-send must not drop the window
+      // the launch model established either.
       send({
         type: "capabilities",
         provider: provider.id,
-        capabilities: capabilitiesForReportedModel(provider, e.model),
+        capabilities: refineCapabilities(
+          launchCapabilities,
+          capabilitiesForReportedModel(provider, e.model),
+        ),
       });
     }
     if (e.kind === "system" && e.sessionId) {
@@ -182,10 +221,11 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         }
         driver = provider.createDriver(onEvent, getActiveCwd);
         active.add(driver);
+        launchCapabilities = capabilitiesFor(provider, model);
         send({
           type: "capabilities",
           provider: provider.id,
-          capabilities: capabilitiesFor(provider, model),
+          capabilities: launchCapabilities,
         });
         return driver;
       })();
