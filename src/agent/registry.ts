@@ -109,10 +109,21 @@ export function getProvider(id: string): ProviderEntry | undefined {
 const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, number>>>> = {
   claude: {
     default: 200_000,
-    opus: 200_000,
+    // Aliases advertised by the v2 model picker (must match the labels/descriptions
+    // in ui/src/v2/chat/composer/ModelPicker.tsx).
+    opus: 1_000_000,
+    fable: 1_000_000,
     sonnet: 200_000,
     haiku: 200_000,
+    // Full names Claude reports in its system init event, which refine the launch
+    // guess via capabilitiesForReportedModel (WHA-96).
+    "claude-opus-5": 1_000_000,
     "claude-fable-5": 1_000_000,
+    "claude-sonnet-5": 200_000,
+    "claude-haiku-4-5": 200_000,
+    // Older Anthropic variants kept for reported-model robustness.
+    "claude-3-opus-20240229": 200_000,
+    "claude-3-5-sonnet-20241022": 200_000,
   },
   codex: {
     "gpt-5.6-sol": 272_000,
