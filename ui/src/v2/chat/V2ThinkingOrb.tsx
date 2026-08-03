@@ -36,8 +36,13 @@ import { Text } from "@astryxdesign/core/Text";
  * When the label changes, in ms. The orb itself shows immediately — the first
  * seconds of any turn are normal, and a label that early reads as noise on the
  * fast turns that make up most of them.
+ *
+ * `label` is 4s BY MEASUREMENT, not by taste. At the 2s it shipped with, every
+ * turn crossed it — "Say pong.", the cheapest turn available, held the orb for
+ * 2.10s — so the label appeared always and the silent tier bought nothing.
+ * 4s makes it mean "this is taking a moment" rather than "a turn happened".
  */
-export const ESCALATION_MS = { label: 2_000, still: 30_000, long: 180_000 };
+export const ESCALATION_MS = { label: 4_000, still: 30_000, long: 180_000 };
 
 /** Which copy tier an elapsed duration falls in. Exported for the tests. */
 export function tierFor(elapsedMs: number): "silent" | "label" | "still" | "long" {
@@ -47,8 +52,17 @@ export function tierFor(elapsedMs: number): "silent" | "label" | "still" | "long
   return "silent";
 }
 
+/**
+ * "Working…" is v1's own word for this exact state (`ChatPane.tsx:1550`), so
+ * the two shells say the same thing, and it stays true of every turn — a turn
+ * reading a file IS working. It replaced "Solving…", which came from the
+ * package's state name and overclaimed: most turns solve nothing. "Thinking…"
+ * was rejected outright — `V2Transcript.tsx` already renders reasoning rows
+ * with that word, and on Grok (the one provider with real reasoning text) both
+ * would sit in the same column meaning different things.
+ */
 const COPY: Record<"label" | "still" | "long", string> = {
-  label: "Solving…",
+  label: "Working…",
   still: "Still working…",
   long: "Still working — this one is taking a while",
 };
@@ -87,10 +101,22 @@ export default function V2ThinkingOrb({
     return () => timers.forEach(clearTimeout);
   }, [elapsedMsForTest]);
 
+  // The mark carries the accessible name ONLY while it is alone. The package
+  // defaults its aria-label to the state word ("Solving…"), which is not the
+  // word on screen — left alone the two drift silently and a screen reader
+  // reports something nobody can see. Once the copy renders it says the same
+  // thing, so the canvas steps out of the a11y tree rather than saying it
+  // twice: exactly one announcement of the state at every tier.
+  const silent = tier === "silent";
+
   return (
     <HStack gap={2} align="center" data-slot="v2-thinking-orb" data-tier={tier} xstyle={styles.row}>
-      <ThinkingOrb state="solving" size={size} />
-      {tier === "silent" ? null : (
+      <ThinkingOrb
+        state="solving"
+        size={size}
+        {...(silent ? { "aria-label": COPY.label } : { "aria-hidden": true })}
+      />
+      {silent ? null : (
         <Text type="supporting" color="secondary">
           {COPY[tier]}
         </Text>
