@@ -77,6 +77,9 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
     pendingApprovals,
     respondToApproval,
     interrupt,
+    permissionMode: livePermissionMode,
+    sessionId,
+    setPermissionMode,
   } = useV2Chat(activeThread ? token : null);
   useEffect(() => {
     if (activeThread) onState?.({ status, busy, awaitingApproval });
@@ -188,6 +191,9 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
                 items.some((item) => item.role === "user")
               }
               disabled={status !== "open" || !token}
+              livePermissionMode={livePermissionMode}
+              sessionId={sessionId}
+              setPermissionMode={setPermissionMode}
               send={send}
               interrupt={interrupt}
           />

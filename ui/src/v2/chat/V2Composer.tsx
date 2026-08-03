@@ -56,6 +56,15 @@ export interface V2ComposerProps {
    *  relaunches with the conversation's context. Null = fresh session. */
   resumeSessionId?: string | null;
   /**
+   * Live session permission mode from useV2Chat (null before launch). Once
+   * set, the chip follows it so mid-session Plan→Build never lies (WHA-97).
+   */
+  livePermissionMode?: string | null;
+  /** Real agent session id — non-null means applyPermission rides the socket. */
+  sessionId?: string | null;
+  /** Mid-session permission switch (US-022). Required once a session exists. */
+  setPermissionMode?: (mode: string) => void;
+  /**
    * The guided-input gate (WHA-86), rendered ABOVE the pins drawer when the
    * driver is blocked on a decision. It is passed in rather than built here so
    * the composer keeps knowing nothing about the approval protocol — it only
@@ -82,6 +91,9 @@ export default function V2Composer({
   disabled = false,
   locked = false,
   resumeSessionId = null,
+  livePermissionMode = null,
+  sessionId = null,
+  setPermissionMode,
   gate,
   send,
   interrupt,
@@ -100,7 +112,9 @@ export default function V2Composer({
     activeThread?.model ?? undefined,
   );
   const [effort, setEffort] = useState(activeThread?.effort ?? "");
-  const [permissionMode, setPermissionMode] = useState("");
+  // Pre-launch selection only — once the session reports a live mode the
+  // chip follows that (v1: effectiveMode = liveMode ?? permission).
+  const [permission, setPermission] = useState("");
   const threadKey = activeThread?.key ?? null;
   const threadModel = activeThread?.model ?? undefined;
   const threadEffort = activeThread?.effort ?? "";
@@ -108,11 +122,24 @@ export default function V2Composer({
     setProviderId(threadProvider);
     setModel(threadModel);
     setEffort(threadEffort);
-    setPermissionMode("");
+    setPermission("");
     // Only the SELECTION changing resets the config — the provider/model/effort
     // ride along because they are properties of that selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadKey]);
+
+  // Pre-launch the chip sets local launch config; once the session exists the
+  // switch rides the driver (US-022). No optimistic update on the live path —
+  // the chip follows the confirmed permission-mode event.
+  const applyPermission = useCallback(
+    (value: string) => {
+      if (sessionId != null && setPermissionMode) setPermissionMode(value);
+      else setPermission(value);
+    },
+    [sessionId, setPermissionMode],
+  );
+  const effectiveMode = livePermissionMode ?? permission;
+
   // Branch for THIS thread's directory — the same poll v1's status bar uses.
   const git = useThreadGit(token, activeThread?.cwd ?? null);
   // Not a repo, or the first poll hasn't landed → no chip at all, rather than
@@ -140,7 +167,7 @@ export default function V2Composer({
           // Undefined, never "" — an empty string would be a real `-m ""`.
           model,
           effort: effort || undefined,
-          permissionMode: permissionMode || undefined,
+          permissionMode: effectiveMode || undefined,
           // Continue the saved conversation. Already gated upstream on the
           // history actually reconstructing, so this is never a dead id.
           resume: resumeSessionId ?? undefined,
@@ -158,7 +185,7 @@ export default function V2Composer({
       effort,
       model,
       providerId,
-      permissionMode,
+      effectiveMode,
       resumeSessionId,
       send,
     ],
@@ -236,7 +263,10 @@ export default function V2Composer({
               // Effort ids are per-provider vocabulary — carrying one across a
               // provider switch would send a mode the new driver never defined.
               if (nextProvider !== providerId) setEffort("");
-              if (nextProvider !== providerId) setPermissionMode("");
+              // Local launch selection only — live mode is owned by the session.
+              if (nextProvider !== providerId && sessionId == null) {
+                setPermission("");
+              }
             }}
           />
           <EffortChip
@@ -245,14 +275,16 @@ export default function V2Composer({
             effort={effort}
             onEffortSelect={setEffort}
           />
-          {!locked ? (
-            <PermissionModeChip
-              providers={providers}
-              activeProviderId={providerId}
-              permissionMode={permissionMode}
-              onPermissionModeSelect={setPermissionMode}
-            />
-          ) : null}
+          {/* Stays visible after turn 1 so mid-session Plan→Build (and the
+              live permission-mode event) can update the chip face (WHA-97).
+              Provider/model still lock via ModelPicker; this chip is the
+              live mode indicator + switch, matching v1. */}
+          <PermissionModeChip
+            providers={providers}
+            activeProviderId={providerId}
+            permissionMode={effectiveMode}
+            onPermissionModeSelect={applyPermission}
+          />
         </div>
       }
       input={
