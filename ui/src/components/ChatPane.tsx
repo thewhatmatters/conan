@@ -76,6 +76,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/t
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff } from "../lib/diff.ts";
 import { asProviderId, fmtBytes, type HistoryItem } from "../chat/model.ts";
+import { buildLaunchOpts } from "../chat/launch.ts";
 import { chunkTranscript, type ToolItem } from "../lib/worklog.ts";
 import { DiffView, DiffStat } from "./DiffView.tsx";
 
@@ -713,22 +714,32 @@ export default function ChatPane({
           return;
         }
       }
-      send(t, {
-        model: resume ? resume.model ?? undefined : model,
-        permissionMode: effectiveMode,
-        // Same resume-vs-fresh split as model: a resumed thread keeps its
-        // saved effort; a fresh one sends the chip's selection ("" = none).
-        effort: resume ? resume.effort ?? undefined : effort || undefined,
-        cwd: launchCwd,
-        projectId: projectId ?? undefined,
-        resume: resume && historyState === "found" ? resume.sessionId : undefined,
-        provider: effectiveProviderId,
-      }, pins.map((p) => ({
-        type: "file" as const,
-        path: p.path,
-        content: p.content,
-        truncated: p.truncated,
-      })), images);
+      send(
+        t,
+        buildLaunchOpts(
+          resume
+            ? {
+                ...resume,
+                canResume: historyState === "found",
+              }
+            : undefined,
+          {
+            model,
+            permissionMode: effectiveMode,
+            effort,
+            cwd: launchCwd,
+            projectId: projectId ?? undefined,
+            provider: effectiveProviderId,
+          },
+        ),
+        pins.map((p) => ({
+          type: "file" as const,
+          path: p.path,
+          content: p.content,
+          truncated: p.truncated,
+        })),
+        images,
+      );
       setPins((prev) => prev.filter((p) => p.keep));
       setImages([]);
       branchLaunchPending.current = false;
