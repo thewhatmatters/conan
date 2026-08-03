@@ -30,7 +30,11 @@ export const PROVIDER_IDS = Object.keys(PROVIDER_ID_SET) as ProviderId[];
 /** Narrow the gateway's free-string provider column (null on pre-migration
  *  rows, which it coalesces to claude) to the real union — once, here. */
 export function asProviderId(value: string | null | undefined): ProviderId {
-  return value != null && value in PROVIDER_ID_SET ? (value as ProviderId) : "claude";
+  // Object.hasOwn — not `in` — so inherited Object keys ("toString",
+  // "__proto__", …) fall back to claude instead of being accepted as ids.
+  return value != null && Object.hasOwn(PROVIDER_ID_SET, value)
+    ? (value as ProviderId)
+    : "claude";
 }
 
 /** First-class project: a chosen folder that chats live inside (US-025).

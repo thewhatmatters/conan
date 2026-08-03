@@ -75,7 +75,7 @@ import SurfacePanel from "./SurfacePanel.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff } from "../lib/diff.ts";
-import { fmtBytes, type HistoryItem } from "../chat/model.ts";
+import { asProviderId, fmtBytes, type HistoryItem } from "../chat/model.ts";
 import { chunkTranscript, type ToolItem } from "../lib/worklog.ts";
 import { DiffView, DiffStat } from "./DiffView.tsx";
 
@@ -358,7 +358,9 @@ export default function ChatPane({
   // The provider this pane is (or will be) driving — a reopened thread's
   // saved provider always wins over the chip state (US-008). Hoisted above
   // the state report so the sidebar avatar tracks it live (US-011).
-  const effectiveProviderId = resume ? resume.provider ?? "claude" : provider;
+  // Narrow free-string resume.provider through the shared asProviderId so a
+  // typo/unknown id cannot bypass the ProviderId union (v2 already does this).
+  const effectiveProviderId = resume ? asProviderId(resume.provider) : provider;
 
   // Report thread state up to the sidebar. The parent's setter bails when
   // nothing changed, so an unstable onState identity can't loop renders.

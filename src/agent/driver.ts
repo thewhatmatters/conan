@@ -266,8 +266,9 @@ export type PermissionDecision =
  * alive across turns — subsequent `send()`s continue the same conversation.
  */
 export interface AgentDriver {
-  /** Stable provider tag (`"claude"`), for logging/UI labeling. */
-  readonly provider: string;
+  /** Stable provider tag (`"claude"`), for logging/UI labeling. Typed as
+   *  `ProviderId` so a driver cannot claim an unregistered id at the seam. */
+  readonly provider: ProviderId;
   /** The provider's verified capability descriptor — what this driver can
    *  actually deliver headlessly. Sent to the client at session start so the
    *  UI adapts without ever branching on `provider`. */
