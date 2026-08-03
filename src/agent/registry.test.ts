@@ -66,6 +66,11 @@ test("context-window lookup returns only verified model sizes", () => {
   assert.equal(contextWindowFor("claude", "claude-fable-5-20241022"), 1_000_000);
   assert.equal(contextWindowFor("claude", "claude-sonnet-5-20241022"), 200_000);
   assert.equal(contextWindowFor("claude", "claude-opus-4-7-20241022"), null);
+  // Claude's bracketed window hints (e.g. `claude-opus-5[1m]`) are normalized
+  // to the base slug before lookup.
+  assert.equal(contextWindowFor("claude", "claude-opus-5[1m]"), 1_000_000);
+  assert.equal(contextWindowFor("claude", "claude-sonnet-5[200k]"), 200_000);
+  assert.equal(contextWindowFor("claude", "claude-opus-4-7[1m]"), null);
   assert.equal(contextWindowFor("codex", "gpt-5.6-sol"), 272_000);
   assert.equal(contextWindowFor("codex", "gpt-5.3-codex-spark"), 128_000);
   assert.equal(contextWindowFor("grok"), 500_000);

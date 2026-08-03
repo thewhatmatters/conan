@@ -151,7 +151,11 @@ const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, numbe
 
 export function contextWindowFor(provider: ProviderId, model?: string): number | null {
   const table = CONTEXT_WINDOWS[provider];
-  const key = model ?? "default";
+  // Normalize Claude's bracketed window hints (e.g. `claude-opus-5[1m]`) so the
+  // lookup operates on the base model slug. Keep the original model for any
+  // provider-specific fallback below.
+  const normalized = (model ?? "default").replace(/\[[^\]]*\]$/, "");
+  const key = normalized ?? "default";
   const exact = table[key];
   if (exact != null) return exact;
   if (!model || model === "default") return null;
@@ -163,7 +167,7 @@ export function contextWindowFor(provider: ProviderId, model?: string): number |
     let bestKeyLen = -1;
     for (const [k, v] of Object.entries(table)) {
       if (k === "default") continue;
-      if (model.startsWith(`${k}-`) && k.length > bestKeyLen) {
+      if (normalized.startsWith(`${k}-`) && k.length > bestKeyLen) {
         bestValue = v;
         bestKeyLen = k.length;
       }
