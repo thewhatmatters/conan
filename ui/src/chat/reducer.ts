@@ -228,7 +228,7 @@ export function reduceChat(state: ChatSessionState, action: ChatAction): ChatSes
         busy: false,
         pendingApprovals: [],
         items: [
-          ...state.items,
+          ...dismissPending(state.items),
           {
             id: nextId(),
             role: "error",
