@@ -80,6 +80,8 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
     permissionMode: livePermissionMode,
     sessionId,
     setPermissionMode,
+    contextTokens,
+    capabilities: sessionCapabilities,
   } = useV2Chat(activeThread ? token : null);
   useEffect(() => {
     if (activeThread) onState?.({ status, busy, awaitingApproval });
@@ -194,6 +196,8 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
               livePermissionMode={livePermissionMode}
               sessionId={sessionId}
               setPermissionMode={setPermissionMode}
+              contextTokens={contextTokens}
+              sessionCapabilities={sessionCapabilities}
               send={send}
               interrupt={interrupt}
           />

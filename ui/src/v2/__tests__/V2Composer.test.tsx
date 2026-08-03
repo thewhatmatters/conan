@@ -138,6 +138,37 @@ describe("V2Composer", () => {
     );
   });
 
+  it("shows the context meter only once usage is reported (WHA-101)", () => {
+    const { rerender, container } = render(
+      <V2Composer activeThread={thread} send={vi.fn()} contextTokens={null} />,
+    );
+    expect(container.querySelector('[data-slot="context-meter"]')).toBeNull();
+
+    rerender(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        contextTokens={45_000}
+        sessionCapabilities={{
+          imageInput: false,
+          streamingDeltas: true,
+          interactiveApproval: true,
+          livePermissionSwitch: true,
+          costUsd: true,
+          reasoningText: false,
+          resume: true,
+          contextWindowTokens: 200_000,
+          modelSelection: true,
+          models: [],
+          permissionModes: [],
+          effortModes: [],
+        }}
+      />,
+    );
+    const ring = screen.getByRole("img", { name: /Context window/ });
+    expect(ring).toHaveAttribute("data-pct", "23");
+  });
+
   it("pre-launch selection is local; mid-session selection rides setPermissionMode", () => {
     const setPermissionMode = vi.fn();
     const send = vi.fn();
