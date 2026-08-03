@@ -18,6 +18,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
+import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
   OutgoingFileAttachment,
   OutgoingImage,
@@ -31,6 +32,7 @@ import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
 import EffortChip from "./composer/EffortChip.tsx";
 import PermissionModeChip from "./composer/PermissionModeChip.tsx";
+import ContextMeter from "./composer/ContextMeter.tsx";
 import RichInput from "./composer/RichInput.tsx";
 
 const styles = stylex.create({
@@ -65,6 +67,16 @@ export interface V2ComposerProps {
   /** Mid-session permission switch (US-022). Required once a session exists. */
   setPermissionMode?: (mode: string) => void;
   /**
+   * Live context-window position from useV2Chat (WHA-101). Null until a turn
+   * reports usage — meter stays absent rather than showing a fabricated zero.
+   */
+  contextTokens?: number | null;
+  /**
+   * Session driver capabilities (WHA-97/101). When null, the meter falls back
+   * to the active provider's registry descriptor for window size (v1 shape).
+   */
+  sessionCapabilities?: AgentCapabilities | null;
+  /**
    * The guided-input gate (WHA-86), rendered ABOVE the pins drawer when the
    * driver is blocked on a decision. It is passed in rather than built here so
    * the composer keeps knowing nothing about the approval protocol — it only
@@ -94,6 +106,8 @@ export default function V2Composer({
   livePermissionMode = null,
   sessionId = null,
   setPermissionMode,
+  contextTokens = null,
+  sessionCapabilities = null,
   gate,
   send,
   interrupt,
@@ -152,6 +166,14 @@ export default function V2Composer({
   ) : undefined;
 
   const isDisabled = disabled || !activeThread;
+
+  // Window size: prefer the live session capabilities frame (WHA-96 may refine
+  // it); fall back to the registry row for the active provider (v1 shape).
+  const registryWindow =
+    providers.find((p) => p.id === providerId)?.capabilities.contextWindowTokens ??
+    null;
+  const windowTokens =
+    sessionCapabilities?.contextWindowTokens ?? registryWindow;
 
   const handleSubmit = useCallback(
     (raw: string) => {
@@ -299,6 +321,11 @@ export default function V2Composer({
             onFiles={handleFiles}
           />
         </VStack>
+      }
+      // v1 places the context ring left of send in the right cluster. ChatComposer
+      // exposes that as sendActions (WHA-101).
+      sendActions={
+        <ContextMeter used={contextTokens} windowTokens={windowTokens} />
       }
       sendButton={<ChatSendButton />}
     />
