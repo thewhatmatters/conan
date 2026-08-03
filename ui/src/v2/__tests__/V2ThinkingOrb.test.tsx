@@ -44,7 +44,7 @@ describe("V2ThinkingOrb", () => {
 
   it("carries the right copy at each escalation tier", () => {
     for (const [ms, copy] of [
-      [ESCALATION_MS.label, "Solving…"],
+      [ESCALATION_MS.label, "Working…"],
       [ESCALATION_MS.still, "Still working…"],
       [ESCALATION_MS.long, "Still working — this one is taking a while"],
     ] as const) {
@@ -52,6 +52,24 @@ describe("V2ThinkingOrb", () => {
       expect(screen.getByText(copy)).toBeInTheDocument();
       unmount();
     }
+  });
+
+  // The package defaults aria-label to its STATE name ("Solving…"), which is
+  // not the word we render. These two pin the screen and the a11y tree
+  // together so the next copy change cannot desync them unnoticed.
+  it("names the silent mark with the copy it stands in for", () => {
+    render(<V2ThinkingOrb elapsedMsForTest={0} />);
+
+    expect(screen.getByRole("img")).toHaveAccessibleName("Working…");
+    expect(screen.queryByRole("img", { name: "Solving…" })).toBeNull();
+  });
+
+  it("drops the mark from the a11y tree once the copy says it out loud", () => {
+    render(<V2ThinkingOrb elapsedMsForTest={ESCALATION_MS.still} />);
+
+    // One announcement of the state, not two.
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText("Still working…")).toBeInTheDocument();
   });
 
   it("escalates on real timers without a per-second re-render", () => {
