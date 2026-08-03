@@ -105,7 +105,7 @@ describe("V2Composer", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("locks provider/model after turn one while effort stays interactive", () => {
+  it("locks provider/model after turn one while effort and permission stay interactive", () => {
     const { container } = render(
       <V2Composer activeThread={thread} send={vi.fn()} locked />,
     );
@@ -116,9 +116,10 @@ describe("V2Composer", () => {
     expect(
       screen.getByRole("button", { name: /Default effort/ }),
     ).toBeEnabled();
+    // WHA-97: permission chip stays mounted so mid-session switches show.
     expect(
-      screen.queryByRole("button", { name: "Supervised" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Supervised" }),
+    ).toBeInTheDocument();
   });
 
   it("sends the provider-defined permission mode selected for a fresh session", () => {
@@ -135,5 +136,60 @@ describe("V2Composer", () => {
       [],
       [],
     );
+  });
+
+  it("pre-launch selection is local; mid-session selection rides setPermissionMode", () => {
+    const setPermissionMode = vi.fn();
+    const send = vi.fn();
+    const { unmount } = render(
+      <V2Composer
+        activeThread={thread}
+        send={send}
+        sessionId={null}
+        setPermissionMode={setPermissionMode}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    expect(setPermissionMode).not.toHaveBeenCalled();
+    typeAndSubmit("propose a plan");
+    expect(send).toHaveBeenCalledWith(
+      "propose a plan",
+      expect.objectContaining({ permissionMode: "plan" }),
+      [],
+      [],
+    );
+    unmount();
+
+    // Session is live: chip follows livePermissionMode; switch rides socket.
+    const { rerender } = render(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        sessionId="sess-1"
+        livePermissionMode="plan"
+        setPermissionMode={setPermissionMode}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Supervised" }));
+    expect(setPermissionMode).toHaveBeenCalledWith("default");
+
+    // Confirmed live mode event moves the chip off Plan (no optimistic update).
+    rerender(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        sessionId="sess-1"
+        livePermissionMode="default"
+        setPermissionMode={setPermissionMode}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Supervised" }),
+    ).toBeInTheDocument();
   });
 });
