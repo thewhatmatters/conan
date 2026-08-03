@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { wsUrl } from "../lib/gateway.ts";
 import type { AgentCapabilities } from "./useProviders.ts";
+import {
+  initialChatState,
+  reduceChat,
+  type ChatItem,
+  type ChatStatus,
+  type PendingApproval,
+  type SentImage,
+  type SentPin,
+} from "../chat/reducer.ts";
 
 /**
- * Level-2 chat spike — the UI half of the headless-agent driver.
+ * The React/socket adapter over the chat session reducer
+ * (`ui/src/chat/reducer.ts`) — the UI half of the headless-agent driver.
  *
  * Opens a plain WebSocket to the gateway's `/ws/agent` (the programmatic peer
  * of `/ws/terminal`). One connection === one headless `claude -p` process ===
@@ -11,8 +21,9 @@ import type { AgentCapabilities } from "./useProviders.ts";
  * auto-reconnect would silently spawn a new process and lose the conversation.
  * "New chat" is an explicit reconnect.
  *
- * The gateway's normalized `AgentEvent`s are folded into a flat, render-ready
- * `ChatItem[]` transcript (tool results merge into their tool-use card by id).
+ * All state transitions live in the pure reducer; this hook only translates
+ * socket frames and user calls into `ChatAction`s (stamping `Date.now()` on
+ * the ones that timestamp transcript items) and sends the outgoing frames.
  */
 
 /** Launch config chosen in the composer chips (mirrors AgentLaunchOpts). */
@@ -58,19 +69,17 @@ export interface OutgoingImage {
   data: string;
 }
 
-/** How a sent image renders in the transcript — a data URL for the thumbnail. */
-export interface SentImage {
-  dataUrl: string;
-}
-
-/** A pin as it renders in the transcript — path + size, not the content
- *  (which is in the prompt the agent received). `truncated` when the read hit
- *  its cap, so the transcript never implies the whole file was sent. */
-export interface SentPin {
-  path: string;
-  bytes: number;
-  truncated: boolean;
-}
+// The transcript/session types moved to the chat domain (`ui/src/chat/`);
+// re-exported here so existing importers keep working unchanged.
+export type {
+  ApprovalResolution,
+  ChatItem,
+  ChatStatus,
+  PendingApproval,
+  SentImage,
+  SentPin,
+  TurnTokens,
+} from "../chat/reducer.ts";
 
 /** Coarse tool classification mirrored from src/agent/driver.ts. */
 // Re-exported from the gateway's driver seam rather than hand-copied. That
@@ -83,59 +92,7 @@ export type {
   ToolPermissionKind,
   PermissionDecision,
 } from "../../../src/agent/driver.ts";
-import type {
-  AgentEvent,
-  ToolPermissionKind,
-  PermissionDecision,
-} from "../../../src/agent/driver.ts";
-
-
-/** A Supervised-mode permission request awaiting the user's decision.
- *  `toolUseId` pins the request to its transcript tool card — the plan card's
- *  proceed buttons (US-022) act on the approval gating that very card. */
-export interface PendingApproval {
-  id: string;
-  toolKind: ToolPermissionKind;
-  summary: string;
-  detail: string;
-  /** Raw tool arguments from the event — lets the approval card render an
-   *  Edit/Write as a real diff (`buildFileDiff`) instead of only `detail`. */
-  input: unknown;
-  toolName: string;
-  toolUseId: string | null;
-}
-
-// AgentEvent is imported from the driver seam above — no local mirror.
-
-/** How an approval transcript entry ended: still pending, the user's
- *  decision, or dismissed (the turn ended before anyone answered). */
-export type ApprovalResolution = "pending" | PermissionDecision | "dismissed";
-
-/** Per-turn token usage, from providers that report counts but no USD
- *  (codex — mirrors the driver's result event, US-010). The footer renders
- *  these when `capabilities.costUsd` is false instead of a blank or
- *  fabricated dollar figure. */
-export interface TurnTokens {
-  input: number | null;
-  cachedInput: number | null;
-  output: number | null;
-  reasoningOutput: number | null;
-}
-
-/** A rendered transcript item. */
-export type ChatItem = (
-  | { id: string; role: "user"; text: string; pins?: SentPin[]; images?: SentImage[] }
-  | { id: string; role: "assistant"; text: string }
-  | { id: string; role: "reasoning"; text: string }
-  | { id: string; role: "tool"; name: string; input: unknown; result: string | null; isError: boolean }
-  | { id: string; role: "approval"; requestId: string; toolKind: ToolPermissionKind; toolName: string; summary: string; resolution: ApprovalResolution }
-  | { id: string; role: "result"; costUsd: number | null; durationMs: number | null; numTurns: number | null; tokens: TurnTokens | null }
-  | { id: string; role: "system"; model: string | null; cwd: string | null }
-  | { id: string; role: "mode"; mode: string }
-  | { id: string; role: "error"; message: string }
-) & { ts?: number | null };
-
-export type ChatStatus = "connecting" | "open" | "closed";
+import type { AgentEvent, PermissionDecision } from "../../../src/agent/driver.ts";
 
 export interface AgentChat {
   items: ChatItem[];
@@ -186,50 +143,21 @@ export interface AgentChat {
 }
 
 export function useAgentChat(token: string | null): AgentChat {
-  const [items, setItems] = useState<ChatItem[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<ChatStatus>("connecting");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [permissionMode, setPermissionModeState] = useState<string | null>(null);
-  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
-
-  const [contextTokens, setContextTokens] = useState<number | null>(null);
-  // Latest context-window POSITION (input + cached) reported by the provider —
-  // distinct from what a turn COST. Null until a turn reports it, and null for
-  // providers that report no usage, so the meter can stay absent rather than
-  // showing a fabricated zero.
-  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [state, dispatch] = useReducer(reduceChat, initialChatState);
   const wsRef = useRef<WebSocket | null>(null);
-  const seq = useRef(0);
-  const nextId = () => `i${++seq.current}`;
-  // Last session id an init frame reported — a repeat init with the SAME id
-  // is a mid-session permission-mode re-init (US-022), not a new session, so
-  // the transcript skips a second "Session started" line for it.
-  const lastInitSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     const ws = new WebSocket(wsUrl(`/ws/agent?token=${token}`));
     wsRef.current = ws;
-    ws.onopen = () => setStatus("open");
+    ws.onopen = () => dispatch({ type: "connection-open" });
     ws.onclose = () => {
       // A remote close (gateway restart, network drop) ends the session for
-      // good — there's deliberately no auto-reconnect. Reset the turn state
-      // (a mid-turn drop would otherwise leave `busy` stuck forever) and say
-      // so in the transcript. Local closes (unmount) null this handler first.
-      setStatus("closed");
-      setBusy(false);
-      setPendingApprovals([]);
-      setItems((prev) => [
-        ...prev,
-        {
-          id: nextId(),
-          role: "error",
-          message: "Connection to the agent lost — this chat can't continue. Start a new chat.",
-        },
-      ]);
+      // good. Local closes (unmount) null this handler first, so the
+      // reducer's transcript notice never fires for them.
+      dispatch({ type: "connection-lost" });
     };
-    ws.onerror = () => setStatus("closed");
+    ws.onerror = () => dispatch({ type: "connection-error" });
     ws.onmessage = (ev) => {
       let msg: Record<string, unknown>;
       try {
@@ -238,138 +166,28 @@ export function useAgentChat(token: string | null): AgentChat {
         return;
       }
       if (msg.type === "busy") {
-        setBusy(msg.busy === true);
+        dispatch({ type: "busy", busy: msg.busy === true });
       } else if (msg.type === "capabilities") {
-        // Sent once when the driver is built — what THIS session's provider
-        // can actually do (US-007/US-009). The permission chip and approval
-        // UI adapt to it without ever branching on a provider name.
-        setCapabilities((msg.capabilities as AgentCapabilities) ?? null);
+        // Sent when the driver is built — what THIS session's provider can
+        // actually do (US-007/US-009). The permission chip and approval UI
+        // adapt to it without ever branching on a provider name.
+        dispatch({ type: "capabilities", capabilities: (msg.capabilities as AgentCapabilities) ?? null });
       } else if (msg.type === "error") {
-        setItems((prev) => [
-          ...prev,
-          { id: nextId(), role: "error", message: String(msg.message ?? "error") },
-        ]);
+        dispatch({ type: "server-error", message: String(msg.message ?? "error") });
       } else if (msg.type === "event") {
-        applyEvent(msg.event as AgentEvent);
+        dispatch({ type: "server-event", event: msg.event as AgentEvent, now: Date.now() });
       }
     };
     return () => {
       // Null the handlers before closing: this is a LOCAL teardown (unmount /
-      // token change), not a lost connection — the onclose transcript notice
-      // must not fire for it.
+      // token change), not a lost connection — the connection-lost transcript
+      // notice must not fire for it.
       ws.onmessage = null;
       ws.onclose = null;
       ws.onerror = null;
       ws.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  /** Fold one normalized event into the flat transcript. */
-  const applyEvent = useCallback((e: AgentEvent) => {
-    const eventTs = Date.now();
-    // Session-level state rides alongside the transcript fold.
-    if (e.kind === "system") {
-      setSessionId(e.sessionId);
-      if (e.permissionMode) setPermissionModeState(e.permissionMode);
-    } else if (e.kind === "permission-mode") {
-      setPermissionModeState(e.mode);
-    } else if (e.kind === "permission-request") {
-      setPendingApprovals((prev) => [
-        ...prev,
-        { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, input: e.input, toolName: e.toolName, toolUseId: e.toolUseId },
-      ]);
-    } else if (e.kind === "result" || e.kind === "exit" || e.kind === "error") {
-      // The turn is over — any unanswered request was settled driver-side.
-      setPendingApprovals([]);
-    }
-    setItems((prev) => {
-      switch (e.kind) {
-        case "permission-request":
-          // The request also reads in the transcript — appended pending,
-          // resolved in place by respondToApproval or dismissed at turn end.
-          return [
-            ...prev,
-            {
-              id: `ap-${e.id}`,
-              role: "approval",
-              requestId: e.id,
-              toolKind: e.toolKind,
-              toolName: e.toolName,
-              summary: e.summary,
-              resolution: "pending",
-              ts: eventTs,
-            },
-          ];
-        case "result":
-        case "exit":
-        case "error": {
-          if (e.kind === "result" && e.contextTokens != null) {
-            setContextTokens(e.contextTokens);
-          }
-          // Turn over — mark any still-pending approval entries dismissed
-          // before appending the terminal item below.
-          const settled = prev.map((it) =>
-            it.role === "approval" && it.resolution === "pending"
-              ? { ...it, resolution: "dismissed" as const }
-              : it,
-          );
-          if (e.kind === "result")
-            return [
-              ...settled,
-              { id: nextId(), role: "result", costUsd: e.costUsd, durationMs: e.durationMs, numTurns: e.numTurns, tokens: e.tokens ?? null, ts: eventTs },
-            ];
-          if (e.kind === "exit")
-            return [
-              ...settled,
-              { id: nextId(), role: "error", message: `Session ended${e.code != null ? ` (exit ${e.code})` : ""}.`, ts: eventTs },
-            ];
-          return [...settled, { id: nextId(), role: "error", message: e.message, ts: eventTs }];
-        }
-        case "system": {
-          // A re-init with the same session id follows a mid-session mode
-          // switch — the mode line already told the story; a NEW id is a real
-          // (re)start and keeps its "Session started" line.
-          if (e.sessionId && e.sessionId === lastInitSessionRef.current) return prev;
-          lastInitSessionRef.current = e.sessionId;
-          return [...prev, { id: nextId(), role: "system", model: e.model, cwd: e.cwd, ts: eventTs }];
-        }
-        case "permission-mode":
-          return [...prev, { id: nextId(), role: "mode", mode: e.mode, ts: eventTs }];
-        case "assistant-text":
-        case "reasoning": {
-          // Deltas append to the open item of the same role in place; a
-          // whole block (or a delta after a different item) starts a new one.
-          // The driver never emits both for the same content, so appending
-          // whenever the last item matches is safe.
-          const role = e.kind === "reasoning" ? "reasoning" : "assistant";
-          const last = prev[prev.length - 1];
-          if (e.delta && last && last.role === role) {
-            const next = prev.slice();
-            next[next.length - 1] = { ...last, text: last.text + e.text };
-            return next;
-          }
-          return [...prev, { id: nextId(), role, text: e.text, ts: eventTs }];
-        }
-        case "tool-use":
-          return [
-            ...prev,
-            { id: e.id || nextId(), role: "tool", name: e.name, input: e.input, result: null, isError: false, ts: eventTs },
-          ];
-        case "tool-result": {
-          // Merge into the matching tool-use card by id; append if unseen.
-          const idx = prev.findIndex((it) => it.role === "tool" && it.id === e.id);
-          if (idx === -1) return prev;
-          const next = prev.slice();
-          const card = next[idx] as Extract<ChatItem, { role: "tool" }>;
-          next[idx] = { ...card, result: e.content, isError: e.isError };
-          return next;
-        }
-        default:
-          return prev;
-      }
-    });
-  }, []);
 
   const send = useCallback(
     (
@@ -379,7 +197,7 @@ export function useAgentChat(token: string | null): AgentChat {
       images: OutgoingImage[] = [],
     ) => {
       const ws = wsRef.current;
-      if (!ws || ws.readyState !== ws.OPEN || busy || !text.trim()) return;
+      if (!ws || ws.readyState !== ws.OPEN || state.busy || !text.trim()) return;
       const pins: SentPin[] = attachments.map((a) => ({
         path: a.path,
         bytes: new TextEncoder().encode(a.content).length,
@@ -388,20 +206,10 @@ export function useAgentChat(token: string | null): AgentChat {
       const sentImages: SentImage[] = images.map((i) => ({
         dataUrl: `data:${i.mediaType};base64,${i.data}`,
       }));
-      setItems((prev) => [
-        ...prev,
-        {
-          id: nextId(),
-          role: "user",
-          text,
-          ...(pins.length ? { pins } : {}),
-          ...(sentImages.length ? { images: sentImages } : {}),
-          ts: Date.now(),
-        },
-      ]);
+      dispatch({ type: "user-sent", text, pins, images: sentImages, now: Date.now() });
       ws.send(JSON.stringify({ type: "prompt", text, attachments, images, ...opts }));
     },
-    [busy],
+    [state.busy],
   );
 
   const interrupt = useCallback(() => {
@@ -409,55 +217,39 @@ export function useAgentChat(token: string | null): AgentChat {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "interrupt" }));
   }, []);
 
-  const setPermissionMode = useCallback(
-    (mode: string) => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== ws.OPEN) return;
-      // No optimistic update — the driver confirms with a permission-mode
-      // event (or surfaces an error), so the indicator never lies.
-      ws.send(JSON.stringify({ type: "set-permission-mode", mode }));
-    },
-    [],
-  );
+  const setPermissionMode = useCallback((mode: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== ws.OPEN) return;
+    // No optimistic update — the driver confirms with a permission-mode
+    // event (or surfaces an error), so the indicator never lies.
+    ws.send(JSON.stringify({ type: "set-permission-mode", mode }));
+  }, []);
 
   const reportError = useCallback((message: string) => {
-    setItems((prev) => [
-      ...prev,
-      { id: nextId(), role: "error", message, ts: Date.now() },
-    ]);
+    dispatch({ type: "client-error", message, now: Date.now() });
   }, []);
 
   const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return;
     ws.send(JSON.stringify({ type: "permission-response", id, decision }));
-    // Clear optimistically — the driver ignores unknown/settled ids, and a
-    // fresh request would arrive as its own permission-request event.
-    setPendingApprovals((prev) => prev.filter((p) => p.id !== id));
-    // Resolve the transcript entry with the decision taken.
-    setItems((prev) =>
-      prev.map((it) =>
-        it.role === "approval" && it.requestId === id && it.resolution === "pending"
-          ? { ...it, resolution: decision }
-          : it,
-      ),
-    );
+    dispatch({ type: "approval-responded", id, decision });
   }, []);
 
   return {
-    items,
-    contextTokens,
-    busy,
-    status,
-    sessionId,
-    pendingApproval: pendingApprovals[0] ?? null,
-    pendingApprovals,
+    items: state.items,
+    contextTokens: state.contextTokens,
+    busy: state.busy,
+    status: state.status,
+    sessionId: state.sessionId,
+    pendingApproval: state.pendingApprovals[0] ?? null,
+    pendingApprovals: state.pendingApprovals,
     respondToApproval,
     send,
     interrupt,
-    permissionMode,
+    permissionMode: state.permissionMode,
     setPermissionMode,
     reportError,
-    capabilities,
+    capabilities: state.capabilities,
   };
 }

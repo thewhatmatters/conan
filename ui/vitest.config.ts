@@ -22,9 +22,13 @@ export default mergeConfig(
       // so `npm run typecheck` sees the same symbols the runner does.
       globals: false,
       setupFiles: ["./src/test/setup.ts"],
-      // v2 only for now. v1 has no tests; widening this later is a one-line
-      // change, and until then a stray v1 spec won't silently go unrun.
-      include: ["src/v2/__tests__/**/*.test.{ts,tsx}"],
+      // v2 + the shared chat domain (ui/src/chat). v1 components still have
+      // no tests; widening further stays a one-line change, and until then a
+      // stray v1 spec won't silently go unrun.
+      include: [
+        "src/v2/__tests__/**/*.test.{ts,tsx}",
+        "src/chat/__tests__/**/*.test.{ts,tsx}",
+      ],
       // Real CSS processing: `tokens.test.ts` asserts that the v2 entry actually
       // injects `tokens.css`, which only happens when Vitest handles CSS instead
       // of stubbing it out.
