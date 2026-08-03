@@ -21,19 +21,7 @@
 import { useEffect, useState } from "react";
 import { apiBase } from "../../lib/gateway.ts";
 import type { ChatItem } from "./useV2Chat.ts";
-
-/** One reconstructed entry — mirrors the gateway's `HistoryItem`. */
-type HistoryItem =
-  | { role: "user" | "assistant" | "reasoning"; text: string; ts?: number | null }
-  | {
-      role: "tool";
-      id: string;
-      name: string;
-      input: unknown;
-      result: string | null;
-      isError: boolean;
-      ts?: number | null;
-    };
+import type { HistoryItem } from "../../chat/model.ts";
 
 /** `null` = nothing to reopen (a draft). */
 export type V2HistoryState = "loading" | "found" | "missing" | null;

@@ -158,9 +158,6 @@ export function pinName(path: string): string {
   return parts.length ? parts[parts.length - 1]! : path;
 }
 
-/** Compact byte size for a chip's tooltip, mirroring v1's `fmtBytes`. */
-export function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+/** Compact byte size for a chip's tooltip — the shared chat-model helper,
+ *  re-exported for this tree's existing importers. */
+export { fmtBytes } from "../../chat/model.ts";

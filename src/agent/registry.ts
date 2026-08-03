@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { AgentCapabilities, AgentDriver, AgentEvent } from "./driver.js";
+import type { AgentCapabilities, AgentDriver, AgentEvent, ProviderId } from "./driver.js";
 import { CLAUDE_CAPABILITIES, ClaudeDriver } from "./claude.js";
 import { CODEX_CAPABILITIES, CodexDriver } from "./codex.js";
 import { GROK_CAPABILITIES, GrokDriver } from "./grok.js";
@@ -32,7 +32,9 @@ export { CODEX_CAPABILITIES, GROK_CAPABILITIES, KIMI_CAPABILITIES };
  * plain `installed: false`, never an error or a hang.
  */
 
-export type ProviderId = "claude" | "codex" | "grok" | "kimi";
+// The provider union lives in driver.ts (the seam the UI shares); re-exported
+// here so registry consumers keep their existing import path.
+export type { ProviderId };
 
 export interface ProviderEntry {
   id: ProviderId;

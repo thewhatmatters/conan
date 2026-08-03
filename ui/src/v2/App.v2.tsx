@@ -62,7 +62,8 @@ import {
   type V2ProjectWithThreads,
   type V2SavedThread,
 } from "./lib/useV2Projects.ts";
-import type { ActiveThread, V2Provider } from "./lib/types.ts";
+import type { ActiveThread } from "./lib/types.ts";
+import { asProviderId } from "../chat/model.ts";
 import type { ProjectGroup, ProjectTreeProps } from "./components/ProjectTree.tsx";
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 import { pillOf, useV2ThreadState } from "./lib/useV2ThreadState.ts";
@@ -95,12 +96,8 @@ const styles = stylex.create({
   },
 });
 
-/** The gateway stores the provider as a free string (null on pre-migration
- *  rows, which it coalesces to claude). Narrow it once, here. */
-function asProvider(value: string | null | undefined): V2Provider {
-  if (value === "codex" || value === "grok") return value;
-  return "claude";
-}
+// Provider narrowing is asProviderId in the shared chat model — checking
+// against the REAL union (the local copy here once coerced kimi to claude).
 
 /** v1's sidebar copy for a row the DB has no title/preview for yet. */
 const UNTITLED = "New chat";
@@ -337,7 +334,7 @@ export default function AppV2() {
               id: thread.sessionId,
               title: thread.title ?? UNTITLED,
               subtitle: thread.lastMessage ?? NO_PREVIEW,
-              provider: asProvider(thread.provider),
+              provider: asProviderId(thread.provider),
               status: pillOf(states[thread.sessionId]),
               lastActivity: thread.lastActivity,
             };
@@ -404,7 +401,7 @@ export default function AppV2() {
           key,
           cwd: config?.cwd ?? "",
           projectName,
-          provider: asProvider(row.provider),
+          provider: asProviderId(row.provider),
           title: row.title,
         });
         return;
@@ -417,7 +414,7 @@ export default function AppV2() {
         cwd: thread.cwd || project.path,
         projectId: project.id,
         projectName: project.name,
-        provider: asProvider(thread.provider),
+        provider: asProviderId(thread.provider),
         title: thread.title ?? UNTITLED,
         sessionId: thread.sessionId,
         model: thread.model,

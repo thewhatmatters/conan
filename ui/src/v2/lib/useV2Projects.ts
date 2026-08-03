@@ -16,33 +16,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiBase } from "../../lib/gateway.ts";
+import type { Project, SavedThread } from "../../chat/model.ts";
 
-/** A project row — a chosen folder every thread inside it uses as its cwd. */
-export interface V2Project {
-  id: string;
-  /** Absolute path of the project folder. */
-  path: string;
-  /** Display name: the folder basename. */
-  name: string;
-  createdAt: number;
-  /** Git repo root containing the folder, gateway-computed. Null = not a repo. */
-  repoRoot?: string | null;
-}
-
-/** A persisted `chat_thread` row. Mirrors v1's `SavedThread`. */
-export interface V2SavedThread {
-  sessionId: string;
-  cwd: string;
-  model: string | null;
-  /** 'claude' | 'codex' | 'grok'; the gateway coalesces pre-migration nulls. */
-  provider: string | null;
-  effort: string | null;
-  title: string | null;
-  /** Last assistant response / prompt preview — the row's subtitle. */
-  lastMessage: string | null;
-  createdAt: number;
-  lastActivity: number;
-}
+// The domain types live in the shared chat model (ui/src/chat/model.ts) —
+// the V2 names stay as aliases for this tree's existing importers.
+export type V2Project = Project;
+export type V2SavedThread = SavedThread;
 
 export interface V2ProjectWithThreads extends V2Project {
   threads: V2SavedThread[];

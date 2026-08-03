@@ -16,6 +16,13 @@ import type { AgentTurn } from "./attachments.js";
  * defining the interface now even for a single impl.
  */
 
+/** The registered agent providers. Declared HERE (the near-import-free seam
+ *  both tsconfig programs type-import) rather than in the registry, so the UI
+ *  shares the one union without dragging node-typed modules into its program —
+ *  a new provider added here propagates to both trees as a compile error, not
+ *  a silently-narrowed copy. The registry re-exports it. */
+export type ProviderId = "claude" | "codex" | "grok" | "kimi";
+
 /** Per-session launch configuration, chosen in the composer's chips. Fixed at
  *  the first prompt — a headless agent keeps conversation context in one live
  *  process, so switching model/permission mid-session isn't meaningful; a new

@@ -4,8 +4,11 @@
  * holds about the active sidebar selection.
  */
 
-/** Which agent a fresh turn launches on. Mirrors the provider chip vocabulary. */
-export type V2Provider = "claude" | "codex" | "grok";
+import type { ProviderId } from "../../chat/model.ts";
+
+/** Which agent a fresh turn launches on — the REAL provider union from the
+ *  driver seam (this tree once redeclared it and silently dropped kimi). */
+export type V2Provider = ProviderId;
 
 /**
  * The thread the content well is hosting — the REOPEN DESCRIPTOR (p2d US-501).

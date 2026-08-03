@@ -30,9 +30,12 @@ import {
 // The shared brand marks (src/assets/providers/*). The row and the composer's
 // picker now render the SAME glyph, so a provider looks identical everywhere.
 import ProviderGlyph from "../chat/composer/ProviderGlyph.tsx";
+import type { ProviderId } from "../../chat/model.ts";
 
-/** Which agent ran this thread. Drives the avatar glyph and its brand colour. */
-export type ThreadProvider = "claude" | "codex" | "grok";
+/** Which agent ran this thread. Drives the avatar glyph and its brand colour.
+ *  The union is the shared `ProviderId` — never a local copy (a narrowed copy
+ *  here once cost kimi threads their glyph). */
+export type ThreadProvider = ProviderId;
 export type ThreadStatus = "working" | "awaiting" | "ready" | "idle";
 
 export interface ThreadRowProps {

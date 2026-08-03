@@ -17,18 +17,11 @@
  */
 import * as stylex from "@stylexjs/stylex";
 import { Text } from "@astryxdesign/core/Text";
-import claudeIcon from "../../../assets/providers/claude.svg?raw";
-import grokIcon from "../../../assets/providers/grok.svg?raw";
-import openaiIcon from "../../../assets/providers/openai.svg?raw";
-import kimiIcon from "../../../assets/providers/kimi.svg?raw";
+// The one brand-mark map both trees share (v1's ProviderMark renders the same
+// module) — re-exported for this tree's existing importers.
+import { PROVIDER_ICON } from "../../../chat/providerIcons.ts";
 
-/** Brand marks by provider id. Codex's mark is the OpenAI one. */
-export const PROVIDER_ICON: Record<string, string> = {
-  claude: claudeIcon,
-  codex: openaiIcon,
-  grok: grokIcon,
-  kimi: kimiIcon,
-};
+export { PROVIDER_ICON };
 
 const styles = stylex.create({
   // `currentColor` marks read as icon-primary; self-coloured ones ignore it.

@@ -55,6 +55,7 @@ import { apiBase } from "../lib/gateway.ts";
 import { cn } from "../lib/utils.ts";
 import { useProviders, type ProviderStatus } from "../hooks/useProviders.ts";
 import { PROVIDER_ICON } from "./ProviderMark.tsx";
+import { pillOf, type Pill, type Project, type SavedThread } from "../chat/model.ts";
 import { useThemes } from "../hooks/useThemes.ts";
 
 /**
@@ -81,20 +82,8 @@ import { useThemes } from "../hooks/useThemes.ts";
  * with no threads persists.
  */
 
-/** First-class project: a chosen folder that chats live inside (US-025).
- *  Ids come from the gateway's project table (stable across reloads). */
-interface Project {
-  id: string;
-  /** Absolute path of the project folder — every thread's cwd. */
-  path: string;
-  /** Display name: the folder basename. */
-  name: string;
-  /** Creation time — the "Created" project sort key (US-005). */
-  createdAt: number;
-  /** Git repo root containing the folder (gateway-computed) — the
-   *  group-by-repository key. Null/absent = not in a repo (groups by path). */
-  repoRoot?: string | null;
-}
+// Project / SavedThread / pillOf now live in the shared chat domain
+// (ui/src/chat/model.ts) — one declaration for both trees.
 
 /** A live (this-run) thread hosting a mounted ChatPane. */
 interface Thread {
@@ -108,32 +97,6 @@ interface Thread {
   resume?: SavedThread;
 }
 
-/** A persisted chat_thread row from GET /api/agent/projects (US-014). */
-interface SavedThread {
-  sessionId: string;
-  cwd: string;
-  model: string | null;
-  /** Agent provider that drove the thread (T3-1 US-006/008) — 'claude' |
-   *  'codex' | 'grok'; the gateway coalesces pre-migration nulls to 'claude'. */
-  provider: string | null;
-  effort: string | null;
-  title: string | null;
-  /** PD-1: last assistant response / prompt preview — the row's description. */
-  lastMessage: string | null;
-  createdAt: number;
-  lastActivity: number;
-}
-
-/** Sidebar status pill, derived from the thread's reported state. */
-type Pill = "working" | "awaiting" | "ready" | "idle";
-
-function pillOf(s: ThreadUiState | undefined): Pill {
-  if (!s) return "idle";
-  if (s.awaitingApproval) return "awaiting";
-  if (s.busy) return "working";
-  if (s.status === "open") return "ready";
-  return "idle";
-}
 
 const PILL: Record<Pill, { label: string; cls: string; dot: string }> = {
   working: {

@@ -1,21 +1,11 @@
 import { useCallback, useState } from "react";
-import type { ChatStatus } from "./useV2Chat.ts";
+import { pillOf, type Pill, type ThreadPillState } from "../../chat/model.ts";
 
-export type V2ThreadPill = "working" | "awaiting" | "ready" | "idle";
-
-export interface V2ThreadUiState {
-  status: ChatStatus;
-  busy: boolean;
-  awaitingApproval: boolean;
-}
-
-export function pillOf(state: V2ThreadUiState | undefined): V2ThreadPill {
-  if (!state) return "idle";
-  if (state.awaitingApproval) return "awaiting";
-  if (state.busy) return "working";
-  if (state.status === "open") return "ready";
-  return "idle";
-}
+// The pill derivation lives in the shared chat model (ui/src/chat/model.ts) —
+// the V2 names stay as aliases/re-exports for this tree's existing importers.
+export type V2ThreadPill = Pill;
+export type V2ThreadUiState = ThreadPillState;
+export { pillOf };
 
 export function useV2ThreadState() {
   const [states, setStates] = useState<Record<string, V2ThreadUiState>>({});

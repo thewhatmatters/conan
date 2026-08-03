@@ -75,6 +75,7 @@ import SurfacePanel from "./SurfacePanel.tsx";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip.tsx";
 import { ProgressCircle } from "./charts/ProgressCircle.tsx";
 import { buildFileDiff } from "../lib/diff.ts";
+import { fmtBytes, type HistoryItem } from "../chat/model.ts";
 import { chunkTranscript, type ToolItem } from "../lib/worklog.ts";
 import { DiffView, DiffStat } from "./DiffView.tsx";
 
@@ -192,11 +193,7 @@ export interface ResumeTarget {
   provider: string | null;
 }
 
-/** One reconstructed history entry from GET /api/agent/threads/:id/transcript
- *  (mirrors the gateway's HistoryItem). */
-type HistoryItem =
-  | { role: "user" | "assistant" | "reasoning"; text: string; ts?: number | null }
-  | { role: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; ts?: number | null };
+// HistoryItem + fmtBytes moved to the shared chat domain (ui/src/chat/model.ts).
 
 export default function ChatPane({
   token,
@@ -1981,12 +1978,6 @@ interface PendingPin {
   keep?: boolean;
 }
 
-/** Compact byte size for pin chips. */
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /**
  * Pin picker (US-010) — a paperclip that searches the thread's cwd (reusing
