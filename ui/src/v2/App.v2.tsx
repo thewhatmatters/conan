@@ -424,6 +424,37 @@ export default function AppV2() {
     [config?.cwd, index],
   );
 
+  // WHA-104 — the breadcrumb's thread menu. It reads the SAME group the sidebar
+  // renders for the open project, so the two surfaces cannot disagree on which
+  // threads exist or what order they are in, and a pick goes through the same
+  // handler a sidebar click does: switching from the crumb and switching from
+  // the rail are one code path, including mid-turn (the well is keyed on the
+  // selection either way — nothing here can block a running turn).
+  const crumbGroup = useMemo(
+    () => groups.find((group) => group.id === activeThread?.projectId) ?? null,
+    [groups, activeThread?.projectId],
+  );
+
+  const crumbThreads = useMemo(
+    () =>
+      (crumbGroup?.threads ?? []).map((row) => ({
+        id: row.id ?? row.title,
+        title: row.title,
+      })),
+    [crumbGroup],
+  );
+
+  const switchThread = useCallback(
+    (key: string) => {
+      if (!crumbGroup) return;
+      const row = crumbGroup.threads?.find(
+        (candidate) => (candidate.id ?? candidate.title) === key,
+      );
+      if (row) onSelectThread(row, crumbGroup.name);
+    },
+    [crumbGroup, onSelectThread],
+  );
+
   return (
     <>
       <Layout
@@ -444,6 +475,9 @@ export default function AppV2() {
             <Toolbar
               project={activeThread?.projectName ?? "Conan"}
               thread={activeThread?.title ?? "Select a thread"}
+              threads={crumbThreads}
+              activeThreadId={activeThread?.key ?? null}
+              onSelectThread={switchThread}
             />
             <VStack gap={0} xstyle={styles.well}>
               <SecondaryBar />

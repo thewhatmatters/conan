@@ -216,6 +216,12 @@
    * search row + the 37px footer. Providers with more models scroll; with
    * fewer, the list keeps its lane. */
   --conan-picker-height: 371px;
+  /* Breadcrumb thread menu (WHA-104): a CEILING, not a measured artboard
+   * value — the menu's floor is the crumb's own width (Astryx anchors it with
+   * `anchor-size`). Thread titles come from the first message and run long, so
+   * without a bound one title sets the width of the whole surface. 320px holds
+   * a readable title at the sidebar row's measure and truncates past it. */
+  --conan-crumb-menu-max-width: 320px;
   --conan-icon-size: 16px; /* every icon in RJ-0 */
   --conan-avatar-size: 40px; /* thread avatar */
   --conan-row-height: 68px; /* thread row */
