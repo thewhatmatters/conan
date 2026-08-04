@@ -49,12 +49,17 @@ describe("Sidebar", () => {
     expect(last?.querySelector('[data-slot="settings-footer"]')).not.toBeNull();
   });
 
-  it("renders a labelled search input and labelled native action buttons", () => {
+  it("renders a labelled search button and labelled native action buttons", () => {
     render(<Sidebar />);
 
-    expect(
-      screen.getByRole("searchbox", { name: "Search projects and threads" }),
-    ).toHaveAttribute("placeholder", "Search");
+    // WHA-70 opener is a button (not a read-only searchbox) so Esc after open
+    // can restore focus without re-opening the palette.
+    const search = screen.getByRole("button", {
+      name: "Search projects and threads",
+    });
+    expect(search).toHaveAttribute("aria-haspopup", "dialog");
+    expect(search).toHaveAttribute("type", "button");
+    expect(screen.getByText("Search")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sort projects" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
   });

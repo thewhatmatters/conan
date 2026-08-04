@@ -35,6 +35,8 @@ export interface SidebarProps {
   emptyState?: ProjectTreeProps["emptyState"];
   /** Opens the add-project dialog (WHA-74) — the shell owns the dialog. */
   onAddProject?: () => void;
+  /** Opens the ⌘K command palette (WHA-70) from the sidebar Search field. */
+  onOpenPalette?: () => void;
 }
 
 const styles = stylex.create({
@@ -65,6 +67,7 @@ export default function Sidebar({
   groups,
   emptyState,
   onAddProject,
+  onOpenPalette,
 }: SidebarProps) {
   return (
     <LayoutPanel
@@ -78,7 +81,7 @@ export default function Sidebar({
       data-slot="sidebar-panel"
     >
       <VStack height="100%" gap={0} justify="between" data-slot="sidebar">
-        <SidebarHeader />
+        <SidebarHeader onOpenPalette={onOpenPalette} />
         <VStack isScrollable padding={4} gap={4} xstyle={styles.body}>
           <ProjectTree
             groups={groups}
