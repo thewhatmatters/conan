@@ -1,14 +1,16 @@
 /**
- * WHA-70 / US-401 — command palette shell.
+ * Command palette — WHA-70 shell, WHA-71 search source, WHA-72 actions.
  *
- * Asserts the Astryx wrapper, VC-1 bootstrap placeholders, default input +
- * footer hints, and the App.v2 ⌘K + sidebar Search openers.
+ * The shell half (dialog, footer hints, ⌘K and sidebar openers) is WHA-70's and
+ * is asserted unchanged. The contents half is Randy's 1T4-0 artboard: an
+ * Actions group over Recent Threads, and the "New thread in…" row that
+ * navigates to a projects screen INSIDE the palette instead of dismissing it —
+ * which is the one behaviour Astryx does not give you for free, since its
+ * combobox closes on every select.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import V2CommandPalette, {
-  VC1_PLACEHOLDERS,
-} from "../command/CommandPalette.tsx";
+import V2CommandPalette from "../command/CommandPalette.tsx";
 import SearchInput from "../components/SearchInput.tsx";
 import AppV2 from "../App.v2.tsx";
 
@@ -58,22 +60,45 @@ function stubShellFetch() {
   );
 }
 
-describe("V2CommandPalette (shell)", () => {
-  it("renders the dialog with default input, footer hints, and VC-1 placeholders when open", async () => {
-    render(<V2CommandPalette isOpen onOpenChange={() => {}} />);
+const PROJECTS = [
+  { id: "p1", name: "conan" },
+  { id: "p2", name: "marketing" },
+];
 
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
-    expect(dialog).toHaveAttribute("open");
+const THREADS = [
+  { id: "s-a", title: "Analyze my project", preview: "Run the skill…", lastActivity: 1 },
+  { id: "s-b", title: "Code Validation", preview: "Check the gates…", lastActivity: 2 },
+];
+
+function renderPalette(overrides: Partial<Parameters<typeof V2CommandPalette>[0]> = {}) {
+  const handlers = {
+    onOpenChange: vi.fn(),
+    onNewThreadIn: vi.fn(),
+    onAddProject: vi.fn(),
+    onSelectThread: vi.fn(),
+  };
+  render(
+    <V2CommandPalette
+      isOpen
+      projects={PROJECTS}
+      threads={THREADS}
+      activeProject={PROJECTS[0]}
+      {...handlers}
+      {...overrides}
+    />,
+  );
+  return handlers;
+}
+
+describe("V2CommandPalette shell (WHA-70)", () => {
+  it("renders the dialog, the combobox and the footer hints when open", () => {
+    renderPalette();
+
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toHaveAttribute("open");
     expect(screen.getByRole("combobox")).toBeInTheDocument();
     expect(screen.getByText(/Navigate/i)).toBeInTheDocument();
     expect(screen.getByText(/Select/i)).toBeInTheDocument();
     expect(screen.getByText(/Close/i)).toBeInTheDocument();
-
-    for (const item of VC1_PLACEHOLDERS) {
-      await waitFor(() => {
-        expect(screen.getByText(item.label)).toBeInTheDocument();
-      });
-    }
   });
 
   it("stays closed when isOpen is false", () => {
@@ -86,6 +111,112 @@ describe("V2CommandPalette (shell)", () => {
     expect(dialog).not.toBeNull();
     expect(dialog).not.toHaveAttribute("open");
     expect(dialog).toHaveAttribute("aria-label", "Command palette");
+  });
+});
+
+describe("V2CommandPalette contents (WHA-71/72, artboard 1T4-0)", () => {
+  it("shows the designed placeholder, actions and recent threads before typing", async () => {
+    renderPalette();
+
+    expect(
+      screen.getByPlaceholderText("Search commands, projects and threads…"),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+    for (const label of ["New thread in…", "Add project"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // Recent threads carry the sidebar's preview line.
+    expect(screen.getByText("Analyze my project")).toBeInTheDocument();
+    expect(screen.getByText("Run the skill…")).toBeInTheDocument();
+    // Section headers come from the auto-grouping, not a hand-rolled list.
+    expect(screen.getByText("Actions")).toBeInTheDocument();
+    expect(screen.getByText("Recent Threads")).toBeInTheDocument();
+  });
+
+  it("omits rows the shell gave it no handler for", async () => {
+    render(
+      <V2CommandPalette
+        isOpen
+        onOpenChange={() => {}}
+        projects={PROJECTS}
+        threads={THREADS}
+        activeProject={PROJECTS[0]}
+        onNewThreadIn={() => {}}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+    // No onAddProject / onOpenSettings → no dead rows offering them.
+    expect(screen.queryByText("Add project")).not.toBeInTheDocument();
+    expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
+  });
+
+  it("filters across actions and threads", async () => {
+    renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "valid" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Code Validation")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("New thread in conan")).not.toBeInTheDocument();
+  });
+
+  it("runs the action and closes for an ordinary row", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("Add project")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Add project"));
+
+    expect(handlers.onAddProject).toHaveBeenCalledTimes(1);
+    expect(handlers.onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("opens a thread by its own id", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("Code Validation")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Code Validation"));
+
+    expect(handlers.onSelectThread).toHaveBeenCalledWith("s-b");
+  });
+
+  it("'New thread in…' navigates to the projects screen and does NOT dismiss", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in…")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New thread in…"));
+
+    // The palette stays open — Astryx closes on every select, so the close that
+    // follows this one row has to be swallowed. That is the whole trick.
+    await waitFor(() => {
+      expect(screen.getByText("marketing")).toBeInTheDocument();
+    });
+    expect(handlers.onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(
+      screen.getByPlaceholderText("Search projects…"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+
+    // …and picking a project there starts the thread in it.
+    fireEvent.click(screen.getByText("marketing"));
+    expect(handlers.onNewThreadIn).toHaveBeenCalledWith("p2");
   });
 });
 

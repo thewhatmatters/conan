@@ -469,15 +469,56 @@ export default function AppV2() {
     [crumbGroup],
   );
 
-  const switchThread = useCallback(
+  // Open a thread by its sidebar key, wherever it lives. The breadcrumb only
+  // ever looks inside the open project, but the palette searches across all of
+  // them, so the lookup is group-agnostic and both callers share one path into
+  // `onSelectThread` — the same one a sidebar click takes.
+  const selectThreadByKey = useCallback(
     (key: string) => {
-      if (!crumbGroup) return;
-      const row = crumbGroup.threads?.find(
-        (candidate) => (candidate.id ?? candidate.title) === key,
-      );
-      if (row) onSelectThread(row, crumbGroup.name);
+      for (const group of groups) {
+        const row = group.threads?.find(
+          (candidate) => (candidate.id ?? candidate.title) === key,
+        );
+        if (row) {
+          onSelectThread(row, group.name);
+          return;
+        }
+      }
     },
-    [crumbGroup, onSelectThread],
+    [groups, onSelectThread],
+  );
+
+  // WHA-71/72 — the palette's contents. Same data the rail renders, mapped to
+  // the palette's shape; the handlers below are the shell's existing ones, so
+  // "New thread in X" from the palette and "New chat" from a project kebab are
+  // one code path.
+  const paletteProjects = useMemo(
+    () => projects.map((project) => ({ id: project.id, name: project.name })),
+    [projects],
+  );
+
+  /** Recent threads across every project, newest activity first (1T4-0). */
+  const paletteThreads = useMemo(
+    () =>
+      projects
+        .flatMap((project) => project.threads)
+        .slice()
+        .sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))
+        .map((thread) => ({
+          id: thread.sessionId,
+          title: thread.title ?? UNTITLED,
+          preview: thread.lastMessage ?? NO_PREVIEW,
+          lastActivity: thread.lastActivity,
+        })),
+    [projects],
+  );
+
+  const paletteActiveProject = useMemo(
+    () =>
+      crumbGroup?.id
+        ? { id: crumbGroup.id, name: crumbGroup.name }
+        : null,
+    [crumbGroup],
   );
 
   return (
@@ -503,7 +544,7 @@ export default function AppV2() {
               thread={activeThread?.title ?? "Select a thread"}
               threads={crumbThreads}
               activeThreadId={activeThread?.key ?? null}
-              onSelectThread={switchThread}
+              onSelectThread={selectThreadByKey}
             />
             <VStack gap={0} xstyle={styles.well}>
               <SecondaryBar />
@@ -587,7 +628,16 @@ export default function AppV2() {
           onAdd={addProject}
         />
       ) : null}
-      <V2CommandPalette isOpen={paletteOpen} onOpenChange={setPaletteOpen} />
+      <V2CommandPalette
+        isOpen={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        projects={paletteProjects}
+        threads={paletteThreads}
+        activeProject={paletteActiveProject}
+        onNewThreadIn={newThreadIn}
+        onAddProject={token ? () => setIsAddingProject(true) : undefined}
+        onSelectThread={selectThreadByKey}
+      />
     </>
   );
 }
