@@ -1,15 +1,10 @@
 /**
  * SidebarHeader — Paper RJ-0 node 70-0 (the sidebar's 64px header band).
  *
- * T0 STUB (owned by US-002).
- *
- * ⚠️ DESIGN CHANGED UNDER THE PRD. The shell PRD (retired in the 2026-08-02
- * cleanup) described this slot as "logo mark + Conan wordmark" — that was true
- * of the earlier artboard. On RJ-0 the wordmark has MOVED to the window title
- * bar (RK-0, alongside the traffic lights), and node 70-0 holds nothing but the search
- * field. This component therefore draws the 64px band and composes
- * `SearchInput`; it does not invent a logo the artboard no longer has. See the
- * title-bar note in `App.v2.tsx` for why RK-0 itself is not rendered.
+ * Draws the fixed 64px band at the top of `Sidebar` and composes `SearchInput`.
+ * On RJ-0 the wordmark lives in the window title bar (RK-0), so this band holds
+ * nothing but search. The palette opener callback is threaded from App.v2
+ * (WHA-70) so ⌘K and the field share one open state.
  */
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -26,7 +21,11 @@ const styles = stylex.create({
   },
 });
 
-export default function SidebarHeader() {
+export interface SidebarHeaderProps {
+  onOpenPalette?: () => void;
+}
+
+export default function SidebarHeader({ onOpenPalette }: SidebarHeaderProps) {
   return (
     <HStack
       align="center"
@@ -35,7 +34,7 @@ export default function SidebarHeader() {
       xstyle={styles.header}
       data-slot="sidebar-header"
     >
-      <SearchInput />
+      <SearchInput onOpenPalette={onOpenPalette} />
     </HStack>
   );
 }

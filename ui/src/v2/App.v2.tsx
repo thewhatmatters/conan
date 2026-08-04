@@ -50,11 +50,13 @@ import * as stylex from "@stylexjs/stylex";
 import { Layout } from "@astryxdesign/core/Layout";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useHotkeys } from "@astryxdesign/core/hooks";
 import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
 import SecondaryBar from "./components/SecondaryBar.tsx";
 import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import AddProjectDialog from "./components/AddProjectDialog.tsx";
+import V2CommandPalette from "./command/CommandPalette.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
 import {
@@ -146,7 +148,20 @@ export default function AppV2() {
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
+  // WHA-70 / US-401 — command palette open state lives at the shell once.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
   const { states, reportState } = useV2ThreadState();
+
+  // ⌘K / Ctrl+K opens the palette (allowInInputs: true so it works while the
+  // composer or sidebar search is focused). Esc is owned by Astryx CommandPalette.
+  useHotkeys([
+    {
+      keys: "mod+k",
+      allowInInputs: true,
+      onPress: openPalette,
+    },
+  ]);
 
   const copyText = useCallback((value: string) => {
     void writeClipboardText(value);
@@ -436,6 +451,7 @@ export default function AppV2() {
             selectedKey={activeThread?.key ?? null}
             onSelectThread={onSelectThread}
             onAddProject={token ? () => setIsAddingProject(true) : undefined}
+            onOpenPalette={openPalette}
           />
         }
         xstyle={styles.shell}
@@ -527,6 +543,7 @@ export default function AppV2() {
           onAdd={addProject}
         />
       ) : null}
+      <V2CommandPalette isOpen={paletteOpen} onOpenChange={setPaletteOpen} />
     </>
   );
 }

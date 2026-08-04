@@ -1,21 +1,17 @@
 /**
  * SearchInput — Paper RJ-0 node MU-0 / RV-0 (the sidebar's ⌘K search field).
  *
- * T0 STUB (owned by US-002). Static, non-interactive: it draws the field at the
- * artboard's measurements so the shell reads correctly, and US-002 replaces the
- * body with a real input + palette trigger. Every value here came out of Paper
- * via `get_jsx` on RV-0 — see `tokens.css` for the mapping.
+ * The field is the command-palette OPENER (WHA-70 / US-401), not a separate
+ * filter: click or focus opens the palette at App.v2. Local typing is read-only
+ * on purpose — search happens inside Astryx CommandPalette (VC-1). Geometry
+ * still comes from Paper `get_jsx` on RV-0 via `tokens.css`.
  *
  * Astryx notes:
  *   - Structure is HStack/Text only; nothing raw. Geometry the props can't
  *     express (border, fixed chip box) rides `xstyle` reading `--conan-*`.
  *   - The ⌘/K chips are built here rather than with Astryx's `Kbd`: `Kbd`
  *     renders one combined element, where RJ-0 draws two separate chips with a
- *     2px bottom edge. US-002 can revisit if `Kbd` gains a per-key variant.
- *   - Each stub carries its own `stylex.create` on purpose. A shared
- *     "shell control" primitive would be nicer code but would put five
- *     parallel worktrees (US-002…US-006) on one file; duplication is the
- *     cheaper trade here (contract §4.4).
+ *     2px bottom edge.
  */
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -89,7 +85,12 @@ function KeyCap({ children }: { children: string }) {
   );
 }
 
-export default function SearchInput() {
+export interface SearchInputProps {
+  /** Opens the shell command palette (WHA-70). */
+  onOpenPalette?: () => void;
+}
+
+export default function SearchInput({ onOpenPalette }: SearchInputProps) {
   return (
     <HStack
       align="center"
@@ -98,6 +99,7 @@ export default function SearchInput() {
       paddingInline={2}
       xstyle={styles.field}
       data-slot="search-input"
+      onClick={onOpenPalette}
     >
       <HStack align="center" gap={1} xstyle={styles.label}>
         <Search size={ICON} aria-hidden />
@@ -105,6 +107,8 @@ export default function SearchInput() {
           type="search"
           aria-label="Search projects and threads"
           placeholder="Search"
+          readOnly={Boolean(onOpenPalette)}
+          onFocus={onOpenPalette}
           {...stylex.props(styles.input)}
         />
       </HStack>
