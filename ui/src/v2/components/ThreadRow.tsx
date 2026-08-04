@@ -16,13 +16,10 @@
  * corner, which is why the avatar is the positioning context.
  */
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
-import { Button } from "@astryxdesign/core/Button";
 import { ContextMenu } from "@astryxdesign/core/ContextMenu";
-import { MoreVertical } from "lucide-react";
 import {
   formatAbsoluteTime,
   formatRelativeTime,
@@ -130,17 +127,18 @@ const styles = stylex.create({
     color: "var(--conan-brand-claude)",
     flexShrink: 0,
   },
-  menu: {
-    borderRadius: "var(--conan-radius-xs)",
-    flexShrink: 0,
-    height: "var(--conan-control-height)",
+  // Astryx's ContextMenu trigger is a plain block that hugs its content, so it
+  // needs an explicit fill or the row stops spanning the rail (the same pattern
+  // the library's Table uses for full-cell menus).
+  trigger: {
+    display: "block",
+    width: "100%",
   },
-  // ONE SLOT, TWO OCCUPANTS (WHA-75): the timestamp at rest, the kebab on
-  // hover/focus. Only the timestamp is in flow; the kebab is taken out of it and
-  // pinned to the slot's trailing edge, so revealing either one cannot move the
-  // row. Measured at 1512px: row, slot and title boxes are byte-identical at
-  // rest, on hover and on keyboard focus. `flexShrink: 0` is the artboard's rule
-  // that this lane never compresses — the title/subtitle truncate instead.
+  // ONE OCCUPANT since WHA-103's rework: the timestamp, always visible. It used
+  // to swap with a hover kebab — that kebab is gone (Randy, 2026-08-04: the menu
+  // is right-click only), so nothing takes this lane away any more.
+  // `flexShrink: 0` is the artboard's rule that this lane never compresses —
+  // the title/subtitle truncate instead.
   trailing: {
     alignItems: "center",
     display: "flex",
@@ -154,23 +152,10 @@ const styles = stylex.create({
     minWidth: "var(--conan-thread-time-lane)",
     position: "relative",
   },
-  // Fades out as the kebab fades in. Reduced-motion drops the transition only;
-  // the swap itself still happens, because it is an affordance, not decoration.
   timestamp: {
     color: "var(--conan-text-muted)",
     fontSize: "var(--conan-text-small)",
-    transition: "opacity var(--conan-duration-fast) ease",
     whiteSpace: "nowrap",
-    "@media (prefers-reduced-motion: reduce)": {
-      transition: "none",
-    },
-  },
-  // Out of flow so revealing it costs no layout. Anchored to the slot's trailing
-  // edge, which is where the artboard draws it.
-  menuOverlay: {
-    insetBlockStart: 0,
-    insetInlineEnd: 0,
-    position: "absolute",
   },
 });
 
@@ -196,10 +181,9 @@ export default function ThreadRow({
   onDelete,
   lastActivity,
 }: ThreadRowProps) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const hasTimestamp = typeof lastActivity === "number" && Number.isFinite(lastActivity);
 
-  return (
+  const row = (
     <HStack
       align="center"
       xstyle={[styles.row, isSelected && styles.rowSelected]}
@@ -242,14 +226,7 @@ export default function ThreadRow({
           </VStack>
         </HStack>
       </button>
-      {/* `data-menu-open` rides the WRAPPER as well as the kebab: the timestamp
-          has to stay hidden for the menu's whole lifetime, and it sits BEFORE
-          the kebab in the DOM, so a sibling combinator can't reach it. */}
-      <HStack
-        xstyle={styles.trailing}
-        data-slot="thread-trailing"
-        data-menu-open={isMenuOpen ? "true" : undefined}
-      >
+      <HStack xstyle={styles.trailing} data-slot="thread-trailing">
         {hasTimestamp ? (
           <time
             dateTime={toDateTimeAttribute(lastActivity)}
@@ -260,45 +237,33 @@ export default function ThreadRow({
             {formatRelativeTime(lastActivity)}
           </time>
         ) : null}
-        {onNewThread ? (
-          <HStack
-            xstyle={[styles.menu, styles.menuOverlay]}
-            data-slot="thread-actions"
-            data-menu-open={isMenuOpen ? "true" : undefined}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <ContextMenu
-              label={`Actions for ${title}`}
-              onOpenChange={setIsMenuOpen}
-              items={[
-                { label: "New thread", onClick: onNewThread },
-                { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
-                { label: "Copy Path", onClick: onCopyPath ?? undefined, isDisabled: !onCopyPath },
-                { label: "Copy Thread ID", onClick: onCopyId ?? undefined, isDisabled: !onCopyId },
-                { type: "divider" },
-                { label: "Delete", onClick: onDelete },
-              ]}
-            >
-              <Button
-                label={`Actions for ${title}`}
-                icon={<MoreVertical size={16} aria-hidden />}
-                isIconOnly
-                variant="ghost"
-                size="sm"
-                onClick={(event) => {
-                  event.currentTarget.dispatchEvent(
-                    new MouseEvent("contextmenu", {
-                      bubbles: true,
-                      cancelable: true,
-                    }),
-                  );
-                }}
-              />
-            </ContextMenu>
-          </HStack>
-        ) : null}
       </HStack>
       {isSelected ? <HStack xstyle={styles.indicator} aria-hidden /> : null}
     </HStack>
+  );
+
+  // A row with no handlers is the prop-less placeholder tree (tests/stories) —
+  // it gets no menu rather than a menu of dead entries.
+  if (!onNewThread) return row;
+
+  // WHA-103 (reworked 2026-08-04): the menu is RIGHT-CLICK ON THE ROW. The first
+  // pass wrapped only a kebab button, which meant the row itself ignored the one
+  // gesture the component is named after. Wrapping the row is also what gives
+  // keyboard users Shift+F10 / the Menu key, which Astryx handles for free.
+  return (
+    <ContextMenu
+      label={`Actions for ${title}`}
+      triggerXstyle={styles.trigger}
+      items={[
+        { label: "New thread", onClick: onNewThread },
+        { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
+        { label: "Copy Path", onClick: onCopyPath ?? undefined, isDisabled: !onCopyPath },
+        { label: "Copy Thread ID", onClick: onCopyId ?? undefined, isDisabled: !onCopyId },
+        { type: "divider" },
+        { label: "Delete", onClick: onDelete },
+      ]}
+    >
+      {row}
+    </ContextMenu>
   );
 }
