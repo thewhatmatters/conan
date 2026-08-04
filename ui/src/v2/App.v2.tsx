@@ -430,9 +430,19 @@ export default function AppV2() {
   // handler a sidebar click does: switching from the crumb and switching from
   // the rail are one code path, including mid-turn (the well is keyed on the
   // selection either way — nothing here can block a running turn).
+  //
+  // The group is found by WHICH GROUP OWNS THE OPEN ROW, not by
+  // `activeThread.projectId`: a draft picked from the rail comes back through
+  // the fallback branch above, which has no project id to carry, so an
+  // id-keyed lookup silently dropped the switcher exactly when you were in a
+  // draft (caught in the browser pass, regression-tested). Matching on the
+  // row's own key has no such hole and needs no name matching.
   const crumbGroup = useMemo(
-    () => groups.find((group) => group.id === activeThread?.projectId) ?? null,
-    [groups, activeThread?.projectId],
+    () =>
+      groups.find((group) =>
+        group.threads?.some((row) => (row.id ?? row.title) === activeThread?.key),
+      ) ?? null,
+    [groups, activeThread?.key],
   );
 
   const crumbThreads = useMemo(

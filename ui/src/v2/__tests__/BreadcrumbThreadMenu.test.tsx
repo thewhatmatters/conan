@@ -280,6 +280,45 @@ describe("AppV2 breadcrumb thread switcher", () => {
     ).toHaveAttribute("aria-current", "page");
   });
 
+  // Regression (browser pass): a draft picked from the rail reaches App.v2's
+  // fallback branch, which carries no project id. Keying the crumb's group on
+  // the project id therefore lost the switcher for the one thread you had just
+  // created — the group is found by which group owns the open row instead.
+  it("keeps the switcher when the open row is a draft picked from the rail", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    // Every project group renders its own menu into the DOM, so scope the
+    // lookup to this project's — and retry the click, since one that lands
+    // before React has flushed is swallowed (same shape as App.v2.test.tsx).
+    const kebab = await screen.findByRole("button", { name: "Actions for conan" });
+    await waitFor(() => {
+      if (kebab.getAttribute("aria-expanded") === "true") return;
+      fireEvent.click(kebab);
+      throw new Error("project menu did not open");
+    });
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Actions for conan" })).getByRole(
+        "menuitem",
+        { name: "New chat" },
+      ),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "New chat: No messages yet" }));
+
+    // `name` as a string is a full match, so this is the crumb trigger and not
+    // the draft ROW ("New chat: No messages yet").
+    const trigger = screen.getByRole("button", { name: "New chat" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    fireEvent.click(trigger);
+
+    // The draft leads, exactly as it does in the rail.
+    expect(
+      within(screen.getByRole("menu", { name: "New chat" }))
+        .getAllByRole("menuitemradio")
+        .map((row) => row.textContent),
+    ).toEqual(["New chat", "Analyze my project", "Code Validation"]);
+  });
+
   it("leaves the crumb static in a single-thread project", async () => {
     stubGateway();
     render(<AppV2 />);
