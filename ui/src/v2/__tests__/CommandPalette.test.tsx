@@ -242,6 +242,50 @@ describe("V2CommandPalette contents (WHA-71/72, artboard 1T4-0)", () => {
     expect(handlers.onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
+  // The chips were decorative until Randy pressed one. jsdom reports
+  // `metaKey`/`ctrlKey` faithfully, so the binding is testable even though the
+  // BROWSER never delivers ⌘1 to a page (it switches tabs) — that part is an
+  // environment fact, not something a test can assert.
+  it("⌘N starts a thread in the active project and closes", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+
+    // Astryx maps `mod` → meta on Apple, ctrl elsewhere; jsdom is non-Apple.
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+
+    expect(handlers.onNewThreadIn).toHaveBeenCalledWith("p1");
+    expect(handlers.onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("⌘1 picks the first project — but only on the projects screen", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in…")).toBeInTheDocument();
+    });
+
+    // Not bound on the root screen, where no ⌘1 chip is drawn.
+    fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+    expect(handlers.onNewThreadIn).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("New thread in…"));
+    await waitFor(() => {
+      expect(screen.getByText("marketing")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+    expect(handlers.onNewThreadIn).toHaveBeenCalledWith("p1");
+  });
+
+  it("binds no shortcut while the palette is closed", () => {
+    const handlers = renderPalette({ isOpen: false });
+
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+
+    expect(handlers.onNewThreadIn).not.toHaveBeenCalled();
+  });
+
   it("keeps a thread row to one line — preview inline, not a second line", async () => {
     renderPalette();
     await waitFor(() => {

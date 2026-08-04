@@ -35,6 +35,7 @@ import {
   CommandPaletteInput,
   useCommandPaletteContext,
 } from "@astryxdesign/core/CommandPalette";
+import { useHotkeys } from "@astryxdesign/core/hooks";
 import { Item } from "@astryxdesign/core/Item";
 import { Kbd } from "@astryxdesign/core/Kbd";
 import { Text } from "@astryxdesign/core/Text";
@@ -343,6 +344,38 @@ export default function V2CommandPalette({
       search: (query: string) => items.filter((item) => matches(item, query)),
     };
   }, [projectItems, rootItems, view]);
+
+  // THE CHIPS ARE NOW REAL. They were painted from the artboard and bound to
+  // nothing until Randy pressed one (2026-08-04) — a chip that advertises a
+  // shortcut nobody registered is a lie in the UI, and this is the second time
+  // this palette has shipped one (WHA-70's footer promised "↵ Select" with
+  // nothing selectable).
+  //
+  // ⌘N and ⌘1…⌘9 are the artboard's bindings and they are correct for the
+  // PRODUCT — Conan ships as a Tauri window with no browser tabs. A browser
+  // preview will never show them working: Chrome/Arc/Safari claim ⌘1…⌘9 for tab
+  // switching and ⌘N for a new window before the page sees the event. Scoped to
+  // the palette being open, and to the screen the chip is drawn on.
+  useHotkeys([
+    {
+      keys: "mod+n",
+      allowInInputs: true,
+      isDisabled: !isOpen || view !== "root" || !activeProject || !onNewThreadIn,
+      onPress: () => {
+        if (activeProject) onNewThreadIn?.(activeProject.id);
+        onOpenChange(false);
+      },
+    },
+    ...projects.slice(0, MAX_PROJECT_SHORTCUTS).map((project, index) => ({
+      keys: `mod+${index + 1}`,
+      allowInInputs: true,
+      isDisabled: !isOpen || view !== "projects" || !onNewThreadIn,
+      onPress: () => {
+        onNewThreadIn?.(project.id);
+        onOpenChange(false);
+      },
+    })),
+  ]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
