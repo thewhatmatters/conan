@@ -13,7 +13,7 @@
  * would be a lie. That one is checked in the browser pass.
  */
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ThreadRow from "../components/ThreadRow.tsx";
 import {
   formatAbsoluteTime,
@@ -120,5 +120,40 @@ describe("ThreadRow trailing slot", () => {
     const kebab = screen.getByRole("button", { name: "Actions for Analyze" });
     kebab.focus();
     expect(document.activeElement).toBe(kebab);
+  });
+
+  it("opens the Astryx context menu from the visible actions trigger", async () => {
+    render(
+      <ThreadRow
+        title="Analyze"
+        subtitle="..."
+        lastActivity={NOW - DAY}
+        onNewThread={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Analyze" }));
+
+    expect(screen.getByRole("menu", { name: "Actions for Analyze" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "New thread" })).toHaveFocus(),
+    );
+  });
+
+  it("also opens from the row action's native context-menu gesture", () => {
+    render(
+      <ThreadRow
+        title="Analyze"
+        subtitle="..."
+        lastActivity={NOW - DAY}
+        onNewThread={() => {}}
+      />,
+    );
+
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Actions for Analyze" }),
+    );
+
+    expect(screen.getByRole("menu", { name: "Actions for Analyze" })).toBeInTheDocument();
   });
 });
