@@ -493,7 +493,13 @@ export default function AppV2() {
   // "New thread in X" from the palette and "New chat" from a project kebab are
   // one code path.
   const paletteProjects = useMemo(
-    () => projects.map((project) => ({ id: project.id, name: project.name })),
+    () =>
+      projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        // 1T4-0 prints the path beside the name on the projects screen.
+        path: project.path,
+      })),
     [projects],
   );
 

@@ -61,8 +61,8 @@ function stubShellFetch() {
 }
 
 const PROJECTS = [
-  { id: "p1", name: "conan" },
-  { id: "p2", name: "marketing" },
+  { id: "p1", name: "conan", path: "/repo/conan" },
+  { id: "p2", name: "marketing", path: "/repo/marketing" },
 ];
 
 const THREADS = [
@@ -209,14 +209,50 @@ describe("V2CommandPalette contents (WHA-71/72, artboard 1T4-0)", () => {
       expect(screen.getByText("marketing")).toBeInTheDocument();
     });
     expect(handlers.onOpenChange).not.toHaveBeenCalledWith(false);
-    expect(
-      screen.getByPlaceholderText("Search projects…"),
-    ).toBeInTheDocument();
+    // 1T4-0's second screen: a BACK ARROW replaces the magnifier and the
+    // placeholder shortens. Astryx's own input hard-codes its leading icon, so
+    // this row is ours — assert it is really there and really goes back.
+    expect(screen.getByPlaceholderText("Search…")).toBeInTheDocument();
     expect(screen.getByText("Projects")).toBeInTheDocument();
+    const back = screen.getByRole("button", { name: "Back to commands" });
+    expect(back).toBeInTheDocument();
+    // The project's path rides the row, inline (1T4-0).
+    expect(screen.getByText("/repo/marketing")).toBeInTheDocument();
 
     // …and picking a project there starts the thread in it.
     fireEvent.click(screen.getByText("marketing"));
     expect(handlers.onNewThreadIn).toHaveBeenCalledWith("p2");
+  });
+
+  it("goes back to the commands screen from the projects screen", async () => {
+    const handlers = renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in…")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("New thread in…"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Back to commands" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to commands" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+    expect(handlers.onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("keeps a thread row to one line — preview inline, not a second line", async () => {
+    renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("Analyze my project")).toBeInTheDocument();
+    });
+
+    // 1T4-0's rows are single-line: the preview is a sibling of the title
+    // INSIDE the label, not Astryx's `description` slot underneath it.
+    const title = screen.getByText("Analyze my project");
+    const preview = screen.getByText("Run the skill…");
+    expect(title.parentElement).toBe(preview.parentElement);
   });
 });
 

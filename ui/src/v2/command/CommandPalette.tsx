@@ -30,18 +30,23 @@
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
-import { CommandPalette as AstryxCommandPalette } from "@astryxdesign/core/CommandPalette";
-import { CommandPaletteInput } from "@astryxdesign/core/CommandPalette";
+import {
+  CommandPalette as AstryxCommandPalette,
+  CommandPaletteInput,
+  useCommandPaletteContext,
+} from "@astryxdesign/core/CommandPalette";
 import { Item } from "@astryxdesign/core/Item";
 import { Kbd } from "@astryxdesign/core/Kbd";
 import { Text } from "@astryxdesign/core/Text";
 import type { SearchableItem, SearchSource } from "@astryxdesign/core/Typeahead";
 import {
-  FolderOpen,
+  ArrowLeft,
+  ChevronRight,
+  Folder,
   FolderPlus,
   MessageSquare,
-  MessageSquarePlus,
   Settings,
+  SquareDashed,
 } from "lucide-react";
 import { formatRelativeTime } from "../lib/relativeTime.ts";
 
@@ -49,6 +54,8 @@ import { formatRelativeTime } from "../lib/relativeTime.ts";
 export interface PaletteProject {
   id: string;
   name: string;
+  /** Absolute path — 1T4-0 prints it beside the name on the projects screen. */
+  path?: string;
 }
 
 /** A recent thread row. `preview` is the sidebar's subtitle. */
@@ -94,23 +101,33 @@ const MAX_PROJECT_SHORTCUTS = 9;
 
 interface PaletteAux {
   group: string;
-  icon: "new-thread" | "new-thread-in" | "add-project" | "settings" | "thread" | "project";
-  description?: string;
+  icon: "new-thread" | "add-project" | "settings" | "thread" | "project";
+  /**
+   * The grey half of a row. 1T4-0 keeps rows to ONE line — a thread's preview
+   * and a project's path sit INLINE after the title, not on a second line, and
+   * that single-vs-double height is most of what makes the panel read right.
+   */
+  meta?: string;
   /** Trailing chip, e.g. `mod+n` — rendered through Astryx `Kbd`. */
   shortcut?: string;
   /** Trailing relative time, e.g. `2d ago`. */
   lastActivity?: number;
+  /** Trailing chevron — the row opens another screen rather than acting. */
+  hasSubmenu?: boolean;
 }
 
 type PaletteItem = SearchableItem<PaletteAux>;
 
+// 1T4-0 gives BOTH "New thread" rows the same dashed-square glyph — they are
+// the same verb, and only the trailing affordance (⌘N vs a chevron) separates
+// them. `SquareDashed` is the closest Lucide match; flagged to Randy for a
+// correction if he named a different one.
 const ICONS = {
-  "new-thread": MessageSquarePlus,
-  "new-thread-in": FolderOpen,
+  "new-thread": SquareDashed,
   "add-project": FolderPlus,
   settings: Settings,
   thread: MessageSquare,
-  project: FolderOpen,
+  project: Folder,
 } as const;
 
 const styles = stylex.create({
@@ -123,19 +140,118 @@ const styles = stylex.create({
     display: "flex",
     flexShrink: 0,
   },
-  meta: {
+  // The trailing lane: relative time or a chevron.
+  trailing: {
     color: "var(--conan-text-muted)",
+    display: "flex",
     flexShrink: 0,
     fontSize: "var(--conan-text-small)",
     whiteSpace: "nowrap",
   },
+  // ONE LINE, two tones (1T4-0). The title keeps its intrinsic width and the
+  // grey half takes the rest and truncates, so a long preview or a long path
+  // can never push the trailing time out of the row.
+  label: {
+    alignItems: "baseline",
+    display: "flex",
+    gap: "var(--conan-space-2)",
+    minWidth: 0,
+  },
+  labelTitle: {
+    flexShrink: 0,
+  },
+  labelMeta: {
+    color: "var(--conan-text-muted)",
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  // The projects screen's search row. Astryx's own input hard-codes a leading
+  // magnifier with no slot to replace it, and 1T4-0 puts a BACK ARROW there —
+  // it is the affordance that says "this is a second screen". So that one row
+  // is rebuilt on the public palette context rather than faked around.
+  searchRow: {
+    alignItems: "center",
+    borderBlockEndColor: "var(--conan-color-border)",
+    borderBlockEndStyle: "solid",
+    borderBlockEndWidth: "var(--conan-border-width)",
+    display: "flex",
+    gap: "var(--conan-space-3)",
+    paddingBlock: "var(--conan-space-3)",
+    paddingInline: "var(--conan-space-4)",
+  },
+  backButton: {
+    alignItems: "center",
+    appearance: "none",
+    backgroundColor: "transparent",
+    borderStyle: "none",
+    borderRadius: "var(--conan-radius-sm)",
+    color: "var(--conan-icon-muted)",
+    cursor: "pointer",
+    display: "flex",
+    flexShrink: 0,
+    padding: 0,
+  },
+  searchInput: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    color: "var(--conan-text-primary)",
+    flexGrow: 1,
+    fontFamily: "var(--conan-font-sans)",
+    fontSize: "var(--conan-text-body)",
+    minWidth: 0,
+    outline: "none",
+    "::placeholder": { color: "var(--conan-text-muted)" },
+  },
 });
+
+/**
+ * The projects screen's search row: back arrow + input, wired to the palette
+ * through `useCommandPaletteContext` (public API) so it keeps the same combobox
+ * keyboard path as Astryx's own input — same role, same aria-controls,
+ * same aria-activedescendant, same key handler.
+ */
+function ProjectsSearchInput({ onBack }: { onBack: () => void }) {
+  const ctx = useCommandPaletteContext();
+  return (
+    <div {...stylex.props(styles.searchRow)} data-slot="palette-projects-search">
+      <button
+        type="button"
+        aria-label="Back to commands"
+        onClick={onBack}
+        {...stylex.props(styles.backButton)}
+      >
+        <ArrowLeft size={16} aria-hidden />
+      </button>
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={ctx?.isOpen ?? true}
+        aria-autocomplete="list"
+        aria-controls={ctx?.listId}
+        aria-activedescendant={
+          ctx && ctx.highlightedIndex >= 0
+            ? ctx.getItemId(ctx.highlightedIndex)
+            : undefined
+        }
+        aria-label="Search projects"
+        placeholder="Search…"
+        value={ctx?.search ?? ""}
+        data-autofocus
+        onChange={(event) => ctx?.setSearch(event.target.value)}
+        onKeyDown={(event) => ctx?.onKeyDown(event)}
+        {...stylex.props(styles.searchInput)}
+      />
+    </div>
+  );
+}
 
 /** Case-insensitive substring match over the label and its description. */
 function matches(item: PaletteItem, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
-  const haystack = `${item.label} ${item.auxiliaryData?.description ?? ""}`;
+  const haystack = `${item.label} ${item.auxiliaryData?.meta ?? ""}`;
   return haystack.toLowerCase().includes(needle);
 }
 
@@ -168,11 +284,8 @@ export default function V2CommandPalette({
       actions.push({
         id: ACTION_NEW_THREAD_IN,
         label: "New thread in…",
-        auxiliaryData: {
-          group: GROUP_ACTIONS,
-          icon: "new-thread-in",
-          description: "Choose a project",
-        },
+        // 1T4-0: a chevron, not a subtitle — the row goes somewhere.
+        auxiliaryData: { group: GROUP_ACTIONS, icon: "new-thread", hasSubmenu: true },
       });
     }
     if (onAddProject) {
@@ -198,7 +311,7 @@ export default function V2CommandPalette({
         auxiliaryData: {
           group: GROUP_THREADS,
           icon: "thread",
-          description: thread.preview,
+          meta: thread.preview,
           lastActivity: thread.lastActivity,
         },
       }));
@@ -214,6 +327,7 @@ export default function V2CommandPalette({
         auxiliaryData: {
           group: GROUP_PROJECTS,
           icon: "project",
+          meta: project.path,
           shortcut: index < MAX_PROJECT_SHORTCUTS ? `mod+${index + 1}` : undefined,
         },
       })),
@@ -281,10 +395,17 @@ export default function V2CommandPalette({
       typeof aux?.lastActivity === "number" ? formatRelativeTime(aux.lastActivity) : "";
     return (
       <Item
-        label={item.label}
-        description={aux?.description}
-        labelLines={1}
-        descriptionLines={1}
+        // ONE line: title, then the grey half inline (1T4-0). Passing this as a
+        // node rather than using `description` is the whole difference between
+        // the artboard's compact rows and double-height ones.
+        label={
+          <span {...stylex.props(styles.label)}>
+            <span {...stylex.props(styles.labelTitle)}>{item.label}</span>
+            {aux?.meta ? (
+              <span {...stylex.props(styles.labelMeta)}>{aux.meta}</span>
+            ) : null}
+          </span>
+        }
         isSelected={isSelected}
         startContent={
           <Text color="inherit" xstyle={styles.icon} aria-hidden>
@@ -294,8 +415,12 @@ export default function V2CommandPalette({
         endContent={
           aux?.shortcut ? (
             <Kbd keys={aux.shortcut} />
+          ) : aux?.hasSubmenu ? (
+            <Text color="inherit" xstyle={styles.trailing} aria-hidden>
+              <ChevronRight size={16} />
+            </Text>
           ) : time ? (
-            <Text color="inherit" xstyle={styles.meta}>
+            <Text color="inherit" xstyle={styles.trailing}>
               {time}
             </Text>
           ) : undefined
@@ -321,18 +446,14 @@ export default function V2CommandPalette({
       width={640}
       label={view === "projects" ? "Choose a project" : "Command palette"}
       input={
-        <CommandPaletteInput
-          placeholder={
-            view === "projects"
-              ? "Search projects…"
-              : "Search commands, projects and threads…"
-          }
-          label={
-            view === "projects"
-              ? "Search projects"
-              : "Search commands, projects and threads"
-          }
-        />
+        view === "projects" ? (
+          <ProjectsSearchInput onBack={() => setView("root")} />
+        ) : (
+          <CommandPaletteInput
+            placeholder="Search commands, projects and threads…"
+            label="Search commands, projects and threads"
+          />
+        )
       }
       emptyBootstrapText={
         view === "projects" ? "No projects yet" : "Type to search"
