@@ -283,9 +283,17 @@
 
 /* Astryx moves pointer focus into portalled menu items, so pointer and keyboard
  * navigation share one visible highlight treatment. Keep this override scoped
- * to the v2 theme and use the shell's existing interaction wash. */
+ * to the v2 theme and use the shell's existing interaction wash.
+ *
+ * WHA-104 extends it to the selectable roles: the breadcrumb's thread rows are
+ * `menuitemradio` (single-select semantics, artboard checkmark), and without
+ * them here they would be the one menu in the shell with no highlight. */
 [data-astryx-theme="neutral"] [role="menuitem"]:hover,
-[data-astryx-theme="neutral"] [role="menuitem"]:focus {
+[data-astryx-theme="neutral"] [role="menuitem"]:focus,
+[data-astryx-theme="neutral"] [role="menuitemradio"]:hover,
+[data-astryx-theme="neutral"] [role="menuitemradio"]:focus,
+[data-astryx-theme="neutral"] [role="menuitemcheckbox"]:hover,
+[data-astryx-theme="neutral"] [role="menuitemcheckbox"]:focus {
   background: var(--conan-wash-row-selected);
 }
 

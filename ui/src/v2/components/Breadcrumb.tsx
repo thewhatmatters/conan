@@ -23,25 +23,29 @@
  *
  * Two decisions worth keeping:
  *
- *   - The rows are `DropdownMenuRadioItem`s, so the open menu is a real
- *     single-select group: every row carries `role="menuitemradio"` and
- *     `aria-checked`, which is what actually tells a screen reader which thread
- *     is open. RJ-0 draws that mark as a trailing ✓ where Astryx's radio row
- *     draws a leading dot — a marker-glyph difference, not a semantic one, and
- *     the only place this deviates from the artboard.
+ *   - The current row is marked with a TRAILING CHECK, the artboard's mark
+ *     (Randy's call, 2026-08-04), while the row keeps `role="menuitemradio"` +
+ *     `aria-checked` so a screen reader still hears which thread is open. Those
+ *     two are independent: ARIA says nothing about the glyph. Getting both meant
+ *     building the row from Astryx's `Item` instead of `DropdownMenuRadioItem`,
+ *     whose marker is a hard-coded leading dot — `useDropdownMenuContext` is
+ *     public for exactly this ("consumers can build custom menu items"), and
+ *     the parent `DropdownMenu` still owns arrow keys, typeahead, Enter/Space
+ *     and Esc because its selector matches `menuitemradio` rows.
  *   - Below two threads there is nothing to switch to, so the leaf falls back to
  *     the static text it has always been. A menu whose only row is the thread
  *     you are already reading is a dead affordance.
  */
+import type { PointerEvent } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
+import { Item } from "@astryxdesign/core/Item";
 import {
   DropdownMenu,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  useDropdownMenuContext,
 } from "@astryxdesign/core/DropdownMenu";
-import { FolderOpen } from "lucide-react";
+import { Check, FolderOpen } from "lucide-react";
 
 /** One row of the thread menu — the sidebar's key and title, nothing else. */
 export interface BreadcrumbThread {
@@ -112,7 +116,61 @@ const styles = stylex.create({
   threadMenu: {
     maxWidth: "var(--conan-crumb-menu-max-width)",
   },
+  // One menu row. The hover/focus wash is NOT here: `tokens.css` already gives
+  // every v2 menu row one treatment for both, keyed on the menu-item roles, and
+  // a second copy in `xstyle` would be a second thing to keep in step.
+  threadRow: {
+    borderRadius: "var(--conan-radius-sm)",
+    color: "var(--conan-text-primary)",
+    cursor: "pointer",
+    outline: "none",
+    width: "100%",
+  },
 });
+
+/**
+ * One thread row: title, and a trailing ✓ when it is the open one.
+ *
+ * `tabIndex={-1}` is what makes the row reachable by the parent menu's roving
+ * focus, and `role` is what puts the click handler on the row itself rather
+ * than inside an invisible button (`Item` skips that when a parent owns the
+ * keyboard). The pointer handler mirrors what Astryx's own menu items do —
+ * focus follows the mouse, so hover and arrow keys share ONE highlight instead
+ * of lighting two rows at once.
+ */
+function ThreadMenuItem({
+  thread,
+  isCurrent,
+  onSelect,
+}: {
+  thread: BreadcrumbThread;
+  isCurrent: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const menu = useDropdownMenuContext();
+
+  return (
+    <Item
+      role="menuitemradio"
+      aria-checked={isCurrent}
+      tabIndex={-1}
+      label={thread.title}
+      isSelected={isCurrent}
+      endContent={isCurrent ? <Check size={16} aria-hidden /> : undefined}
+      onClick={() => {
+        onSelect(thread.id);
+        menu?.closeMenu();
+      }}
+      onPointerMove={(event: PointerEvent<HTMLElement>) => {
+        if (event.pointerType !== "mouse") return;
+        const row = event.currentTarget;
+        if (row !== row.ownerDocument.activeElement) row.focus();
+      }}
+      xstyle={styles.threadRow}
+      data-slot="breadcrumb-thread-row"
+    />
+  );
+}
 
 export default function Breadcrumb({
   project = "Conan",
@@ -160,19 +218,14 @@ export default function Breadcrumb({
           xstyle={styles.threadMenu}
           data-slot="breadcrumb-thread-menu"
         >
-          <DropdownMenuRadioGroup
-            value={activeThreadId ?? undefined}
-            onChange={(id) => onSelectThread?.(id)}
-            aria-label={`Switch thread in ${project}`}
-          >
-            {threads.map((sibling) => (
-              <DropdownMenuRadioItem
-                key={sibling.id}
-                value={sibling.id}
-                label={sibling.title}
-              />
-            ))}
-          </DropdownMenuRadioGroup>
+          {threads.map((sibling) => (
+            <ThreadMenuItem
+              key={sibling.id}
+              thread={sibling}
+              isCurrent={sibling.id === activeThreadId}
+              onSelect={(id) => onSelectThread?.(id)}
+            />
+          ))}
         </DropdownMenu>
       ) : (
         <HStack align="center" xstyle={styles.leaf}>

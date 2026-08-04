@@ -113,6 +113,34 @@ describe("Breadcrumb thread switcher", () => {
     }
   });
 
+  // Randy's call, 2026-08-04: the mark is the artboard's trailing check, not
+  // Astryx's leading radio dot — and ONLY on the current row. The a11y state
+  // above rides the same row, which is the whole reason the row is hand-built.
+  it("draws the mark as a check after the title, on the current row only", () => {
+    renderSwitcher({ activeThreadId: "s-validate" });
+    openSwitcher();
+
+    const rows = within(screen.getByRole("menu")).getAllByRole("menuitemradio");
+    const marks = rows.map((row) => row.querySelectorAll("svg").length);
+    expect(marks).toEqual([0, 1, 0]);
+
+    const current = rows[1];
+    if (!current) throw new Error("no current row");
+    const mark = current.querySelector("svg");
+    const title = current.textContent ?? "";
+    expect(title).toBe("Code Validation");
+    // Trailing, not leading: the mark follows the title in DOM order.
+    expect(
+      current.compareDocumentPosition(mark!) & Node.DOCUMENT_POSITION_CONTAINED_BY,
+    ).toBeTruthy();
+    const label = [...current.querySelectorAll("*")].find(
+      (node) => node.textContent === "Code Validation" && node.querySelector("svg") === null,
+    );
+    expect(
+      label!.compareDocumentPosition(mark!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("reports the picked sibling's id and closes", async () => {
     const { onSelectThread } = renderSwitcher();
     const trigger = openSwitcher();
