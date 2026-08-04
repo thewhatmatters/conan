@@ -96,7 +96,9 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     binary: "kimi",
     capabilities: KIMI_CAPABILITIES,
     createDriver: (emit, fallbackCwd) => new KimiDriver(emit, fallbackCwd),
-    readHistory: (sessionId, cwd) => readKimiHistory(sessionId, cwd),
+    // Kimi's own session_index.jsonl maps session id → directory, so the
+    // reader resolves the store without a cwd (like Codex, unlike Grok).
+    readHistory: (sessionId) => readKimiHistory(sessionId),
   },
 ];
 
