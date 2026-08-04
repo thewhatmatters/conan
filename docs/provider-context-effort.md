@@ -15,7 +15,7 @@ Grok 0.2.111. The live probes ran from throwaway directories with the prompt
 | Claude | `sonnet` (v2 picker alias) | 200,000 | v2 model picker advertises "Sonnet 5 · 200k context" |
 | Claude | `haiku` (v2 picker alias) | 200,000 | v2 model picker advertises "Haiku 4.5 · 200k context" |
 | Claude | `claude-opus-5` | 1,000,000 | Live CLI `system/init` reports `claude-opus-5[1m]`; bracket suffix denotes the 1M window |
-| Claude | `claude-sonnet-5` | 200,000 | Inferred from bracket suffix `[200k]` and matching v2 picker label |
+| Claude | `claude-sonnet-5` | 200,000 | Inferred from the v2 picker label; bracket suffix not yet observed for this model |
 | Claude | `claude-fable-5` | 1,000,000 | v2 model picker advertises "Fable 5 · 1M context" |
 | Claude | `claude-haiku-4-5` | 200,000 | v2 model picker advertises "Haiku 4.5 · 200k context" |
 | Claude | `claude-3-opus-20240229` | 200,000 | Anthropic Claude 3 Opus product limit |
