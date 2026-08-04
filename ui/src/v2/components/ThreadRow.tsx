@@ -20,7 +20,8 @@ import { useState } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { Button } from "@astryxdesign/core/Button";
+import { ContextMenu } from "@astryxdesign/core/ContextMenu";
 import { MoreVertical } from "lucide-react";
 import {
   formatAbsoluteTime,
@@ -266,18 +267,9 @@ export default function ThreadRow({
             data-menu-open={isMenuOpen ? "true" : undefined}
             onClick={(event) => event.stopPropagation()}
           >
-            <DropdownMenu
-              isMenuOpen={isMenuOpen}
+            <ContextMenu
+              label={`Actions for ${title}`}
               onOpenChange={setIsMenuOpen}
-              button={{
-                label: `Actions for ${title}`,
-                icon: <MoreVertical size={16} aria-hidden />,
-                isIconOnly: true,
-                variant: "ghost",
-                size: "sm",
-              }}
-              hasChevron={false}
-              placement="below"
               items={[
                 { label: "New thread", onClick: onNewThread },
                 { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
@@ -286,7 +278,23 @@ export default function ThreadRow({
                 { type: "divider" },
                 { label: "Delete", onClick: onDelete },
               ]}
-            />
+            >
+              <Button
+                label={`Actions for ${title}`}
+                icon={<MoreVertical size={16} aria-hidden />}
+                isIconOnly
+                variant="ghost"
+                size="sm"
+                onClick={(event) => {
+                  event.currentTarget.dispatchEvent(
+                    new MouseEvent("contextmenu", {
+                      bubbles: true,
+                      cancelable: true,
+                    }),
+                  );
+                }}
+              />
+            </ContextMenu>
           </HStack>
         ) : null}
       </HStack>
