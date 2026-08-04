@@ -14,13 +14,21 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import Breadcrumb from "../components/Breadcrumb.tsx";
+import Breadcrumb, {
+  BREADCRUMB_TITLE_MAX_CHARS,
+  truncateBreadcrumbTitle,
+} from "../components/Breadcrumb.tsx";
 import AppV2 from "../App.v2.tsx";
 
 const ANALYZE = { id: "s-analyze", title: "Analyze my project" };
 const VALIDATE = { id: "s-validate", title: "Code Validation" };
 const SHIP = { id: "s-ship", title: "Ship the release" };
 const THREADS = [ANALYZE, VALIDATE, SHIP];
+
+/** A first-message title longer than the 64-char product cap. */
+const LONG_TITLE =
+  'In notes.md change "Ship the widget" to "Ship the widget v2" and add a fourth goal about QA coverage for the breadcrumb switcher';
+const LONG = { id: "s-long", title: LONG_TITLE };
 
 function renderSwitcher(overrides: Parameters<typeof Breadcrumb>[0] = {}) {
   const onSelectThread = vi.fn();
@@ -180,6 +188,39 @@ describe("Breadcrumb thread switcher", () => {
       expect(trigger).toHaveAttribute("aria-expanded", "false");
       expect(trigger).toHaveFocus();
     });
+  });
+
+  // Randy 2026-08-04: 64-char hard cap so the switcher can hug content without
+  // one runaway first-message title sizing the panel.
+  it("truncates leaf and menu titles past 64 characters", () => {
+    expect(LONG_TITLE.length).toBeGreaterThan(BREADCRUMB_TITLE_MAX_CHARS);
+    const clipped = truncateBreadcrumbTitle(LONG_TITLE);
+    expect(clipped.length).toBe(BREADCRUMB_TITLE_MAX_CHARS);
+    expect(clipped.endsWith("…")).toBe(true);
+    expect(clipped).not.toBe(LONG_TITLE);
+
+    renderSwitcher({
+      thread: LONG_TITLE,
+      threads: [LONG, ANALYZE],
+      activeThreadId: "s-long",
+    });
+
+    // Leaf uses the clipped string as both visible text and accessible name.
+    const trigger = screen.getByRole("button", { name: clipped });
+    expect(trigger).toHaveTextContent(clipped);
+    expect(screen.queryByRole("button", { name: LONG_TITLE })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    const rows = within(screen.getByRole("menu")).getAllByRole("menuitemradio");
+    expect(rows.map((row) => row.textContent)).toEqual([clipped, ANALYZE.title]);
+    // Picking still keys off the real id — truncation is display-only.
+    fireEvent.click(rows[1]!);
+  });
+
+  it("leaves titles at or under 64 characters untouched", () => {
+    const exact = "x".repeat(BREADCRUMB_TITLE_MAX_CHARS);
+    expect(truncateBreadcrumbTitle(exact)).toBe(exact);
+    expect(truncateBreadcrumbTitle("Short")).toBe("Short");
   });
 });
 

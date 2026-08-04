@@ -47,6 +47,25 @@ import {
 } from "@astryxdesign/core/DropdownMenu";
 import { Check, FolderOpen } from "lucide-react";
 
+/**
+ * Randy (2026-08-04): hard-cap breadcrumb + switcher titles at 64 characters
+ * before ellipsis. Character cap (not only CSS max-width) so the dropdown can
+ * hug content without one runaway first-message title blowing the panel out.
+ */
+export const BREADCRUMB_TITLE_MAX_CHARS = 64;
+
+/** Truncate a thread title for the crumb leaf and the switcher rows. */
+export function truncateBreadcrumbTitle(
+  title: string,
+  max = BREADCRUMB_TITLE_MAX_CHARS,
+): string {
+  if (title.length <= max) return title;
+  // Keep the ellipsis inside the budget so the visible string is never longer
+  // than `max` (matches the "64 chars before truncating" product call).
+  if (max <= 1) return "…";
+  return `${title.slice(0, max - 1)}…`;
+}
+
 /** One row of the thread menu — the sidebar's key and title, nothing else. */
 export interface BreadcrumbThread {
   /** The sidebar's thread key: a session id, or a draft id. */
@@ -110,21 +129,25 @@ const styles = stylex.create({
     marginInlineStart: "calc(-1 * var(--conan-space-1h))",
     paddingInline: "var(--conan-space-1h)",
   },
-  // A thread title is whatever the first message was, so the menu needs a
-  // ceiling or one long title sizes the whole surface. Astryx's `Item`
-  // truncates a string label to a single line inside that bound.
+  // Hug content: width follows the longest (already 64-char-capped) row so a
+  // short sibling list does not sit in a hollow 320px box. maxWidth is only
+  // the safety ceiling for the rare case a glyph run still overflows 68ch.
   threadMenu: {
     maxWidth: "var(--conan-crumb-menu-max-width)",
+    width: "max-content",
   },
   // One menu row. The hover/focus wash is NOT here: `tokens.css` already gives
   // every v2 menu row one treatment for both, keyed on the menu-item roles, and
   // a second copy in `xstyle` would be a second thing to keep in step.
+  // `width: max-content` keeps each row from stretching under a wider panel
+  // when the floor is the crumb trigger; the panel still hugs the longest row.
   threadRow: {
     borderRadius: "var(--conan-radius-sm)",
     color: "var(--conan-text-primary)",
     cursor: "pointer",
     outline: "none",
-    width: "100%",
+    width: "max-content",
+    minWidth: "100%",
   },
 });
 
@@ -148,13 +171,14 @@ function ThreadMenuItem({
   onSelect: (id: string) => void;
 }) {
   const menu = useDropdownMenuContext();
+  const label = truncateBreadcrumbTitle(thread.title);
 
   return (
     <Item
       role="menuitemradio"
       aria-checked={isCurrent}
       tabIndex={-1}
-      label={thread.title}
+      label={label}
       isSelected={isCurrent}
       endContent={isCurrent ? <Check size={16} aria-hidden /> : undefined}
       onClick={() => {
@@ -181,6 +205,11 @@ export default function Breadcrumb({
   onProjectClick,
 }: BreadcrumbProps) {
   const canSwitch = threads.length > 1 && onSelectThread != null;
+  const leafLabel = truncateBreadcrumbTitle(thread);
+  // Full title as a tooltip only when we clipped — Astryx Button uses
+  // `tooltip`, not the HTML `title` attribute (BaseProps omits it).
+  const leafTooltip =
+    thread.length > BREADCRUMB_TITLE_MAX_CHARS ? thread : undefined;
 
   return (
     <HStack align="center" gap={1} wrap="wrap" xstyle={styles.crumbs} data-slot="breadcrumb">
@@ -202,18 +231,19 @@ export default function Breadcrumb({
       {canSwitch ? (
         <DropdownMenu
           button={{
-            // `label` is the accessible name and has to CONTAIN the visible
-            // text (WCAG 2.5.3 Label in Name), so it stays the title; the
-            // `children` render that same title through `Text` so the leaf
-            // keeps the artboard's body type rather than the Button's own
-            // label scale.
-            label: thread,
-            children: <Text color="inherit">{thread}</Text>,
+            // Accessible name matches the visible (possibly truncated) leaf so
+            // WCAG 2.5.3 Label in Name holds; full title rides Astryx tooltip.
+            label: leafLabel,
+            children: <Text color="inherit">{leafLabel}</Text>,
             variant: "ghost",
             size: "sm",
             xstyle: styles.threadTrigger,
             "data-slot": "breadcrumb-thread",
+            tooltip: leafTooltip,
           }}
+          // Hug the longest row instead of stretching to a fixed panel width;
+          // the token ceiling still clamps runaway glyphs.
+          menuWidth="max-content"
           placement="below"
           xstyle={styles.threadMenu}
           data-slot="breadcrumb-thread-menu"
@@ -229,7 +259,7 @@ export default function Breadcrumb({
         </DropdownMenu>
       ) : (
         <HStack align="center" xstyle={styles.leaf}>
-          <Text color="inherit">{thread}</Text>
+          <Text color="inherit">{leafLabel}</Text>
         </HStack>
       )}
     </HStack>

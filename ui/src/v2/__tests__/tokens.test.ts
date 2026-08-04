@@ -60,6 +60,12 @@ describe("v2 tokens.css", () => {
     expect(injectedCss()).toContain("--conan-chat-measure: 800px");
   });
 
+  it("sizes the breadcrumb thread menu to hug up to a 64-char title", () => {
+    // Ceiling tracks the product cap (64 chars + check + padding ≈ 68ch), not
+    // the old fixed 320px that left hollow empty space next to short rows.
+    expect(injectedCss()).toContain("--conan-crumb-menu-max-width: 68ch");
+  });
+
   it("collapses the fixed sidebar below the shell breakpoint (US-506)", () => {
     const css = injectedCss();
     expect(css).toContain("--conan-shell-min-width: 960px");
