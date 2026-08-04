@@ -72,6 +72,9 @@ describe("Breadcrumb a11y (US-101 C)", () => {
     expect(parent).toHaveAttribute("type", "button");
   });
 
+  // WHA-104 made the leaf a switcher when the project has siblings to switch
+  // to; with no `threads` prop it is still the static current-page text. The
+  // switcher's own contract lives in `BreadcrumbThreadMenu.test.tsx`.
   it("keeps the leaf thread title as static text, not a button", () => {
     render(<Breadcrumb project="Conan" thread="Analyze my project" />);
 

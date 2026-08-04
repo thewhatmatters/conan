@@ -34,10 +34,22 @@ const styles = stylex.create({
   },
 });
 
+// WHA-104: the crumb's thread segment switches threads, so the toolbar also
+// forwards the sibling list and the selection callback. It stays a pure
+// pass-through — the shell (App.v2) owns the data, as it does for the sidebar.
 export interface ToolbarProps
-  extends Pick<BreadcrumbProps, "project" | "thread"> {}
+  extends Pick<
+    BreadcrumbProps,
+    "project" | "thread" | "threads" | "activeThreadId" | "onSelectThread"
+  > {}
 
-export default function Toolbar({ project, thread }: ToolbarProps) {
+export default function Toolbar({
+  project,
+  thread,
+  threads,
+  activeThreadId,
+  onSelectThread,
+}: ToolbarProps) {
   return (
     <HStack
       align="center"
@@ -47,7 +59,13 @@ export default function Toolbar({ project, thread }: ToolbarProps) {
       xstyle={styles.toolbar}
       data-slot="toolbar"
     >
-      <Breadcrumb project={project} thread={thread} />
+      <Breadcrumb
+        project={project}
+        thread={thread}
+        threads={threads}
+        activeThreadId={activeThreadId}
+        onSelectThread={onSelectThread}
+      />
       <HStack align="center" gap={6} xstyle={styles.tabGroup}>
         <SurfaceTabs />
       </HStack>
