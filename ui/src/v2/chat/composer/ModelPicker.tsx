@@ -80,7 +80,13 @@ const styles = stylex.create({
   // models = 371px, Codex's 8 = 480px), which reads as a glitch. Pinning it to
   // the five-row Claude height keeps the panel still; longer lists scroll.
   panel: {
-    backgroundColor: "var(--conan-color-content)",
+    // The popover surface, NOT the content surface. Every other v2 popover
+    // (permission chip, effort chip) paints `--color-background-popover`
+    // (#1B1B1B in dark); this panel was the lone holdout on the lighter
+    // `--conan-color-content` (#262626), so the composer's three chips opened
+    // to two different tones. `--conan-color-popover` already existed for
+    // exactly this and had no consumer until now.
+    backgroundColor: "var(--conan-color-popover)",
     borderRadius: "var(--conan-radius-lg)",
     height: "var(--conan-picker-height)",
     overflow: "hidden",
