@@ -90,21 +90,21 @@ describe("V2CommandPalette (shell)", () => {
 });
 
 describe("SearchInput opener", () => {
-  it("calls onOpenPalette on click and focus", () => {
+  it("is a button that opens on click, not on focus", () => {
     const onOpenPalette = vi.fn();
     render(<SearchInput onOpenPalette={onOpenPalette} />);
 
-    const field = screen.getByRole("searchbox", {
+    const field = screen.getByRole("button", {
       name: "Search projects and threads",
     });
-    expect(field).toHaveAttribute("readonly");
+    expect(field).toHaveAttribute("aria-haspopup", "dialog");
+    expect(field.tagName).toBe("BUTTON");
+
+    fireEvent.focus(field);
+    expect(onOpenPalette).not.toHaveBeenCalled();
 
     fireEvent.click(field);
-    expect(onOpenPalette).toHaveBeenCalled();
-
-    onOpenPalette.mockClear();
-    fireEvent.focus(field);
-    expect(onOpenPalette).toHaveBeenCalled();
+    expect(onOpenPalette).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -126,7 +126,7 @@ describe("App.v2 command palette wiring", () => {
     });
   });
 
-  it("opens the palette from the sidebar Search field", async () => {
+  it("opens the palette from the sidebar Search button", async () => {
     stubShellFetch();
     const { container } = render(<AppV2 />);
     const dialog = () =>
@@ -135,7 +135,7 @@ describe("App.v2 command palette wiring", () => {
     expect(dialog()).not.toHaveAttribute("open");
 
     fireEvent.click(
-      screen.getByRole("searchbox", { name: "Search projects and threads" }),
+      screen.getByRole("button", { name: "Search projects and threads" }),
     );
 
     await waitFor(() => {
