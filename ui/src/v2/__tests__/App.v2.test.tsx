@@ -301,46 +301,52 @@ describe("AppV2 live projects (US-501)", () => {
     expect(screen.getAllByRole("button", { name: "New chat: No messages yet" })).toHaveLength(1);
   });
 
-  it("exposes the saved-thread kebab without nesting it in the select target", async () => {
+  // WHA-103 (reworked): there is no kebab any more. Right-click is the gesture,
+  // and it has to work on the ROW, not on some control inside it.
+  it("opens the thread menu from a right-click on the row itself", async () => {
     stubGateway();
     render(<AppV2 />);
 
     const row = await screen.findByRole("button", {
       name: "Analyze my project: Run serverless code...",
     });
-    const menu = screen.getByRole("button", { name: "Actions for Analyze my project" });
-    expect(row.contains(menu)).toBe(false);
-    expect(row.parentElement?.contains(menu)).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: "Actions for Analyze my project" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(row);
+
+    expect(
+      await screen.findByRole("menu", { name: "Actions for Analyze my project" }),
+    ).toBeInTheDocument();
   });
 
-  it("keeps the thread kebab visibly anchored while its menu owns focus", async () => {
+  it("keeps the menu keyboard-navigable once right-click opens it", async () => {
     stubGateway();
     render(<AppV2 />);
 
-    const trigger = await screen.findByRole("button", {
-      name: "Actions for Analyze my project",
-    });
-    const actions = trigger.closest('[data-slot="thread-actions"]');
-    expect(actions).not.toHaveAttribute("data-menu-open");
-
-    fireEvent.click(trigger);
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
 
     const firstItem = await screen.findByRole("menuitem", { name: "New thread" });
     await waitFor(() => expect(firstItem).toHaveFocus());
     fireEvent.keyDown(firstItem, { key: "ArrowDown" });
 
     expect(screen.getByRole("menuitem", { name: "Rename thread" })).toHaveFocus();
-    expect(actions).toHaveAttribute("data-menu-open", "true");
   });
 
   it("round-trips rename through the existing thread route", async () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
-    const actions = await screen.findByRole("button", {
-      name: "Actions for Analyze my project",
-    });
-    fireEvent.click(actions);
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Rename thread" });
@@ -382,8 +388,10 @@ describe("AppV2 live projects (US-501)", () => {
     stubGateway(PROJECTS, false);
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
     const input = await screen.findByRole("textbox", { name: "Thread title" });
@@ -401,8 +409,10 @@ describe("AppV2 live projects (US-501)", () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename thread" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename thread" });
@@ -418,8 +428,10 @@ describe("AppV2 live projects (US-501)", () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
@@ -451,8 +463,10 @@ describe("AppV2 live projects (US-501)", () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
     const dialog = await screen.findByRole("alertdialog", {
@@ -476,8 +490,10 @@ describe("AppV2 live projects (US-501)", () => {
     const fetchMock = stubGateway();
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
     const dialog = await screen.findByRole("alertdialog", {
@@ -501,8 +517,10 @@ describe("AppV2 live projects (US-501)", () => {
     stubGateway(PROJECTS, true, false);
     render(<AppV2 />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Actions for Analyze my project" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete thread" }));
