@@ -46,8 +46,8 @@ import {
   Folder,
   FolderPlus,
   MessageSquare,
+  MessageSquareDashed,
   Settings,
-  SquareDashed,
 } from "lucide-react";
 import { formatRelativeTime } from "../lib/relativeTime.ts";
 
@@ -119,12 +119,12 @@ interface PaletteAux {
 
 type PaletteItem = SearchableItem<PaletteAux>;
 
-// 1T4-0 gives BOTH "New thread" rows the same dashed-square glyph — they are
-// the same verb, and only the trailing affordance (⌘N vs a chevron) separates
-// them. `SquareDashed` is the closest Lucide match; flagged to Randy for a
-// correction if he named a different one.
+// Both "New thread" rows share one glyph — same verb; trailing affordance
+// (⌘N vs chevron) is what separates them. Randy locked Lucide
+// `MessageSquareDashed` (https://lucide.dev/icons/message-square-dashed)
+// over the earlier `SquareDashed` artboard guess.
 const ICONS = {
-  "new-thread": SquareDashed,
+  "new-thread": MessageSquareDashed,
   "add-project": FolderPlus,
   settings: Settings,
   thread: MessageSquare,

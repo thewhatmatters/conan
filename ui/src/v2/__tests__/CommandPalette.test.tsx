@@ -136,6 +136,30 @@ describe("V2CommandPalette contents (WHA-71/72, artboard 1T4-0)", () => {
     expect(screen.getByText("Recent Threads")).toBeInTheDocument();
   });
 
+  // Randy 2026-08-04: Lucide message-square-dashed for both "New thread" rows
+  // (not the earlier SquareDashed artboard guess).
+  it("uses message-square-dashed on both New thread action rows", async () => {
+    renderPalette();
+    await waitFor(() => {
+      expect(screen.getByText("New thread in conan")).toBeInTheDocument();
+    });
+
+    const rowHasDashedMessage = (label: string) => {
+      let node: HTMLElement | null = screen.getByText(label);
+      for (let i = 0; i < 8 && node; i++) {
+        if (node.querySelector("svg.lucide-message-square-dashed")) return true;
+        node = node.parentElement;
+      }
+      return false;
+    };
+
+    expect(rowHasDashedMessage("New thread in conan")).toBe(true);
+    expect(rowHasDashedMessage("New thread in…")).toBe(true);
+    // Two action rows share the glyph; recent-thread rows use solid MessageSquare.
+    expect(document.querySelectorAll("svg.lucide-message-square-dashed").length).toBe(2);
+    expect(document.querySelectorAll("svg.lucide-square-dashed").length).toBe(0);
+  });
+
   it("omits rows the shell gave it no handler for", async () => {
     render(
       <V2CommandPalette
