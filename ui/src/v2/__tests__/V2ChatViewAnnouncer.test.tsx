@@ -112,6 +112,10 @@ describe("approval announcer (WHA-55)", () => {
     );
 
     expect(container.querySelector('[data-slot="v2-composer"]')).not.toBeNull();
+    const composerMeasure = container.querySelector('[data-slot="v2-composer"]')?.parentElement;
+    expect(getComputedStyle(composerMeasure!).paddingBottom).toBe(
+      "calc(var(--conan-space-4) + var(--conan-space-1))",
+    );
     expect(screen.queryByRole("button", { name: "Approve once" })).not.toBeNull();
   });
 });

@@ -52,6 +52,8 @@
   --conan-color-content: var(--color-background-surface); /* #262626 · 4N-0 */
   --conan-color-field: var(--color-background-surface); /* #262626 · RV-0 */
   --conan-color-popover: var(--color-background-popover); /* #1B1B1B */
+  --conan-color-terminal: var(--color-background-body);
+
 
   /* Window chrome — the artboard's title bar (RK-0) sits a shade below the app
    * so the app body reads as a lifted card inside it. No theme token is that
@@ -243,6 +245,15 @@
   --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
 }
 
+/* Keep the resize target comfortably interactive while SurfaceWorkspace paints
+ * only the centered 1px divider from the artboard. Astryx HStack's default
+ * width: 100% otherwise wins over flex sizing on this structural control. */
+[data-slot="surface-splitter"][data-orientation="vertical"] {
+  flex: 0 0 var(--conan-space-2);
+  min-width: var(--conan-space-2);
+  width: var(--conan-space-2);
+}
+
 @keyframes conan-status-pulse {
   50% {
     opacity: 0.45;
@@ -355,6 +366,12 @@
 html[data-astryx-theme="neutral"] {
   /* Re-arm the dark side of every `light-dark()` token value. */
   color-scheme: dark;
+
+  /* The shared xterm engine reads these v1 bridge names from <html>. The v1
+   * values are unlayered, so this narrow bridge is important to cross the
+   * cascade-layer boundary without changing any Astryx source token. */
+  --term-bg: var(--conan-color-terminal) !important;
+  --term-fg: var(--conan-text-primary) !important;
 }
 
 [data-astryx-theme="neutral"] body {

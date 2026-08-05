@@ -1,203 +1,419 @@
-/**
- * SurfaceTabs — Paper RJ-0 nodes HL-0 (the tab strip) and its "Surface" entry.
- *
- * RJ-0's grammar: Chat is the permanent tab and carries no close; Browser,
- * Terminal and Diff are the openable surfaces and each carries an ✕. Selection
- * is a translucent wash plus a jump in weight (400 → 600) and tone (muted →
- * primary, icon → white). Trailing the strip is the "Surface" opener, drawn at
- * 20% opacity — the artboard's way of saying "disabled until there is something
- * to open".
- *
- * A11Y (US-101). The strip is a real WAI-ARIA tab strip: `role="tablist"` around
- * `role="tab"` items, one Tab stop for the whole group (roving tabindex), and
- * Arrow/Home/End moving between tabs. `onSelect`/`onClose` are optional — the
- * strip stays presentation-driven off `tabs` (mounting surfaces is US-005's job)
- * but the elements are genuine controls either way.
- *
- * WHY NOT Astryx's `TabList`/`Tab`. They exist (`npx astryx component TabList`)
- * and they are the right thing for *navigation* tabs, but they are the wrong
- * shape here on two counts:
- *   1. `TabList` renders a `<nav>` and `Tab` marks the active item with
- *      `aria-current="page"` — the navigation pattern, not `tablist`/`tab` with
- *      `aria-selected`, which is what this strip is (it switches surfaces inside
- *      one view; it does not navigate).
- *   2. `Tab` renders a `<button>`, and a closeable tab has to contain its own ✕
- *      button. Nesting a button inside a button is invalid HTML and breaks the
- *      inner control, so the tab element itself must NOT be a button.
- * What Astryx *does* own here is the keyboard behaviour: `useListFocus` — the
- * exact hook `TabList` itself uses — supplies the roving tabindex and the
- * Arrow/Home/End handling, so none of that is hand-rolled. `orientation: 'both'`
- * matches `TabList`: the APG lets a horizontal tab strip accept both axes.
- *
- * The ✕ is an Astryx `IconButton` sized down to the artboard's bare 16px glyph
- * (RJ-0 draws no chrome around it) and named "Close <label> tab".
- */
-import {
-  useCallback,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
+import { useCallback, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
 } from "react";
 import * as stylex from "@stylexjs/stylex";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  useDropdownMenuContext,
+} from "@astryxdesign/core/DropdownMenu";
 import { HStack } from "@astryxdesign/core/HStack";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { Item } from "@astryxdesign/core/Item";
 import { Text } from "@astryxdesign/core/Text";
 import { useListFocus } from "@astryxdesign/core/hooks";
 import {
-  ChevronDown,
   Diff,
+  Check,
+  ChevronDown,
+  FileText,
   Globe,
   Layers,
   MessagesSquare,
+  MoreVertical,
+  PanelLeft,
+  PanelRight,
   Terminal,
   X,
   type LucideIcon,
 } from "lucide-react";
 
-/** The surfaces the shell can host, in the artboard's order. */
+export type SurfaceId = "chat" | "browser" | "terminal" | "diff" | "files";
+export type SurfacePlacement = "right" | "left";
+
 export interface SurfaceTab {
-  id: string;
+  id: SurfaceId;
   label: string;
   icon: LucideIcon;
-  /** Chat is permanent; every other surface can be closed. */
   isCloseable?: boolean;
   isSelected?: boolean;
+  isDocked?: boolean;
+  isVisuallyActive?: boolean;
+  joinedSide?: "start" | "end";
+  dockedDescription?: string;
+  placement?: SurfacePlacement;
 }
 
 export interface SurfaceTabsProps {
   tabs?: SurfaceTab[];
-  /** Fired by click, Enter or Space on a tab. */
-  onSelect?: (id: string) => void;
-  /** Fired by the tab's ✕. */
-  onClose?: (id: string) => void;
+  onSelect?: (id: SurfaceId) => void;
+  onOpen?: (id: Exclude<SurfaceId, "chat">) => void;
+  onClose?: (id: Exclude<SurfaceId, "chat">) => void;
+  onPlacementChange?: (
+    id: Exclude<SurfaceId, "chat">,
+    placement: SurfacePlacement,
+  ) => void;
 }
 
+export const SURFACE_OPTIONS: ReadonlyArray<
+  Omit<SurfaceTab, "id" | "isSelected" | "placement"> & {
+    id: Exclude<SurfaceId, "chat">;
+  }
+> = [
+  { id: "browser", label: "Browser", icon: Globe, isCloseable: true },
+  { id: "terminal", label: "Terminal", icon: Terminal, isCloseable: true },
+  { id: "diff", label: "Diff", icon: Diff, isCloseable: true },
+  { id: "files", label: "Files", icon: FileText, isCloseable: true },
+];
+
+const DEFAULT_TABS: SurfaceTab[] = [
+  { id: "chat", label: "Chat", icon: MessagesSquare, isSelected: true },
+];
+const PLACEMENTS: ReadonlyArray<{
+  id: SurfacePlacement;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "right", label: "Right", icon: PanelRight },
+  { id: "left", label: "Left", icon: PanelLeft },
+];
 const ICON = 16;
 
 const styles = stylex.create({
-  // Every tab is a 32px pill on the shell's workhorse 10px radius.
+  strip: {
+    flexShrink: 0,
+    height: "var(--conan-control-height)",
+  },
   tab: {
+    boxSizing: "border-box",
     borderRadius: "var(--conan-radius-md)",
     color: "var(--conan-icon-muted)",
     cursor: "pointer",
     flexShrink: 0,
     height: "var(--conan-control-height)",
-    // The focus ring is the shell's accent, matching every Astryx control.
-    outline: {
-      default: null,
-      ":focus-visible": "2px solid var(--conan-color-accent)",
-    },
-    outlineOffset: {
-      default: "0",
-      ":focus-visible": "2px",
-    },
+    outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
+    outlineOffset: { default: "0", ":focus-visible": "2px" },
+    position: "relative",
   },
   tabSelected: {
     backgroundColor: "var(--conan-wash-tab-selected)",
     color: "var(--conan-icon-strong)",
   },
-  // RJ-0 draws the ✕ as a bare 16px glyph, so the IconButton is shrunk to the
-  // glyph's own box: same geometry as a plain icon, but a real named button
-  // with a hover wash and a focus ring. `inherit` keeps it tracking the tab's
-  // tone (muted → white on the selected tab) instead of the button's own.
-  close: {
+  joinedStart: {
+    borderEndEndRadius: 0,
+    borderStartEndRadius: 0,
+  },
+  joinedEnd: {
+    borderEndStartRadius: 0,
+    borderStartStartRadius: 0,
+    marginInlineStart: "calc(-1 * var(--conan-space-hair))",
+  },
+  tabLabel: { paddingInline: "var(--conan-space-3)" },
+  dockGroup: {
+    borderRadius: "var(--conan-radius-md)",
+    boxSizing: "border-box",
+    height: "var(--conan-control-height)",
+  },
+  dockGroupInactive: {
+    boxShadow: "inset 0 0 0 var(--conan-border-width) var(--conan-color-border)",
+  },
+  tabShell: {
+    borderRadius: "var(--conan-radius-md)",
+    display: "flex",
+    overflow: "hidden",
+    position: "relative",
+  },
+  tabActions: {
+    alignItems: "center",
+    display: "flex",
+    height: "var(--conan-control-height)",
+    insetInlineEnd: 0,
+    justifyContent: "flex-end",
+    position: "absolute",
+    top: 0,
+    width: "var(--conan-icon-size)",
+    zIndex: 1,
+  },
+  tabActionFade: {
+    backgroundImage: "linear-gradient(to right, transparent 0%, var(--conan-color-popover) 45%)",
+    height: "100%",
+    insetInlineEnd: 0,
+    opacity: 0,
+    pointerEvents: "none",
+    position: "absolute",
+    top: 0,
+    transitionDuration: "var(--conan-duration-fast)",
+    transitionProperty: "opacity",
+    width: "calc(var(--conan-space-6) + var(--conan-space-4))",
+  },
+  tabActionFadeSelected: {
+    backgroundImage: "linear-gradient(to right, transparent 0%, var(--conan-wash-tab-selected) 45%), linear-gradient(to right, transparent 0%, var(--conan-color-popover) 45%)",
+  },
+  tabActionVisible: { opacity: 1 },
+  optionsButton: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "transparent",
+      ":active": "transparent",
+    },
+    borderRadius: "var(--conan-radius-xs)",
+    color: "inherit",
+    height: "var(--conan-icon-size)",
+    opacity: 0,
+    outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
+    width: "var(--conan-icon-size)",
+  },
+  dockSwitcher: {
+    alignItems: "center",
+    display: "flex",
+    height: "var(--conan-control-height)",
+    opacity: 1,
+    transitionProperty: "opacity",
+    transitionDuration: "var(--conan-duration-fast)",
+    paddingInlineEnd: "var(--conan-space-1)",
+  },
+  switcherButton: {
     borderRadius: "var(--conan-radius-xs)",
     color: "inherit",
     height: "var(--conan-icon-size)",
     width: "var(--conan-icon-size)",
   },
-  // The strip's own gutter is 2px — tighter than anything else in the shell, so
-  // the tabs read as one segmented control rather than four buttons.
-  strip: {
-    flexShrink: 0,
-    height: "var(--conan-control-height)",
-  },
-  // Not `disabled`: RJ-0 dims the whole opener to 20% rather than recolouring
-  // its parts, which keeps the white icon/label relationship intact. It carries
-  // `role="button"` + `aria-disabled` so assistive tech hears what a sighted
-  // user sees — an unavailable control — and, like a disabled <button>, it is
-  // deliberately not focusable and has no click behaviour.
   opener: {
     borderRadius: "var(--conan-radius-md)",
     color: "var(--conan-icon-strong)",
-    flexShrink: 0,
     height: "var(--conan-control-height)",
-    opacity: 0.2,
+  },
+  openerDim: { opacity: 0.2 },
+  sectionLabel: {
+    paddingBlock: "var(--conan-space-1)",
+    paddingInline: "var(--conan-space-2)",
+  },
+  divider: {
+    border: 0,
+    borderTop: "var(--conan-border-width) solid var(--conan-color-border)",
+    marginBlock: "var(--conan-space-1)",
+    width: "100%",
   },
 });
 
-const DEFAULT_TABS: SurfaceTab[] = [
-  { id: "chat", label: "Chat", icon: MessagesSquare, isSelected: true },
-  { id: "browser", label: "Browser", icon: Globe, isCloseable: true },
-  { id: "terminal", label: "Terminal", icon: Terminal, isCloseable: true },
-  { id: "diff", label: "Diff", icon: Diff, isCloseable: true },
-];
+function PlacementMenuItem({
+  placement,
+  current,
+  onSelect,
+}: {
+  placement: (typeof PLACEMENTS)[number];
+  current: boolean;
+  onSelect: () => void;
+}) {
+  const menu = useDropdownMenuContext();
+  const PlacementIcon = placement.icon;
 
-interface TabProps {
-  tab: SurfaceTab;
-  onSelect?: (id: string) => void;
-  onClose?: (id: string) => void;
+  return (
+    <Item
+      role="menuitemradio"
+      aria-checked={current}
+      tabIndex={-1}
+      label={placement.label}
+      startContent={<PlacementIcon size={ICON} aria-hidden />}
+      endContent={current ? <Check size={ICON} aria-hidden /> : undefined}
+      onClick={() => {
+        onSelect();
+        menu?.closeMenu();
+      }}
+    />
+  );
 }
 
-function Tab({ tab, onSelect, onClose }: TabProps) {
-  const { id, label, icon: Icon, isCloseable, isSelected } = tab;
+function DockedSurfaceMenuItem({
+  tab,
+  current,
+  onSelect,
+}: {
+  tab: SurfaceTab;
+  current: boolean;
+  onSelect: () => void;
+}) {
+  const menu = useDropdownMenuContext();
+  const SurfaceIcon = tab.icon;
 
-  const handleSelect = useCallback(() => onSelect?.(id), [onSelect, id]);
+  return (
+    <Item
+      role="menuitemradio"
+      aria-checked={current}
+      tabIndex={-1}
+      label={tab.label}
+      startContent={<SurfaceIcon size={ICON} aria-hidden />}
+      endContent={current ? <Check size={ICON} aria-hidden /> : undefined}
+      onClick={() => {
+        onSelect();
+        menu?.closeMenu();
+      }}
+    />
+  );
+}
 
+function SurfaceTabItem({
+  tab,
+  dockedTabs,
+  onSelect,
+  onClose,
+  onPlacementChange,
+}: {
+  tab: SurfaceTab;
+  dockedTabs: SurfaceTab[];
+  onSelect?: SurfaceTabsProps["onSelect"];
+  onClose?: SurfaceTabsProps["onClose"];
+  onPlacementChange?: SurfaceTabsProps["onPlacementChange"];
+}) {
+  const {
+    id,
+    label,
+    icon: Icon,
+    isCloseable,
+    isSelected,
+    isDocked,
+    joinedSide,
+    dockedDescription,
+  } = tab;
+  const isVisuallyActive = tab.isVisuallyActive ?? (isSelected || isDocked);
+  const [actionsVisible, setActionsVisible] = useState(false);
+  const handleSelect = useCallback(() => onSelect?.(id), [id, onSelect]);
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
-      // Only the tab's own keys activate it: Enter on the ✕ bubbles up here,
-      // and closing a surface must not also select it.
       if (event.target !== event.currentTarget) return;
+      if (event.shiftKey && event.key === "F10" && isDocked) return;
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       onSelect?.(id);
     },
-    [onSelect, id],
+    [id, isDocked, onSelect],
   );
+  const stopControlClick = useCallback((event: ReactMouseEvent) => {
+    event.stopPropagation();
+  }, []);
+  const surfaceId = id === "chat" ? null : id;
 
-  const handleClose = useCallback(
-    (event: ReactMouseEvent) => {
-      event.stopPropagation();
-      onClose?.(id);
-    },
-    [onClose, id],
-  );
-
-  return (
+  const tabNode = (
     <HStack
       align="center"
-      hAlign="center"
       gap={1}
-      paddingInline={3}
-      xstyle={[styles.tab, isSelected && styles.tabSelected]}
+      xstyle={[
+        styles.tab,
+        isVisuallyActive && styles.tabSelected,
+        joinedSide === "start" && styles.joinedStart,
+        joinedSide === "end" && styles.joinedEnd,
+      ]}
       role="tab"
       aria-selected={isSelected ?? false}
-      // Roving tabindex: the strip is ONE Tab stop and the selected tab is the
-      // tabbable one. `useListFocus` below repairs and moves this as focus
-      // travels, so this is only the initial source of truth.
+      aria-description={dockedDescription}
       tabIndex={isSelected ? 0 : -1}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
       data-slot="surface-tab"
     >
-      <Icon size={ICON} aria-hidden />
-      <Text
-        color={isSelected ? "primary" : "secondary"}
-        weight={isSelected ? "semibold" : "normal"}
-      >
-        {label}
-      </Text>
-      {isCloseable ? (
-        <IconButton
-          label={`Close ${label} tab`}
-          icon={<X size={ICON} aria-hidden />}
-          variant="ghost"
-          size="sm"
-          xstyle={styles.close}
-          onClick={handleClose}
-          data-slot="surface-tab-close"
-        />
+      <HStack align="center" gap={1} xstyle={styles.tabLabel}>
+        <Icon size={ICON} aria-hidden />
+        <Text
+          color={isVisuallyActive ? "primary" : "secondary"}
+          weight={isVisuallyActive ? "semibold" : "normal"}
+        >
+          {label}
+        </Text>
+      </HStack>
+      {isDocked && surfaceId && dockedTabs.length > 1 ? (
+        <HStack
+          xstyle={styles.dockSwitcher}
+          onClick={stopControlClick}
+          data-slot="docked-surface-switcher"
+        >
+          <DropdownMenu
+            button={{
+              label: "Switch docked surface",
+              icon: <ChevronDown size={ICON} aria-hidden />,
+              isIconOnly: true,
+              variant: "ghost",
+              size: "sm",
+              xstyle: styles.switcherButton,
+            }}
+            hasChevron={false}
+            placement="below"
+          >
+            {dockedTabs.map((candidate) => (
+              <DockedSurfaceMenuItem
+                key={candidate.id}
+                tab={candidate}
+                current={candidate.id === id}
+                onSelect={() => onSelect?.(candidate.id)}
+              />
+            ))}
+          </DropdownMenu>
+        </HStack>
       ) : null}
+    </HStack>
+  );
+
+  if (!isCloseable || !surfaceId || isDocked) return tabNode;
+
+  return (
+    <HStack
+      xstyle={styles.tabShell}
+      data-slot="surface-tab-shell"
+      onMouseEnter={() => setActionsVisible(true)}
+      onMouseLeave={() => setActionsVisible(false)}
+      onFocusCapture={() => setActionsVisible(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setActionsVisible(false);
+        }
+      }}
+    >
+      {tabNode}
+      <HStack
+        xstyle={styles.tabActions}
+        data-slot="surface-tab-actions"
+      >
+        <HStack
+          aria-hidden
+          xstyle={[
+            styles.tabActionFade,
+            isVisuallyActive && styles.tabActionFadeSelected,
+            actionsVisible && styles.tabActionVisible,
+          ]}
+          data-slot="surface-tab-action-fade"
+        />
+        <DropdownMenu
+          button={{
+            label: `${label} surface options`,
+            icon: <MoreVertical size={ICON} aria-hidden />,
+            isIconOnly: true,
+            variant: "ghost",
+            size: "sm",
+            xstyle: [styles.optionsButton, actionsVisible && styles.tabActionVisible],
+          }}
+          hasChevron={false}
+          placement="below"
+          data-testid="surface-options-trigger"
+        >
+          <Text color="secondary" xstyle={styles.sectionLabel}>
+            Dock &amp; Surface
+          </Text>
+          {PLACEMENTS.map((placement) => (
+            <PlacementMenuItem
+              key={placement.id}
+              placement={placement}
+              current={tab.placement === placement.id}
+              onSelect={() => onPlacementChange?.(surfaceId, placement.id)}
+            />
+          ))}
+          <hr {...stylex.props(styles.divider)} />
+          <DropdownMenuItem
+            label="Close Surface"
+            icon={<X size={ICON} aria-hidden />}
+            onClick={() => onClose?.(surfaceId)}
+          />
+        </DropdownMenu>
+      </HStack>
     </HStack>
   );
 }
@@ -205,16 +421,26 @@ function Tab({ tab, onSelect, onClose }: TabProps) {
 export default function SurfaceTabs({
   tabs = DEFAULT_TABS,
   onSelect,
+  onOpen,
   onClose,
+  onPlacementChange,
 }: SurfaceTabsProps) {
-  // Astryx's own tab-strip keyboard engine (the hook `TabList` uses): Arrow /
-  // Home / End move between `role="tab"` items, and the single roving tab stop
-  // is stamped and repaired as tabs mount, unmount or change selection.
   const { listRef, handleKeyDown, handleFocus } = useListFocus<HTMLElement>({
     itemSelector: '[role="tab"]',
     orientation: "both",
     hasRovingTabIndex: true,
   });
+  const openIds = new Set(tabs.map((tab) => tab.id));
+  const allOpen = SURFACE_OPTIONS.every((surface) => openIds.has(surface.id));
+  const dockedTabs = tabs.filter((tab) => tab.id !== "chat" && tab.placement != null);
+  const visibleTabs = tabs.filter((tab) => tab.placement == null || tab.isDocked);
+  const handleTabListKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if ((event.target as Element).closest('[role="menu"]')) return;
+      handleKeyDown(event);
+    },
+    [handleKeyDown],
+  );
 
   return (
     <HStack
@@ -224,27 +450,57 @@ export default function SurfaceTabs({
       xstyle={styles.strip}
       role="tablist"
       aria-label="Surfaces"
-      onKeyDown={handleKeyDown}
+      onKeyDown={handleTabListKeyDown}
       onFocus={handleFocus}
       data-slot="surface-tabs"
     >
-      {tabs.map((tab) => (
-        <Tab key={tab.id} tab={tab} onSelect={onSelect} onClose={onClose} />
-      ))}
-      <HStack
-        align="center"
-        hAlign="center"
-        gap={1}
-        paddingInline={3}
-        xstyle={styles.opener}
-        role="button"
-        aria-disabled="true"
-        data-slot="surface-opener"
-      >
-        <Layers size={ICON} aria-hidden />
-        <Text color="inherit">Surface</Text>
-        <ChevronDown size={ICON} aria-hidden />
-      </HStack>
+      {visibleTabs.map((tab, index) => {
+        if (tab.joinedSide === "end") return null;
+        const joinedTab = tab.joinedSide === "start" ? visibleTabs[index + 1] : undefined;
+        const item = (candidate: SurfaceTab) => (
+          <SurfaceTabItem
+            key={candidate.id}
+            tab={candidate}
+            dockedTabs={dockedTabs}
+            onSelect={onSelect}
+            onClose={onClose}
+            onPlacementChange={onPlacementChange}
+          />
+        );
+        if (!joinedTab || joinedTab.joinedSide !== "end") return item(tab);
+        return (
+          <HStack
+            key="docked-tab-group"
+            gap={0}
+            xstyle={[
+              styles.dockGroup,
+              !tab.isVisuallyActive && styles.dockGroupInactive,
+            ]}
+            data-slot="docked-tab-group"
+          >
+            {item(tab)}
+            {item(joinedTab)}
+          </HStack>
+        );
+      })}
+      <DropdownMenu
+          button={{
+            label: "Surface",
+            icon: <Layers size={ICON} aria-hidden />,
+            children: <Text color="inherit">Surface</Text>,
+            variant: "ghost",
+            size: "sm",
+            isDisabled: allOpen,
+            xstyle: [styles.opener, allOpen && styles.openerDim],
+          }}
+          items={SURFACE_OPTIONS.map((surface) => ({
+            label: surface.label,
+            icon: <surface.icon size={ICON} aria-hidden />,
+            onClick: () => onOpen?.(surface.id),
+            isDisabled: openIds.has(surface.id),
+          }))}
+          data-slot="surface-opener"
+        />
     </HStack>
   );
 }

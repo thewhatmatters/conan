@@ -17,6 +17,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import Breadcrumb from "./components/Breadcrumb.tsx";
 import SurfaceTabs from "./components/SurfaceTabs.tsx";
 import type { BreadcrumbProps } from "./components/Breadcrumb.tsx";
+import type { SurfaceTabsProps } from "./components/SurfaceTabs.tsx";
 
 const styles = stylex.create({
   toolbar: {
@@ -41,7 +42,8 @@ export interface ToolbarProps
   extends Pick<
     BreadcrumbProps,
     "project" | "thread" | "threads" | "activeThreadId" | "onSelectThread"
-  > {}
+  >,
+    SurfaceTabsProps {}
 
 export default function Toolbar({
   project,
@@ -49,6 +51,11 @@ export default function Toolbar({
   threads,
   activeThreadId,
   onSelectThread,
+  tabs,
+  onSelect,
+  onOpen,
+  onClose,
+  onPlacementChange,
 }: ToolbarProps) {
   return (
     <HStack
@@ -67,7 +74,13 @@ export default function Toolbar({
         onSelectThread={onSelectThread}
       />
       <HStack align="center" gap={6} xstyle={styles.tabGroup}>
-        <SurfaceTabs />
+        <SurfaceTabs
+          tabs={tabs}
+          onSelect={onSelect}
+          onOpen={onOpen}
+          onClose={onClose}
+          onPlacementChange={onPlacementChange}
+        />
       </HStack>
     </HStack>
   );

@@ -44,6 +44,7 @@ const styles = stylex.create({
   measure: {
     marginInline: "auto",
     maxWidth: "var(--conan-chat-measure)",
+    paddingBlockEnd: "calc(var(--conan-space-4) + var(--conan-space-1))",
     width: "100%",
   },
   // Available to assistive tech, absent from the visual layout. Clip-based
