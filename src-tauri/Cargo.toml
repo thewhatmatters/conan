@@ -19,9 +19,16 @@ tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
 serde_json = "1.0"
+# Scheme validation for the browser view — only http/https may be loaded.
+url = "2"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.2", features = [] }
+# WHA-38: `unstable` unlocks Window::add_child — embedding a native webview as a
+# child of the main window, which is the only way to host a real browser inside
+# a surface pane. Documented as "available on desktop and crate feature
+# `unstable` only", so the API may move between minor versions; the version is
+# pinned exactly for that reason.
+tauri = { version = "=2.11.2", features = ["unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
