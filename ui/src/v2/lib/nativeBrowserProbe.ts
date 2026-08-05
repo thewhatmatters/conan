@@ -105,6 +105,26 @@ export async function runNativeBrowserProbe(): Promise<void> {
     (dockItem as HTMLElement | undefined)?.click();
     await wait(1500);
     await anchorRect("anchor-rect-docked");
+    // 3. THE defect QA blocked on: open the palette over a live browser and
+    //    confirm the native view actually hides. Verified through visibility
+    //    state rather than pixels, since this box can't screenshot the window.
+    const paletteEvent = new KeyboardEvent("keydown", {
+      key: "k", metaKey: true, bubbles: true,
+    });
+    document.dispatchEvent(paletteEvent);
+    window.dispatchEvent(paletteEvent);
+    await wait(1200);
+    await report("palette-in-dom", Boolean(document.querySelector('[data-slot="command-palette"]')));
+    await report("state-with-palette-open", await call("browser_state"));
+
+    // Escape has to reach whatever Astryx focused; dispatching on `document`
+    // left the palette open last run.
+    const focused = (document.activeElement ?? document.body) as HTMLElement;
+    focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await wait(1500);
+    await report("palette-after-escape", Boolean(document.querySelector('[data-slot="command-palette"]')));
+    await report("state-after-palette-closed", await call("browser_state"));
+
     await report("DONE", "probe finished");
   } catch (error) {
     await report("FAILED", String(error));

@@ -60,6 +60,55 @@ function chromeOffset(metrics: WindowMetrics | null): { x: number; y: number } {
   };
 }
 
+/**
+ * Overlays that must never be painted *under* the browser view.
+ *
+ * QA confirmed this is product-breaking, not cosmetic: ⌘K over a live browser
+ * opens and takes focus while being invisible in pixels — the user is typing
+ * into something they cannot see. Full-pane it vanishes entirely; docked, it is
+ * sliced in half down the pane edge.
+ *
+ * A native view composites above the entire webview and no z-index reaches it,
+ * so the only lever is to hide the view while an overlay would cover it.
+ *
+ * Astryx's Dialog renders a real `<dialog open aria-modal="true">`, which the
+ * first two selectors catch; the command palette is not a native dialog, hence
+ * the explicit slot. Any NEW overlay must be a native dialog, carry
+ * `aria-modal`, or be added here — otherwise it will silently render beneath a
+ * browser and look like it never opened.
+ */
+const OVERLAY_SELECTOR = [
+  "dialog[open]",
+  '[aria-modal="true"]',
+  '[data-slot="command-palette"]',
+].join(",");
+
+/**
+ * Whether any overlay actually covers the view's rect.
+ *
+ * Intersection rather than mere presence, because hiding on *any* open overlay
+ * would blink the page away for menus that never touch it — the Surface and
+ * Actions dropdowns sit above the pane and are fine. Hide exactly when the
+ * overlay would be occluded, and no more.
+ */
+function overlayCovers(rect: DOMRect): boolean {
+  // Edges derived from x/y/width/height rather than read off `right`/`bottom`,
+  // so this holds for any rect-like value and cannot silently compare against a
+  // zero edge.
+  const left = rect.x;
+  const top = rect.y;
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+  for (const el of document.querySelectorAll(OVERLAY_SELECTOR)) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    const oRight = r.x + r.width;
+    const oBottom = r.y + r.height;
+    if (r.x < right && oRight > left && r.y < bottom && oBottom > top) return true;
+  }
+  return false;
+}
+
 /** Tauri's invoke, loaded lazily so the browser build never imports it. */
 async function getInvoke(): Promise<Invoke | null> {
   if (!isTauri()) return null;
@@ -93,6 +142,8 @@ export function useNativeBrowser(input: {
   // The caller's intent, readable from the reconcile loop without making the
   // loop depend on it (a changing dep would restart the loop every toggle).
   const wantVisibleRef = useRef(false);
+  /** What the OS view's visibility currently IS, so we only call on a change. */
+  const shownRef = useRef(false);
   // The last rect we pushed, so a resize storm doesn't spam IPC with no-ops.
   const lastRect = useRef<string>("");
 
@@ -114,41 +165,32 @@ export function useNativeBrowser(input: {
     };
   }, []);
 
-  /** Measure the anchor in window coordinates and push it to the native view. */
+  /**
+   * Reconcile the native view against the DOM: should it be visible at all, and
+   * where. Visibility and geometry are decided together because they share the
+   * same inputs — an absent anchor, a collapsed pane and a covering overlay are
+   * all "not right now", and splitting them let one of them get forgotten.
+   */
   const syncBounds = useCallback(async () => {
     const invoke = invokeRef.current;
     if (!invoke) return;
     const node = anchor.current;
-    // No anchor means the surface is not rendering the browser right now.
-    // An OS view does not disappear with its placeholder, so say so explicitly
-    // or it floats over whatever replaced it.
-    if (!node) {
-      if (lastRect.current !== "hidden") {
-        lastRect.current = "hidden";
-        await invoke("browser_set_visible", { visible: false }).catch(() => {});
-      }
-      return;
+    const rect = node?.getBoundingClientRect();
+    // A zero-area rect means the pane is collapsed or display:none.
+    const hasRect = Boolean(rect && rect.width >= 1 && rect.height >= 1);
+    const shouldShow =
+      hasRect && wantVisibleRef.current && !overlayCovers(rect as DOMRect);
+
+    if (shouldShow !== shownRef.current) {
+      shownRef.current = shouldShow;
+      await invoke("browser_set_visible", { visible: shouldShow }).catch(() => {});
     }
-    const rect = node.getBoundingClientRect();
-    // A zero-area rect means the pane is collapsed or display:none — treat it
-    // as hidden rather than pushing a degenerate size the OS may reject.
-    if (rect.width < 1 || rect.height < 1) {
-      if (lastRect.current !== "hidden") {
-        lastRect.current = "hidden";
-        await invoke("browser_set_visible", { visible: false }).catch(() => {});
-      }
-      return;
-    }
+    if (!shouldShow || !rect) return;
+
     const offset = offsetRef.current;
     const key = `${rect.x}:${rect.y}:${rect.width}:${rect.height}`;
     if (key === lastRect.current) return;
-    // Coming back from hidden: the bounds alone would leave it invisible, since
-    // nothing else re-shows a view the reconcile loop hid.
-    const wasHidden = lastRect.current === "hidden";
     lastRect.current = key;
-    if (wasHidden && wantVisibleRef.current) {
-      await invoke("browser_set_visible", { visible: true }).catch(() => {});
-    }
     await invoke("browser_set_bounds", {
       x: rect.x + offset.x,
       y: rect.y + offset.y,
@@ -209,13 +251,12 @@ export function useNativeBrowser(input: {
     return () => cancelAnimationFrame(frame);
   }, [syncBounds, state.supported, url]);
 
-  // Visibility is explicit — CSS cannot hide an OS view.
+  // Visibility is explicit — CSS cannot hide an OS view. This only records the
+  // caller's intent; the reconcile loop applies it alongside the overlay and
+  // rect checks, so exactly one place decides what is on screen.
   useEffect(() => {
-    const invoke = invokeRef.current;
     wantVisibleRef.current = visible && Boolean(url);
-    if (!state.supported || !invoke) return;
-    void invoke("browser_set_visible", { visible: wantVisibleRef.current }).catch(() => {});
-    if (visible) void syncBounds();
+    if (state.supported) void syncBounds();
   }, [visible, url, syncBounds, state.supported]);
 
   // Poll the real URL so link clicks and SPA routing stay visible to us.

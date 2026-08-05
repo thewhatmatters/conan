@@ -21,6 +21,22 @@ use tauri::{
   LogicalPosition, LogicalSize, Manager, Runtime, WebviewUrl, Window,
 };
 
+/// Whether the view was last COMMANDED visible. Tauri's `Webview` exposes no
+/// `is_visible()`, so this is Conan's own record rather than the OS's — honest
+/// as "what we asked for", which is exactly what needs verifying when the
+/// question is whether the hide-on-overlay wiring fired.
+static COMMANDED_VISIBLE: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+fn set_commanded(visible: bool) {
+  if let Ok(mut guard) = COMMANDED_VISIBLE.lock() {
+    *guard = visible;
+  }
+}
+
+fn commanded() -> bool {
+  COMMANDED_VISIBLE.lock().map(|g| *g).unwrap_or(false)
+}
+
 /// The label of the single browser child webview. One per window is enough for
 /// the spike; tabs would key this.
 const BROWSER_LABEL: &str = "conan-browser";
@@ -33,6 +49,10 @@ pub struct BrowserState {
   pub url: Option<String>,
   /// Whether the view currently exists.
   pub open: bool,
+  /// Whether it is actually ON SCREEN. Distinct from `open`, and the difference
+  /// matters: the view is hidden (not closed) whenever an overlay would cover
+  /// it, so "open" alone cannot tell you whether the user can see the page.
+  pub visible: bool,
 }
 
 fn parse_url(raw: &str) -> Result<url::Url, String> {
@@ -63,7 +83,11 @@ pub async fn browser_open<R: Runtime>(
     // Re-assert geometry: the pane may have moved while the view was hidden.
     let _ = existing.set_position(LogicalPosition::new(x, y));
     let _ = existing.set_size(LogicalSize::new(width, height));
-    return Ok(BrowserState { url: Some(target.to_string()), open: true });
+    return Ok(BrowserState {
+      url: Some(target.to_string()),
+      open: true,
+      visible: commanded(),
+    });
   }
 
   let builder = tauri::webview::WebviewBuilder::new(
@@ -81,7 +105,8 @@ pub async fn browser_open<R: Runtime>(
     )
     .map_err(|e| format!("could not create the browser view: {e}"))?;
 
-  Ok(BrowserState { url: Some(target.to_string()), open: true })
+  set_commanded(true);
+  Ok(BrowserState { url: Some(target.to_string()), open: true, visible: true })
 }
 
 /// Keep the native view glued to the pane. Called on every layout change the
@@ -117,6 +142,7 @@ pub async fn browser_set_visible<R: Runtime>(
   let Some(view) = window.get_webview(BROWSER_LABEL) else {
     return Ok(());
   };
+  set_commanded(visible);
   if visible {
     view.show().map_err(|e| format!("show failed: {e}"))
   } else {
@@ -131,9 +157,9 @@ pub async fn browser_state<R: Runtime>(window: Window<R>) -> Result<BrowserState
   match window.get_webview(BROWSER_LABEL) {
     Some(view) => {
       let url = view.url().ok().map(|u| u.to_string());
-      Ok(BrowserState { url, open: true })
+      Ok(BrowserState { url, open: true, visible: commanded() })
     }
-    None => Ok(BrowserState { url: None, open: false }),
+    None => Ok(BrowserState { url: None, open: false, visible: false }),
   }
 }
 
@@ -193,5 +219,6 @@ pub async fn browser_close<R: Runtime>(window: Window<R>) -> Result<(), String> 
   if let Some(view) = window.get_webview(BROWSER_LABEL) {
     view.close().map_err(|e| format!("close failed: {e}"))?;
   }
+  set_commanded(false);
   Ok(())
 }
