@@ -90,6 +90,9 @@ export function useNativeBrowser(input: {
   });
   const invokeRef = useRef<Invoke | null>(null);
   const offsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // The caller's intent, readable from the reconcile loop without making the
+  // loop depend on it (a changing dep would restart the loop every toggle).
+  const wantVisibleRef = useRef(false);
   // The last rect we pushed, so a resize storm doesn't spam IPC with no-ops.
   const lastRect = useRef<string>("");
 
@@ -114,19 +117,38 @@ export function useNativeBrowser(input: {
   /** Measure the anchor in window coordinates and push it to the native view. */
   const syncBounds = useCallback(async () => {
     const invoke = invokeRef.current;
+    if (!invoke) return;
     const node = anchor.current;
-    if (!invoke || !node) return;
+    // No anchor means the surface is not rendering the browser right now.
+    // An OS view does not disappear with its placeholder, so say so explicitly
+    // or it floats over whatever replaced it.
+    if (!node) {
+      if (lastRect.current !== "hidden") {
+        lastRect.current = "hidden";
+        await invoke("browser_set_visible", { visible: false }).catch(() => {});
+      }
+      return;
+    }
     const rect = node.getBoundingClientRect();
     // A zero-area rect means the pane is collapsed or display:none — treat it
     // as hidden rather than pushing a degenerate size the OS may reject.
     if (rect.width < 1 || rect.height < 1) {
-      await invoke("browser_set_visible", { visible: false }).catch(() => {});
+      if (lastRect.current !== "hidden") {
+        lastRect.current = "hidden";
+        await invoke("browser_set_visible", { visible: false }).catch(() => {});
+      }
       return;
     }
     const offset = offsetRef.current;
     const key = `${rect.x}:${rect.y}:${rect.width}:${rect.height}`;
     if (key === lastRect.current) return;
+    // Coming back from hidden: the bounds alone would leave it invisible, since
+    // nothing else re-shows a view the reconcile loop hid.
+    const wasHidden = lastRect.current === "hidden";
     lastRect.current = key;
+    if (wasHidden && wantVisibleRef.current) {
+      await invoke("browser_set_visible", { visible: true }).catch(() => {});
+    }
     await invoke("browser_set_bounds", {
       x: rect.x + offset.x,
       y: rect.y + offset.y,
@@ -161,30 +183,38 @@ export function useNativeBrowser(input: {
       );
   }, [url, anchor, state.supported]);
 
-  // Track layout. ResizeObserver catches pane resize and splitter drags;
-  // window resize and scroll move the rect without resizing the element.
+  // Track layout by reconciling every frame while the view is open.
+  //
+  // This was a ResizeObserver attached on mount, and it never attached at all:
+  // at mount the surface is empty, so the anchor is not rendered, `anchor.current`
+  // is null and the effect bailed — and its deps (a stable ref, a stable
+  // callback, an unchanged boolean) meant it never ran again. The only bounds
+  // the view ever got were the ones passed at open, which is why docking left
+  // the page sprawled across the chat at its pre-dock size.
+  //
+  // A per-frame reconcile is the honest mechanism for pinning an OS view to a
+  // DOM rect, and not a workaround for that bug: an observer catches resizes of
+  // one node, but the rect also moves when the pane is REPOSITIONED without
+  // resizing, when React swaps the node, and continuously during a splitter
+  // drag. Reading `anchor.current` fresh each frame covers all of it, and the
+  // cost is one getBoundingClientRect while a browser is on screen.
   useEffect(() => {
-    if (!state.supported) return;
-    const node = anchor.current;
-    if (!node) return;
-    void syncBounds();
-    const observer = new ResizeObserver(() => void syncBounds());
-    observer.observe(node);
-    const onWindow = () => void syncBounds();
-    window.addEventListener("resize", onWindow);
-    window.addEventListener("scroll", onWindow, true);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", onWindow);
-      window.removeEventListener("scroll", onWindow, true);
+    if (!state.supported || !url) return;
+    let frame = 0;
+    const tick = () => {
+      void syncBounds();
+      frame = requestAnimationFrame(tick);
     };
-  }, [anchor, syncBounds, state.supported]);
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [syncBounds, state.supported, url]);
 
   // Visibility is explicit — CSS cannot hide an OS view.
   useEffect(() => {
     const invoke = invokeRef.current;
+    wantVisibleRef.current = visible && Boolean(url);
     if (!state.supported || !invoke) return;
-    void invoke("browser_set_visible", { visible: visible && Boolean(url) }).catch(() => {});
+    void invoke("browser_set_visible", { visible: wantVisibleRef.current }).catch(() => {});
     if (visible) void syncBounds();
   }, [visible, url, syncBounds, state.supported]);
 

@@ -78,13 +78,33 @@ export async function runNativeBrowserProbe(): Promise<void> {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await wait(4000);
 
-    const anchor = document.querySelector('[data-slot="browser-native-anchor"]');
-    const rect = anchor?.getBoundingClientRect();
-    await report("anchor-rect", rect ? {
-      x: Math.round(rect.x), y: Math.round(rect.y),
-      w: Math.round(rect.width), h: Math.round(rect.height),
-    } : "NO ANCHOR — the native path never rendered");
+    const anchorRect = (label: string) => {
+      const el = document.querySelector('[data-slot="browser-native-anchor"]');
+      const r = el?.getBoundingClientRect();
+      return report(label, r ? {
+        x: Math.round(r.x), y: Math.round(r.y),
+        w: Math.round(r.width), h: Math.round(r.height),
+      } : "NO ANCHOR");
+    };
+    await anchorRect("anchor-rect-fullwidth");
     await report("url-through-real-ui", await call("browser_state"));
+
+    // 2. DOCK IT. Randy's report: docking left the page sprawled across the
+    //    chat at its pre-dock size, because nothing was tracking the rect after
+    //    open. The rect must shrink here, and the reconcile loop must push it.
+    const dockMenu = [...document.querySelectorAll("button")].find((n) =>
+      (n.getAttribute("aria-label") ?? "").toLowerCase().includes("dock") ||
+      (n.textContent ?? "").trim().startsWith("Surface"),
+    );
+    (dockMenu as HTMLElement | undefined)?.click();
+    await wait(600);
+    const dockItem = [...document.querySelectorAll("[role=menuitem],button")].find((n) =>
+      /dock.*(right|chat)/i.test(n.textContent ?? ""),
+    );
+    await report("found-dock-control", Boolean(dockItem) ? (dockItem!.textContent ?? "").trim() : "none");
+    (dockItem as HTMLElement | undefined)?.click();
+    await wait(1500);
+    await anchorRect("anchor-rect-docked");
     await report("DONE", "probe finished");
   } catch (error) {
     await report("FAILED", String(error));
