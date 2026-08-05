@@ -6,13 +6,20 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ExternalLink, File, Folder, RotateCcw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Folder, RefreshCw, RotateCcw } from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
+import {
+  buildFileTree,
+  rollupFileStatus,
+  V2FileTree,
+  type FileStatus,
+  type FileTreeNode,
+} from "./V2FileTree.tsx";
 
 const styles = stylex.create({
   body: {
@@ -25,6 +32,61 @@ const styles = stylex.create({
     width: "100%",
   },
   padded: { padding: "var(--conan-space-4)" },
+  surfaceHeader: {
+    alignItems: "center",
+    borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
+    display: "flex",
+    flexShrink: 0,
+    gap: "var(--conan-space-2)",
+    minHeight: "var(--conan-control-height)",
+    paddingInline: "var(--conan-space-3)",
+  },
+  headerPath: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  iconButton: {
+    alignItems: "center",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+      ":active": "var(--conan-wash-pressed)",
+    },
+    border: 0,
+    borderRadius: "var(--conan-radius-xs)",
+    color: "var(--conan-icon-muted)",
+    cursor: "pointer",
+    display: "inline-flex",
+    flexShrink: 0,
+    justifyContent: "center",
+    padding: "var(--conan-space-1)",
+  },
+  treeScroller: {
+    flexGrow: 1,
+    minHeight: 0,
+    overflow: "auto",
+    padding: "var(--conan-space-1)",
+  },
+  count: {
+    backgroundColor: "var(--conan-wash-raised)",
+    borderRadius: "var(--conan-radius-full)",
+    color: "var(--conan-text-muted)",
+    flexShrink: 0,
+    paddingBlock: "var(--conan-space-hair)",
+    paddingInline: "var(--conan-space-2)",
+  },
+  stat: {
+    display: "inline-flex",
+    gap: "var(--conan-space-1)",
+    whiteSpace: "nowrap",
+  },
+  statAdd: { color: "var(--conan-diff-add-text)" },
+  statDel: { color: "var(--conan-diff-del-text)" },
+  statDivider: { color: "var(--conan-text-dim)" },
+  inlineError: { color: "var(--conan-color-error)" },
   fill: { flexGrow: 1, minHeight: 0, minWidth: 0, width: "100%" },
   terminal: {
     backgroundColor: "var(--conan-color-terminal)",
@@ -408,6 +470,8 @@ interface FileEntry {
   name: string;
   path: string;
   isDir: boolean;
+  size: number;
+  mtimeMs: number;
 }
 interface FileListing {
   path: string;
@@ -417,29 +481,81 @@ interface FileListing {
 }
 
 export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: string | null }) {
-  const [path, setPath] = useState(cwd);
   const [listing, setListing] = useState<FileListing | null>(null);
+  const [cache, setCache] = useState<Record<string, FileListing>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [directoryErrors, setDirectoryErrors] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ path: string; content: string } | null>(null);
-  useEffect(() => setPath(cwd), [cwd]);
-  useEffect(() => {
-    if (!token || !path) return;
+  const [statusByPath, setStatusByPath] = useState<Map<string, FileStatus>>(new Map());
+
+  const loadDirectory = useCallback(async (path: string) => {
+    if (!token) return;
+    setDirectoryErrors((current) => {
+      const next = new Set(current);
+      next.delete(path);
+      return next;
+    });
+    try {
+      const response = await fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(path)}`, {
+        headers: { "x-conan-token": token },
+      });
+      if (!response.ok) throw new Error("Could not read folder.");
+      const data = (await response.json()) as FileListing;
+      setCache((current) => ({ ...current, [data.path]: data }));
+    } catch {
+      setDirectoryErrors((current) => new Set(current).add(path));
+    }
+  }, [token]);
+
+  const loadRoot = useCallback(() => {
+    if (!token || !cwd) return;
     let cancelled = false;
-    fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(path)}`, {
-      headers: { "x-conan-token": token },
-    })
-      .then((response) => response.json())
-      .then((data: FileListing) => {
-        if (!cancelled) setListing(data);
+    setListing(null);
+    setPreview(null);
+    setExpanded(new Set());
+    setDirectoryErrors(new Set());
+    Promise.all([
+      fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(cwd)}`, {
+        headers: { "x-conan-token": token },
+      }).then((response) => {
+        if (!response.ok) throw new Error("Could not read folder.");
+        return response.json() as Promise<FileListing>;
+      }),
+      fetch(apiBase() + "/api/fs/diff", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-conan-token": token },
+        body: JSON.stringify({ cwd }),
+      }).then((response) => {
+        if (!response.ok) throw new Error("Could not load changes.");
+        return response.json() as Promise<DiffResult>;
+      }),
+    ])
+      .then(([root, diff]) => {
+        if (cancelled) return;
+        setListing(root);
+        setCache({ [root.path]: root });
+        const statuses = new Map<string, FileStatus>();
+        if (diff.root) {
+          for (const file of diff.files) {
+            statuses.set(`${diff.root.replace(/\/$/, "")}/${file.path}`, file.status);
+          }
+        }
+        setStatusByPath(statuses);
       })
       .catch(() => {
-        if (!cancelled) setListing({ path, parent: null, entries: [], error: "Could not read folder." });
+        if (!cancelled) {
+          setListing({ path: cwd, parent: null, entries: [], error: "Could not read folder." });
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [path, token]);
+  }, [cwd, token]);
+
+  useEffect(() => loadRoot(), [loadRoot]);
+
   const openFile = useCallback(
-    async (entry: FileEntry) => {
+    async (entry: FileTreeNode) => {
       if (!token) return;
       const response = await fetch(
         apiBase() + `/api/fs/read?path=${encodeURIComponent(entry.path)}`,
@@ -450,37 +566,74 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
     },
     [token],
   );
-  if (!token || !path) return <CenterState>Select a thread to browse its files.</CenterState>;
+  const nodes = useMemo(() => {
+    const makeNodes = (current: FileListing | undefined): FileTreeNode[] =>
+      current?.entries.map((entry) => {
+        const directStatus = statusByPath.get(entry.path);
+        const childStatuses = [...statusByPath.entries()]
+          .filter(([changedPath]) => changedPath.startsWith(`${entry.path}/`))
+          .map(([, status]) => status);
+        const status = directStatus ?? rollupFileStatus(childStatuses);
+        return {
+          id: entry.path,
+          name: entry.name,
+          path: entry.path,
+          isDir: entry.isDir,
+          status,
+          children: entry.isDir ? makeNodes(cache[entry.path]) : undefined,
+        };
+      }) ?? [];
+    return makeNodes(listing ?? undefined);
+  }, [cache, listing, statusByPath]);
+
+  if (!token || !cwd) return <CenterState>Select a thread to browse its files.</CenterState>;
   if (!listing) return <CenterState>Loading files…</CenterState>;
   return (
-    <VStack gap={3} xstyle={[styles.body, styles.padded]}>
-      <HStack gap={2} align="center">
-        {listing.parent ? (
-          <Button label="Parent folder" variant="ghost" size="sm" clickAction={() => setPath(listing.parent)} />
+    <VStack xstyle={styles.body}>
+      <div {...stylex.props(styles.surfaceHeader)}>
+        {preview ? (
+          <button type="button" aria-label="Back to files" onClick={() => setPreview(null)} {...stylex.props(styles.iconButton)}>
+            <ArrowLeft size={16} aria-hidden />
+          </button>
+        ) : <Folder size={16} aria-hidden />}
+        <span title={preview?.path ?? listing.path} {...stylex.props(styles.headerPath)}>
+          <Text type="supporting" color="secondary">{preview?.path ?? listing.path}</Text>
+        </span>
+        {!preview ? (
+          <button type="button" aria-label="Refresh files" onClick={loadRoot} {...stylex.props(styles.iconButton)}>
+            <RefreshCw size={16} aria-hidden />
+          </button>
         ) : null}
-        <Text color="secondary">{preview?.path ?? listing.path}</Text>
-      </HStack>
+      </div>
       {preview ? (
-        <VStack gap={2} xstyle={styles.fill}>
-          <Button label="Back to files" variant="ghost" size="sm" clickAction={() => setPreview(null)} />
+        <VStack xstyle={[styles.fill, styles.padded]}>
           <Text xstyle={styles.preview}>{preview.content}</Text>
         </VStack>
       ) : listing.error ? (
         <CenterState>{listing.error}</CenterState>
       ) : (
-        <VStack gap={1}>
-          {listing.entries.map((entry) => (
-            <Button
-              key={entry.path}
-              label={entry.name}
-              icon={entry.isDir ? <Folder size={16} aria-hidden /> : <File size={16} aria-hidden />}
-              variant="ghost"
-              size="sm"
-              xstyle={styles.row}
-              clickAction={() => (entry.isDir ? setPath(entry.path) : void openFile(entry))}
-            />
-          ))}
-        </VStack>
+        <div {...stylex.props(styles.treeScroller)}>
+          <V2FileTree
+            label="Workspace files"
+            nodes={nodes}
+            expanded={expanded}
+            onToggle={(node) => {
+              setExpanded((current) => {
+                const next = new Set(current);
+                if (next.has(node.id)) next.delete(node.id);
+                else {
+                  next.add(node.id);
+                  if (!cache[node.path]) void loadDirectory(node.path);
+                }
+                return next;
+              });
+            }}
+            onOpenFile={(node) => void openFile(node)}
+            renderTrailing={(node) => directoryErrors.has(node.path) ? (
+              <span role="status" {...stylex.props(styles.inlineError)}>Couldn’t load</span>
+            ) : null}
+          />
+        </div>
       )}
     </VStack>
   );
@@ -489,7 +642,11 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
 interface DiffFile {
   path: string;
   patch: string;
+  status: FileStatus;
+  truncated: boolean;
 }
+
+interface DiffResult { repo: boolean; root: string | null; files: DiffFile[] }
 
 export function V2DiffSurface({ token, cwd }: { token: string | null; cwd: string | null }) {
   const [files, setFiles] = useState<DiffFile[] | null>(null);
@@ -497,6 +654,8 @@ export function V2DiffSurface({ token, cwd }: { token: string | null; cwd: strin
   useEffect(() => {
     if (!token || !cwd) return;
     let cancelled = false;
+    setFiles(null);
+    setError(null);
     fetch(apiBase() + "/api/fs/diff", {
       method: "POST",
       headers: { "content-type": "application/json", "x-conan-token": token },
@@ -520,6 +679,18 @@ export function V2DiffSurface({ token, cwd }: { token: string | null; cwd: strin
     () => files?.map((file) => ({ ...file, diff: parseUnifiedPatch(file.path, file.patch) })),
     [files],
   );
+  const tree = useMemo(() => buildFileTree(parsed ?? []), [parsed]);
+  const byPath = useMemo(() => new Map(parsed?.map((file) => [file.path, file]) ?? []), [parsed]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const folderIds: string[] = [];
+    const collect = (nodes: FileTreeNode[]) => nodes.forEach((node) => {
+      if (node.isDir) folderIds.push(node.id);
+      if (node.children) collect(node.children);
+    });
+    collect(tree);
+    setExpanded(new Set(folderIds));
+  }, [tree]);
   if (!token || !cwd) return <CenterState>Select a thread to review changes.</CenterState>;
   if (error) return <CenterState>{error}</CenterState>;
   if (!parsed) {
@@ -530,14 +701,51 @@ export function V2DiffSurface({ token, cwd }: { token: string | null; cwd: strin
     );
   }
   if (parsed.length === 0) return <CenterState>No uncommitted changes.</CenterState>;
+  const aggregate = (node: FileTreeNode): { added: number; removed: number } => {
+    const file = byPath.get(node.path);
+    if (file) return { added: file.diff.added, removed: file.diff.removed };
+    return (node.children ?? []).reduce(
+      (total, child) => {
+        const counts = aggregate(child);
+        return { added: total.added + counts.added, removed: total.removed + counts.removed };
+      },
+      { added: 0, removed: 0 },
+    );
+  };
   return (
-    <VStack gap={3} xstyle={[styles.body, styles.padded]}>
-      {parsed.map((file) => (
-        <VStack key={file.path} gap={2}>
-          <Text weight="semibold">{file.path}</Text>
-          <V2DiffView diff={file.diff} />
-        </VStack>
-      ))}
+    <VStack xstyle={styles.body}>
+      <div {...stylex.props(styles.surfaceHeader)}>
+        <Text type="supporting" color="secondary">Uncommitted changes</Text>
+        <span {...stylex.props(styles.count)}><Text type="supporting" hasTabularNumbers>{parsed.length}</Text></span>
+      </div>
+      <div {...stylex.props(styles.treeScroller)}>
+        <V2FileTree
+          label="Changed files"
+          nodes={tree}
+          expanded={expanded}
+          onToggle={(node) => setExpanded((current) => {
+            const next = new Set(current);
+            if (next.has(node.id)) next.delete(node.id);
+            else next.add(node.id);
+            return next;
+          })}
+          onOpenFile={() => {}}
+          renderTrailing={(node) => {
+            const counts = aggregate(node);
+            return (
+              <span {...stylex.props(styles.stat)}>
+                <span {...stylex.props(styles.statAdd)}>+{counts.added}</span>
+                <span aria-hidden {...stylex.props(styles.statDivider)}>/</span>
+                <span {...stylex.props(styles.statDel)}>−{counts.removed}</span>
+              </span>
+            );
+          }}
+          renderExpandedFile={(node) => {
+            const file = byPath.get(node.path);
+            return file ? <V2DiffView diff={file.diff} /> : null;
+          }}
+        />
+      </div>
     </VStack>
   );
 }
