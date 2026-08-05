@@ -47,16 +47,11 @@ describe("Toolbar", () => {
     expect(screen.getByText("Analyze my project")).toBeInTheDocument();
   });
 
-  it("renders the artboard's surface tabs as a tablist with Chat selected", () => {
+  it("starts with only the permanent Chat surface selected", () => {
     render(<Toolbar />);
 
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent?.replace(/Close .*/, ""))).toEqual([
-      "Chat",
-      "Browser",
-      "Terminal",
-      "Diff",
-    ]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Chat"]);
     expect(screen.getByRole("tablist", { name: "Surfaces" })).toBeInTheDocument();
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });

@@ -193,6 +193,36 @@ describe("AppV2 shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the joined dock pill visible while another surface is selected", () => {
+    render(<AppV2 />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /^Browser/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Right" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
+    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
+      "aria-description",
+      "Docked right to Chat",
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
+      "aria-description",
+      "Docked right to Chat",
+    );
+    expect(screen.getByRole("tab", { name: /^Diff/ })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+  });
+
   it("says loading, not 'no projects', while the gateway is unreachable", () => {
     const { container } = render(<AppV2 />);
 

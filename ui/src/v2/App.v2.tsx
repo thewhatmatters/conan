@@ -58,6 +58,13 @@ import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import AddProjectDialog from "./components/AddProjectDialog.tsx";
 import V2CommandPalette from "./command/CommandPalette.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
+import SurfaceWorkspace from "./components/SurfaceWorkspace.tsx";
+import {
+  SURFACE_OPTIONS,
+  type SurfaceId,
+  type SurfacePlacement,
+  type SurfaceTab,
+} from "./components/SurfaceTabs.tsx";
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
 import {
   useV2Projects,
@@ -71,6 +78,7 @@ import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 import { pillOf, useV2ThreadState } from "./lib/useV2ThreadState.ts";
 import { writeClipboardText } from "./lib/writeClipboardText.ts";
 import { apiBase } from "../lib/gateway.ts";
+import { MessagesSquare } from "lucide-react";
 
 /**
  * `xstyle` is Astryx's per-component style escape hatch, and the reason this app
@@ -91,7 +99,14 @@ const styles = stylex.create({
   // three meet the window edge, so rounding them would open gaps.
   well: {
     backgroundColor: "var(--conan-color-content)",
+    borderLeftColor: "var(--conan-color-border)",
+    borderLeftStyle: "solid",
+    borderLeftWidth: "var(--conan-border-width)",
     borderStartStartRadius: "var(--conan-radius-page)",
+    borderTopColor: "var(--conan-color-border)",
+    borderTopStyle: "solid",
+    borderTopWidth: "var(--conan-border-width)",
+    boxSizing: "border-box",
     flexGrow: 1,
     minHeight: 0,
     overflow: "clip",
@@ -150,8 +165,124 @@ export default function AppV2() {
   const [isAddingProject, setIsAddingProject] = useState(false);
   // WHA-70 / US-401 — command palette open state lives at the shell once.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [openSurfaces, setOpenSurfaces] = useState<
+    Array<Exclude<SurfaceId, "chat">>
+  >([]);
+  const [activeSurface, setActiveSurface] = useState<SurfaceId>("chat");
+  const [activeDockedSurface, setActiveDockedSurface] = useState<
+    Exclude<SurfaceId, "chat"> | null
+  >(null);
+  const [surfacePlacements, setSurfacePlacements] = useState<
+    Partial<Record<Exclude<SurfaceId, "chat">, SurfacePlacement>>
+  >({});
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const { states, reportState } = useV2ThreadState();
+
+  const surfaceTabs = useMemo<SurfaceTab[]>(
+    () => {
+      const dockedId =
+        activeDockedSurface && surfacePlacements[activeDockedSurface]
+          ? activeDockedSurface
+          : openSurfaces.find((id) => surfacePlacements[id] != null) ?? null;
+      const dockGroupActive =
+        activeSurface !== "chat" && surfacePlacements[activeSurface] != null;
+      const ordered = dockedId
+        ? [dockedId, ...openSurfaces.filter((id) => id !== dockedId)]
+        : openSurfaces;
+      const dockedLabel = dockedId
+        ? SURFACE_OPTIONS.find((candidate) => candidate.id === dockedId)?.label
+        : null;
+      return [
+        {
+        id: "chat",
+        label: "Chat",
+        icon: MessagesSquare,
+        isSelected: activeSurface === "chat",
+        isDocked: dockedId != null,
+        isVisuallyActive: dockedId ? dockGroupActive : activeSurface === "chat",
+        joinedSide: dockedId ? ("start" as const) : undefined,
+        dockedDescription: dockedLabel ? `Joined with ${dockedLabel}` : undefined,
+        },
+      ...ordered.map((id) => {
+        const surface = SURFACE_OPTIONS.find((candidate) => candidate.id === id)!;
+        return {
+          ...surface,
+          placement: surfacePlacements[id],
+          isSelected: activeSurface === id,
+          isDocked: id === dockedId,
+          isVisuallyActive:
+            id === dockedId ? dockGroupActive : activeSurface === id,
+          joinedSide: id === dockedId ? ("end" as const) : undefined,
+          dockedDescription:
+            id === dockedId
+              ? `Docked ${surfacePlacements[id]} to Chat`
+              : undefined,
+        };
+      }),
+      ];
+    },
+    [activeDockedSurface, activeSurface, openSurfaces, surfacePlacements],
+  );
+  const openSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
+    setOpenSurfaces((current) => (current.includes(id) ? current : [...current, id]));
+    setActiveSurface(id);
+  }, []);
+  const selectSurface = useCallback(
+    (id: SurfaceId) => {
+      if (id === "chat") {
+        const restoredDock =
+          activeDockedSurface && surfacePlacements[activeDockedSurface]
+            ? activeDockedSurface
+            : openSurfaces.find((candidate) => surfacePlacements[candidate] != null);
+        setActiveSurface(restoredDock ?? "chat");
+        return;
+      }
+      if (surfacePlacements[id]) setActiveDockedSurface(id);
+      setActiveSurface(id);
+    },
+    [activeDockedSurface, openSurfaces, surfacePlacements],
+  );
+  const closeSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
+    setOpenSurfaces((current) => current.filter((candidate) => candidate !== id));
+    setSurfacePlacements((current) => {
+      const next = { ...current };
+      delete next[id];
+      setActiveDockedSurface((activeDock) =>
+        activeDock === id
+          ? openSurfaces.find((candidate) => candidate !== id && next[candidate] != null) ?? null
+          : activeDock,
+      );
+      return next;
+    });
+    setActiveSurface((current) =>
+      current === id
+        ? activeDockedSurface && surfacePlacements[activeDockedSurface]
+          ? activeDockedSurface
+          : "chat"
+        : current,
+    );
+  }, [activeDockedSurface, openSurfaces, surfacePlacements]);
+  const changeSurfacePlacement = useCallback(
+    (id: Exclude<SurfaceId, "chat">, placement: SurfacePlacement) => {
+      setSurfacePlacements((current) => ({ ...current, [id]: placement }));
+      setActiveDockedSurface(id);
+      setActiveSurface(id);
+    },
+    [],
+  );
+  const undockSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
+    setSurfacePlacements((current) => {
+      const next = { ...current };
+      delete next[id];
+      setActiveDockedSurface((activeDock) =>
+        activeDock === id
+          ? openSurfaces.find((candidate) => candidate !== id && next[candidate] != null) ?? null
+          : activeDock,
+      );
+      return next;
+    });
+    setActiveSurface(id);
+  }, [openSurfaces]);
 
   // ⌘K / Ctrl+K opens the palette (allowInInputs: true so it works while the
   // composer or sidebar search is focused). Esc is owned by Astryx CommandPalette.
@@ -551,19 +682,35 @@ export default function AppV2() {
               threads={crumbThreads}
               activeThreadId={activeThread?.key ?? null}
               onSelectThread={selectThreadByKey}
+              tabs={surfaceTabs}
+              onSelect={selectSurface}
+              onOpen={openSurface}
+              onClose={closeSurface}
+              onPlacementChange={changeSurfacePlacement}
             />
             <VStack gap={0} xstyle={styles.well}>
-              <SecondaryBar />
               {/* Keyed by the selection: one useV2Chat per well (docs §9 gotcha
                   2), so switching threads must tear the socket down and open the
                   new thread's session rather than replaying the old one's items
                   under a new descriptor. */}
-              <V2ChatView
-                key={activeThread?.key ?? "no-thread"}
+              <SurfaceWorkspace
+                header={<SecondaryBar />}
+                activeSurface={activeSurface}
+                openSurfaces={openSurfaces}
+                placement={
+                  activeSurface === "chat" ? undefined : surfacePlacements[activeSurface]
+                }
                 token={token}
-                activeThread={activeThread}
-                onState={activeThread ? onActiveState : undefined}
-              />
+                cwd={activeThread?.cwd ?? config?.cwd ?? null}
+                onUndock={undockSurface}
+              >
+                <V2ChatView
+                  key={activeThread?.key ?? "no-thread"}
+                  token={token}
+                  activeThread={activeThread}
+                  onState={activeThread ? onActiveState : undefined}
+                />
+              </SurfaceWorkspace>
             </VStack>
           </VStack>
         }

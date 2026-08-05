@@ -32,12 +32,15 @@ const ICON = 16;
 
 const styles = stylex.create({
   bar: {
+    boxSizing: "border-box",
     flexShrink: 0,
     height: "var(--conan-secondary-bar-height)",
+    width: "100%",
   },
   row: {
     flexShrink: 0,
     height: "var(--conan-control-height)",
+    width: "100%",
   },
   // Real <button> — reset UA chrome so the control still reads as RJ-0's
   // icon+label+chevron pill (32px tall, 10px radius, 12px inline pad).
