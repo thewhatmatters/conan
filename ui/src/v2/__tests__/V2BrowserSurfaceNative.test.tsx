@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Pretend we're inside the Tauri app. Both the surface and useNativeBrowser
@@ -6,6 +6,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../lib/gateway.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/gateway.ts")>();
   return { ...actual, isTauri: () => true, apiBase: () => "" };
+});
+
+// Stand in for the native view so the SURFACE's reporting can be tested
+// independently of Tauri. `nativeUrl` is what the real view would return from
+// browser_state after the user clicks a link or an SPA changes route.
+let nativeUrl: string | null = null;
+/** Lets the test push a new live URL and actually re-render, the way a real
+ *  navigation inside the webview would. */
+let pushNativeUrl: (url: string | null) => void = () => {};
+vi.mock("../lib/useNativeBrowser.ts", async () => {
+  const { useState, useEffect } = await import("react");
+  return {
+    useNativeBrowser: () => {
+      const [url, setUrl] = useState<string | null>(nativeUrl);
+      useEffect(() => {
+        pushNativeUrl = (next) => {
+          nativeUrl = next;
+          setUrl(next);
+        };
+      }, []);
+      return { supported: true, url, open: url !== null, error: null, evalScript: async () => {} };
+    },
+  };
 });
 
 const { V2BrowserSurface } = await import("../components/V2SurfaceBodies.tsx");
@@ -40,7 +63,10 @@ function navigateTo(value: string) {
 }
 
 describe("V2BrowserSurface under a native webview", () => {
-  beforeEach(() => vi.stubGlobal("fetch", stub(REFUSES_FRAMING)));
+  beforeEach(() => {
+    nativeUrl = null;
+    vi.stubGlobal("fetch", stub(REFUSES_FRAMING));
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -95,5 +121,48 @@ describe("V2BrowserSurface under a native webview", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reports the native view's LIVE url to the agent, not the one in the bar", async () => {
+    // The whole point of WHA-38 for WHA-109: the user opens one page, clicks
+    // through to another, and the agent is told where they actually are. The
+    // iframe could never do this — it is why `read_browser` had to refuse.
+    const onStateChange = vi.fn();
+    render(<V2BrowserSurface token="t" active onStateChange={onStateChange} />);
+    navigateTo("https://www.espn.com");
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="browser-native-anchor"]')).toBeInTheDocument(),
+    );
+
+    // The user clicks into an article; the native view knows, the URL bar doesn't.
+    act(() => pushNativeUrl("https://www.espn.com/nfl/story/_/id/12345"));
+
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          url: "https://www.espn.com/nfl/story/_/id/12345",
+          // Never stale under a native view, so the agent is never told to stop.
+          navigatedAway: false,
+        }),
+      ),
+    );
+  });
+
+  it("never marks the surface stale under a native view", async () => {
+    nativeUrl = "https://www.espn.com/";
+    const onStateChange = vi.fn();
+    render(<V2BrowserSurface token="t" active onStateChange={onStateChange} />);
+    navigateTo("https://www.espn.com");
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="browser-native-anchor"]')).toBeInTheDocument(),
+    );
+    // The iframe's "I've lost track of you" apology must never appear here —
+    // there is nothing to lose track of.
+    expect(screen.queryByText(/followed a link inside this page/)).toBeNull();
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ navigatedAway: false }),
+      ),
+    );
   });
 });
