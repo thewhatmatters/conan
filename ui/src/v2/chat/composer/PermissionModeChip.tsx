@@ -6,7 +6,11 @@
  * channel without hard-coding Claude-specific choices here.
  */
 import * as stylex from "@stylexjs/stylex";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@astryxdesign/core/DropdownMenu";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
 
 export interface PermissionModeChipProps {
@@ -18,9 +22,27 @@ export interface PermissionModeChipProps {
 
 const styles = stylex.create({
   trigger: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+    },
     borderRadius: "var(--conan-radius-pill)",
     height: "var(--conan-control-height)",
     pointerEvents: "auto",
+  },
+  menuItem: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+      ":focus": "var(--conan-wash-hover)",
+    },
+  },
+  menuItemSelected: {
+    backgroundColor: {
+      default: "var(--conan-wash-row-selected)",
+      ":hover": "var(--conan-wash-row-selected)",
+      ":focus": "var(--conan-wash-row-selected)",
+    },
   },
 });
 
@@ -45,12 +67,26 @@ export default function PermissionModeChip({
         size: "md",
         xstyle: styles.trigger,
       }}
-      items={modes.map((mode) => ({
-        label: mode.label,
-        onClick: () => onPermissionModeSelect(mode.id),
-      }))}
       placement="above"
       data-slot="permission-mode-chip"
-    />
+    >
+      <DropdownMenuRadioGroup
+        value={current?.id}
+        onChange={onPermissionModeSelect}
+        aria-label="Permission mode"
+      >
+        {modes.map((mode) => (
+          <DropdownMenuRadioItem
+            key={mode.id}
+            value={mode.id}
+            label={mode.label}
+            xstyle={[
+              styles.menuItem,
+              current?.id === mode.id && styles.menuItemSelected,
+            ]}
+          />
+        ))}
+      </DropdownMenuRadioGroup>
+    </DropdownMenu>
   );
 }

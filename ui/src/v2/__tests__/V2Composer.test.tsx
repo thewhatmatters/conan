@@ -127,7 +127,7 @@ describe("V2Composer", () => {
     render(<V2Composer activeThread={thread} send={send} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
     typeAndSubmit("propose a plan");
 
     expect(send).toHaveBeenCalledWith(
@@ -182,7 +182,7 @@ describe("V2Composer", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
     expect(setPermissionMode).not.toHaveBeenCalled();
     typeAndSubmit("propose a plan");
     expect(send).toHaveBeenCalledWith(
@@ -206,7 +206,7 @@ describe("V2Composer", () => {
     expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Plan" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Supervised" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Supervised" }));
     expect(setPermissionMode).toHaveBeenCalledWith("default");
 
     // Confirmed live mode event moves the chip off Plan (no optimistic update).

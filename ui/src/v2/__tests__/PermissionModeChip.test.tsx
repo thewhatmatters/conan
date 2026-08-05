@@ -28,8 +28,28 @@ describe("PermissionModeChip", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
     expect(select).toHaveBeenCalledWith("plan");
+  });
+
+  it("marks the current permission mode as a selected radio row", () => {
+    render(
+      <PermissionModeChip
+        providers={[provider]}
+        activeProviderId="claude"
+        permissionMode="plan"
+        onPermissionModeSelect={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByRole("menuitemradio", { name: "Plan" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(
+      screen.getByRole("menuitemradio", { name: "Supervised" }),
+    ).toHaveAttribute("aria-checked", "false");
   });
 
   it("is absent when the provider exposes no permission vocabulary", () => {

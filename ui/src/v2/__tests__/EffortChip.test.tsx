@@ -81,6 +81,26 @@ describe("EffortChip", () => {
     expect(onEffortSelect).toHaveBeenCalledWith("ultrathink");
   });
 
+  it("marks the current effort as a selected radio row", () => {
+    render(
+      <EffortChip
+        providers={[provider()]}
+        activeProviderId="claude"
+        effort="think"
+        onEffortSelect={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Think/ }));
+
+    expect(screen.getByRole("menuitemradio", { name: "Think" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(
+      screen.getByRole("menuitemradio", { name: "Ultrathink" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
   it("follows the ACTIVE provider's vocabulary, not a shared list", () => {
     const codex = provider({
       id: "codex",

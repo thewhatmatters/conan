@@ -20,7 +20,11 @@
  * claude and encrypted for codex (docs D2).
  */
 import * as stylex from "@stylexjs/stylex";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@astryxdesign/core/DropdownMenu";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
 
 export interface EffortChipProps {
@@ -38,9 +42,27 @@ const styles = stylex.create({
   // `pointer-events: none` while disabled; effort stays reachable because it
   // applies to the NEXT turn, which is exactly when the composer is busy.
   trigger: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+    },
     borderRadius: "var(--conan-radius-pill)",
     height: "var(--conan-control-height)",
     pointerEvents: "auto",
+  },
+  menuItem: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+      ":focus": "var(--conan-wash-hover)",
+    },
+  },
+  menuItemSelected: {
+    backgroundColor: {
+      default: "var(--conan-wash-row-selected)",
+      ":hover": "var(--conan-wash-row-selected)",
+      ":focus": "var(--conan-wash-row-selected)",
+    },
   },
 });
 
@@ -70,17 +92,33 @@ export default function EffortChip({
         size: "md",
         xstyle: styles.trigger,
       }}
-      items={[
-        {
-          label: "Default effort",
-          onClick: () => onEffortSelect(DEFAULT_ID),
-        },
-        ...effortModes.map((mode) => ({
-          label: mode.label,
-          onClick: () => onEffortSelect(mode.id),
-        })),
-      ]}
       data-slot="effort-chip"
-    />
+    >
+      <DropdownMenuRadioGroup
+        value={effort}
+        onChange={onEffortSelect}
+        aria-label="Reasoning effort"
+      >
+        <DropdownMenuRadioItem
+          value={DEFAULT_ID}
+          label="Default effort"
+          xstyle={[
+            styles.menuItem,
+            effort === DEFAULT_ID && styles.menuItemSelected,
+          ]}
+        />
+        {effortModes.map((mode) => (
+          <DropdownMenuRadioItem
+            key={mode.id}
+            value={mode.id}
+            label={mode.label}
+            xstyle={[
+              styles.menuItem,
+              effort === mode.id && styles.menuItemSelected,
+            ]}
+          />
+        ))}
+      </DropdownMenuRadioGroup>
+    </DropdownMenu>
   );
 }
