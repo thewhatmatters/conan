@@ -8,7 +8,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { ExternalLink, File, Folder, RotateCcw } from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
-import { apiBase } from "../../lib/gateway.ts";
+import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
@@ -200,11 +200,17 @@ export function V2BrowserSurface({
         // heuristic, which is the only signal left in that case.
       }
       if (seq !== navSeq.current) return;
+      // Unreachable is real whatever renders it — a dead host is a dead host.
       if (probe && !probe.reachable) {
         setView({ kind: "unreachable", url, reason: probe.reason });
         return;
       }
-      if (probe && !probe.frameable) {
+      // Frameability is an IFRAME question, and it must not gate a native view.
+      // The probe asks "may localhost:5173 embed this?", which is meaningless
+      // when the page is about to load in a top-level webview that no
+      // `frame-ancestors` header applies to. Gating on it here is what made
+      // espn.com refuse inside a browser perfectly capable of showing it.
+      if (probe && !probe.frameable && !isTauri()) {
         setView({ kind: "refused", url, reason: probe.reason });
         return;
       }
@@ -235,6 +241,9 @@ export function V2BrowserSurface({
   // progress. With the probe vetting first this is belt-and-braces; without it
   // (stale gateway) it is the only failure signal there is.
   useEffect(() => {
+    // Iframe-only: with a native view there is no iframe to fire `load`, so
+    // this heuristic would declare every page unreachable after the timeout.
+    if (isTauri()) return;
     if (view.kind !== "ok" || !frameLoading) return;
     const url = view.url;
     const timer = setTimeout(() => {
