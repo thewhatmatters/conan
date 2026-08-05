@@ -5,6 +5,12 @@ import type { AgentCapabilities, AgentDriver, AgentEvent, AgentLaunchOpts } from
 import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
 import { prepareImageAttachments } from "./imageStaging.js";
 import {
+  EMPTY_SURFACE,
+  parseSurfaceFrame,
+  withBrowserContext,
+  type BrowserSurfaceState,
+} from "../browser/surface.js";
+import {
   capabilitiesFor,
   capabilitiesForReportedModel,
   getProvider,
@@ -116,6 +122,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
    *  denominator, which a reported model may refine but never erase (WHA-96).
    *  Null until the first prompt builds the driver. */
   let launchCapabilities: AgentCapabilities | null = null;
+  /** What this thread's Browser surface is showing (WHA-109). Reported by the
+   *  renderer over `browser-surface` frames; drives the per-turn auto-context
+   *  block. Socket-scoped on purpose — a URL must not outlive the surface. */
+  let browserSurface: BrowserSurfaceState = EMPTY_SURFACE;
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
@@ -292,9 +302,18 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         .then((d) => {
           const attachments = prepareFileAttachments(msg.attachments);
           const images = prepareImageAttachments(msg.images);
+          // WHA-109 auto-context: when the Browser surface is the active
+          // surface, the model is told WHICH page the user is looking at —
+          // never its contents, which stay behind an explicit read_browser
+          // call. Applied to the wire text only; `firstPrompt`/`lastPrompt`
+          // above keep the user's own words, so sidebar titles and the
+          // last-message preview never show this block.
           return d.send(
             {
-              text: serializeTurnPrompt({ text, attachments, images }),
+              text: withBrowserContext(
+                serializeTurnPrompt({ text, attachments, images }),
+                browserSurface,
+              ),
               attachments,
               images,
             },
@@ -324,6 +343,13 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       // Same provider-vocabulary contract as the prompt frame's
       // permissionMode — the driver floors ids it doesn't recognize.
       driver?.setPermissionMode(msg.mode.trim());
+    } else if (msg.type === "browser-surface") {
+      // WHA-109: the renderer reports what its Browser surface is showing.
+      // A malformed frame leaves the last good state alone rather than
+      // blanking it — a dropped report should not silently strip the model's
+      // context mid-conversation.
+      const next = parseSurfaceFrame(msg);
+      if (next) browserSurface = next;
     }
   });
 

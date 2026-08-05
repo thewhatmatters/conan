@@ -94,6 +94,13 @@ export type {
 } from "../../../src/agent/driver.ts";
 import type { AgentEvent, PermissionDecision } from "../../../src/agent/driver.ts";
 
+/** The Browser-surface report frame (WHA-109). Type-imported from the gateway's
+ *  own definition — same trick as the driver seam above, so the wire shape
+ *  cannot drift between the two programs. Types only: the module is erased at
+ *  build time and nothing node-typed enters the UI bundle. */
+export type { BrowserSurfaceState as BrowserSurfaceReport } from "../../../src/browser/surface.ts";
+import type { BrowserSurfaceState as BrowserSurfaceReport } from "../../../src/browser/surface.ts";
+
 export interface AgentChat {
   items: ChatItem[];
   /** Latest context-window POSITION (input + cached tokens) the provider
@@ -135,6 +142,10 @@ export interface AgentChat {
   setPermissionMode: (mode: string) => void;
   /** Surface a client-side launch/composer failure in the transcript. */
   reportError: (message: string) => void;
+  /** Tell the gateway what this thread's Browser surface is showing (WHA-109),
+   *  so the next turn can carry an auto-context line naming the page. Ambient
+   *  and additive — v1 never calls it, and not calling it changes nothing. */
+  reportBrowserSurface: (state: BrowserSurfaceReport) => void;
   /** The session driver's verified capability descriptor — the
    *  `{type:"capabilities"}` frame the gateway sends once when the first
    *  prompt builds the driver (US-007). Null until then; the pane falls back
@@ -229,6 +240,15 @@ export function useAgentChat(token: string | null): AgentChat {
     dispatch({ type: "client-error", message, now: Date.now() });
   }, []);
 
+  const reportBrowserSurface = useCallback((state: BrowserSurfaceReport) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== ws.OPEN) return;
+    // Fire-and-forget: this is ambient context, not a request. Dropping a
+    // report while the socket is down costs one turn's browser context, which
+    // is strictly better than queueing a URL that may be stale by reconnect.
+    ws.send(JSON.stringify({ type: "browser-surface", ...state }));
+  }, []);
+
   const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return;
@@ -250,6 +270,7 @@ export function useAgentChat(token: string | null): AgentChat {
     permissionMode: state.permissionMode,
     setPermissionMode,
     reportError,
+    reportBrowserSurface,
     capabilities: state.capabilities,
   };
 }
