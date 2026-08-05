@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildFileTree,
   fileIconKind,
+  rollupFileStatus,
   V2FileTree,
   type FileTreeNode,
 } from "../components/V2FileTree.tsx";
@@ -32,6 +33,13 @@ describe("v2 file presentation", () => {
     expect(tree[0]).toMatchObject({ isDir: true, status: "added" });
     expect(tree[0]?.children?.map((node) => node.name)).toEqual(["lib", "App.tsx"]);
     expect(tree[1]).toMatchObject({ status: "deleted" });
+  });
+
+  it("rolls uniform folder changes up without flattening them to modified", () => {
+    expect(rollupFileStatus(["added", "added"])).toBe("added");
+    expect(rollupFileStatus(["deleted", "deleted"])).toBe("deleted");
+    expect(rollupFileStatus(["added", "deleted"])).toBe("modified");
+    expect(rollupFileStatus([])).toBeUndefined();
   });
 });
 
@@ -136,6 +144,36 @@ describe("v2 Files and Diff surfaces", () => {
       expect.stringContaining(encodeURIComponent("/repo/src")),
       expect.anything(),
     );
+  });
+
+  it("rolls Files folder status up and exposes a failed lazy load", async () => {
+    let folderAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/fs/diff")) {
+        return response({
+          repo: true,
+          root: "/repo",
+          files: [{ path: "src/new.ts", status: "added", patch: "", truncated: false }],
+        });
+      }
+      const path = decodeURIComponent(new URL(url, "http://x").searchParams.get("path") ?? "");
+      if (path === "/repo/src") {
+        folderAttempts += 1;
+        return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
+      }
+      return response({
+        path: "/repo",
+        parent: null,
+        entries: [{ name: "src", path: "/repo/src", isDir: true, size: 0, mtimeMs: 1 }],
+      });
+    }));
+    render(<V2FilesSurface token="token" cwd="/repo" />);
+
+    const folder = await screen.findByRole("treeitem", { name: "src, added" });
+    fireEvent.click(folder);
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn’t load");
+    expect(folderAttempts).toBe(1);
   });
 
   it("shows a collapsible changed-file list with aligned addition and deletion counts", async () => {

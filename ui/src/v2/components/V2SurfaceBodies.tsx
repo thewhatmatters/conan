@@ -15,6 +15,7 @@ import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 import {
   buildFileTree,
+  rollupFileStatus,
   V2FileTree,
   type FileStatus,
   type FileTreeNode,
@@ -85,6 +86,7 @@ const styles = stylex.create({
   statAdd: { color: "var(--conan-diff-add-text)" },
   statDel: { color: "var(--conan-diff-del-text)" },
   statDivider: { color: "var(--conan-text-dim)" },
+  inlineError: { color: "var(--conan-color-error)" },
   fill: { flexGrow: 1, minHeight: 0, minWidth: 0, width: "100%" },
   terminal: {
     backgroundColor: "var(--conan-color-terminal)",
@@ -482,16 +484,27 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
   const [listing, setListing] = useState<FileListing | null>(null);
   const [cache, setCache] = useState<Record<string, FileListing>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [directoryErrors, setDirectoryErrors] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ path: string; content: string } | null>(null);
   const [statusByPath, setStatusByPath] = useState<Map<string, FileStatus>>(new Map());
 
   const loadDirectory = useCallback(async (path: string) => {
     if (!token) return;
-    const response = await fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(path)}`, {
-      headers: { "x-conan-token": token },
+    setDirectoryErrors((current) => {
+      const next = new Set(current);
+      next.delete(path);
+      return next;
     });
-    const data = (await response.json()) as FileListing;
-    setCache((current) => ({ ...current, [data.path]: data }));
+    try {
+      const response = await fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(path)}`, {
+        headers: { "x-conan-token": token },
+      });
+      if (!response.ok) throw new Error("Could not read folder.");
+      const data = (await response.json()) as FileListing;
+      setCache((current) => ({ ...current, [data.path]: data }));
+    } catch {
+      setDirectoryErrors((current) => new Set(current).add(path));
+    }
   }, [token]);
 
   const loadRoot = useCallback(() => {
@@ -500,6 +513,7 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
     setListing(null);
     setPreview(null);
     setExpanded(new Set());
+    setDirectoryErrors(new Set());
     Promise.all([
       fetch(apiBase() + `/api/fs/list?path=${encodeURIComponent(cwd)}`, {
         headers: { "x-conan-token": token },
@@ -559,7 +573,7 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
         const childStatuses = [...statusByPath.entries()]
           .filter(([changedPath]) => changedPath.startsWith(`${entry.path}/`))
           .map(([, status]) => status);
-        const status = directStatus ?? (childStatuses.length ? "modified" : undefined);
+        const status = directStatus ?? rollupFileStatus(childStatuses);
         return {
           id: entry.path,
           name: entry.name,
@@ -615,6 +629,9 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
               });
             }}
             onOpenFile={(node) => void openFile(node)}
+            renderTrailing={(node) => directoryErrors.has(node.path) ? (
+              <span role="status" {...stylex.props(styles.inlineError)}>Couldn’t load</span>
+            ) : null}
           />
         </div>
       )}

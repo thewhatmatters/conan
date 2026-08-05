@@ -97,7 +97,7 @@ const styles = stylex.create({
   },
   modified: { backgroundColor: "var(--conan-color-warning)" },
   added: { backgroundColor: "var(--conan-color-success)" },
-  untracked: { backgroundColor: "var(--conan-color-success)" },
+  untracked: { backgroundColor: "var(--conan-color-accent)" },
   deleted: { backgroundColor: "var(--conan-color-error)" },
   content: {
     minWidth: 0,
@@ -112,6 +112,11 @@ const CONFIG_EXTENSIONS = new Set(["json", "yaml", "yml", "toml"]);
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "svg", "webp"]);
 
 export type FileIconKind = "code" | "config" | "image" | "fallback";
+
+export function rollupFileStatus(statuses: FileStatus[]): FileStatus | undefined {
+  if (statuses.length === 0) return undefined;
+  return statuses.every((status) => status === statuses[0]) ? statuses[0] : "modified";
+}
 
 export function fileIconKind(name: string): FileIconKind {
   const lower = name.toLowerCase();
@@ -154,9 +159,7 @@ export function buildFileTree<T extends { path: string; status: FileStatus }>(fi
     for (const node of nodes) {
       const childStatuses = node.children ? finish(node.children) : [];
       if (node.isDir && childStatuses.length > 0) {
-        node.status = childStatuses.every((status) => status === childStatuses[0])
-          ? childStatuses[0]
-          : "modified";
+        node.status = rollupFileStatus(childStatuses);
       }
       if (node.status) statuses.push(node.status);
     }
