@@ -66,22 +66,25 @@ describe("v2 tokens.css", () => {
     expect(injectedCss()).toContain("--conan-crumb-menu-max-width: 68ch");
   });
 
-  it("gives v2 scroll regions one minimal token-driven native scrollbar", () => {
+  it("auto-hides v2 scrollbars at rest and reveals them without resizing", () => {
     const css = injectedCss();
     expect(css).toContain("--conan-scrollbar-size: var(--conan-space-1h)");
     expect(css).toMatch(
-      /@supports not selector\(::-webkit-scrollbar\)\s*{\s*\[data-astryx-theme=["']neutral["']\] \*\s*{[^}]*scrollbar-color:\s*var\(--conan-scrollbar-thumb\) transparent[^}]*scrollbar-width:\s*thin/s,
+      /@supports not selector\(::-webkit-scrollbar\)\s*{\s*\[data-astryx-theme=["']neutral["']\] \*\s*{[^}]*scrollbar-color:\s*transparent transparent[^}]*scrollbar-width:\s*thin[^}]*}\s*\[data-astryx-theme=["']neutral["']\] \*:hover\s*{[^}]*scrollbar-color:\s*var\(--conan-scrollbar-thumb-hover\) transparent/s,
     );
     expect(css).toMatch(
       /\*::-webkit-scrollbar\s*{[^}]*width:\s*var\(--conan-scrollbar-size\)/s,
     );
     expect(css).toMatch(
-      /\*::-webkit-scrollbar-thumb\s*{[^}]*background-color:\s*var\(--conan-scrollbar-thumb\)[^}]*border-radius:\s*var\(--conan-radius-full\)/s,
+      /\*::-webkit-scrollbar-thumb\s*{[^}]*background-color:\s*transparent[^}]*border-radius:\s*var\(--conan-radius-full\)[^}]*transition:\s*background-color var\(--conan-duration-fast\) var\(--conan-ease\)/s,
     );
     expect(css).toMatch(/\*::-webkit-scrollbar-thumb:hover\s*{/);
     expect(css).toMatch(/\*::-webkit-scrollbar-thumb:active\s*{/);
     expect(css).toMatch(
       /\*::-webkit-scrollbar-button\s*{[^}]*display:\s*none[^}]*height:\s*0[^}]*width:\s*0/s,
+    );
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*{\s*\[data-astryx-theme=["']neutral["']\] \*::-webkit-scrollbar-thumb\s*{[^}]*transition:\s*none/s,
     );
   });
 
