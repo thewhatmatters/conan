@@ -95,6 +95,17 @@ describe("v2 tokens.css", () => {
     expect(css).toMatch(/\[data-slot=["']sidebar-panel["']\]\s*{[^}]*display:\s*none/s);
   });
 
+  it("frosts the pane header off the well's own tone (WHA-115)", () => {
+    const css = injectedCss();
+    // The glass has to be MIXED off `--conan-color-content`, not written as a
+    // literal: the bar overlays the well, so a hard-coded tone would drift the
+    // moment the well moves and the frosted bar would read as a foreign patch.
+    expect(css).toMatch(
+      /--conan-glass-tint:\s*color-mix\(in srgb, var\(--conan-color-content\) 82%, transparent\)/,
+    );
+    expect(css).toContain("--conan-glass-blur: 16px");
+  });
+
   it("lets composer controls yield space to the send action at narrow widths", () => {
     const css = injectedCss();
     expect(css).toMatch(

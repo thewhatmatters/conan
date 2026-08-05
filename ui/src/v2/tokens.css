@@ -70,6 +70,27 @@
   --conan-wash-hover: var(--color-overlay-hover); /* #FFFFFF0D */
   --conan-wash-pressed: var(--color-overlay-pressed); /* #FFFFFF1A */
 
+  /* -- Glass (WHA-115) ---------------------------------------------------
+   * The pane header bars — SecondaryBar (Actions · Open · Commit & Push) and
+   * the docked-surface header — sit OVER their pane's scroll area rather than
+   * in a row above it, so whatever scrolls under stays faintly visible.
+   *
+   * Same construction Astryx already uses for the composer dock at the FOOT
+   * of the well (`ChatLayout` blurLayer: backdrop blur + a translucent tone),
+   * mirrored to the head. Mixed off `--conan-color-content` rather than
+   * written as a literal so the bar tracks the well if the well ever moves.
+   *
+   * 82% is a readability budget, not a taste call. The bar's own text step is
+   * the shell's dimmest (`--conan-icon-muted` / Astryx `secondary`, #A3A3A3),
+   * so it sets the floor: at 82% the labels hold AA (4.5:1) over any backdrop
+   * up to ~#959595. Everything v2 paints in the well is far below that — the
+   * well is #262626 and a 16px blur averages even #FAFAFA transcript glyphs
+   * down to the low #4xxxxx. A LARGE solid near-white region behind the bar
+   * would fail, and no v2 surface draws one; if one ever lands, raise this
+   * percentage rather than darkening the labels. */
+  --conan-glass-tint: color-mix(in srgb, var(--conan-color-content) 82%, transparent);
+  --conan-glass-blur: 16px;
+
   /* -- Text --------------------------------------------------------------
    * FOUR steps, not three. `strong` (#FFFFFF) is reserved for the two places
    * the artboard shouts — the "Projects" section label and the breadcrumb LEAF

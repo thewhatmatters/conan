@@ -42,6 +42,11 @@ const styles = stylex.create({
     flexGrow: 1,
     height: "100%",
     minHeight: 0,
+    // WHA-115 — ChatLayout's root IS the scroll container, and the pane's
+    // header is now a glass bar overlaying its top. Padding on a scroll
+    // container belongs to the scrollable area, so this starts the first
+    // message below the bar while letting the transcript slide under it.
+    paddingBlockStart: "var(--conan-secondary-bar-height)",
   },
   // ONE measure for the transcript and the composer, so message text and the
   // input share a vertical axis. Applied to the CONTENT, not to ChatLayout —

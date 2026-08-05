@@ -37,13 +37,30 @@ const styles = stylex.create({
     minHeight: 0,
     minWidth: 0,
     overflow: "clip",
+    // Containing block for the glass header that overlays this pane.
+    position: "relative",
   },
   paneBody: { flexGrow: 1, minHeight: 0, minWidth: 0, overflow: "clip" },
+  // WHA-115 — the header is a GLASS OVERLAY, not a row above the body. It is
+  // lifted out of flow so the pane's scroll area starts at y=0 and its content
+  // passes under the bar; the body keeps clear of it with a top inset equal to
+  // this height (`--conan-secondary-bar-height`, applied by each pane body).
+  //
+  // Same construction as Astryx's composer dock at the foot of the well, in
+  // reverse. Unlike the dock there is no mask fade: the bar ends on the 1px
+  // `headerRule`, which is what keeps a hard, readable edge between chrome and
+  // content instead of a smear.
   paneHeader: {
+    backdropFilter: "blur(var(--conan-glass-blur))",
+    WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
+    backgroundColor: "var(--conan-glass-tint)",
     boxSizing: "border-box",
-    flexShrink: 0,
     height: "var(--conan-secondary-bar-height)",
+    insetInline: 0,
+    position: "absolute",
+    top: 0,
     width: "100%",
+    zIndex: 2,
   },
   headerRule: {
     backgroundColor: "var(--conan-color-border)",
@@ -51,7 +68,9 @@ const styles = stylex.create({
     insetInline: 0,
     position: "absolute",
     top: "calc(var(--conan-secondary-bar-height) - var(--conan-border-width))",
-    zIndex: 1,
+    // Above the glass (z 2), so the bar's bottom edge stays a crisp line
+    // rather than being painted over by the panel it belongs to.
+    zIndex: 3,
   },
   dockHeader: {
     paddingInline: "var(--conan-space-4)",
@@ -84,6 +103,8 @@ const styles = stylex.create({
     minHeight: 0,
     minWidth: 0,
     overflow: "clip",
+    // Containing block for this pane's own glass header (WHA-115).
+    position: "relative",
   },
   standalone: { flexBasis: "auto", flexGrow: 1 },
   hidden: { display: "none" },

@@ -22,16 +22,33 @@ import {
 } from "./V2FileTree.tsx";
 
 const styles = stylex.create({
+  // WHA-115 — the pane header is a glass overlay sitting ON this box, not a
+  // row above it. The top inset is what keeps the first row clear of the bar
+  // while still letting everything below scroll under it: padding-block-start
+  // on a scroll container is part of the scrollable area, so the content slides
+  // under the glass rather than stopping at it.
+  //
+  // Every `body` consumer therefore uses LONGHAND padding below — a `padding`
+  // shorthand in a later style would silently reset this inset and hide the
+  // surface's first row under the bar.
   body: {
     backgroundColor: "var(--conan-color-content)",
+    boxSizing: "border-box",
     color: "var(--conan-text-primary)",
     height: "100%",
     minHeight: 0,
     minWidth: 0,
     overflow: "auto",
+    paddingBlockStart: "var(--conan-secondary-bar-height)",
     width: "100%",
   },
-  padded: { padding: "var(--conan-space-4)" },
+  // Block-start restates the header inset so the surface keeps the same gap
+  // below the bar it had when the bar was a row above it.
+  padded: {
+    paddingBlockEnd: "var(--conan-space-4)",
+    paddingBlockStart: "calc(var(--conan-secondary-bar-height) + var(--conan-space-4))",
+    paddingInline: "var(--conan-space-4)",
+  },
   surfaceHeader: {
     alignItems: "center",
     borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
@@ -90,7 +107,9 @@ const styles = stylex.create({
   fill: { flexGrow: 1, minHeight: 0, minWidth: 0, width: "100%" },
   terminal: {
     backgroundColor: "var(--conan-color-terminal)",
-    padding: "var(--conan-space-2)",
+    paddingBlockEnd: "var(--conan-space-2)",
+    paddingBlockStart: "calc(var(--conan-secondary-bar-height) + var(--conan-space-2))",
+    paddingInline: "var(--conan-space-2)",
   },
   frame: {
     backgroundColor: "var(--conan-color-bg)",
