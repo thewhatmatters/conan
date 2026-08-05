@@ -11,6 +11,16 @@ import {
   type BrowserSurfaceState,
 } from "../browser/surface.js";
 import {
+  closeBrowserToolSession,
+  mcpConfigFor,
+  openBrowserToolSession,
+} from "../browser/mcp.js";
+
+/** The loopback port the CLI reaches Conan's tool endpoint on — the same one
+ *  the gateway binds (src/gateway/index.ts), read from the same env so a
+ *  non-default `CONAN_PORT` (every isolated QA stack) still resolves. */
+const GATEWAY_PORT = Number(process.env.CONAN_PORT ?? 3747);
+import {
   capabilitiesFor,
   capabilitiesForReportedModel,
   getProvider,
@@ -126,6 +136,12 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
    *  renderer over `browser-surface` frames; drives the per-turn auto-context
    *  block. Socket-scoped on purpose — a URL must not outlive the surface. */
   let browserSurface: BrowserSurfaceState = EMPTY_SURFACE;
+  /** This conversation's private `read_browser` endpoint (WHA-109). Minted per
+   *  socket and torn down with it, so a tool call can only ever resolve to the
+   *  Browser surface of the thread that made it. Reads `browserSurface` through
+   *  a closure rather than a snapshot — the tool must see the page the user is
+   *  on when the model calls it, not the one they were on at launch. */
+  const toolSessionKey = openBrowserToolSession(() => browserSurface);
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
@@ -278,6 +294,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       if (typeof msg.permissionMode === "string" && msg.permissionMode.trim()) {
         opts.permissionMode = msg.permissionMode.trim();
       }
+      // WHA-109: point this session's CLI at its own `read_browser` endpoint.
+      // Set on every prompt (the driver only reads it at launch) so it is never
+      // missed on the first turn, whatever order the frames arrive in.
+      opts.mcpConfig = mcpConfigFor(GATEWAY_PORT, toolSessionKey);
       if (typeof msg.effort === "string" && msg.effort.trim()) {
         opts.effort = msg.effort.trim();
       } else if (opts.resume) {
@@ -354,6 +374,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   });
 
   const cleanup = (): void => {
+    // Unconditional, and before the driver check: a socket that closed without
+    // ever prompting still minted a key, and leaving it registered would leak
+    // a live tool endpoint for a conversation that no longer exists.
+    closeBrowserToolSession(toolSessionKey);
     if (!driver) return;
     driver.dispose();
     active.delete(driver);

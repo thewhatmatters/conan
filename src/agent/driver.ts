@@ -49,6 +49,11 @@ export interface AgentLaunchOpts {
    *  the full context server-side. Claude forks the resumed conversation into
    *  a NEW session id, reported by the system init event as usual. */
   resume?: string;
+  /** `--mcp-config` JSON exposing Conan's own tools to this session (WHA-109's
+   *  `read_browser`). Optional and provider-agnostic by design: a driver whose
+   *  CLI has no MCP support simply ignores it, and the session runs without the
+   *  tool rather than failing to launch. */
+  mcpConfig?: string;
 }
 
 /** One permission mode a provider actually supports, in its OWN vocabulary —

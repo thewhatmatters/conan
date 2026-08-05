@@ -2,8 +2,8 @@
  * Active-Browser-surface state, per agent session (WHA-109).
  *
  * The renderer owns what the Browser surface is showing; the gateway needs it
- * for two jobs — the auto-context block prepended to each turn, and (next) the
- * `read_browser` tool. So the surface reports its state up the existing
+ * for two jobs — the auto-context block prepended to each turn, and the
+ * `read_browser` tool in ./mcp.ts. So the surface reports its state up the existing
  * `/ws/agent` socket and the gateway holds the latest frame per session.
  *
  * State is deliberately in-memory and socket-scoped. A browser surface is
@@ -89,7 +89,10 @@ export function browserContextBlock(state: BrowserSurfaceState): string | null {
   const headline = title
     ? `Active browser surface: ${title} — ${state.url}`
     : `Active browser surface: ${state.url}`;
-  return `${headline}\n(The user is looking at this page. Its text was not sent — call read_browser to read it.)`;
+  // Names the tool as the CLI actually exposes it — MCP namespaces every tool
+  // as mcp__<server>__<name>, so a bare `read_browser` would be a hint the
+  // model has to guess its way past.
+  return `${headline}\n(The user is looking at this page. Its text was not sent — call mcp__conan__read_browser to read it.)`;
 }
 
 /** Prepend the block to a turn's text, clearly fenced off from the user's words. */

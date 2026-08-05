@@ -64,7 +64,7 @@ test("browserContextBlock: names the page and says the text was withheld", () =>
   assert.match(block, /Active browser surface: Dashboard — http:\/\/localhost:5173\//);
   // The ticket is explicit that page text is never auto-sent; the block must
   // point at the tool instead of implying the model already has the content.
-  assert.match(block, /read_browser/);
+  assert.match(block, /mcp__conan__read_browser/);
 });
 
 test("browserContextBlock: a failed page is reported as failed, not described", () => {
