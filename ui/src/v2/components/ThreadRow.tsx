@@ -6,9 +6,10 @@
  * placeholder rows from `ProjectTree`.
  *
  * The artboard's row is 68px tall: a 40px provider avatar in a fixed lane, then
- * a two-line title/subtitle column. Selection is stated twice — a translucent
- * wash across the row AND a 2px accent bar riding its bottom edge, inset 12px
- * so it reads as underlining the content rather than the container.
+ * a two-line title/subtitle column. Like Astryx TabList, the translucent wash
+ * belongs to hover; selection is persistent and independent via the 2px accent
+ * bar riding the bottom edge, inset 12px so it underlines the content rather
+ * than filling the container.
  *
  * VERTICAL LANES: the avatar is a fixed 40px `flexShrink: 0` slot, so titles
  * line up across every row regardless of avatar content (Paper's repeated-row
@@ -62,7 +63,10 @@ export interface ThreadRowProps {
 
 const styles = stylex.create({
   row: {
-    backgroundColor: "transparent",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+    },
     borderRadius: "var(--conan-radius-md)",
     flexShrink: 0,
     height: "var(--conan-row-height)",
@@ -80,9 +84,6 @@ const styles = stylex.create({
     minWidth: 0,
     padding: 0,
     textAlign: "start",
-  },
-  rowSelected: {
-    backgroundColor: "var(--conan-wash-row-selected)",
   },
   avatar: {
     backgroundColor: "var(--conan-wash-raised)",
@@ -186,7 +187,7 @@ export default function ThreadRow({
   const row = (
     <HStack
       align="center"
-      xstyle={[styles.row, isSelected && styles.rowSelected]}
+      xstyle={styles.row}
       data-slot="thread-row"
       data-thread-id={id ?? title}
       data-selected={isSelected ? "true" : undefined}
