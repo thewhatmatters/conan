@@ -19,6 +19,7 @@ function surface(over: Partial<BrowserSurfaceState> = {}): BrowserSurfaceState {
     title: "A page",
     problem: null,
     loading: false,
+    navigatedAway: false,
     ...over,
   };
 }
@@ -229,6 +230,25 @@ test("metadata carries the same mid-probe caveat", async () => {
   try {
     const result = await callReadBrowser("metadata", surface({ url, title: "Docs", loading: true }));
     assert.match(body(result), /still loading this URL/);
+  } finally {
+    server.close();
+  }
+});
+
+test("read_browser refuses a stale URL rather than describing the wrong page", async () => {
+  // The exact shape of Randy's bug: reading state.url here would return the
+  // page he STARTED on, which the model then summarizes as if it were on screen.
+  const { server, url } = await serve(
+    "<html><head><title>Portal</title></head><body><p>Language portal, not an article.</p></body></html>",
+  );
+  try {
+    for (const scope of ["fullText", "metadata"] as const) {
+      const result = await callReadBrowser(scope, surface({ url, navigatedAway: true }));
+      assert.equal(result.isError, true, `${scope} must refuse a stale URL`);
+      assert.doesNotMatch(body(result), /Language portal/, "must not leak the stale page's text");
+      assert.match(body(result), /cannot read the current URL/);
+      assert.match(body(result), /paste its URL into the Browser surface/);
+    }
   } finally {
     server.close();
   }

@@ -19,6 +19,7 @@ test("parseSurfaceFrame: accepts a well-formed frame and normalizes the URL", ()
     title: "Vite App",
     problem: null,
     loading: false,
+    navigatedAway: false,
   });
 });
 
@@ -29,6 +30,7 @@ test("parseSurfaceFrame: an empty URL is a valid empty surface, not a rejection"
     title: null,
     problem: null,
     loading: false,
+    navigatedAway: false,
   });
 });
 
@@ -50,11 +52,25 @@ test("parseSurfaceFrame: active defaults to false unless strictly true", () => {
 test("browserContextBlock: silent unless the surface is active with a URL", () => {
   assert.equal(browserContextBlock(EMPTY_SURFACE), null);
   assert.equal(
-    browserContextBlock({ url: "http://a.test/", active: false, title: "A", problem: null, loading: false }),
+    browserContextBlock({
+      url: "http://a.test/",
+      active: false,
+      title: "A",
+      problem: null,
+      loading: false,
+      navigatedAway: false,
+    }),
     null,
   );
   assert.equal(
-    browserContextBlock({ url: null, active: true, title: null, problem: null, loading: false }),
+    browserContextBlock({
+      url: null,
+      active: true,
+      title: null,
+      problem: null,
+      loading: false,
+      navigatedAway: false,
+    }),
     null,
   );
 });
@@ -66,6 +82,7 @@ test("browserContextBlock: names the page and says the text was withheld", () =>
     title: "Dashboard",
     problem: null,
     loading: false,
+    navigatedAway: false,
   })!;
   assert.match(block, /Active browser surface: Dashboard — http:\/\/localhost:5173\//);
   // The ticket is explicit that page text is never auto-sent; the block must
@@ -80,6 +97,7 @@ test("browserContextBlock: a failed page is reported as failed, not described", 
     title: null,
     problem: "X-Frame-Options: DENY forbids embedding",
     loading: false,
+    navigatedAway: false,
   })!;
   assert.match(block, /did not load/);
   assert.match(block, /Do not describe its contents/);
@@ -93,13 +111,21 @@ test("browserContextBlock: a hostile title cannot flood the prompt", () => {
     title: "x".repeat(5_000),
     problem: null,
     loading: false,
+    navigatedAway: false,
   })!;
   assert.ok(block.length < 500);
   assert.match(block, /…/);
 });
 
 test("withBrowserContext: prepends when active, passes through untouched otherwise", () => {
-  const active = { url: "http://a.test/", active: true, title: "A", problem: null, loading: false };
+  const active = {
+    url: "http://a.test/",
+    active: true,
+    title: "A",
+    problem: null,
+    loading: false,
+    navigatedAway: false,
+  };
   assert.match(withBrowserContext("what is this?", active), /^Active browser surface: A/);
   assert.match(withBrowserContext("what is this?", active), /what is this\?$/);
   assert.equal(withBrowserContext("unchanged", EMPTY_SURFACE), "unchanged");
@@ -115,6 +141,7 @@ test("a URL still being probed is reported as loading, not as a live page", () =
     title: null,
     problem: null,
     loading: true,
+    navigatedAway: false,
   })!;
   assert.match(block, /still loading/);
   assert.match(block, /Do not describe its contents/);
@@ -129,6 +156,7 @@ test("loading outranks a stale problem from the previous page", () => {
     title: null,
     problem: "X-Frame-Options: DENY forbids embedding",
     loading: true,
+    navigatedAway: false,
   })!;
   assert.match(block, /still loading/);
   assert.doesNotMatch(block, /DENY/);
@@ -138,4 +166,48 @@ test("parseSurfaceFrame carries loading through, defaulting false", () => {
   assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true, loading: true })?.loading, true);
   assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true })?.loading, false);
   assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true, loading: "yes" })?.loading, false);
+});
+
+test("a URL gone stale by in-frame navigation refuses to describe the page", () => {
+  // Randy's report: he opened wikipedia.com, clicked through to Neil Armstrong,
+  // and the model confidently summarized the *language portal* — because that
+  // is what the stale URL pointed at. The block must now refuse outright.
+  const block = browserContextBlock({
+    url: "https://www.wikipedia.org/",
+    active: true,
+    title: "Wikipedia",
+    problem: null,
+    loading: false,
+    navigatedAway: true,
+  })!;
+  assert.match(block, /followed links inside it/);
+  assert.match(block, /Do NOT describe or summarize/);
+  assert.match(block, /where they started, not where they are/);
+  // It must tell the user how to recover, not just refuse.
+  assert.match(block, /paste it into the Browser surface's URL bar/);
+  // And it must NOT hand over the stale title as if it were current.
+  assert.doesNotMatch(block, /Active browser surface: Wikipedia —/);
+});
+
+test("navigatedAway outranks problem but yields to loading", () => {
+  const base = { url: "https://a.test/", active: true, title: null, problem: "stale refusal" };
+  assert.match(
+    browserContextBlock({ ...base, loading: false, navigatedAway: true })!,
+    /followed links inside it/,
+  );
+  // An explicit re-navigation is in flight — that supersedes the stale state.
+  assert.match(
+    browserContextBlock({ ...base, loading: true, navigatedAway: true })!,
+    /still loading/,
+  );
+});
+
+test("parseSurfaceFrame carries navigatedAway, defaulting false", () => {
+  const on = parseSurfaceFrame({ url: "http://a.test/", active: true, navigatedAway: true });
+  assert.equal(on?.navigatedAway, true);
+  assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true })?.navigatedAway, false);
+  assert.equal(
+    parseSurfaceFrame({ url: "http://a.test/", active: true, navigatedAway: "yes" })?.navigatedAway,
+    false,
+  );
 });

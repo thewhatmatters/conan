@@ -112,6 +112,19 @@ export async function callReadBrowser(
       true,
     );
   }
+  if (state.navigatedAway) {
+    // Reading state.url here is precisely the bug this guards: it returns the
+    // page the user STARTED on, which the model then summarizes as if it were
+    // on screen. Refusing with the fix is worth more than answering wrongly.
+    return text(
+      `The user opened ${state.url} in the Browser surface and has since followed links ` +
+        `inside it. Conan cannot read the current URL — the frame is cross-origin, so its ` +
+        `location is not visible. Reading ${state.url} would describe the page they STARTED ` +
+        `on, not the one on screen. Ask the user which page they are on, or ask them to ` +
+        `paste its URL into the Browser surface's URL bar, then try again.`,
+      true,
+    );
+  }
   if (state.problem) {
     return text(
       `The Browser surface is pointed at ${state.url} but the page did not load: ` +

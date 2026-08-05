@@ -43,6 +43,17 @@ export interface BrowserSurfaceState {
    * window is up to the probe timeout — so it has to be represented.
    */
   loading: boolean;
+  /**
+   * The user followed a link INSIDE the framed page, so `url` is where they
+   * started, not where they are. A cross-origin frame fires `load` on each
+   * internal navigation but never surrenders its new location, so this is the
+   * whole of what Conan can know: that the URL went stale.
+   *
+   * It exists because the alternative shipped a confident lie — a reader
+   * navigated Wikipedia's portal to an article, and the model described the
+   * portal in detail while the article was on screen.
+   */
+  navigatedAway: boolean;
 }
 
 export const EMPTY_SURFACE: BrowserSurfaceState = {
@@ -51,6 +62,7 @@ export const EMPTY_SURFACE: BrowserSurfaceState = {
   title: null,
   problem: null,
   loading: false,
+  navigatedAway: false,
 };
 
 /**
@@ -84,6 +96,7 @@ export function parseSurfaceFrame(value: unknown): BrowserSurfaceState | null {
     title,
     problem,
     loading: frame.loading === true,
+    navigatedAway: frame.navigatedAway === true,
   };
 }
 
@@ -102,6 +115,11 @@ export function browserContextBlock(state: BrowserSurfaceState): string | null {
   // claiming either "it loaded" or "it failed" would be a guess.
   if (state.loading) {
     return `Active browser surface: ${state.url} — still loading, nothing is on screen for it yet. Do not describe its contents; call mcp__conan__read_browser if you need to know what is at that URL.`;
+  }
+  // Ahead of everything but `loading`: a stale URL is worse than no URL,
+  // because the model will describe it confidently and be wrong.
+  if (state.navigatedAway) {
+    return `Active browser surface: the user opened ${state.url} and has since followed links inside it. Conan cannot see which page is displayed now (the frame is cross-origin). Do NOT describe or summarize the page — ${state.url} is where they started, not where they are. Ask the user for the current URL, or ask them to paste it into the Browser surface's URL bar.`;
   }
   if (state.problem) {
     return `Active browser surface: ${state.url} — this page did not load (${state.problem}). Do not describe its contents.`;

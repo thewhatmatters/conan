@@ -73,6 +73,7 @@ describe("V2BrowserSurface", () => {
       title: null,
       problem: null,
       loading: false,
+      navigatedAway: false,
     });
   });
 
@@ -94,6 +95,7 @@ describe("V2BrowserSurface", () => {
         title: "Local app",
         problem: null,
         loading: false,
+        navigatedAway: false,
       }),
     );
   });
@@ -126,6 +128,7 @@ describe("V2BrowserSurface", () => {
         title: null,
         problem: "X-Frame-Options: DENY forbids embedding",
         loading: false,
+        navigatedAway: false,
       }),
     );
   });
@@ -149,6 +152,7 @@ describe("V2BrowserSurface", () => {
         title: null,
         problem: "connection refused",
         loading: false,
+        navigatedAway: false,
       }),
     );
   });
@@ -242,6 +246,7 @@ describe("V2BrowserSurface", () => {
         title: null,
         problem: null,
         loading: true,
+        navigatedAway: false,
       }),
     );
 
@@ -251,5 +256,60 @@ describe("V2BrowserSurface", () => {
         expect.objectContaining({ loading: false, title: "Late" }),
       ),
     );
+  });
+
+  it("detects in-frame navigation and stops vouching for the stale URL", async () => {
+    // Randy's report: opened wikipedia.com, clicked through to an article, and
+    // the model summarized the *portal* because the URL never changed. A
+    // cross-origin frame fires `load` on each internal navigation but never
+    // reveals where it went — the second load is the whole signal we get.
+    const onStateChange = vi.fn();
+    render(<V2BrowserSurface token="t" active onStateChange={onStateChange} />);
+    navigateTo("https://www.wikipedia.org");
+
+    const frame = await screen.findByTitle("Local app");
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ navigatedAway: false, title: "Local app" }),
+      ),
+    );
+    expect(screen.queryByText(/followed a link inside this page/)).toBeNull();
+
+    // First load = the URL we asked for. Second = the user following a link.
+    fireEvent.load(frame);
+    fireEvent.load(frame);
+
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          url: "https://www.wikipedia.org/",
+          navigatedAway: true,
+          // The stale title must be withheld too — it named the start page.
+          title: null,
+        }),
+      ),
+    );
+    // And the user is told, since the URL bar can no longer be trusted.
+    expect(screen.getByText(/Conan can't read the current address/)).toBeInTheDocument();
+  });
+
+  it("an explicit navigation clears the stale flag", async () => {
+    const onStateChange = vi.fn();
+    render(<V2BrowserSurface token="t" active onStateChange={onStateChange} />);
+    navigateTo("https://www.wikipedia.org");
+    const frame = await screen.findByTitle("Local app");
+    fireEvent.load(frame);
+    fireEvent.load(frame);
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ navigatedAway: true })),
+    );
+
+    navigateTo("https://example.com");
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ url: "https://example.com/", navigatedAway: false }),
+      ),
+    );
+    expect(screen.queryByText(/followed a link inside this page/)).toBeNull();
   });
 });

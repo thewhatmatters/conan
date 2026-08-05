@@ -40,6 +40,13 @@ const styles = stylex.create({
     justifyContent: "flex-start",
     width: "100%",
   },
+  staleNotice: {
+    backgroundColor: "var(--conan-wash-hover)",
+    borderRadius: "var(--conan-radius-md)",
+    paddingBlock: "var(--conan-space-2)",
+    paddingInline: "var(--conan-space-3)",
+    width: "100%",
+  },
   preview: {
     backgroundColor: "var(--conan-color-bg)",
     borderRadius: "var(--conan-radius-md)",
@@ -159,6 +166,13 @@ export function V2BrowserSurface({
   // Bumped per navigation so Refresh remounts the frame even for the same URL.
   const [frameKey, setFrameKey] = useState(0);
   const [frameLoading, setFrameLoading] = useState(false);
+  // A cross-origin frame fires `load` on every navigation inside it but never
+  // tells us where it went (verified: the second load fires, reading
+  // contentWindow.location throws). So we can know the user has moved off the
+  // URL in the bar without knowing their new one — which is exactly enough to
+  // stop describing the wrong page.
+  const [navigatedAway, setNavigatedAway] = useState(false);
+  const frameLoads = useRef(0);
   // Guards async probe/read results against a newer navigation having started.
   const navSeq = useRef(0);
 
@@ -191,6 +205,8 @@ export function V2BrowserSurface({
         return;
       }
       setFrameLoading(true);
+      frameLoads.current = 0;
+      setNavigatedAway(false);
       setFrameKey((key) => key + 1);
       setView({ kind: "ok", url });
       // The title can only come from the gateway — a cross-origin frame will
@@ -236,14 +252,15 @@ export function V2BrowserSurface({
     onStateChange({
       url: view.kind === "empty" ? null : view.url,
       active,
-      title: view.kind === "ok" ? title : null,
+      title: view.kind === "ok" && !navigatedAway ? title : null,
       problem,
+      navigatedAway: view.kind === "ok" && navigatedAway,
       // `checking` reports as loading rather than as a live page: the probe has
       // no verdict yet, and a turn sent inside that window must not be told a
       // page is on screen that may still resolve to a refusal.
       loading: view.kind === "checking",
     });
-  }, [view, title, active, onStateChange]);
+  }, [view, title, active, navigatedAway, onStateChange]);
 
   const currentUrl = view.kind === "empty" ? null : view.url;
   const go = useCallback(() => void navigate(draft), [draft, navigate]);
@@ -318,13 +335,33 @@ export function V2BrowserSurface({
         </VStack>
       ) : null}
 
+      {/* Randy's report: the URL bar silently kept showing the page he STARTED
+          on after he followed links inside Wikipedia. We cannot read the new
+          URL from a cross-origin frame, so the fix is to stop implying we
+          know it — say so to the user, and to the agent (navigatedAway). */}
+      {view.kind === "ok" && navigatedAway ? (
+        <VStack xstyle={styles.staleNotice} data-slot="browser-stale-url">
+          <Text type="supporting" color="secondary">
+            You've followed a link inside this page. Conan can't read the current
+            address — the bar still shows where you started. Paste the page's URL
+            above to re-sync it, and to let the agent read it.
+          </Text>
+        </VStack>
+      ) : null}
+
       {view.kind === "ok" ? (
         <VStack xstyle={styles.fill}>
           <iframe
             key={frameKey}
             src={view.url}
             title={title ?? "Browser surface"}
-            onLoad={() => setFrameLoading(false)}
+            onLoad={() => {
+              setFrameLoading(false);
+              // The first load is the URL we asked for; any later one is the
+              // user following a link inside the page.
+              frameLoads.current += 1;
+              if (frameLoads.current > 1) setNavigatedAway(true);
+            }}
             {...stylex.props(styles.frame)}
           />
         </VStack>
