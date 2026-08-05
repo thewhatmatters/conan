@@ -66,6 +66,25 @@ describe("v2 tokens.css", () => {
     expect(injectedCss()).toContain("--conan-crumb-menu-max-width: 68ch");
   });
 
+  it("gives v2 scroll regions one minimal token-driven native scrollbar", () => {
+    const css = injectedCss();
+    expect(css).toContain("--conan-scrollbar-size: var(--conan-space-1h)");
+    expect(css).toMatch(
+      /@supports not selector\(::-webkit-scrollbar\)\s*{\s*\[data-astryx-theme=["']neutral["']\] \*\s*{[^}]*scrollbar-color:\s*var\(--conan-scrollbar-thumb\) transparent[^}]*scrollbar-width:\s*thin/s,
+    );
+    expect(css).toMatch(
+      /\*::-webkit-scrollbar\s*{[^}]*width:\s*var\(--conan-scrollbar-size\)/s,
+    );
+    expect(css).toMatch(
+      /\*::-webkit-scrollbar-thumb\s*{[^}]*background-color:\s*var\(--conan-scrollbar-thumb\)[^}]*border-radius:\s*var\(--conan-radius-full\)/s,
+    );
+    expect(css).toMatch(/\*::-webkit-scrollbar-thumb:hover\s*{/);
+    expect(css).toMatch(/\*::-webkit-scrollbar-thumb:active\s*{/);
+    expect(css).toMatch(
+      /\*::-webkit-scrollbar-button\s*{[^}]*display:\s*none[^}]*height:\s*0[^}]*width:\s*0/s,
+    );
+  });
+
   it("collapses the fixed sidebar below the shell breakpoint (US-506)", () => {
     const css = injectedCss();
     expect(css).toContain("--conan-shell-min-width: 960px");

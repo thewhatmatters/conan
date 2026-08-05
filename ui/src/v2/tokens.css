@@ -242,7 +242,55 @@
   --conan-indicator-height: 2px; /* selected-row bar */
   --conan-window-control-size: 16px; /* RM-0 / RN-0 / RO-0 */
 
+  /* Native scrollbars stay visible and operable, but recede into the shell.
+   * Reuse the existing 6px spacing step and neutral hierarchy so every scroll
+   * region gets one consistent treatment without component-local colours. */
+  --conan-scrollbar-size: var(--conan-space-1h);
+  --conan-scrollbar-thumb: var(--conan-color-border);
+  --conan-scrollbar-thumb-hover: var(--conan-color-border-strong);
+  --conan-scrollbar-thumb-active: var(--conan-text-dim);
+
   --conan-shell-min-width: 960px; /* below this the sidebar collapses (T6) */
+}
+
+/* WHA-110: minimal native vertical scrollbars throughout v2. Firefox does not
+ * expose WebKit's stateful pseudos, so keep its native implementation thin and
+ * token-coloured. Chromium/WebKit get the exact token-sized rail and hover /
+ * active states below. Tracks, corners, and legacy arrow buttons stay
+ * transparent so the thumb is the only visible affordance. */
+@supports not selector(::-webkit-scrollbar) {
+  [data-astryx-theme="neutral"] * {
+    scrollbar-color: var(--conan-scrollbar-thumb) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar {
+  width: var(--conan-scrollbar-size);
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-track,
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-thumb {
+  background-color: var(--conan-scrollbar-thumb);
+  border-radius: var(--conan-radius-full);
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--conan-scrollbar-thumb-hover);
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-thumb:active {
+  background-color: var(--conan-scrollbar-thumb-active);
+}
+
+[data-astryx-theme="neutral"] *::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
 }
 
 /* Keep the resize target comfortably interactive while SurfaceWorkspace paints
