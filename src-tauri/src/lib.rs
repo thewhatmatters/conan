@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent};
+
+mod browser;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -36,6 +38,17 @@ pub fn run() {
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
     .manage(GatewayChild(Mutex::new(None)))
+    // WHA-38: the Browser surface's native view. An OS-level child webview
+    // rather than an iframe, so framing headers don't apply and its URL is
+    // readable — at the cost of the renderer having to drive its geometry.
+    .invoke_handler(tauri::generate_handler![
+      browser::browser_open,
+      browser::browser_set_bounds,
+      browser::browser_set_visible,
+      browser::browser_state,
+      browser::browser_eval,
+      browser::browser_close,
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

@@ -10,6 +10,7 @@ import { ExternalLink, File, Folder, RotateCcw } from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
+import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 
@@ -173,6 +174,9 @@ export function V2BrowserSurface({
   // stop describing the wrong page.
   const [navigatedAway, setNavigatedAway] = useState(false);
   const frameLoads = useRef(0);
+  // WHA-38: the element the native view is glued to. Under Tauri the iframe is
+  // never rendered — this placeholder just reserves the rect.
+  const anchorRef = useRef<HTMLDivElement | null>(null);
   // Guards async probe/read results against a newer navigation having started.
   const navSeq = useRef(0);
 
@@ -240,6 +244,15 @@ export function V2BrowserSurface({
     return () => clearTimeout(timer);
   }, [view, frameLoading, frameKey]);
 
+  // The native view supersedes the iframe wherever it exists. Everything the
+  // iframe path has to guess at — did they navigate, where are they now — the
+  // native view simply answers.
+  const native = useNativeBrowser({
+    anchor: anchorRef,
+    url: view.kind === "ok" ? view.url : null,
+    visible: active && view.kind === "ok",
+  });
+
   // Report upward so the next turn can name this page. Failures report their
   // reason as `problem`, so the model is told the page did not load rather
   // than being handed a URL whose contents nobody can see.
@@ -249,18 +262,23 @@ export function V2BrowserSurface({
       view.kind === "refused" || view.kind === "unreachable"
         ? view.reason ?? "the page could not be displayed"
         : null;
+    // With a native view the URL is authoritative — link clicks and SPA routing
+    // both land in `native.url`, so `navigatedAway` (the iframe's "I've lost
+    // track" flag) is permanently false and the agent gets the real page.
+    const liveUrl = native.supported && native.url ? native.url : null;
+    const staleUrl = view.kind === "empty" ? null : view.url;
     onStateChange({
-      url: view.kind === "empty" ? null : view.url,
+      url: liveUrl ?? staleUrl,
       active,
-      title: view.kind === "ok" && !navigatedAway ? title : null,
+      title: view.kind === "ok" && (native.supported || !navigatedAway) ? title : null,
       problem,
-      navigatedAway: view.kind === "ok" && navigatedAway,
+      navigatedAway: !native.supported && view.kind === "ok" && navigatedAway,
       // `checking` reports as loading rather than as a live page: the probe has
       // no verdict yet, and a turn sent inside that window must not be told a
       // page is on screen that may still resolve to a refusal.
       loading: view.kind === "checking",
     });
-  }, [view, title, active, navigatedAway, onStateChange]);
+  }, [view, title, active, navigatedAway, native.supported, native.url, onStateChange]);
 
   const currentUrl = view.kind === "empty" ? null : view.url;
   const go = useCallback(() => void navigate(draft), [draft, navigate]);
@@ -339,7 +357,7 @@ export function V2BrowserSurface({
           on after he followed links inside Wikipedia. We cannot read the new
           URL from a cross-origin frame, so the fix is to stop implying we
           know it — say so to the user, and to the agent (navigatedAway). */}
-      {view.kind === "ok" && navigatedAway ? (
+      {view.kind === "ok" && navigatedAway && !native.supported ? (
         <VStack xstyle={styles.staleNotice} data-slot="browser-stale-url">
           <Text type="supporting" color="secondary">
             You've followed a link inside this page. Conan can't read the current
@@ -349,7 +367,14 @@ export function V2BrowserSurface({
         </VStack>
       ) : null}
 
-      {view.kind === "ok" ? (
+      {view.kind === "ok" && native.supported ? (
+        // The native view paints itself over this rect — nothing renders here.
+        // It is a plain div on purpose: an Astryx component would be a layout
+        // participant we'd then have to reason about when measuring.
+        <div ref={anchorRef} data-slot="browser-native-anchor" {...stylex.props(styles.fill)} />
+      ) : null}
+
+      {view.kind === "ok" && !native.supported ? (
         <VStack xstyle={styles.fill}>
           <iframe
             key={frameKey}
