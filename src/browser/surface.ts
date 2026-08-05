@@ -34,6 +34,15 @@ export interface BrowserSurfaceState {
    * naming a URL the user cannot actually see.
    */
   problem: string | null;
+  /**
+   * The URL is being probed and nothing is on screen for it yet. Its own state
+   * rather than an absence, because the alternative is a lie in both
+   * directions: reporting the new URL as live claims a page that may turn out
+   * to be refused, and reporting the old one names a page the user has already
+   * navigated away from. A user can type and send during the probe — that
+   * window is up to the probe timeout — so it has to be represented.
+   */
+  loading: boolean;
 }
 
 export const EMPTY_SURFACE: BrowserSurfaceState = {
@@ -41,6 +50,7 @@ export const EMPTY_SURFACE: BrowserSurfaceState = {
   active: false,
   title: null,
   problem: null,
+  loading: false,
 };
 
 /**
@@ -68,7 +78,13 @@ export function parseSurfaceFrame(value: unknown): BrowserSurfaceState | null {
   const title = typeof frame.title === "string" && frame.title.trim() ? frame.title.trim() : null;
   const problem =
     typeof frame.problem === "string" && frame.problem.trim() ? frame.problem.trim() : null;
-  return { url, active: frame.active === true, title, problem };
+  return {
+    url,
+    active: frame.active === true,
+    title,
+    problem,
+    loading: frame.loading === true,
+  };
 }
 
 /** Bound on the title we echo into a prompt — a hostile page controls it. */
@@ -82,6 +98,11 @@ const MAX_TITLE_CHARS = 200;
  */
 export function browserContextBlock(state: BrowserSurfaceState): string | null {
   if (!state.active || !state.url) return null;
+  // Ordered before `problem`: a URL still being probed has no verdict yet, and
+  // claiming either "it loaded" or "it failed" would be a guess.
+  if (state.loading) {
+    return `Active browser surface: ${state.url} — still loading, nothing is on screen for it yet. Do not describe its contents; call mcp__conan__read_browser if you need to know what is at that URL.`;
+  }
   if (state.problem) {
     return `Active browser surface: ${state.url} — this page did not load (${state.problem}). Do not describe its contents.`;
   }

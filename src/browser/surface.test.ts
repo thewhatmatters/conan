@@ -18,6 +18,7 @@ test("parseSurfaceFrame: accepts a well-formed frame and normalizes the URL", ()
     active: true,
     title: "Vite App",
     problem: null,
+    loading: false,
   });
 });
 
@@ -27,6 +28,7 @@ test("parseSurfaceFrame: an empty URL is a valid empty surface, not a rejection"
     active: true,
     title: null,
     problem: null,
+    loading: false,
   });
 });
 
@@ -48,10 +50,13 @@ test("parseSurfaceFrame: active defaults to false unless strictly true", () => {
 test("browserContextBlock: silent unless the surface is active with a URL", () => {
   assert.equal(browserContextBlock(EMPTY_SURFACE), null);
   assert.equal(
-    browserContextBlock({ url: "http://a.test/", active: false, title: "A", problem: null }),
+    browserContextBlock({ url: "http://a.test/", active: false, title: "A", problem: null, loading: false }),
     null,
   );
-  assert.equal(browserContextBlock({ url: null, active: true, title: null, problem: null }), null);
+  assert.equal(
+    browserContextBlock({ url: null, active: true, title: null, problem: null, loading: false }),
+    null,
+  );
 });
 
 test("browserContextBlock: names the page and says the text was withheld", () => {
@@ -60,6 +65,7 @@ test("browserContextBlock: names the page and says the text was withheld", () =>
     active: true,
     title: "Dashboard",
     problem: null,
+    loading: false,
   })!;
   assert.match(block, /Active browser surface: Dashboard — http:\/\/localhost:5173\//);
   // The ticket is explicit that page text is never auto-sent; the block must
@@ -73,6 +79,7 @@ test("browserContextBlock: a failed page is reported as failed, not described", 
     active: true,
     title: null,
     problem: "X-Frame-Options: DENY forbids embedding",
+    loading: false,
   })!;
   assert.match(block, /did not load/);
   assert.match(block, /Do not describe its contents/);
@@ -85,14 +92,50 @@ test("browserContextBlock: a hostile title cannot flood the prompt", () => {
     active: true,
     title: "x".repeat(5_000),
     problem: null,
+    loading: false,
   })!;
   assert.ok(block.length < 500);
   assert.match(block, /…/);
 });
 
 test("withBrowserContext: prepends when active, passes through untouched otherwise", () => {
-  const active = { url: "http://a.test/", active: true, title: "A", problem: null };
+  const active = { url: "http://a.test/", active: true, title: "A", problem: null, loading: false };
   assert.match(withBrowserContext("what is this?", active), /^Active browser surface: A/);
   assert.match(withBrowserContext("what is this?", active), /what is this\?$/);
   assert.equal(withBrowserContext("unchanged", EMPTY_SURFACE), "unchanged");
+});
+
+test("a URL still being probed is reported as loading, not as a live page", () => {
+  // The residual Barkley found: navigate, then send before the probe settles.
+  // Naming the URL as if it were on screen claims a page that may still resolve
+  // to a refusal; naming the previous one describes a page already left behind.
+  const block = browserContextBlock({
+    url: "https://github.com/",
+    active: true,
+    title: null,
+    problem: null,
+    loading: true,
+  })!;
+  assert.match(block, /still loading/);
+  assert.match(block, /Do not describe its contents/);
+  // The tool is still offered — its own fetch is independent of the probe.
+  assert.match(block, /mcp__conan__read_browser/);
+});
+
+test("loading outranks a stale problem from the previous page", () => {
+  const block = browserContextBlock({
+    url: "http://next.test/",
+    active: true,
+    title: null,
+    problem: "X-Frame-Options: DENY forbids embedding",
+    loading: true,
+  })!;
+  assert.match(block, /still loading/);
+  assert.doesNotMatch(block, /DENY/);
+});
+
+test("parseSurfaceFrame carries loading through, defaulting false", () => {
+  assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true, loading: true })?.loading, true);
+  assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true })?.loading, false);
+  assert.equal(parseSurfaceFrame({ url: "http://a.test/", active: true, loading: "yes" })?.loading, false);
 });

@@ -13,7 +13,14 @@ import {
 import type { BrowserSurfaceState } from "./surface.js";
 
 function surface(over: Partial<BrowserSurfaceState> = {}): BrowserSurfaceState {
-  return { url: "http://127.0.0.1:1/", active: true, title: "A page", problem: null, ...over };
+  return {
+    url: "http://127.0.0.1:1/",
+    active: true,
+    title: "A page",
+    problem: null,
+    loading: false,
+    ...over,
+  };
 }
 
 /** The text of a tool result, for readability in assertions. */
@@ -196,4 +203,33 @@ test("mcpConfigFor points at the session's own keyed endpoint on the right port"
   };
   assert.equal(config.mcpServers.conan.type, "http");
   assert.equal(config.mcpServers.conan.url, "http://127.0.0.1:3850/mcp/abc123");
+});
+
+test("a call landing mid-probe answers, but flags that it is not yet the user's screen", async () => {
+  const { server, url } = await serve(
+    "<html><head><title>Docs</title></head><body><p>Install it.</p></body></html>",
+  );
+  try {
+    const loading = await callReadBrowser("fullText", surface({ url, title: null, loading: true }));
+    assert.equal(loading.isError, undefined, "a probe in flight must not block the read");
+    assert.match(body(loading), /Install it\./);
+    assert.match(body(loading), /still loading this URL/);
+    assert.match(body(loading), /may not see this content yet/);
+
+    // ...and says nothing of the sort once the surface has settled.
+    const settled = await callReadBrowser("fullText", surface({ url, title: null }));
+    assert.doesNotMatch(body(settled), /still loading/);
+  } finally {
+    server.close();
+  }
+});
+
+test("metadata carries the same mid-probe caveat", async () => {
+  const { server, url } = await serve("<html><head><title>Docs</title></head><body>x</body></html>");
+  try {
+    const result = await callReadBrowser("metadata", surface({ url, title: "Docs", loading: true }));
+    assert.match(body(result), /still loading this URL/);
+  } finally {
+    server.close();
+  }
 });

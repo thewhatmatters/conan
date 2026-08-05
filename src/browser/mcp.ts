@@ -119,6 +119,13 @@ export async function callReadBrowser(
       true,
     );
   }
+  // Mid-probe: this fetch is independent of the surface's, so it can answer —
+  // but the answer describes the URL, not the user's screen, and the difference
+  // matters if the surface is about to land on a refusal.
+  const stillLoading = state.loading
+    ? "\n\nNote: the Browser surface is still loading this URL, so the user may not see " +
+      "this content yet — it may still turn out to be a page the surface cannot display."
+    : "";
 
   if (scope === "selection") {
     return text(
@@ -141,7 +148,7 @@ export async function callReadBrowser(
     // the extra fetch is cheap enough not to special-case).
     const title = state.title ?? (await freshTitle(state.url));
     return text(
-      `Active browser surface\nURL: ${state.url}\nTitle: ${title ?? "(the page has no title)"}`,
+      `Active browser surface\nURL: ${state.url}\nTitle: ${title ?? "(the page has no title)"}${stillLoading}`,
     );
   }
 
@@ -171,7 +178,7 @@ export async function callReadBrowser(
     `Active browser surface: ${snapshot.title ?? "(no title)"} — ${snapshot.url}`,
     ...notes,
   ].join("\n");
-  return text(`${header}\n\n---\n${snapshot.text}`);
+  return text(`${header}${stillLoading}\n\n---\n${snapshot.text}`);
 }
 
 async function freshTitle(url: string): Promise<string | null> {

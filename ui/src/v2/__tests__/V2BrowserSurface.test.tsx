@@ -72,6 +72,7 @@ describe("V2BrowserSurface", () => {
       active: true,
       title: null,
       problem: null,
+      loading: false,
     });
   });
 
@@ -92,6 +93,7 @@ describe("V2BrowserSurface", () => {
         active: true,
         title: "Local app",
         problem: null,
+        loading: false,
       }),
     );
   });
@@ -123,6 +125,7 @@ describe("V2BrowserSurface", () => {
         active: true,
         title: null,
         problem: "X-Frame-Options: DENY forbids embedding",
+        loading: false,
       }),
     );
   });
@@ -145,6 +148,7 @@ describe("V2BrowserSurface", () => {
         active: true,
         title: null,
         problem: "connection refused",
+        loading: false,
       }),
     );
   });
@@ -210,6 +214,42 @@ describe("V2BrowserSurface", () => {
 
     await waitFor(() =>
       expect(screen.getByTitle("Browser surface")).toHaveAttribute("src", "http://fast.test/"),
+    );
+  });
+
+  it("reports loading while the probe is in flight, never as a live page", async () => {
+    // The window Barkley found: navigate, then send before the probe settles.
+    let settle: () => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes("/api/browser/probe")) {
+          return new Promise((resolve) => {
+            settle = () => resolve({ ok: true, json: () => Promise.resolve(FRAMEABLE) } as Response);
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ title: "Late" }) } as Response);
+      }),
+    );
+    const onStateChange = vi.fn();
+    render(<V2BrowserSurface token="t" active onStateChange={onStateChange} />);
+    navigateTo("https://github.com");
+
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith({
+        url: "https://github.com/",
+        active: true,
+        title: null,
+        problem: null,
+        loading: true,
+      }),
+    );
+
+    settle();
+    await waitFor(() =>
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ loading: false, title: "Late" }),
+      ),
     );
   });
 });

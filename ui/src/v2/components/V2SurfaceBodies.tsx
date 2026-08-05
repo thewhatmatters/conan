@@ -238,6 +238,10 @@ export function V2BrowserSurface({
       active,
       title: view.kind === "ok" ? title : null,
       problem,
+      // `checking` reports as loading rather than as a live page: the probe has
+      // no verdict yet, and a turn sent inside that window must not be told a
+      // page is on screen that may still resolve to a refusal.
+      loading: view.kind === "checking",
     });
   }, [view, title, active, onStateChange]);
 
