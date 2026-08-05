@@ -13,7 +13,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { useV2Chat } from "../lib/useV2Chat.ts";
+import { useV2Chat, type BrowserSurfaceReport } from "../lib/useV2Chat.ts";
 import { useV2ThreadHistory } from "../lib/useV2ThreadHistory.ts";
 import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
@@ -30,6 +30,11 @@ export interface V2ChatViewProps {
     busy: boolean;
     awaitingApproval: boolean;
   }) => void;
+  /** What the Browser surface is showing (WHA-109). Owned by the shell, not by
+   *  the chat, because the surface outlives this view — it is remounted per
+   *  thread (`key`), and re-reporting on remount is what keeps a freshly opened
+   *  socket aware of a page that was already loaded. */
+  browserSurface?: BrowserSurfaceReport;
 }
 
 const styles = stylex.create({
@@ -62,7 +67,12 @@ const styles = stylex.create({
   },
 });
 
-export default function V2ChatView({ token, activeThread, onState }: V2ChatViewProps) {
+export default function V2ChatView({
+  token,
+  activeThread,
+  onState,
+  browserSurface,
+}: V2ChatViewProps) {
   // No selection → no socket. Opening /ws/agent for a well that has nothing to
   // chat with holds an agent session open for nothing, and (because App.v2
   // keys this view by the selection) the first click would tear that socket
@@ -83,10 +93,18 @@ export default function V2ChatView({ token, activeThread, onState }: V2ChatViewP
     setPermissionMode,
     contextTokens,
     capabilities: sessionCapabilities,
+    reportBrowserSurface,
   } = useV2Chat(activeThread ? token : null);
   useEffect(() => {
     if (activeThread) onState?.({ status, busy, awaitingApproval });
   }, [activeThread, awaitingApproval, busy, onState, status]);
+  // Push the Browser surface's state down the socket whenever it changes —
+  // and once more whenever the socket reopens, since the gateway holds this
+  // per-connection and a reconnect starts it empty.
+  useEffect(() => {
+    if (!browserSurface || status !== "open") return;
+    reportBrowserSurface(browserSurface);
+  }, [browserSurface, reportBrowserSurface, status]);
   useEffect(
     () => () => {
       if (activeThread) {

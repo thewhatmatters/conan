@@ -19,6 +19,7 @@ import {
   type SurfaceId,
   type SurfacePlacement,
 } from "./SurfaceTabs.tsx";
+import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
 
 const DEFAULT_SIZE = 420;
 const STEP_SIZE = 24;
@@ -152,13 +153,26 @@ function SurfaceBody({
   id,
   token,
   cwd,
+  browserActive,
+  onBrowserStateChange,
 }: {
   id: Exclude<SurfaceId, "chat">;
   token: string | null;
   cwd: string | null;
+  /** True when Browser is the surface currently on screen (WHA-109). */
+  browserActive: boolean;
+  onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
 }) {
   if (id === "terminal") return <V2TerminalSurface token={token} cwd={cwd} />;
-  if (id === "browser") return <V2BrowserSurface />;
+  if (id === "browser") {
+    return (
+      <V2BrowserSurface
+        token={token}
+        active={browserActive}
+        onStateChange={onBrowserStateChange}
+      />
+    );
+  }
   if (id === "files") return <V2FilesSurface token={token} cwd={cwd} />;
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
@@ -172,6 +186,7 @@ export default function SurfaceWorkspace({
   token,
   cwd,
   onUndock,
+  onBrowserStateChange,
 }: {
   children: ReactNode;
   header: ReactNode;
@@ -181,6 +196,8 @@ export default function SurfaceWorkspace({
   token: string | null;
   cwd: string | null;
   onUndock?: (id: Exclude<SurfaceId, "chat">) => void;
+  /** Browser-surface reports headed for the agent socket (WHA-109). */
+  onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [size, setSize] = useState(DEFAULT_SIZE);
@@ -332,7 +349,13 @@ export default function SurfaceWorkspace({
                   xstyle={[styles.surfaceBody, activeSurface !== surface && styles.hidden]}
                   data-surface={surface}
                 >
-                  <SurfaceBody id={surface} token={token} cwd={cwd} />
+                  <SurfaceBody
+                    id={surface}
+                    token={token}
+                    cwd={cwd}
+                    browserActive={activeSurface === "browser"}
+                    onBrowserStateChange={onBrowserStateChange}
+                  />
                 </HStack>
               ))}
             </HStack>

@@ -454,6 +454,10 @@ export class ClaudeDriver implements AgentDriver {
     ];
     if (this.opts.model) args.push("--model", this.opts.model);
     if (this.opts.resume) args.push("--resume", this.opts.resume);
+    // WHA-109: Conan's own MCP server, carrying `read_browser`. Added WITHOUT
+    // --strict-mcp-config so the user's own configured servers still load —
+    // this adds a tool, it does not take the user's away.
+    if (this.opts.mcpConfig) args.push("--mcp-config", this.opts.mcpConfig);
     if (this.opts.permissionMode)
       args.push("--permission-mode", claudeModeFor(this.opts.permissionMode));
     // Permission prompts ride the control channel instead of headless

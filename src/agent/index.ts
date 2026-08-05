@@ -5,6 +5,22 @@ import type { AgentCapabilities, AgentDriver, AgentEvent, AgentLaunchOpts } from
 import { prepareFileAttachments, serializeTurnPrompt } from "./attachments.js";
 import { prepareImageAttachments } from "./imageStaging.js";
 import {
+  EMPTY_SURFACE,
+  parseSurfaceFrame,
+  withBrowserContext,
+  type BrowserSurfaceState,
+} from "../browser/surface.js";
+import {
+  closeBrowserToolSession,
+  mcpConfigFor,
+  openBrowserToolSession,
+} from "../browser/mcp.js";
+
+/** The loopback port the CLI reaches Conan's tool endpoint on — the same one
+ *  the gateway binds (src/gateway/index.ts), read from the same env so a
+ *  non-default `CONAN_PORT` (every isolated QA stack) still resolves. */
+const GATEWAY_PORT = Number(process.env.CONAN_PORT ?? 3747);
+import {
   capabilitiesFor,
   capabilitiesForReportedModel,
   getProvider,
@@ -116,6 +132,16 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
    *  denominator, which a reported model may refine but never erase (WHA-96).
    *  Null until the first prompt builds the driver. */
   let launchCapabilities: AgentCapabilities | null = null;
+  /** What this thread's Browser surface is showing (WHA-109). Reported by the
+   *  renderer over `browser-surface` frames; drives the per-turn auto-context
+   *  block. Socket-scoped on purpose — a URL must not outlive the surface. */
+  let browserSurface: BrowserSurfaceState = EMPTY_SURFACE;
+  /** This conversation's private `read_browser` endpoint (WHA-109). Minted per
+   *  socket and torn down with it, so a tool call can only ever resolve to the
+   *  Browser surface of the thread that made it. Reads `browserSurface` through
+   *  a closure rather than a snapshot — the tool must see the page the user is
+   *  on when the model calls it, not the one they were on at launch. */
+  const toolSessionKey = openBrowserToolSession(() => browserSurface);
 
   const onEvent = (e: AgentEvent): void => {
     send({ type: "event", event: e });
@@ -268,6 +294,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       if (typeof msg.permissionMode === "string" && msg.permissionMode.trim()) {
         opts.permissionMode = msg.permissionMode.trim();
       }
+      // WHA-109: point this session's CLI at its own `read_browser` endpoint.
+      // Set on every prompt (the driver only reads it at launch) so it is never
+      // missed on the first turn, whatever order the frames arrive in.
+      opts.mcpConfig = mcpConfigFor(GATEWAY_PORT, toolSessionKey);
       if (typeof msg.effort === "string" && msg.effort.trim()) {
         opts.effort = msg.effort.trim();
       } else if (opts.resume) {
@@ -292,9 +322,18 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         .then((d) => {
           const attachments = prepareFileAttachments(msg.attachments);
           const images = prepareImageAttachments(msg.images);
+          // WHA-109 auto-context: when the Browser surface is the active
+          // surface, the model is told WHICH page the user is looking at —
+          // never its contents, which stay behind an explicit read_browser
+          // call. Applied to the wire text only; `firstPrompt`/`lastPrompt`
+          // above keep the user's own words, so sidebar titles and the
+          // last-message preview never show this block.
           return d.send(
             {
-              text: serializeTurnPrompt({ text, attachments, images }),
+              text: withBrowserContext(
+                serializeTurnPrompt({ text, attachments, images }),
+                browserSurface,
+              ),
               attachments,
               images,
             },
@@ -324,10 +363,21 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       // Same provider-vocabulary contract as the prompt frame's
       // permissionMode — the driver floors ids it doesn't recognize.
       driver?.setPermissionMode(msg.mode.trim());
+    } else if (msg.type === "browser-surface") {
+      // WHA-109: the renderer reports what its Browser surface is showing.
+      // A malformed frame leaves the last good state alone rather than
+      // blanking it — a dropped report should not silently strip the model's
+      // context mid-conversation.
+      const next = parseSurfaceFrame(msg);
+      if (next) browserSurface = next;
     }
   });
 
   const cleanup = (): void => {
+    // Unconditional, and before the driver check: a socket that closed without
+    // ever prompting still minted a key, and leaving it registered would leak
+    // a live tool endpoint for a conversation that no longer exists.
+    closeBrowserToolSession(toolSessionKey);
     if (!driver) return;
     driver.dispose();
     active.delete(driver);

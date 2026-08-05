@@ -59,6 +59,7 @@ import AddProjectDialog from "./components/AddProjectDialog.tsx";
 import V2CommandPalette from "./command/CommandPalette.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
 import SurfaceWorkspace from "./components/SurfaceWorkspace.tsx";
+import type { BrowserSurfaceReport } from "../hooks/useAgentChat.ts";
 import {
   SURFACE_OPTIONS,
   type SurfaceId,
@@ -175,6 +176,10 @@ export default function AppV2() {
   const [surfacePlacements, setSurfacePlacements] = useState<
     Partial<Record<Exclude<SurfaceId, "chat">, SurfacePlacement>>
   >({});
+  // WHA-109: the shell owns what the Browser surface is showing, because the
+  // surface and the chat are siblings — the surface produces this, the chat
+  // consumes it, and neither can see the other.
+  const [browserSurface, setBrowserSurface] = useState<BrowserSurfaceReport>();
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const { states, reportState } = useV2ThreadState();
 
@@ -703,12 +708,14 @@ export default function AppV2() {
                 token={token}
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
                 onUndock={undockSurface}
+                onBrowserStateChange={setBrowserSurface}
               >
                 <V2ChatView
                   key={activeThread?.key ?? "no-thread"}
                   token={token}
                   activeThread={activeThread}
                   onState={activeThread ? onActiveState : undefined}
+                  browserSurface={browserSurface}
                 />
               </SurfaceWorkspace>
             </VStack>

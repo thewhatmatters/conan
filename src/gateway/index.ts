@@ -42,6 +42,8 @@ import {
   WorktreeValidationError,
 } from "../fs/worktrees.js";
 import { probeUrl } from "../browser/probe.js";
+import { readPage } from "../browser/read.js";
+import { handleMcpMessage, hasBrowserToolSession } from "../browser/mcp.js";
 import { listSessions, listEvents } from "../session/index.js";
 import { readPlanState } from "../plan/index.js";
 import { readSkills } from "../skills/index.js";
@@ -489,6 +491,58 @@ app.get("/api/browser/probe", async (req, res) => {
     return;
   }
   res.json(await probeUrl(parsed.href, origin));
+});
+
+// Read a Browser-surface page as text (WHA-109). The surface is an iframe, so
+// the renderer cannot read a cross-origin page at all — not its title, not a
+// word of its body. This route reads it gateway-side instead, which is also
+// what keeps browser credentials out of the model's context: this process holds
+// no cookies, so none can ride along. `readPage` never throws; a failure is a
+// 200 with an `error` field, matching the probe route's "failure is data".
+app.get("/api/browser/read", async (req, res) => {
+  if (!authed(req, res)) return;
+  const { url } = req.query;
+  if (typeof url !== "string" || !url.trim()) {
+    res.status(400).json({ error: "url required" });
+    return;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    res.status(400).json({ error: "invalid url" });
+    return;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    res.status(400).json({ error: "only http/https urls can be read" });
+    return;
+  }
+  res.json(await readPage(parsed.href));
+});
+
+// The `read_browser` MCP endpoint (WHA-109). Deliberately NOT behind `authed`:
+// the path segment IS the credential — an unguessable 192-bit key minted per
+// agent socket and handed only to that session's CLI child, which never sees
+// the gateway token. That also scopes the tool: a key resolves to exactly one
+// conversation's Browser surface, so two threads cannot read each other's page.
+app.post("/mcp/:key", async (req, res) => {
+  const { key } = req.params;
+  if (!hasBrowserToolSession(key)) {
+    res.status(404).json({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32000, message: "unknown or closed session" },
+    });
+    return;
+  }
+  const response = await handleMcpMessage(key, req.body);
+  // A notification has no reply; 202 is what the streamable-HTTP transport
+  // expects for one, and an empty 200 body would look like a malformed result.
+  if (!response) {
+    res.status(202).end();
+    return;
+  }
+  res.json(response);
 });
 
 // Reveal a path in Finder (macOS `open -R`). Existence-checked; args passed as

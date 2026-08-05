@@ -18,6 +18,7 @@ import {
   type OutgoingImage,
   type PendingApproval,
   type PermissionDecision,
+  type BrowserSurfaceReport,
 } from "../../hooks/useAgentChat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 
@@ -47,6 +48,9 @@ export interface V2Chat {
   setPermissionMode: (mode: string) => void;
   /** Surface a client-side launch/composer failure in the transcript. */
   reportError: (message: string) => void;
+  /** Report the Browser surface's live state for the turn's auto-context
+   *  block (WHA-109). Ambient — never blocks or acknowledges. */
+  reportBrowserSurface: (state: BrowserSurfaceReport) => void;
   /** Session driver capabilities frame; null until first prompt builds it. */
   capabilities: AgentCapabilities | null;
 }
@@ -68,6 +72,7 @@ export function useV2Chat(token: string | null): V2Chat {
     permissionMode: chat.permissionMode,
     setPermissionMode: chat.setPermissionMode,
     reportError: chat.reportError,
+    reportBrowserSurface: chat.reportBrowserSurface,
     capabilities: chat.capabilities,
   };
 }
@@ -79,4 +84,4 @@ export type {
   PendingApproval,
   PermissionDecision,
 };
-export type { AgentCapabilities };
+export type { AgentCapabilities, BrowserSurfaceReport };
