@@ -149,6 +149,45 @@ pub async fn browser_eval<R: Runtime>(window: Window<R>, script: String) -> Resu
   view.eval(&script).map_err(|e| format!("eval failed: {e}"))
 }
 
+/// Window geometry as Tauri sees it, so a mis-positioned view can be diagnosed
+/// with numbers instead of guesses. `add_child` takes LOGICAL coordinates
+/// relative to the window; `getBoundingClientRect()` is CSS pixels relative to
+/// the webview viewport. Those agree only if the main webview fills the
+/// window's content area at scale 1 — this reports whether it actually does.
+#[derive(Serialize, Clone)]
+pub struct WindowMetrics {
+  pub scale_factor: f64,
+  pub inner_width: f64,
+  pub inner_height: f64,
+  pub outer_width: f64,
+  pub outer_height: f64,
+  /// Window position of the content area, physical.
+  pub inner_x: i32,
+  pub inner_y: i32,
+  pub outer_x: i32,
+  pub outer_y: i32,
+}
+
+#[tauri::command]
+pub async fn browser_window_metrics<R: Runtime>(window: Window<R>) -> Result<WindowMetrics, String> {
+  let scale = window.scale_factor().map_err(|e| e.to_string())?;
+  let inner = window.inner_size().map_err(|e| e.to_string())?;
+  let outer = window.outer_size().map_err(|e| e.to_string())?;
+  let inner_pos = window.inner_position().map_err(|e| e.to_string())?;
+  let outer_pos = window.outer_position().map_err(|e| e.to_string())?;
+  Ok(WindowMetrics {
+    scale_factor: scale,
+    inner_width: inner.width as f64,
+    inner_height: inner.height as f64,
+    outer_width: outer.width as f64,
+    outer_height: outer.height as f64,
+    inner_x: inner_pos.x,
+    inner_y: inner_pos.y,
+    outer_x: outer_pos.x,
+    outer_y: outer_pos.y,
+  })
+}
+
 #[tauri::command]
 pub async fn browser_close<R: Runtime>(window: Window<R>) -> Result<(), String> {
   if let Some(view) = window.get_webview(BROWSER_LABEL) {

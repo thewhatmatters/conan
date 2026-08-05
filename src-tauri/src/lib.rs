@@ -48,6 +48,7 @@ pub fn run() {
       browser::browser_state,
       browser::browser_eval,
       browser::browser_close,
+      browser::browser_window_metrics,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

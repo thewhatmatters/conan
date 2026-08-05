@@ -30,47 +30,61 @@ export async function runNativeBrowserProbe(): Promise<void> {
     const { invoke } = await import("@tauri-apps/api/core");
     const call = invoke as <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
-    // 1. Load a site that NO iframe can display. github.com sends
-    //    frame-ancestors 'none' — if this renders, the view is genuinely not
-    //    an iframe, which is the whole premise.
-    const opened = await call<{ url: string | null; open: boolean }>("browser_open", {
-      url: "https://github.com",
-      x: 400,
-      y: 120,
-      width: 900,
-      height: 600,
+    // 0. Geometry first — the mis-positioning needs numbers, not theories.
+    //    getBoundingClientRect() is CSS px in the webview viewport; add_child
+    //    takes LOGICAL px relative to the window. If the main webview does not
+    //    fill the window content area 1:1, every rect we push is offset.
+    const metrics = await call<{
+      scale_factor: number;
+      inner_width: number;
+      inner_height: number;
+    }>("browser_window_metrics");
+    await report("window-metrics", metrics);
+    await report("viewport", {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      dpr: window.devicePixelRatio,
+      // The delta that matters: logical inner size vs CSS viewport.
+      logicalInnerW: metrics.inner_width / metrics.scale_factor,
+      logicalInnerH: metrics.inner_height / metrics.scale_factor,
     });
-    await report("open-github", opened);
 
+    // 1. Drive the REAL surface, not the commands underneath it. Driving the
+    //    commands directly is exactly what let two gatekeeper bugs through:
+    //    it proved the view worked and never asked whether the UI would call it.
+    const clickByText = (text: string): boolean => {
+      const el = [...document.querySelectorAll("button,[role=menuitem]")].find((n) =>
+        (n.textContent ?? "").trim().startsWith(text),
+      );
+      if (!el) return false;
+      (el as HTMLElement).click();
+      return true;
+    };
+
+    await report("open-surface-menu", clickByText("Surface"));
+    await wait(600);
+    await report("open-browser-surface", clickByText("Browser"));
+    await wait(900);
+
+    const input = document.querySelector<HTMLInputElement>('[data-surface="browser"] input');
+    if (!input) {
+      await report("FAILED", "no URL input — could not reach the Browser surface");
+      return;
+    }
+    // React owns this input, so set through the native setter it patched over.
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, "https://example.com");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await wait(4000);
-    const afterLoad = await call<{ url: string | null }>("browser_state");
-    await report("url-after-load", afterLoad);
 
-    // 2. A real navigation, driven from inside the page — the case the iframe
-    //    could detect but never identify.
-    await call("browser_eval", { script: `location.href = "https://github.com/features";` });
-    await wait(4000);
-    await report("url-after-link-navigation", await call("browser_state"));
-
-    // 3. THE one an iframe cannot see at all: a client-side route change.
-    //    If url() reflects this, the invisible-SPA problem is solved.
-    await call("browser_eval", {
-      script: `history.pushState({}, "", "/spa-route-probe");`,
-    });
-    await wait(1500);
-    await report("url-after-pushstate", await call("browser_state"));
-
-    // 4. Geometry + visibility — the manual work an OS view demands.
-    await call("browser_set_bounds", { x: 200, y: 200, width: 600, height: 400 });
-    await report("set-bounds", "ok");
-    await call("browser_set_visible", { visible: false });
-    await report("hide", "ok");
-    await wait(500);
-    await call("browser_set_visible", { visible: true });
-    await report("show", "ok");
-
-    await call("browser_close");
-    await report("close", await call("browser_state"));
+    const anchor = document.querySelector('[data-slot="browser-native-anchor"]');
+    const rect = anchor?.getBoundingClientRect();
+    await report("anchor-rect", rect ? {
+      x: Math.round(rect.x), y: Math.round(rect.y),
+      w: Math.round(rect.width), h: Math.round(rect.height),
+    } : "NO ANCHOR — the native path never rendered");
+    await report("url-through-real-ui", await call("browser_state"));
     await report("DONE", "probe finished");
   } catch (error) {
     await report("FAILED", String(error));
