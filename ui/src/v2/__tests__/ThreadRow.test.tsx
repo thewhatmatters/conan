@@ -12,6 +12,7 @@
  * browser pass.
  */
 import { describe, expect, it, vi } from "vitest";
+import * as stylex from "@stylexjs/stylex";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ThreadRow from "../components/ThreadRow.tsx";
 import {
@@ -151,5 +152,62 @@ describe("ThreadRow trailing slot", () => {
     fireEvent.contextMenu(screen.getByRole("button", { name: "Analyze: ..." }));
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  /**
+   * WHA-118 — the select button must state the shell's own focus ring.
+   *
+   * jsdom neither lays out nor paints and the StyleX plugin injects no CSS into
+   * the test document, so `getComputedStyle(...).outline` reads empty here and
+   * cannot be the assertion. What IS available is StyleX's atomic classes: the
+   * class for a given (property, value, condition) is a deterministic hash, so
+   * declaring the SAME rule locally yields the same class names, and asking
+   * whether the button carries them is a real check on the rule it compiled
+   * with — not on a string in the source.
+   *
+   * This fails at the WHA-116 tip, where the button declared no outline at all
+   * and fell through to the browser's default ring.
+   */
+  it("declares the shell's 2px accent focus ring on the select button", () => {
+    const expected = stylex.create({
+      ring: {
+        outline: {
+          default: null,
+          ":focus-visible": "2px solid var(--conan-color-accent)",
+        },
+        outlineOffset: { default: "0", ":focus-visible": "-2px" },
+      },
+    });
+    // Dev builds prepend a readable debug name ("ThreadRow__expected.ring")
+    // that is unique per declaration site; only the atomic hashes are shared.
+    const wanted = (stylex.props(expected.ring).className ?? "")
+      .split(" ")
+      .filter((name) => name && !name.includes("__"));
+    expect(wanted.length).toBeGreaterThan(0);
+
+    render(<ThreadRow title="Analyze" subtitle="..." />);
+    const button = screen.getByRole("button", { name: "Analyze: ..." });
+
+    expect(button.className.split(" ")).toEqual(expect.arrayContaining(wanted));
+  });
+
+  /**
+   * The three states ride three separate channels (WHA-116's rule): hover owns
+   * the wash, selection owns the accent bar, focus owns the outline. Selecting
+   * a row must therefore not touch the button's classes — if a future change
+   * routes selection back through the button, this catches it.
+   */
+  it("keeps selection off the focusable button's own styling", () => {
+    const { rerender } = render(<ThreadRow title="Analyze" subtitle="..." />);
+    const before = screen.getByRole("button", { name: "Analyze: ..." }).className;
+
+    rerender(<ThreadRow title="Analyze" subtitle="..." isSelected />);
+    const after = screen.getByRole("button", { name: "Analyze: ..." }).className;
+
+    expect(after).toBe(before);
+    expect(screen.getByRole("button", { name: "Analyze: ..." })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });
