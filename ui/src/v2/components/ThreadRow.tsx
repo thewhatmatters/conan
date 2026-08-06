@@ -74,14 +74,32 @@ const styles = stylex.create({
     position: "relative",
     width: "100%",
   },
+  // WHA-118. Without the outline below this button fell through to the UA's own
+  // focus ring — measured at the WHA-116 tip as Chrome's `rgb(153,200,255) auto
+  // 1px`, square-cornered, and a DIFFERENT ring again under the Tauri WKWebView.
+  // A browser default is not a design decision, so the row now states the
+  // shell's own: the same 2px accent outline SurfaceTabs and the surface
+  // splitter already use, at the row's own radius so the ring follows the shape
+  // the hover wash draws rather than boxing it.
+  //
+  // Three states, three channels, deliberately non-overlapping (WHA-116's rule):
+  // hover is the WASH, selection is the 2px accent BAR on the bottom edge, and
+  // keyboard focus is this OUTLINE. None of them borrows another's channel, so
+  // a row can show all three at once and still be readable.
   selectTarget: {
     appearance: "none",
     backgroundColor: "transparent",
+    borderRadius: "var(--conan-radius-md)",
     borderStyle: "none",
     cursor: "pointer",
     flexGrow: 1,
     height: "100%",
     minWidth: 0,
+    // Inset rather than the +2px SurfaceTabs uses: this button is a flex child
+    // filling the row, so an outward ring would be clipped by the sidebar edge
+    // on the left and collide with the trailing kebab on the right.
+    outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
+    outlineOffset: { default: "0", ":focus-visible": "-2px" },
     padding: 0,
     textAlign: "start",
   },
