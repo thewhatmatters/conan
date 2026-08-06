@@ -23,7 +23,7 @@ export interface ContextProgressProps {
 const styles = stylex.create({
   root: {
     minWidth: 0,
-    width: "min(220px, 42vw)",
+    width: "min(56px, 18vw)",
   },
   unknown: {
     color: "var(--conan-text-secondary)",
