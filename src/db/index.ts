@@ -112,6 +112,28 @@ function migrate(handle: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_project_action_project
       ON project_action (project_id, created_at);
   `);
+
+  // WHA-129: the fleet lineage `attempt` table. Same reason as project_action —
+  // repeated here so an existing database picks it up, since schema.sql's
+  // CREATE TABLE IF NOT EXISTS only ever helps a fresh one.
+  handle.exec(`
+    CREATE TABLE IF NOT EXISTS attempt (
+      id                   TEXT PRIMARY KEY,
+      context              TEXT NOT NULL,
+      session_id           TEXT,
+      provider             TEXT NOT NULL,
+      model                TEXT,
+      permission_mode      TEXT,
+      containment_observed TEXT NOT NULL,
+      cwd                  TEXT,
+      started_at           INTEGER NOT NULL,
+      ended_at             INTEGER,
+      cost_usd             REAL,
+      duration_ms          INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_attempt_session ON attempt (session_id);
+    CREATE INDEX IF NOT EXISTS idx_attempt_started ON attempt (started_at);
+  `);
 }
 
 /** Close the database handle (used on shutdown / in tests). */
