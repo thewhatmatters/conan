@@ -20,6 +20,18 @@ import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
 import V2ApprovalGate from "./V2ApprovalGate.tsx";
 
+interface ContextSnapshot {
+  provider: ActiveThread["provider"];
+  contextTokens: number;
+  capabilities: ReturnType<typeof useV2Chat>["capabilities"];
+}
+
+// V2ChatView is keyed by thread, so navigation intentionally tears down its
+// socket and reducer. Keep only the last provider-reported context position
+// across that UI remount. The key is the thread — never the provider — because
+// two Claude threads can occupy very different positions in their windows.
+const contextSnapshotByThread = new Map<string, ContextSnapshot>();
+
 export interface V2ChatViewProps {
   /** Gateway auth token; null until /api/config resolves — no socket then. */
   token: string | null;
@@ -100,6 +112,29 @@ export default function V2ChatView({
     capabilities: sessionCapabilities,
     reportBrowserSurface,
   } = useV2Chat(activeThread ? token : null);
+  const cachedContext = activeThread
+    ? contextSnapshotByThread.get(activeThread.key)
+    : undefined;
+  const matchingCachedContext =
+    cachedContext?.provider === activeThread?.provider ? cachedContext : undefined;
+  const visibleContextTokens =
+    contextTokens ?? matchingCachedContext?.contextTokens ?? null;
+  const visibleSessionCapabilities =
+    sessionCapabilities ?? matchingCachedContext?.capabilities ?? null;
+
+  useEffect(() => {
+    if (!activeThread) return;
+    const previous = contextSnapshotByThread.get(activeThread.key);
+    const matchingPrevious =
+      previous?.provider === activeThread.provider ? previous : undefined;
+    const nextTokens = contextTokens ?? matchingPrevious?.contextTokens ?? null;
+    if (nextTokens == null) return;
+    contextSnapshotByThread.set(activeThread.key, {
+      provider: activeThread.provider,
+      contextTokens: nextTokens,
+      capabilities: sessionCapabilities ?? matchingPrevious?.capabilities ?? null,
+    });
+  }, [activeThread, contextTokens, sessionCapabilities]);
   useEffect(() => {
     if (activeThread) onState?.({ status, busy, awaitingApproval });
   }, [activeThread, awaitingApproval, busy, onState, status]);
@@ -220,8 +255,8 @@ export default function V2ChatView({
               livePermissionMode={livePermissionMode}
               sessionId={sessionId}
               setPermissionMode={setPermissionMode}
-              contextTokens={contextTokens}
-              sessionCapabilities={sessionCapabilities}
+              contextTokens={visibleContextTokens}
+              sessionCapabilities={visibleSessionCapabilities}
               send={send}
               interrupt={interrupt}
           />

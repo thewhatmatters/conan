@@ -30,6 +30,11 @@ const chat = {
   pendingApprovals: [] as PendingApproval[],
   respondToApproval: vi.fn(),
   interrupt: vi.fn(),
+  contextTokens: null as number | null,
+  capabilities: null as {
+    contextWindowTokens: number | null;
+    permissionModes: unknown[];
+  } | null,
 };
 
 vi.mock("../lib/useV2Chat.ts", () => ({ useV2Chat: () => chat }));
@@ -61,6 +66,47 @@ beforeEach(() => {
   chat.pendingApproval = null;
   chat.pendingApprovals = [];
   chat.awaitingApproval = false;
+  chat.contextTokens = null;
+  chat.capabilities = null;
+});
+
+describe("context position navigation", () => {
+  it("restores the last honest reading for the same thread only", () => {
+    const persistentThread = {
+      key: "context-persist-thread",
+      sessionId: "session-1",
+      cwd: "/tmp/x",
+      projectName: "x",
+      provider: "claude",
+      title: "x",
+    };
+    chat.contextTokens = 45_000;
+    chat.capabilities = {
+      contextWindowTokens: 200_000,
+      permissionModes: [],
+    };
+    const first = render(
+      <V2ChatView token="tok" activeThread={persistentThread as never} />,
+    );
+    expect(screen.getByRole("progressbar", { name: "Context" })).toBeTruthy();
+    first.unmount();
+
+    chat.contextTokens = null;
+    chat.capabilities = null;
+    const restored = render(
+      <V2ChatView token="tok" activeThread={persistentThread as never} />,
+    );
+    expect(screen.getByRole("progressbar", { name: "Context" })).toBeTruthy();
+    restored.unmount();
+
+    render(
+      <V2ChatView
+        token="tok"
+        activeThread={{ ...persistentThread, key: "different-thread" } as never}
+      />,
+    );
+    expect(screen.queryByRole("progressbar", { name: "Context" })).toBeNull();
+  });
 });
 
 describe("approval announcer (WHA-55)", () => {
