@@ -174,6 +174,40 @@ test("a refused spawn clears the gate so the next prompt can retry", async () =>
   d.dispose();
 });
 
+test("a socket closing mid-build spawns no process and records no row", async () => {
+  // The regression Barkley and I caught at de77edd. `plan()` is the async
+  // provider install probe, so it can hold for seconds; a user who closes the
+  // tab inside that window used to get a real process spawned with no socket
+  // attached and an attempt row whose `ended_at` was never stamped — and
+  // because `dispose()` had already run, neither a later dispose nor the
+  // shutdown sweep could reach it. An attempt that outlives its connection
+  // makes every duration in the ledger a lie.
+  const before = rows().length;
+  spawns = 0;
+  const d = newDispatcher();
+  let release!: () => void;
+  const probe = new Promise<void>((r) => {
+    release = r;
+  });
+  const pending = d.spawn(async () => {
+    await probe;
+    return {
+      provider: stubProvider("claude"),
+      model: null,
+      permissionMode: "default",
+      cwd: null,
+    };
+  });
+
+  d.dispose(); // socket closed while the probe is still in flight
+  release();
+  await assert.rejects(pending, /connection closed/);
+
+  assert.equal(spawns, 0, "spawned a process for a connection already closed");
+  assert.equal(rows().length, before, "wrote an attempt row for an aborted spawn");
+  assert.equal(d.current(), null);
+});
+
 test("shutdown closes every live attempt", async () => {
   const before = rows().length;
   const a = newDispatcher();

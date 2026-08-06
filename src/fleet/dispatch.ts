@@ -79,6 +79,16 @@ export function createDispatcher(opts: {
       if (!building) {
         building = (async () => {
           const p = await plan();
+          // Resolving a provider is async, so the connection can close while
+          // this is in flight. Everything below is synchronous, so this one
+          // check closes the whole window: without it the spawn would go on to
+          // start a real process for a socket that is gone and open an attempt
+          // row that nothing can ever close — `dispose()` has already run, so
+          // both a later dispose and the shutdown sweep hit its `disposed`
+          // guard and no-op.
+          if (disposed) {
+            throw new Error("dispatch aborted: connection closed during spawn");
+          }
           const containment = resolveContainment(
             p.provider.id,
             p.permissionMode ?? undefined,
