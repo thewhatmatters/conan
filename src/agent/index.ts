@@ -30,6 +30,10 @@ import {
 import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
   setChatThreadLastMessage,
 } from "./threads.js";
+import {
+  createDispatcher,
+  disposeAllDispatched,
+} from "../fleet/dispatch.js";
 
 /**
  * WS handler for the Level-2 chat spike (`/ws/terminal`'s peer at `/ws/agent`).
@@ -74,7 +78,9 @@ import { adoptChatThread, getChatThread, touchChatThread, upsertChatThread,
  *     the context-window denominator (see `refineCapabilities`).
  */
 
-const active = new Set<AgentDriver>();
+// WHA-129: the live-driver set moved into src/fleet/dispatch.ts. Every spawn is
+// registered there so shutdown closes its attempt row through the same seam
+// that opened it, and so there is exactly one place that knows what is running.
 
 /** Fold the reported-model capabilities over the launch-time ones (WHA-96).
  *
@@ -160,6 +166,9 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
     }
     if (e.kind === "system" && e.sessionId) {
       sessionId = e.sessionId;
+      // WHA-129: a process is spawned before it has a name, so the attempt row
+      // is written at spawn and learns its session id here.
+      dispatcher.bindSession(e.sessionId);
       if (resumeFrom) {
         // --resume forks into a new session id; move the saved row (title,
         // project, created_at intact) so the sidebar lists the thread once.
@@ -192,6 +201,12 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
       }
     }
     if (e.kind === "assistant-text") turnText += e.text;
+    // WHA-129: one process serves many turns, so per-turn cost accumulates onto
+    // the attempt. Providers that report none (codex, kimi) leave it null rather
+    // than writing a zero that would read as "free".
+    if (e.kind === "result" && typeof e.costUsd === "number") {
+      dispatcher.recordCost(e.costUsd);
+    }
     if (e.kind === "result" && sessionId) {
       try {
         touchChatThread(sessionId);
@@ -217,19 +232,25 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
   // to claude when absent so old clients are unaffected.
   let provider: ProviderEntry = getProvider("claude")!;
   let driver: AgentDriver | null = null;
-  /** In-flight build — resolving the requested provider is async (install
-   *  probe), so a second prompt racing the first must await the same build
-   *  instead of spawning a duplicate driver. */
-  let building: Promise<AgentDriver> | null = null;
+  /** WHA-129: this connection's spawn seam. An interactive socket dispatches
+   *  in `chat` context — no ticket, no AC, no verifier pair, so the fleet
+   *  predicates that land in later phases are skipped for it (freeze §1.2).
+   *  The in-flight build guard that used to live here moved inside, because
+   *  "one driver and one attempt row per connection" is a property of the
+   *  seam, not of this handler. */
+  const dispatcher = createDispatcher({
+    context: "chat",
+    emit: onEvent,
+    fallbackCwd: getActiveCwd,
+  });
 
   const ensureDriver = (
     requested: string | null,
-    resume: string | null,
-    model: string | undefined,
+    opts: AgentLaunchOpts,
   ): Promise<AgentDriver> => {
-    if (driver) return Promise.resolve(driver);
-    if (!building) {
-      building = (async () => {
+    const { resume, model } = opts;
+    return dispatcher
+      .spawn(async () => {
         if (resume) {
           try {
             const saved = getChatThread(resume)?.provider;
@@ -245,23 +266,25 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
           // fallback to claude.
           provider = await resolveRequestedProvider(requested);
         }
-        driver = provider.createDriver(onEvent, getActiveCwd);
-        active.add(driver);
-        launchCapabilities = capabilitiesFor(provider, model);
-        send({
-          type: "capabilities",
-          provider: provider.id,
-          capabilities: launchCapabilities,
-        });
-        return driver;
-      })();
-      // A refused build (unknown/uninstalled provider) must not poison the
-      // socket — clear it so the user can retry with another provider.
-      building.catch(() => {
-        building = null;
+        return {
+          provider,
+          model: model ?? null,
+          permissionMode: opts.permissionMode ?? null,
+          cwd: opts.cwd ?? getActiveCwd(),
+        };
+      })
+      .then((s) => {
+        if (!driver) {
+          driver = s.driver;
+          launchCapabilities = capabilitiesFor(s.provider, model);
+          send({
+            type: "capabilities",
+            provider: s.provider.id,
+            capabilities: launchCapabilities,
+          });
+        }
+        return s.driver;
       });
-    }
-    return building;
   };
 
   socket.on("message", (raw) => {
@@ -318,7 +341,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
           : null;
       const text = msg.text;
       send({ type: "busy", busy: true });
-      void ensureDriver(requested, opts.resume ?? null, opts.model)
+      void ensureDriver(requested, opts)
         .then((d) => {
           const attachments = prepareFileAttachments(msg.attachments);
           const images = prepareImageAttachments(msg.images);
@@ -378,9 +401,10 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
     // ever prompting still minted a key, and leaving it registered would leak
     // a live tool endpoint for a conversation that no longer exists.
     closeBrowserToolSession(toolSessionKey);
-    if (!driver) return;
-    driver.dispose();
-    active.delete(driver);
+    // WHA-129: dispose through the seam so the attempt row is stamped closed.
+    // Idempotent and safe on a socket that never prompted — there is simply no
+    // spawn to close, which is exactly the "connect alone writes no row" case.
+    dispatcher.dispose();
     driver = null;
   };
   socket.on("close", cleanup);
@@ -396,8 +420,9 @@ function titleFromPrompt(prompt: string | null): string | null {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
-/** Tear down every live chat session (gateway shutdown). */
+/** Tear down every live chat session (gateway shutdown). Delegates to the
+ *  dispatch seam so every attempt row gets an `ended_at` instead of being left
+ *  recorded as running forever. */
 export function closeAllAgents(): void {
-  for (const driver of active) driver.dispose();
-  active.clear();
+  disposeAllDispatched();
 }

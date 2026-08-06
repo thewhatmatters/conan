@@ -115,3 +115,37 @@ CREATE TABLE IF NOT EXISTS prompt_consideration (
   PRIMARY KEY (event_id, skill)
 );
 CREATE INDEX IF NOT EXISTS idx_prompt_consideration_event ON prompt_consideration (event_id);
+
+-- WHA-129 (fleet phase 1a): one row per agent process actually spawned, written
+-- by the single dispatch seam (src/fleet/dispatch.ts). This is the first brick of
+-- the fleet lineage model — see docs/conan-fleet-phase0-freeze.md.
+--
+-- `context` is the freeze doc's DispatchContext discriminant: 'chat' for ordinary
+-- interactive turns (no ticket, no AC, fleet predicates skipped), 'fleet-attempt'
+-- for a task attempt under lineage. One seam, two policies.
+--
+-- `session_id` is the PROVIDER's session id (the chat_thread key), not session(id)
+-- from the hooks table, and is NULL until the provider reports it at init — a
+-- process is spawned before it has a name. Deliberately no FK: a thread row only
+-- exists when the client supplied a projectId, but every spawn gets an attempt.
+--
+-- `containment_observed` is the class resolved from (provider, permission_mode) at
+-- spawn. Recorded per attempt rather than per binding because claude's permission
+-- mode is live-switchable mid-session, so the configured floor is not necessarily
+-- what the attempt ran under.
+CREATE TABLE IF NOT EXISTS attempt (
+  id                   TEXT PRIMARY KEY,
+  context              TEXT NOT NULL,             -- chat | fleet-attempt
+  session_id           TEXT,                      -- provider session id, backfilled at init
+  provider             TEXT NOT NULL,
+  model                TEXT,                      -- launch model id; null = provider default
+  permission_mode      TEXT,                      -- the id requested at spawn; null = provider default
+  containment_observed TEXT NOT NULL,             -- none | prompt-gated | fail-closed-cancel | os-sandbox
+  cwd                  TEXT,
+  started_at           INTEGER NOT NULL,          -- epoch ms
+  ended_at             INTEGER,                   -- epoch ms; null while the process is live
+  cost_usd             REAL,
+  duration_ms          INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_attempt_session ON attempt (session_id);
+CREATE INDEX IF NOT EXISTS idx_attempt_started ON attempt (started_at);
