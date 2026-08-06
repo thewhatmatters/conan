@@ -23,10 +23,8 @@
  * behaves like the docs claim.
  */
 import { useMemo } from "react";
-import type { Ref } from "react";
 import { ChatComposerInput } from "@astryxdesign/core/Chat";
 import type {
-  ChatComposerInputHandle,
   ChatComposerToken,
   ChatComposerTrigger,
 } from "@astryxdesign/core/Chat";
@@ -43,8 +41,6 @@ export interface RichInputProps {
   cwd: string | null;
   /** Pasted or dropped files (images and text alike). */
   onFiles: (files: File[]) => void;
-  /** Shared handle for Full Featured header actions to focus/insert text. */
-  handleRef?: Ref<ChatComposerInputHandle>;
 }
 
 /** A selected item becomes an inline chip whose serialized value is v1's
@@ -53,7 +49,7 @@ function toToken(item: SearchableItem): ChatComposerToken {
   return { value: item.id, label: item.label };
 }
 
-export default function RichInput({ token, cwd, onFiles, handleRef }: RichInputProps) {
+export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
   const triggers = useMemo<ChatComposerTrigger[]>(
     () => [
       {
@@ -85,7 +81,6 @@ export default function RichInput({ token, cwd, onFiles, handleRef }: RichInputP
     <ChatComposerInput
       maxRows={8}
       label="Message input"
-      handleRef={handleRef}
       triggers={triggers}
       onFiles={onFiles}
       onDragOver={(event) => {

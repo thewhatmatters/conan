@@ -16,11 +16,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
-import type { ChatComposerInputHandle } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
-import { AtSign, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
@@ -127,7 +126,6 @@ export default function V2Composer({
   interrupt,
 }: V2ComposerProps) {
   const [value, setValue] = useState("");
-  const inputHandleRef = useRef<ChatComposerInputHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachments = useComposerAttachments(token);
   const providers = useV2Providers(token);
@@ -264,21 +262,8 @@ export default function V2Composer({
     [acceptsImages, attachments],
   );
 
-  const insertMention = useCallback(() => {
-    inputHandleRef.current?.focus();
-    inputHandleRef.current?.insertText("@");
-  }, []);
-
   const headerActions = (
     <HStack align="center" gap={1}>
-      <Button
-        variant="ghost"
-        size="sm"
-        isIconOnly
-        label="Mention a file or folder"
-        icon={<AtSign size={ACTION_ICON} aria-hidden />}
-        onClick={insertMention}
-      />
       <Button
         variant="ghost"
         size="sm"
@@ -383,7 +368,6 @@ export default function V2Composer({
             token={token}
             cwd={activeThread?.cwd ?? null}
             onFiles={handleFiles}
-            handleRef={inputHandleRef}
           />
         </VStack>
       }

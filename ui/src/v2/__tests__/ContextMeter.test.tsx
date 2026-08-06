@@ -94,7 +94,7 @@ describe("ContextProgress", () => {
       "data-pct",
       "23",
     );
-    expect(screen.getByText("23% · 45k/200k")).toBeInTheDocument();
+    expect(screen.queryByText("23% · 45k/200k")).toBeNull();
   });
 
   it("shows only an honest raw count when the window is unknown", () => {

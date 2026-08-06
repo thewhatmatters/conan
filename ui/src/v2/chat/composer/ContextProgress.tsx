@@ -70,11 +70,10 @@ export default function ContextProgress({ used, windowTokens }: ContextProgressP
       ) : (
         <ProgressBar
           label="Context"
+          isLabelHidden
           value={state.pct}
           max={100}
           variant={progressVariant(state.variant)}
-          hasValueLabel
-          formatValueLabel={() => state.summary}
         />
       )}
     </div>

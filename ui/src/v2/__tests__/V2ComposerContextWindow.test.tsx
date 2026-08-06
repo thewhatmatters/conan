@@ -80,6 +80,6 @@ describe("context-meter denominator", () => {
       "aria-valuenow",
       "4.5",
     );
-    expect(screen.getByText("5% · 45k/1M")).toBeInTheDocument();
+    expect(screen.queryByText("5% · 45k/1M")).toBeNull();
   });
 });

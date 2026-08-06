@@ -61,23 +61,8 @@ describe("V2Composer", () => {
       screen.getByLabelText("Message input"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Mention a file or folder" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("button", { name: "Attach files" }),
     ).toBeInTheDocument();
-  });
-
-  it("opens @ typeahead from the visible mention action", () => {
-    render(<V2Composer activeThread={thread} send={vi.fn()} />);
-    const textbox = screen.getByLabelText("Message input");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Mention a file or folder" }),
-    );
-
-    expect(textbox).toHaveFocus();
-    expect(textbox.textContent).toBe("@");
   });
 
   it("stages a selected image from the visible attachment action", async () => {
