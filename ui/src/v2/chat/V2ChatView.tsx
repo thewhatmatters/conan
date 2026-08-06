@@ -41,6 +41,17 @@ export interface V2ChatViewProps {
     status: "connecting" | "open" | "closed";
     busy: boolean;
     awaitingApproval: boolean;
+    /**
+     * The provider's session id, once its first `system` frame arrives — the
+     * same id the gateway keys the persisted `chat_thread` row on (WHA-121).
+     *
+     * The shell needs this and had no way to learn it. A `New chat` is local
+     * state until the first send; the gateway then writes the real row, but
+     * nothing told App.v2 that happened, so the sidebar kept showing an
+     * untitled draft and a later visit reopened a session it could not name.
+     * Null before the socket reports one, and on a closed session.
+     */
+    sessionId: string | null;
   }) => void;
   /** What the Browser surface is showing (WHA-109). Owned by the shell, not by
    *  the chat, because the surface outlives this view — it is remounted per
@@ -136,8 +147,8 @@ export default function V2ChatView({
     });
   }, [activeThread, contextTokens, sessionCapabilities]);
   useEffect(() => {
-    if (activeThread) onState?.({ status, busy, awaitingApproval });
-  }, [activeThread, awaitingApproval, busy, onState, status]);
+    if (activeThread) onState?.({ status, busy, awaitingApproval, sessionId });
+  }, [activeThread, awaitingApproval, busy, onState, sessionId, status]);
   // Push the Browser surface's state down the socket whenever it changes —
   // and once more whenever the socket reopens, since the gateway holds this
   // per-connection and a reconnect starts it empty.
@@ -148,7 +159,12 @@ export default function V2ChatView({
   useEffect(
     () => () => {
       if (activeThread) {
-        onState?.({ status: "closed", busy: false, awaitingApproval: false });
+        onState?.({
+          status: "closed",
+          busy: false,
+          awaitingApproval: false,
+          sessionId: null,
+        });
       }
     },
     [activeThread?.key, onState],
