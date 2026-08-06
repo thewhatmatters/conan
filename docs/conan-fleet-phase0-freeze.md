@@ -34,7 +34,7 @@ Containment is resolved at spawn time from `(provider, permission_mode)` and rec
 
 Containment floors are per role. A role floor is an explicit set of allowed classes (e.g., `floor: [os-sandbox]` or `floor: [os-sandbox, fail-closed-cancel]`), not a `>=` comparison on a fake total order. A role binding must be in the allowed set or the dispatch is refused.
 
-- **Critic floor:** `unknown` is unacceptable until a Conan envelope exists. Until then, a code critic is bound to `codex` with `sandbox: read-only` explicitly pinned (must not inherit the session's `acceptEdits`/`workspace-write` mode).
+- **Critic floor:** allowed-set is `{os-sandbox}` with `codex` `sandbox: read-only` explicitly pinned (must not inherit the session's `acceptEdits`/`workspace-write` mode). `unknown` is never acceptable.
 
 ## 3. Identity and independent verification
 
@@ -115,9 +115,10 @@ The dispatcher and lineage layer enforce these as pure value-object checks with 
 - Resolved binding + mode meets the role floor.
 - Builder principal/instance differs from verifier.
 - Round and same-finding caps.
-- Stale digest/SHA invalidates evidence and approval.
 
-Promote-gate checks (admissible evidence, stale-tip invalidation) live on the promote path, not in the dispatcher.
+Promote-gate checks live on the promote path, not in the dispatcher. This includes:
+- Promote gate cannot clear without admissible evidence per §6.
+- Stale digest/SHA invalidates evidence and approval.
 
 ## 10. Open product decisions for Randy
 
