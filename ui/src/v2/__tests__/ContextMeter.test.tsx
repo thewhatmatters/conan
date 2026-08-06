@@ -1,11 +1,12 @@
 /**
- * ContextMeter — pure model honesty rules + presence of the ring (WHA-101).
+ * ContextProgress — WHA-101 honesty rules in WHA-119's Full Featured bar.
  */
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import ContextMeter from "../chat/composer/ContextMeter.tsx";
+import ContextProgress from "../chat/composer/ContextProgress.tsx";
 import {
   contextMeterState,
+  contextPressureStatus,
   fmtTokens,
 } from "../chat/composer/contextMeterModel.ts";
 
@@ -57,26 +58,54 @@ describe("contextMeterState", () => {
   });
 });
 
-describe("ContextMeter", () => {
+describe("contextPressureStatus", () => {
+  it("stays quiet for normal and unknown-window usage", () => {
+    expect(contextPressureStatus(contextMeterState(45_000, 200_000))).toBeUndefined();
+    expect(contextPressureStatus(contextMeterState(45_000, null))).toBeUndefined();
+  });
+
+  it("gives recovery copy at warning and error thresholds", () => {
+    expect(contextPressureStatus(contextMeterState(150_000, 200_000))).toEqual({
+      type: "warning",
+      message: expect.stringMatching(/75%.*new thread soon/i),
+    });
+    expect(contextPressureStatus(contextMeterState(180_000, 200_000))).toEqual({
+      type: "error",
+      message: expect.stringMatching(/90%.*new thread/i),
+    });
+  });
+});
+
+describe("ContextProgress", () => {
   it("renders nothing when used is null", () => {
     const { container } = render(
-      <ContextMeter used={null} windowTokens={200_000} />,
+      <ContextProgress used={null} windowTokens={200_000} />,
     );
-    expect(container.querySelector('[data-slot="context-meter"]')).toBeNull();
+    expect(container.querySelector('[data-slot="context-progress"]')).toBeNull();
   });
 
-  it("renders the ring with percentage metadata when both values are known", () => {
-    render(<ContextMeter used={45_000} windowTokens={200_000} />);
-    const ring = screen.getByRole("img", { name: /Context window/ });
-    expect(ring).toHaveAttribute("data-slot", "context-meter");
-    expect(ring).toHaveAttribute("data-variant", "default");
-    expect(ring).toHaveAttribute("data-pct", "23");
+  it("renders Astryx progress with percentage metadata when both values are known", () => {
+    const { container } = render(
+      <ContextProgress used={45_000} windowTokens={200_000} />,
+    );
+    const progress = screen.getByRole("progressbar", { name: "Context" });
+    expect(progress).toHaveAttribute("aria-valuenow", "22.5");
+    expect(container.querySelector('[data-slot="context-progress"]')).toHaveAttribute(
+      "data-pct",
+      "23",
+    );
+    expect(screen.getByText("23% · 45k/200k")).toBeInTheDocument();
   });
 
-  it("marks unknown-window as neutral", () => {
-    render(<ContextMeter used={12_000} windowTokens={null} />);
-    const ring = screen.getByRole("img", { name: /12k tokens/ });
-    expect(ring).toHaveAttribute("data-variant", "neutral");
-    expect(ring).toHaveAttribute("data-pct", "unknown");
+  it("shows only an honest raw count when the window is unknown", () => {
+    const { container } = render(
+      <ContextProgress used={12_000} windowTokens={null} />,
+    );
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText("12k tokens")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="context-progress"]')).toHaveAttribute(
+      "data-pct",
+      "unknown",
+    );
   });
 });

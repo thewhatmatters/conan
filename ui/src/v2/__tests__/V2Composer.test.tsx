@@ -138,11 +138,11 @@ describe("V2Composer", () => {
     );
   });
 
-  it("shows the context meter only once usage is reported (WHA-101)", () => {
+  it("shows context progress only once usage is reported (WHA-101/119)", () => {
     const { rerender, container } = render(
       <V2Composer activeThread={thread} send={vi.fn()} contextTokens={null} />,
     );
-    expect(container.querySelector('[data-slot="context-meter"]')).toBeNull();
+    expect(container.querySelector('[data-slot="context-progress"]')).toBeNull();
 
     rerender(
       <V2Composer
@@ -165,8 +165,59 @@ describe("V2Composer", () => {
         }}
       />,
     );
-    const ring = screen.getByRole("img", { name: /Context window/ });
-    expect(ring).toHaveAttribute("data-pct", "23");
+    expect(screen.getByRole("progressbar", { name: "Context" })).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="context-progress"]')).toHaveAttribute(
+      "data-pct",
+      "23",
+    );
+  });
+
+  it("uses the native Astryx status rail for real context pressure", () => {
+    const { rerender } = render(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        contextTokens={150_000}
+        sessionCapabilities={{
+          imageInput: false,
+          streamingDeltas: true,
+          interactiveApproval: true,
+          livePermissionSwitch: true,
+          costUsd: true,
+          reasoningText: false,
+          resume: true,
+          contextWindowTokens: 200_000,
+          modelSelection: true,
+          models: [],
+          permissionModes: [],
+          effortModes: [],
+        }}
+      />,
+    );
+    expect(screen.getByText(/Context is 75% full/)).toBeInTheDocument();
+
+    rerender(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        contextTokens={180_000}
+        sessionCapabilities={{
+          imageInput: false,
+          streamingDeltas: true,
+          interactiveApproval: true,
+          livePermissionSwitch: true,
+          costUsd: true,
+          reasoningText: false,
+          resume: true,
+          contextWindowTokens: 200_000,
+          modelSelection: true,
+          models: [],
+          permissionModes: [],
+          effortModes: [],
+        }}
+      />,
+    );
+    expect(screen.getByText(/Context is 90% full/)).toBeInTheDocument();
   });
 
   it("pre-launch selection is local; mid-session selection rides setPermissionMode", () => {

@@ -46,10 +46,12 @@ describe("context-meter denominator", () => {
     render(
       <V2Composer activeThread={thread} send={vi.fn()} contextTokens={45_000} />,
     );
-    const ring = screen.getByRole("img", { name: /Context window/ });
+    const progress = screen.getByText("45k tokens").closest(
+      '[data-slot="context-progress"]',
+    );
     // Registry says 200k. If it were consulted this would read "23% · 45k/200k".
-    expect(ring).toHaveAttribute("aria-label", "Context window: 45k tokens");
-    expect(ring).toHaveAttribute("data-pct", "unknown");
+    expect(progress).toHaveAttribute("data-pct", "unknown");
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("uses the session capabilities frame when it has arrived", () => {
@@ -74,7 +76,10 @@ describe("context-meter denominator", () => {
         }}
       />,
     );
-    const ring = screen.getByRole("img", { name: /Context window/ });
-    expect(ring).toHaveAttribute("aria-label", "Context window: 5% · 45k/1M");
+    expect(screen.getByRole("progressbar", { name: "Context" })).toHaveAttribute(
+      "aria-valuenow",
+      "4.5",
+    );
+    expect(screen.getByText("5% · 45k/1M")).toBeInTheDocument();
   });
 });

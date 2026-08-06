@@ -23,6 +23,11 @@ export interface ContextMeterState {
   detail: string;
 }
 
+export type ContextPressureStatus = {
+  type: "warning" | "error";
+  message: string;
+};
+
 /** Compact token count — same thresholds as v1's fmtTokens. */
 export function fmtTokens(n: number): string {
   const compact = (v: number, suffix: string) =>
@@ -59,4 +64,27 @@ export function contextMeterState(
       ? "Tokens the conversation is carrying (input + cached). Grows each turn."
       : "This provider reports no context-window size, so no percentage is shown — only the raw count.";
   return { pct, variant, usedLabel, windowLabel, summary, detail };
+}
+
+/**
+ * The composer validation/status rail is reserved for pressure that needs a
+ * user decision. Normal and unknown-window states stay quiet; warning/error
+ * states say how to recover instead of merely repeating the percentage.
+ */
+export function contextPressureStatus(
+  state: ContextMeterState | null,
+): ContextPressureStatus | undefined {
+  if (state?.variant === "warning") {
+    return {
+      type: "warning",
+      message: `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread soon to keep responses reliable.`,
+    };
+  }
+  if (state?.variant === "error") {
+    return {
+      type: "error",
+      message: `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread to preserve earlier details.`,
+    };
+  }
+  return undefined;
 }

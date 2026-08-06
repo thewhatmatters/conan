@@ -32,7 +32,11 @@ import BranchChip from "./composer/BranchChip.tsx";
 import ModelPicker from "./composer/ModelPicker.tsx";
 import EffortChip from "./composer/EffortChip.tsx";
 import PermissionModeChip from "./composer/PermissionModeChip.tsx";
-import ContextMeter from "./composer/ContextMeter.tsx";
+import ContextProgress from "./composer/ContextProgress.tsx";
+import {
+  contextMeterState,
+  contextPressureStatus,
+} from "./composer/contextMeterModel.ts";
 import RichInput from "./composer/RichInput.tsx";
 
 const styles = stylex.create({
@@ -178,6 +182,8 @@ export default function V2Composer({
   // which arrives with the first turn's result — by which point the
   // capabilities frame has long since landed.
   const windowTokens = sessionCapabilities?.contextWindowTokens ?? null;
+  const contextState = contextMeterState(contextTokens, windowTokens);
+  const contextStatus = contextPressureStatus(contextState);
 
   const handleSubmit = useCallback(
     (raw: string) => {
@@ -274,6 +280,9 @@ export default function V2Composer({
         </>
       }
       headerActions={branchChip}
+      headerContext={
+        <ContextProgress used={contextTokens} windowTokens={windowTokens} />
+      }
       footerActions={
         <div data-slot="composer-controls">
           {/* provider+model is the thread's identity and LOCKS after turn 1;
@@ -326,11 +335,8 @@ export default function V2Composer({
           />
         </VStack>
       }
-      // v1 places the context ring left of send in the right cluster. ChatComposer
-      // exposes that as sendActions (WHA-101).
-      sendActions={
-        <ContextMeter used={contextTokens} windowTokens={windowTokens} />
-      }
+      status={contextStatus}
+      statusPosition="bottom"
       sendButton={<ChatSendButton />}
     />
   );
