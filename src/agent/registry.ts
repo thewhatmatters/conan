@@ -111,10 +111,21 @@ export function getProvider(id: string): ProviderEntry | undefined {
 const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, number>>>> = {
   claude: {
     default: 200_000,
-    opus: 200_000,
+    // Aliases advertised by the v2 model picker (must match the labels/descriptions
+    // in ui/src/v2/chat/composer/ModelPicker.tsx).
+    opus: 1_000_000,
+    fable: 1_000_000,
     sonnet: 200_000,
     haiku: 200_000,
+    // Full names Claude reports in its system init event, which refine the launch
+    // guess via capabilitiesForReportedModel (WHA-96).
+    "claude-opus-5": 1_000_000,
     "claude-fable-5": 1_000_000,
+    "claude-sonnet-5": 200_000,
+    "claude-haiku-4-5": 200_000,
+    // Older Anthropic variants kept for reported-model robustness.
+    "claude-3-opus-20240229": 200_000,
+    "claude-3-5-sonnet-20241022": 200_000,
   },
   codex: {
     "gpt-5.6-sol": 272_000,
@@ -141,7 +152,30 @@ const CONTEXT_WINDOWS: Readonly<Record<ProviderId, Readonly<Record<string, numbe
 };
 
 export function contextWindowFor(provider: ProviderId, model?: string): number | null {
-  return CONTEXT_WINDOWS[provider][model ?? "default"] ?? null;
+  const table = CONTEXT_WINDOWS[provider];
+  // Normalize Claude's bracketed window hints (e.g. `claude-opus-5[1m]`) so the
+  // lookup operates on the base model slug. Keep the original `model` for the
+  // early "no reported model" guard below.
+  const normalized = (model ?? "default").replace(/\[[^\]]*\]$/, "");
+  const exact = table[normalized];
+  if (exact != null) return exact;
+  if (!model || model === "default") return null;
+  // Claude reports date-suffixed model variants (e.g. claude-opus-5-20241022).
+  // For that provider only, fall back to the longest matching verified base slug
+  // so the meter corrects after the CLI reports the resolved model name.
+  if (provider === "claude") {
+    let bestValue: number | null = null;
+    let bestKeyLen = -1;
+    for (const [k, v] of Object.entries(table)) {
+      if (k === "default") continue;
+      if (normalized.startsWith(`${k}-`) && k.length > bestKeyLen) {
+        bestValue = v;
+        bestKeyLen = k.length;
+      }
+    }
+    return bestValue;
+  }
+  return null;
 }
 
 /** Resolve the launch-specific denominator without mutating the driver's
