@@ -23,16 +23,16 @@ This is one seam with two policies, not two doors.
 
 ## 2. Containment semantics
 
-Containment is resolved at spawn time from `(provider, permission_mode)` and recorded as an observed mode-change event. Classes are ordered from least to most restrictive:
+Containment is resolved at spawn time from `(provider, permission_mode)` and recorded both as a column on the attempt row (`containment_observed`) and as observed mode-change events for mid-attempt widening. The classes are not totally ordered; a role floor is an explicit allowed-set.
 
 | Class | Meaning | Examples |
 |---|---|---|
-| `none` | No OS or prompt isolation beyond the provider's defaults. | Grok default, unknown provider |
-| `prompt-gated` | Model is instructed to refuse dangerous edits; no OS enforcement. | Claude default supervised mode |
-| `fail-closed-cancel` | OS-level read-only or operation-cancellation on approval refusal. | Claude with `--permission-prompt-tool stdio` |
-| `os-sandbox` | Provider's read-only / workspace-write sandbox enforced by the OS. | Codex `--sandbox read-only`, `--sandbox workspace-write` |
+| `none` | No approval channel and permission flags rejected; every tool runs. | kimi headless `-p` (`danger-full-access` on every session) |
+| `prompt-gated` | Approvals route to a human via the control channel; tools the user's `settings.json` already allows never prompt. | claude default supervised mode |
+| `fail-closed-cancel` | No approval channel exists; anything needing approval cancels the turn. Tools inside the allowlist still run. | grok `default` (unknown modes floor here) |
+| `os-sandbox` | Kernel-enforced, fixed at spawn. | codex `--sandbox read-only`, `--sandbox workspace-write` |
 
-Containment floors are per role. A role binding must meet the floor or the dispatch is refused.
+Containment floors are per role. A role floor is an explicit set of allowed classes (e.g., `floor: [os-sandbox]` or `floor: [os-sandbox, fail-closed-cancel]`), not a `>=` comparison on a fake total order. A role binding must be in the allowed set or the dispatch is refused.
 
 - **Critic floor:** `unknown` is unacceptable until a Conan envelope exists. Until then, a code critic is bound to `codex` with `sandbox: read-only` explicitly pinned (must not inherit the session's `acceptEdits`/`workspace-write` mode).
 
@@ -62,6 +62,7 @@ NEEDS_EVIDENCE
 - `APPROVED` is artifact-class-aware:
   - Read-verifiable artifacts (docs, rubrics) may satisfy acceptance on read.
   - Executable / user-visible artifacts require evidence-backed matching and may require human-eye review (see §6).
+- Promote gate cannot clear without admissible evidence per §6.
 
 ## 5. Evidence object
 
@@ -115,7 +116,8 @@ The dispatcher and lineage layer enforce these as pure value-object checks with 
 - Builder principal/instance differs from verifier.
 - Round and same-finding caps.
 - Stale digest/SHA invalidates evidence and approval.
-- Promote gate cannot clear without admissible evidence.
+
+Promote-gate checks (admissible evidence, stale-tip invalidation) live on the promote path, not in the dispatcher.
 
 ## 10. Open product decisions for Randy
 
