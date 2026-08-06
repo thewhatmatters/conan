@@ -18,7 +18,6 @@ import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
-import { VStack } from "@astryxdesign/core/VStack";
 import { Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
@@ -43,11 +42,6 @@ import {
 import RichInput from "./composer/RichInput.tsx";
 
 const styles = stylex.create({
-  // TS-0 — the input region's floor, so the composer has room to compose in.
-  inputSlot: {
-    justifyContent: "center",
-    minHeight: "var(--conan-composer-input-min)",
-  },
   fileInput: {
     display: "none",
   },
@@ -359,17 +353,11 @@ export default function V2Composer({
         </div>
       }
       input={
-        // S5-0's input region (TS-0) is min-height 84px. ChatComposerInput has
-        // maxRows but no minRows, so the floor lives on the slot wrapper —
-        // without it the input collapses to a single 30px row and the composer
-        // reads cramped against the artboard.
-        <VStack gap={0} xstyle={styles.inputSlot}>
-          <RichInput
-            token={token}
-            cwd={activeThread?.cwd ?? null}
-            onFiles={handleFiles}
-          />
-        </VStack>
+        <RichInput
+          token={token}
+          cwd={activeThread?.cwd ?? null}
+          onFiles={handleFiles}
+        />
       }
       status={contextStatus}
       statusPosition="bottom"

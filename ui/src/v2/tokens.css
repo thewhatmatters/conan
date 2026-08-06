@@ -230,10 +230,6 @@
    * away from the caret. The frosted dock still spans the well; only the
    * CONTENT is constrained. */
   --conan-chat-measure: 800px;
-  /* S5-0's input region (TS-0) is min-height 84px — enough to compose a few
-   * lines before it grows. Without it the input collapses to one 30px row and
-   * the composer reads cramped. */
-  --conan-composer-input-min: 84px;
   /* Model picker: FIXED so switching providers never resizes the panel. Sized
    * to the Claude list — five 56px rows + 8px list inset (288) + the 46px
    * search row + the 37px footer. Providers with more models scroll; with
