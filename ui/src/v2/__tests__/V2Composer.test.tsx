@@ -21,6 +21,7 @@ vi.mock("../lib/useV2Providers.ts", async (importOriginal) => {
         name: "Claude Code",
         installed: true,
         capabilities: {
+          imageInput: true,
           models: [],
           effortModes: [{ id: "think", label: "Think" }],
           permissionModes: [
@@ -59,6 +60,38 @@ describe("V2Composer", () => {
     expect(
       screen.getByLabelText("Message input"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Mention a file or folder" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Attach files" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens @ typeahead from the visible mention action", () => {
+    render(<V2Composer activeThread={thread} send={vi.fn()} />);
+    const textbox = screen.getByLabelText("Message input");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mention a file or folder" }),
+    );
+
+    expect(textbox).toHaveFocus();
+    expect(textbox.textContent).toBe("@");
+  });
+
+  it("stages a selected image from the visible attachment action", async () => {
+    const { container } = render(
+      <V2Composer activeThread={thread} send={vi.fn()} />,
+    );
+    const chooser = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const image = new File(["image"], "reference.png", { type: "image/png" });
+
+    expect(chooser).not.toBeNull();
+    fireEvent.change(chooser!, { target: { files: [image] } });
+
+    expect(await screen.findByText("Image 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Items" })).toBeInTheDocument();
   });
 
   it("calls send(text, { cwd, provider }) on submit and clears the input", () => {

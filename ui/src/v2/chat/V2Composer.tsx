@@ -13,10 +13,14 @@
  * from context (do not double-bind value on the input slot — it breaks the
  * caret and clear-after-send, docs §9 gotcha 4).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
+import type { ChatComposerInputHandle } from "@astryxdesign/core/Chat";
+import { Button } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
+import { AtSign, Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
@@ -45,7 +49,12 @@ const styles = stylex.create({
     justifyContent: "center",
     minHeight: "var(--conan-composer-input-min)",
   },
+  fileInput: {
+    display: "none",
+  },
 });
+
+const ACTION_ICON = 16;
 
 export interface V2ComposerProps {
   /** Active sidebar selection — supplies cwd/provider for send. */
@@ -118,6 +127,8 @@ export default function V2Composer({
   interrupt,
 }: V2ComposerProps) {
   const [value, setValue] = useState("");
+  const inputHandleRef = useRef<ChatComposerInputHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const attachments = useComposerAttachments(token);
   const providers = useV2Providers(token);
   // The launch config the picker commits: provider (fresh sessions only),
@@ -253,6 +264,46 @@ export default function V2Composer({
     [acceptsImages, attachments],
   );
 
+  const insertMention = useCallback(() => {
+    inputHandleRef.current?.focus();
+    inputHandleRef.current?.insertText("@");
+  }, []);
+
+  const headerActions = (
+    <HStack align="center" gap={1}>
+      <Button
+        variant="ghost"
+        size="sm"
+        isIconOnly
+        label="Mention a file or folder"
+        icon={<AtSign size={ACTION_ICON} aria-hidden />}
+        onClick={insertMention}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        isIconOnly
+        label="Attach files"
+        icon={<Paperclip size={ACTION_ICON} aria-hidden />}
+        onClick={() => fileInputRef.current?.click()}
+      />
+      {branchChip}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          if (files.length > 0) handleFiles(files);
+          event.currentTarget.value = "";
+        }}
+        {...stylex.props(styles.fileInput)}
+      />
+    </HStack>
+  );
+
   return (
     <ChatComposer
       data-slot="v2-composer"
@@ -279,7 +330,7 @@ export default function V2Composer({
           />
         </>
       }
-      headerActions={branchChip}
+      headerActions={headerActions}
       headerContext={
         <ContextProgress used={contextTokens} windowTokens={windowTokens} />
       }
@@ -332,6 +383,7 @@ export default function V2Composer({
             token={token}
             cwd={activeThread?.cwd ?? null}
             onFiles={handleFiles}
+            handleRef={inputHandleRef}
           />
         </VStack>
       }
