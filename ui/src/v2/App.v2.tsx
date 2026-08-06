@@ -58,6 +58,7 @@ import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import AddProjectDialog from "./components/AddProjectDialog.tsx";
 import V2CommandPalette from "./command/CommandPalette.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
+import type { V2ChatViewProps } from "./chat/V2ChatView.tsx";
 import SurfaceWorkspace from "./components/SurfaceWorkspace.tsx";
 import type { BrowserSurfaceReport } from "../hooks/useAgentChat.ts";
 import {
@@ -124,6 +125,21 @@ const NO_PREVIEW = "No messages yet";
 interface V2Draft {
   id: string;
   projectId: string;
+  /**
+   * The session the draft became once the user sent (WHA-121).
+   *
+   * A draft is local state with no `chat_thread` row. On the first send the
+   * gateway writes that row — titled from the prompt — but nothing used to
+   * tell the shell, so the row stayed "New chat" and a later visit reopened a
+   * session the shell could not name, losing the transcript.
+   *
+   * The draft is NOT discarded on promotion. Its id is what `V2ChatView` is
+   * keyed by, and swapping that key mid-turn would remount the view and tear
+   * the socket down — the promotion has to be invisible to the live pane.
+   * The draft therefore survives as the row's identity and carries the
+   * session id that makes it reopenable.
+   */
+  sessionId?: string;
 }
 
 /** The project behind an open "Remove project?" confirmation (WHA-74). */
@@ -307,7 +323,14 @@ export default function AppV2() {
     (projectId: string) => {
       const project = projects.find((candidate) => candidate.id === projectId);
       if (!project) return;
-      const existing = drafts.find((draft) => draft.projectId === projectId);
+      // "One reusable draft per project" means one UNSENT one (WHA-121). A
+      // draft survives promotion now — it is the sent thread's row identity —
+      // so matching on project alone would hand "New chat" straight back to
+      // the conversation the user just had. Caught in the live pass: two New
+      // chats in a row produced one row and one thread.
+      const existing = drafts.find(
+        (draft) => draft.projectId === projectId && !draft.sessionId,
+      );
       const id = existing?.id ?? draftId();
       if (!existing) setDrafts((current) => [...current, { id, projectId }]);
       setActiveThread({
@@ -326,11 +349,17 @@ export default function AppV2() {
     async (row: ThreadRowProps) => {
       const id = row.id;
       if (!id) return;
-      if (id.startsWith("draft-")) {
-        setDrafts((current) => current.filter((draft) => draft.id !== id));
-      } else if (token) {
+      // WHA-121 — a SENT draft still carries a `draft-…` id but now owns a real
+      // row. Dropping only the local entry would strand that row in the DB,
+      // reappearing in the sidebar on the next refresh, so resolve it first.
+      const draft = drafts.find((candidate) => candidate.id === id);
+      const persistedId = draft ? draft.sessionId : id;
+      if (draft) {
+        setDrafts((current) => current.filter((candidate) => candidate.id !== id));
+      }
+      if (persistedId && token) {
         const response = await fetch(
-          apiBase() + `/api/agent/threads/${encodeURIComponent(id)}`,
+          apiBase() + `/api/agent/threads/${encodeURIComponent(persistedId)}`,
           {
             method: "DELETE",
             headers: { "x-conan-token": token },
@@ -341,7 +370,7 @@ export default function AppV2() {
       }
       setActiveThread((current) => (current?.key === id ? null : current));
     },
-    [refresh, token],
+    [drafts, refresh, token],
   );
 
   const requestDeleteThread = useCallback((row: ThreadRowProps) => {
@@ -452,6 +481,17 @@ export default function AppV2() {
   // Presentational shape for the sidebar. Groups open by default: the gateway
   // already returns projects newest-activity-first, so the top of the tree is
   // the work you were last in. (Sort/group controls are US-504.)
+  /** Sessions a draft already owns — their saved rows must not list twice. */
+  const promotedSessionIds = useMemo(
+    () =>
+      new Set(
+        drafts
+          .map((draft) => draft.sessionId)
+          .filter((id): id is string => id != null),
+      ),
+    [drafts],
+  );
+
   const groups: ProjectGroup[] = useMemo(
     () =>
       projects.map((p) => ({
@@ -463,24 +503,36 @@ export default function AppV2() {
         threads: [
           ...drafts
             .filter((draft) => draft.projectId === p.id)
-            .map((draft): ThreadRowProps => ({
-              id: draft.id,
-              title: UNTITLED,
-              subtitle: NO_PREVIEW,
-              provider: "claude",
-              status: pillOf(states[draft.id]),
-              onNewThread: () => newThreadIn(p.id),
-              onRename: null,
-              onCopyPath: null,
-              onCopyId: null,
-              onDelete: () =>
-                requestDeleteThread({
-                  id: draft.id,
-                  title: UNTITLED,
-                  subtitle: NO_PREVIEW,
-                }),
-            })),
-          ...p.threads.map((thread): ThreadRowProps => {
+            .map((draft): ThreadRowProps => {
+              // WHA-121 — once sent, the draft IS the saved thread. It keeps
+              // its own id (the chat view is keyed by it) but renders the
+              // gateway's title and preview, and the saved row is suppressed
+              // below so the conversation appears once, not twice.
+              const saved = draft.sessionId
+                ? p.threads.find((t) => t.sessionId === draft.sessionId)
+                : undefined;
+              const row: ThreadRowProps = {
+                id: draft.id,
+                title: saved?.title ?? UNTITLED,
+                subtitle: saved?.lastMessage ?? NO_PREVIEW,
+                provider: asProviderId(saved?.provider),
+                status: pillOf(states[draft.id]),
+                lastActivity: saved?.lastActivity,
+              };
+              return {
+                ...row,
+                onNewThread: () => newThreadIn(p.id),
+                // Rename and copy-id need a persisted row behind them, so they
+                // stay off until the draft has actually been sent.
+                onRename: saved ? () => setRenameTarget(row) : null,
+                onCopyPath: saved ? () => copyText(saved.cwd || p.path) : null,
+                onCopyId: saved ? () => copyText(saved.sessionId) : null,
+                onDelete: () => requestDeleteThread(row),
+              };
+            }),
+          ...p.threads
+            .filter((thread) => !promotedSessionIds.has(thread.sessionId))
+            .map((thread): ThreadRowProps => {
             const row: ThreadRowProps = {
               id: thread.sessionId,
               title: thread.title ?? UNTITLED,
@@ -505,6 +557,7 @@ export default function AppV2() {
       drafts,
       newThreadIn,
       projects,
+      promotedSessionIds,
       requestDeleteThread,
       requestRemoveProject,
       states,
@@ -533,17 +586,51 @@ export default function AppV2() {
       ? "empty"
       : "loading";
 
-  const onActiveState = useCallback(
-    (state: Parameters<typeof reportState>[1]) => {
-      if (activeThread) reportState(activeThread.key, state);
+  /**
+   * The chat's state, and the one moment a draft becomes a real thread (WHA-121).
+   *
+   * Two things happen on the first send: the gateway writes the `chat_thread`
+   * row (titled from the prompt, `src/agent/index.ts:186`), and the socket
+   * reports the session id. Only the second reaches the client, and until now
+   * it stopped at `V2ChatView`. Binding the id to the draft here is what makes
+   * the sidebar row nameable and the thread reopenable.
+   *
+   * What this deliberately does NOT do is touch `activeThread`. Its `key` is
+   * the chat view's React key, so moving it mid-turn remounts the view and
+   * tears the socket down; and setting `activeThread.sessionId` would start
+   * `useV2ThreadHistory` fetching the transcript of the session still
+   * streaming, prepending a duplicate of what is already on screen. The
+   * promotion is recorded on the DRAFT and only read on the next visit.
+   */
+  const onActiveState = useCallback<NonNullable<V2ChatViewProps["onState"]>>(
+    ({ sessionId, ...pill }) => {
+      if (!activeThread) return;
+      reportState(activeThread.key, pill);
+      if (!sessionId) return;
+      const draft = drafts.find((candidate) => candidate.id === activeThread.key);
+      if (!draft || draft.sessionId === sessionId) return;
+      setDrafts((current) =>
+        current.map((candidate) =>
+          candidate.id === draft.id ? { ...candidate, sessionId } : candidate,
+        ),
+      );
+      // Pull the row the gateway just wrote, so the sidebar shows its real
+      // title and preview without the user reloading.
+      void refresh();
     },
-    [activeThread?.key, reportState],
+    [activeThread, drafts, refresh, reportState],
   );
 
   const onSelectThread = useCallback(
     (row: ThreadRowProps, projectName: string) => {
       const key = row.id ?? row.title;
-      const hit = index.get(key);
+      // WHA-121 — a sent draft keeps its `draft-…` id as the row identity, so
+      // the saved-thread index has to be reached through its session id.
+      // Without this the lookup missed and fell to the placeholder branch
+      // below, which opens a session with no `sessionId` — no history to
+      // reconstruct, which is exactly why revisiting read as a brand-new chat.
+      const promoted = drafts.find((draft) => draft.id === key)?.sessionId;
+      const hit = index.get(promoted ?? key);
       if (!hit) {
         // A row with no backing saved thread (the prop-less placeholder tree in
         // tests/stories). Fall back to the app's own cwd so the well still
@@ -572,7 +659,7 @@ export default function AppV2() {
         effort: thread.effort,
       });
     },
-    [config?.cwd, index],
+    [config?.cwd, drafts, index],
   );
 
   // WHA-104 — the breadcrumb's thread menu. It reads the SAME group the sidebar
