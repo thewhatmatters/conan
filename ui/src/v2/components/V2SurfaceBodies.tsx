@@ -49,14 +49,68 @@ const styles = stylex.create({
     paddingBlockStart: "calc(var(--conan-secondary-bar-height) + var(--conan-space-4))",
     paddingInline: "var(--conan-space-4)",
   },
+  /**
+   * WHA-120 — for a surface that owns a scroller, the pane is an OVERLAY
+   * stack, not a column of rows.
+   *
+   * WHA-115 gave `body` a top inset so its content cleared the pane's glass
+   * bar. That works while `body` is itself the scroller. It stops working the
+   * moment a surface nests its own (WHA-114 gave Files and Diff a path row
+   * plus `treeScroller`): the inner scroller then starts BELOW both bars, so
+   * nothing ever passes under the glass and the bar reads flat. Measured at
+   * `1df121e`: bar bottom y=129, scroller top y=161.
+   *
+   * The fix is to stop stacking and start layering. `body` drops its inset and
+   * becomes the positioning context; the surface's own toolbar joins the glass
+   * band as a second frosted bar; and the scroller runs the FULL pane height
+   * with a top inset covering both. Rows then slide under the path row and the
+   * pane bar in one motion, which is what "you can vaguely see the content
+   * behind it" asks for.
+   */
+  overlayBody: {
+    overflow: "clip",
+    paddingBlockStart: 0,
+    position: "relative",
+  },
   surfaceHeader: {
     alignItems: "center",
     borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
+    boxSizing: "border-box",
     display: "flex",
     flexShrink: 0,
     gap: "var(--conan-space-2)",
-    minHeight: "var(--conan-control-height)",
+    // Fixed, not `min-height`: `overlayScroller` below offsets by exactly this
+    // value, and a header free to grow would silently hide the first row.
+    height: "var(--conan-control-height)",
     paddingInline: "var(--conan-space-3)",
+  },
+  // The surface's own toolbar, lifted into the pane's glass band (WHA-120).
+  // Same tint and blur as the pane header above it, so the two read as one
+  // frosted stack divided by the rule `surfaceHeader` already draws.
+  glassHeader: {
+    backdropFilter: "blur(var(--conan-glass-blur))",
+    WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
+    backgroundColor: "var(--conan-glass-tint)",
+    insetInline: 0,
+    position: "absolute",
+    top: "var(--conan-secondary-bar-height)",
+    zIndex: 2,
+  },
+  // The Browser's URL row as a glass bar (WHA-120). No fixed height and no
+  // matching offset on the frame below it, unlike `surfaceHeader`: the frame
+  // fills the whole pane and the page inside scrolls itself, so there is no
+  // "first row" that has to clear the bar.
+  browserBar: {
+    alignItems: "center",
+    borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
+    boxSizing: "border-box",
+    paddingBlock: "var(--conan-space-2)",
+    paddingInline: "var(--conan-space-4)",
+  },
+  // Fills the pane behind the two glass bars rather than starting below them.
+  frameFill: {
+    inset: 0,
+    position: "absolute",
   },
   headerPath: {
     flexGrow: 1,
@@ -81,11 +135,22 @@ const styles = stylex.create({
     justifyContent: "center",
     padding: "var(--conan-space-1)",
   },
+  // Longhand, not the `padding` shorthand it used to be: `overlayScroller`
+  // overrides only the block-start, and a shorthand here would win and put the
+  // first row back under the glass.
   treeScroller: {
     flexGrow: 1,
     minHeight: 0,
     overflow: "auto",
-    padding: "var(--conan-space-1)",
+    paddingBlock: "var(--conan-space-1)",
+    paddingInline: "var(--conan-space-1)",
+  },
+  // Clears BOTH frosted bars — the pane's and the surface's own — while
+  // leaving the scroller itself spanning the full pane, which is what lets
+  // rows scroll up under them instead of stopping at them.
+  overlayScroller: {
+    paddingBlockStart:
+      "calc(var(--conan-secondary-bar-height) + var(--conan-control-height) + var(--conan-space-1))",
   },
   count: {
     backgroundColor: "var(--conan-wash-raised)",
@@ -105,6 +170,18 @@ const styles = stylex.create({
   statDivider: { color: "var(--conan-text-dim)" },
   inlineError: { color: "var(--conan-color-error)" },
   fill: { flexGrow: 1, minHeight: 0, minWidth: 0, width: "100%" },
+  // WHA-120 — the terminal keeps its inset, deliberately, and this is the one
+  // surface where "content under the glass" is the WRONG answer.
+  //
+  // xterm is TOP-anchored until its scrollback exceeds the viewport — measured
+  // on a fresh shell, the prompt paints on the container's first row rather
+  // than at its foot. Give the terminal the full pane and
+  // that prompt renders under the frosted bar, blurred and unreadable, until
+  // enough output pushes it up — the state a user is in every single time they
+  // open the surface. Scrollback that has already left the viewport is clipped
+  // by xterm's own scroller, not drawn under ours, so full-bleed buys nothing
+  // for the scrolled case either. Cost with no benefit; the bar stays solid
+  // over the terminal's own tone.
   terminal: {
     backgroundColor: "var(--conan-color-terminal)",
     paddingBlockEnd: "var(--conan-space-2)",
@@ -373,9 +450,27 @@ export function V2BrowserSurface({
   const currentUrl = view.kind === "empty" ? null : view.url;
   const go = useCallback(() => void navigate(draft), [draft, navigate]);
 
+  // WHA-120 — the page reads through the glass only on the IFRAME path.
+  //
+  // Where the native child webview is available (WHA-38, the Tauri app) it is
+  // composited ABOVE the DOM: it cannot be blurred, and stretching its anchor
+  // under the bar would paint an opaque native rectangle straight over the
+  // pane's frosted header, hiding Actions / Open / Commit & Push entirely.
+  // So the app keeps the inset layout and only the browser preview goes
+  // full-bleed. The two DO diverge; that is a property of the native view, not
+  // a shortcut. Flagged to Randy rather than shipped quietly.
+  const readsThroughGlass = !native.supported;
+
   return (
-    <VStack gap={3} xstyle={[styles.body, styles.padded]}>
-      <HStack gap={2} align="end">
+    <VStack
+      gap={3}
+      xstyle={[styles.body, styles.padded, readsThroughGlass && styles.overlayBody]}
+    >
+      <HStack
+        gap={2}
+        align="end"
+        xstyle={readsThroughGlass && [styles.browserBar, styles.glassHeader]}
+      >
         <TextInput
           label="URL"
           isLabelHidden
@@ -465,7 +560,7 @@ export function V2BrowserSurface({
       ) : null}
 
       {view.kind === "ok" && !native.supported ? (
-        <VStack xstyle={styles.fill}>
+        <VStack xstyle={[styles.fill, styles.frameFill]}>
           <iframe
             key={frameKey}
             src={view.url}
@@ -608,8 +703,8 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
   if (!token || !cwd) return <CenterState>Select a thread to browse its files.</CenterState>;
   if (!listing) return <CenterState>Loading files…</CenterState>;
   return (
-    <VStack xstyle={styles.body}>
-      <div {...stylex.props(styles.surfaceHeader)}>
+    <VStack xstyle={[styles.body, styles.overlayBody]}>
+      <div {...stylex.props(styles.surfaceHeader, styles.glassHeader)}>
         {preview ? (
           <button type="button" aria-label="Back to files" onClick={() => setPreview(null)} {...stylex.props(styles.iconButton)}>
             <ArrowLeft size={16} aria-hidden />
@@ -631,7 +726,7 @@ export function V2FilesSurface({ token, cwd }: { token: string | null; cwd: stri
       ) : listing.error ? (
         <CenterState>{listing.error}</CenterState>
       ) : (
-        <div {...stylex.props(styles.treeScroller)}>
+        <div {...stylex.props(styles.treeScroller, styles.overlayScroller)}>
           <V2FileTree
             label="Workspace files"
             nodes={nodes}
@@ -732,12 +827,12 @@ export function V2DiffSurface({ token, cwd }: { token: string | null; cwd: strin
     );
   };
   return (
-    <VStack xstyle={styles.body}>
-      <div {...stylex.props(styles.surfaceHeader)}>
+    <VStack xstyle={[styles.body, styles.overlayBody]}>
+      <div {...stylex.props(styles.surfaceHeader, styles.glassHeader)}>
         <Text type="supporting" color="secondary">Uncommitted changes</Text>
         <span {...stylex.props(styles.count)}><Text type="supporting" hasTabularNumbers>{parsed.length}</Text></span>
       </div>
-      <div {...stylex.props(styles.treeScroller)}>
+      <div {...stylex.props(styles.treeScroller, styles.overlayScroller)}>
         <V2FileTree
           label="Changed files"
           nodes={tree}
