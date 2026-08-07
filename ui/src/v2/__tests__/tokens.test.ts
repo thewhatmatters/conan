@@ -62,6 +62,13 @@ describe("v2 tokens.css", () => {
     expect(css).toContain("--conan-composer-measure: 450px");
   });
 
+  it("removes the glass scrim behind the solid composer", () => {
+    const css = injectedCss();
+    expect(css).toMatch(
+      /\[data-chat-view=["']v2["']\]\s*>\s*div:last-child\s*>\s*div:nth-last-child\(2\)\s*{[^}]*display:\s*none/s,
+    );
+  });
+
   it("sizes the breadcrumb thread menu to hug up to a 64-char title", () => {
     // Ceiling tracks the product cap (64 chars + check + padding ≈ 68ch), not
     // the old fixed 320px that left hollow empty space next to short rows.
