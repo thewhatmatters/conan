@@ -54,6 +54,24 @@ const question: PendingApproval = {
   },
 };
 
+const multipleQuestions: PendingApproval = {
+  ...question,
+  input: {
+    questions: [
+      ...(question.input as { questions: unknown[] }).questions,
+      {
+        header: "Style",
+        question: "How should the note be written?",
+        multiSelect: false,
+        options: [
+          { label: "Concise", description: "Keep only the essentials" },
+          { label: "Detailed", description: "Preserve supporting context" },
+        ],
+      },
+    ],
+  },
+};
+
 describe("optionsFor", () => {
   it("offers all four decisions for a tool call", () => {
     expect(optionsFor(approval).map((o) => o.decision)).toEqual([
@@ -108,18 +126,93 @@ describe("V2ApprovalGate", () => {
   it("requires every question and supports a free-text Other answer", () => {
     const respond = vi.fn();
     render(<V2ApprovalGate approval={question} count={1} respond={respond} />);
-    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
-    expect(screen.getByText("Answer each question before continuing.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Submit answers" })).toBeDisabled();
     expect(respond).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Other answer for Destination" }), {
+    const otherInput = screen.getByRole("textbox", { name: "Other answer for Destination" });
+    expect(otherInput).toHaveAttribute("placeholder", "Type something");
+    expect(screen.queryByText("Other")).toBeNull();
+    fireEvent.change(otherInput, {
       target: { value: "Research folder" },
     });
+    expect(screen.getByRole("button", { name: "Submit answers" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
     expect(respond).toHaveBeenCalledWith("approval-1", "accept", {
       ...(question.input as Record<string, unknown>),
       answers: { "Where should this note go?": "Research folder" },
     });
+  });
+
+  it("steps through multiple questions and preserves answers across Back and Next", () => {
+    const respond = vi.fn();
+    render(<V2ApprovalGate approval={multipleQuestions} count={1} respond={respond} />);
+
+    expect(screen.getByText("Question 1 of 2")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Question progress" })).toHaveProperty("value", 1);
+    expect(screen.getByRole("radio", { name: /Vault/ })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: /Concise/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit answers" })).toBeNull();
+    const initialActions = screen.getAllByRole("button").map((button) => button.textContent);
+    expect(initialActions.indexOf("Cancel turn")).toBeLessThan(initialActions.indexOf("Next question"));
+
+    expect(screen.getByRole("button", { name: "Next question" })).toBeDisabled();
+    expect(screen.getByText("Question 1 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Vault/ }));
+    expect(screen.getByRole("button", { name: "Next question" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+
+    expect(screen.getByText("Question 2 of 2")).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: /Vault/ })).toBeNull();
+    expect(screen.getByRole("radio", { name: /Concise/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Submit answers" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("radio", { name: /Vault/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Concise/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+
+    expect(respond).toHaveBeenCalledWith("approval-1", "accept", {
+      ...(multipleQuestions.input as Record<string, unknown>),
+      answers: {
+        "Where should this note go?": "Vault",
+        "How should the note be written?": "Concise",
+      },
+    });
+  });
+
+  it("shows and handles answer shortcuts without intercepting Other text", () => {
+    const { container } = render(
+      <V2ApprovalGate approval={question} count={1} respond={vi.fn()} />,
+    );
+    const gate = container.querySelector('[data-slot="v2-question-gate"]')!;
+
+    expect(screen.getByRole("img", { name: "1" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "2" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "3" })).toBeTruthy();
+
+    fireEvent.keyDown(gate, { key: "2" });
+    const archive = screen.getByRole("radio", { name: /Archive/ });
+    expect(archive).toBeChecked();
+    expect(document.activeElement).toBe(archive);
+
+    const other = screen.getByRole("textbox", { name: "Other answer for Destination" });
+    fireEvent.change(other, { target: { value: "Folder 2" } });
+    fireEvent.keyDown(other, { key: "1" });
+    expect(other).toHaveValue("Folder 2");
+    expect(screen.getByRole("radio", { name: /Vault/ })).not.toBeChecked();
+  });
+
+  it("does not show stepper chrome for a single question", () => {
+    render(<V2ApprovalGate approval={question} count={1} respond={vi.fn()} />);
+
+    expect(screen.queryByRole("progressbar", { name: "Question progress" })).toBeNull();
+    expect(screen.queryByText(/Question 1 of/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next question" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Submit answers" })).toBeTruthy();
   });
 
   it("fails recoverably when an AskUserQuestion payload is malformed", () => {

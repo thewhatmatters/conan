@@ -72,12 +72,12 @@ const styles = stylex.create({
     // message below the bar while letting the transcript slide under it.
     paddingBlockStart: "var(--conan-secondary-bar-height)",
   },
-  // ONE measure for the transcript and the composer, so message text and the
-  // input share a vertical axis. Applied to the CONTENT, not to ChatLayout —
-  // the frosted dock and the scroll area still span the whole well.
+  // The composer is intentionally narrower than the transcript: it is an
+  // action surface, not a reading column. The dock still spans the whole well
+  // and this remains fluid below its ceiling on narrow panes.
   measure: {
     marginInline: "auto",
-    maxWidth: "var(--conan-chat-measure)",
+    maxWidth: "var(--conan-composer-measure)",
     paddingBlockEnd: "calc(var(--conan-space-4) + var(--conan-space-1))",
     width: "100%",
   },

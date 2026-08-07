@@ -27,6 +27,7 @@ import { ChatComposerDrawer } from "@astryxdesign/core/Chat";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Kbd } from "@astryxdesign/core/Kbd";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import V2ApprovalContent from "./V2ApprovalPanel.tsx";
@@ -67,10 +68,19 @@ const styles = stylex.create({
     cursor: "pointer",
     display: "flex",
     gap: "var(--conan-space-2)",
+    width: "100%",
   },
   optionInput: {
     accentColor: "var(--conan-color-accent)",
     marginBlockStart: 3,
+  },
+  optionCopy: {
+    flexGrow: 1,
+    minWidth: 0,
+  },
+  optionShortcut: {
+    alignSelf: "center",
+    marginInlineStart: "auto",
   },
   otherInput: {
     backgroundColor: "var(--conan-color-field)",
@@ -83,6 +93,23 @@ const styles = stylex.create({
     width: "100%",
   },
   error: { color: "var(--conan-color-error)" },
+  questionGate: { width: "100%" },
+  actions: {
+    paddingBlockStart: "var(--conan-space-2)",
+    width: "100%",
+  },
+  trailingAction: { marginInlineStart: "auto" },
+  stepMeta: {
+    alignItems: "center",
+    display: "flex",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  progress: {
+    accentColor: "var(--conan-color-accent)",
+    height: "var(--conan-space-1)",
+    width: "100%",
+  },
 });
 
 interface AskOption { label: string; description?: string }
@@ -188,7 +215,8 @@ export default function V2ApprovalGate({
   );
   const [answers, setAnswers] = useState<Record<number, string[]>>({});
   const [other, setOther] = useState<Record<number, string>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [stepError, setStepError] = useState(false);
 
   // AC2: focus moves into the option list when the gate appears. Keyed on the
   // approval id so a SECOND queued approval re-focuses rather than leaving the
@@ -196,12 +224,13 @@ export default function V2ApprovalGate({
   useEffect(() => {
     const node = groupRef.current?.querySelector("input, button");
     if (node instanceof HTMLElement) node.focus();
-  }, [approval.id]);
+  }, [approval.id, currentStep]);
 
   useEffect(() => {
     setAnswers({});
     setOther({});
-    setSubmitted(false);
+    setCurrentStep(0);
+    setStepError(false);
   }, [approval.id]);
 
   if (approval.toolName === "AskUserQuestion" && !questions) {
@@ -225,10 +254,60 @@ export default function V2ApprovalGate({
       ...(answers[index] ?? []),
       ...(other[index]?.trim() ? [other[index].trim()] : []),
     ];
-    const complete = questions.every((_, index) => answerFor(index).length > 0);
+    // Parsing guarantees a non-empty list and navigation keeps this index in bounds.
+    const question = questions[currentStep]!;
+    const isLastStep = currentStep === questions.length - 1;
+    const currentComplete = answerFor(currentStep).length > 0;
+    const chooseOption = (option: AskOption) => {
+      const selected = answers[currentStep]?.includes(option.label) ?? false;
+      setStepError(false);
+      setAnswers((current) => ({
+        ...current,
+        [currentStep]: question.multiSelect
+          ? selected
+            ? (current[currentStep] ?? []).filter((item) => item !== option.label)
+            : [...(current[currentStep] ?? []), option.label]
+          : [option.label],
+      }));
+      if (!question.multiSelect) setOther((current) => ({ ...current, [currentStep]: "" }));
+    };
+    const chooseOther = () => {
+      setStepError(false);
+      setOther((current) => ({ ...current, [currentStep]: current[currentStep] || " " }));
+      if (!question.multiSelect) setAnswers((current) => ({ ...current, [currentStep]: [] }));
+    };
+    const onQuestionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement && target.type !== "radio" && target.type !== "checkbox") ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
+      const shortcut = Number(event.key);
+      if (!Number.isInteger(shortcut) || shortcut < 1) return;
+      const option = question.options[shortcut - 1];
+      if (option) {
+        event.preventDefault();
+        chooseOption(option);
+        const inputs = groupRef.current?.querySelectorAll<HTMLInputElement>(
+          `input[name="question-${approval.id}-${currentStep}"]`,
+        );
+        inputs?.[shortcut - 1]?.focus();
+      } else if (shortcut === question.options.length + 1 && shortcut <= 9) {
+        event.preventDefault();
+        chooseOther();
+        const inputs = groupRef.current?.querySelectorAll<HTMLInputElement>(
+          `input[name="question-${approval.id}-${currentStep}"]`,
+        );
+        inputs?.[shortcut - 1]?.focus();
+      }
+    };
     const submit = () => {
-      setSubmitted(true);
-      if (!complete) return;
+      if (!currentComplete) {
+        setStepError(true);
+        return;
+      }
       const answerMap = Object.fromEntries(
         questions.map((question, index) => [question.question, answerFor(index).join(", ")]),
       );
@@ -239,70 +318,131 @@ export default function V2ApprovalGate({
     };
     return (
       <ChatComposerDrawer data-slot="v2-approval-gate" label="Answer requested" count={count}>
-        <VStack gap={3} ref={groupRef} data-slot="v2-question-gate">
+        <VStack
+          gap={3}
+          ref={groupRef}
+          data-slot="v2-question-gate"
+          xstyle={styles.questionGate}
+          onKeyDown={onQuestionKeyDown}
+        >
           <VStack gap={1}>
             <Text type="body" weight="medium">The agent needs your input</Text>
-            <Text type="supporting" color="secondary">Answer each question to continue this turn.</Text>
+            <Text type="supporting" color="secondary">
+              {questions.length > 1 ? "Answer one question at a time." : "Answer this question to continue the turn."}
+            </Text>
           </VStack>
-          {questions.map((question, index) => (
-            <fieldset key={question.question} {...stylex.props(styles.question)}>
-              <VStack gap={2}>
-                <legend><Text type="body" weight="medium">{question.header || question.question}</Text></legend>
-                {question.header ? <Text type="supporting" color="secondary">{question.question}</Text> : null}
-                {question.options.map((option) => {
-                  const selected = answers[index]?.includes(option.label) ?? false;
-                  return (
-                    <label key={option.label} {...stylex.props(styles.optionLabel)}>
-                      <input
-                        type={question.multiSelect ? "checkbox" : "radio"}
-                        name={`question-${approval.id}-${index}`}
-                        checked={selected}
-                        onChange={() => {
-                          setAnswers((current) => ({
-                            ...current,
-                            [index]: question.multiSelect
-                              ? selected ? (current[index] ?? []).filter((item) => item !== option.label) : [...(current[index] ?? []), option.label]
-                              : [option.label],
-                          }));
-                          if (!question.multiSelect) setOther((current) => ({ ...current, [index]: "" }));
-                        }}
-                        {...stylex.props(styles.optionInput)}
-                      />
-                      <VStack gap={0}>
-                        <Text type="body">{option.label}</Text>
-                        {option.description ? <Text type="supporting" color="secondary">{option.description}</Text> : null}
-                      </VStack>
-                    </label>
-                  );
+          {questions.length > 1 ? (
+            <VStack gap={1}>
+              <div {...stylex.props(styles.stepMeta)}>
+                <Text type="supporting" color="secondary">Question {currentStep + 1} of {questions.length}</Text>
+                <Text type="supporting" color="secondary">{Math.round(((currentStep + 1) / questions.length) * 100)}%</Text>
+              </div>
+              <progress
+                aria-label="Question progress"
+                max={questions.length}
+                value={currentStep + 1}
+                {...stylex.props(styles.progress)}
+              />
+            </VStack>
+          ) : null}
+          <fieldset key={question.question} {...stylex.props(styles.question)}>
+            <VStack gap={2}>
+              <legend><Text type="body" weight="medium">{question.header || question.question}</Text></legend>
+              {question.header ? <Text type="supporting" color="secondary">{question.question}</Text> : null}
+              <VStack gap={3}>
+                {question.options.map((option, optionIndex) => {
+                const selected = answers[currentStep]?.includes(option.label) ?? false;
+                return (
+                  <label key={option.label} {...stylex.props(styles.optionLabel)}>
+                    <input
+                      type={question.multiSelect ? "checkbox" : "radio"}
+                      name={`question-${approval.id}-${currentStep}`}
+                      checked={selected}
+                      onChange={() => chooseOption(option)}
+                      {...stylex.props(styles.optionInput)}
+                    />
+                    <VStack gap={0} xstyle={styles.optionCopy}>
+                      <Text type="body">{option.label}</Text>
+                      {option.description ? <Text type="supporting" color="secondary">{option.description}</Text> : null}
+                    </VStack>
+                    {optionIndex < 9 ? <Kbd keys={String(optionIndex + 1)} xstyle={styles.optionShortcut} /> : null}
+                  </label>
+                );
                 })}
                 <label {...stylex.props(styles.optionLabel)}>
                   <input
                     type={question.multiSelect ? "checkbox" : "radio"}
-                    name={`question-${approval.id}-${index}`}
-                    checked={Boolean(other[index])}
-                    onChange={() => {
-                      setOther((current) => ({ ...current, [index]: current[index] || " " }));
-                      if (!question.multiSelect) setAnswers((current) => ({ ...current, [index]: [] }));
-                    }}
+                    name={`question-${approval.id}-${currentStep}`}
+                    checked={Boolean(other[currentStep])}
+                    onChange={chooseOther}
                     {...stylex.props(styles.optionInput)}
                   />
-                  <VStack gap={1}>
-                    <Text type="body">Other</Text>
+                  <VStack gap={0} xstyle={styles.optionCopy}>
                     <input
                       aria-label={`Other answer for ${question.header || question.question}`}
-                      value={other[index] ?? ""}
-                      onChange={(event) => setOther((current) => ({ ...current, [index]: event.target.value }))}
+                      placeholder="Type something"
+                      value={other[currentStep] ?? ""}
+                      onChange={(event) => {
+                        setStepError(false);
+                        setOther((current) => ({ ...current, [currentStep]: event.target.value }));
+                        if (!question.multiSelect) setAnswers((current) => ({ ...current, [currentStep]: [] }));
+                      }}
                       {...stylex.props(styles.otherInput)}
                     />
                   </VStack>
+                  {question.options.length < 9 ? (
+                    <Kbd keys={String(question.options.length + 1)} xstyle={styles.optionShortcut} />
+                  ) : null}
                 </label>
               </VStack>
-            </fieldset>
-          ))}
-          {submitted && !complete ? <Text type="supporting" xstyle={styles.error}>Answer each question before continuing.</Text> : null}
-          <HStack gap={2}>
-            <Button label="Submit answers" variant="primary" size="sm" onClick={submit} />
-            <Button label="Cancel turn" variant="destructive" size="sm" onClick={() => respond(approval.id, "cancel")} />
+            </VStack>
+          </fieldset>
+          {stepError ? <Text type="supporting" xstyle={styles.error}>Choose an answer before continuing.</Text> : null}
+          <HStack gap={3} xstyle={styles.actions}>
+            <Button
+              label="Cancel turn"
+              variant="destructive"
+              size="sm"
+              onClick={() => respond(approval.id, "cancel")}
+            />
+            {currentStep > 0 ? (
+              <Button
+                label="Back"
+                variant="secondary"
+                size="sm"
+                xstyle={styles.trailingAction}
+                onClick={() => {
+                  setStepError(false);
+                  setCurrentStep((step) => step - 1);
+                }}
+              />
+            ) : null}
+            {isLastStep ? (
+              <Button
+                label="Submit answers"
+                variant="primary"
+                size="sm"
+                isDisabled={!currentComplete}
+                xstyle={currentStep === 0 ? styles.trailingAction : undefined}
+                onClick={submit}
+              />
+            ) : (
+              <Button
+                label="Next question"
+                variant="primary"
+                size="sm"
+                isDisabled={!currentComplete}
+                xstyle={currentStep === 0 ? styles.trailingAction : undefined}
+                onClick={() => {
+                  if (!currentComplete) {
+                    setStepError(true);
+                    return;
+                  }
+                  setStepError(false);
+                  setCurrentStep((step) => step + 1);
+                }}
+              />
+            )}
           </HStack>
         </VStack>
       </ChatComposerDrawer>

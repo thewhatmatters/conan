@@ -224,12 +224,12 @@
   --conan-secondary-bar-height: 64px; /* LN-0 (16 + 32 + 16) */
 
   --conan-control-height: var(--size-element-md); /* 32px · every control */
-  /* The chat column's measure. The composer is 800px wide, and the
-   * transcript shares it so message text and the composer sit on ONE axis —
-   * a full-bleed 1200px+ line is unreadable and puts the send button a screen
-   * away from the caret. The frosted dock still spans the well; only the
-   * CONTENT is constrained. */
+  /* Reading and composing have different jobs. Transcript prose gets a roomy
+   * 800px ceiling; the action-heavy composer stays at a focused 450px so its
+   * controls read as one unit instead of floating across a wide empty field.
+   * Both remain fluid below their ceiling on narrow panes. */
   --conan-chat-measure: 800px;
+  --conan-composer-measure: 450px;
   /* Model picker: FIXED so switching providers never resizes the panel. Sized
    * to the Claude list — five 56px rows + 8px list inset (288) + the 46px
    * search row + the 37px footer. Providers with more models scroll; with
