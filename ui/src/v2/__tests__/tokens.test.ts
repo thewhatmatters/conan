@@ -56,8 +56,10 @@ describe("v2 tokens.css", () => {
     }
   });
 
-  it("keeps the transcript and composer on the 800px chat measure", () => {
-    expect(injectedCss()).toContain("--conan-chat-measure: 800px");
+  it("gives transcript and composer separate readable measures", () => {
+    const css = injectedCss();
+    expect(css).toContain("--conan-chat-measure: 800px");
+    expect(css).toContain("--conan-composer-measure: 450px");
   });
 
   it("sizes the breadcrumb thread menu to hug up to a 64-char title", () => {
