@@ -368,6 +368,15 @@
   }
 }
 
+/* Conan's composer is already an opaque, bounded surface; Astryx's glass scrim
+ * behind it adds a second visual layer and leaves a visible seam in the
+ * transcript. The blur layer is always the dock's second-last child
+ * (immediately before the composer), whether the optional scroll button is
+ * present or not. Remove that decorative layer and keep the dock literal. */
+[data-chat-view="v2"] > div:last-child > div:nth-last-child(2) {
+  display: none;
+}
+
 /* Keep the composer controls compressible before the send action. Astryx's
  * footer correctly reserves the send button, but the three trigger wrappers
  * otherwise use their content width as a floor and push that primary action
