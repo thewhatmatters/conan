@@ -26,10 +26,12 @@ interface ContextSnapshot {
   capabilities: ReturnType<typeof useV2Chat>["capabilities"];
 }
 
-// V2ChatView is keyed by thread, so navigation intentionally tears down its
-// socket and reducer. Keep only the last provider-reported context position
-// across that UI remount. The key is the thread — never the provider — because
-// two Claude threads can occupy very different positions in their windows.
+// V2ChatView is keyed by thread, so navigation remounts it. Since WHA-105 the
+// SESSION survives that remount, so a live thread carries its own context
+// position back — this map covers the one case that does not: a session the
+// registry evicted while idle, whose meter would otherwise reset to blank on
+// reopen. The key is the thread — never the provider — because two Claude
+// threads can occupy very different positions in their windows.
 const contextSnapshotByThread = new Map<string, ContextSnapshot>();
 
 export interface V2ChatViewProps {
@@ -37,22 +39,21 @@ export interface V2ChatViewProps {
   token: string | null;
   /** Sidebar selection; null until the user picks a thread. */
   activeThread: ActiveThread | null;
-  onState?: (state: {
-    status: "connecting" | "open" | "closed";
-    busy: boolean;
-    awaitingApproval: boolean;
-    /**
-     * The provider's session id, once its first `system` frame arrives — the
-     * same id the gateway keys the persisted `chat_thread` row on (WHA-121).
-     *
-     * The shell needs this and had no way to learn it. A `New chat` is local
-     * state until the first send; the gateway then writes the real row, but
-     * nothing told App.v2 that happened, so the sidebar kept showing an
-     * untitled draft and a later visit reopened a session it could not name.
-     * Null before the socket reports one, and on a closed session.
-     */
-    sessionId: string | null;
-  }) => void;
+  /**
+   * The provider's session id, once its first `system` frame arrives — the
+   * same id the gateway keys the persisted `chat_thread` row on (WHA-121).
+   *
+   * The shell needs this and had no way to learn it. A `New chat` is local
+   * state until the first send; the gateway then writes the real row, but
+   * nothing told App.v2 that happened, so the sidebar kept showing an untitled
+   * draft and a later visit reopened a session it could not name. Null before
+   * the socket reports one.
+   *
+   * This callback used to carry the sidebar pill state too. It no longer does:
+   * the pill is read from the session registry (WHA-105), which knows it for
+   * every live thread rather than only the mounted one.
+   */
+  onSessionId?: (sessionId: string | null) => void;
   /** What the Browser surface is showing (WHA-109). Owned by the shell, not by
    *  the chat, because the surface outlives this view — it is remounted per
    *  thread (`key`), and re-reporting on remount is what keeps a freshly opened
@@ -98,20 +99,16 @@ const styles = stylex.create({
 export default function V2ChatView({
   token,
   activeThread,
-  onState,
+  onSessionId,
   browserSurface,
 }: V2ChatViewProps) {
   // No selection → no socket. Opening /ws/agent for a well that has nothing to
-  // chat with holds an agent session open for nothing, and (because App.v2
-  // keys this view by the selection) the first click would tear that socket
-  // down mid-handshake — a "closed before the connection is established"
-  // warning in the console for no gain.
+  // chat with holds an agent session open for nothing.
   const {
     items: live,
     send,
     status,
     busy,
-    awaitingApproval,
     pendingApproval,
     pendingApprovals,
     respondToApproval,
@@ -122,7 +119,7 @@ export default function V2ChatView({
     contextTokens,
     capabilities: sessionCapabilities,
     reportBrowserSurface,
-  } = useV2Chat(activeThread ? token : null);
+  } = useV2Chat(activeThread ? token : null, activeThread?.key ?? null);
   const cachedContext = activeThread
     ? contextSnapshotByThread.get(activeThread.key)
     : undefined;
@@ -147,8 +144,8 @@ export default function V2ChatView({
     });
   }, [activeThread, contextTokens, sessionCapabilities]);
   useEffect(() => {
-    if (activeThread) onState?.({ status, busy, awaitingApproval, sessionId });
-  }, [activeThread, awaitingApproval, busy, onState, sessionId, status]);
+    if (activeThread) onSessionId?.(sessionId);
+  }, [activeThread, onSessionId, sessionId]);
   // Push the Browser surface's state down the socket whenever it changes —
   // and once more whenever the socket reopens, since the gateway holds this
   // per-connection and a reconnect starts it empty.
@@ -156,19 +153,6 @@ export default function V2ChatView({
     if (!browserSurface || status !== "open") return;
     reportBrowserSurface(browserSurface);
   }, [browserSurface, reportBrowserSurface, status]);
-  useEffect(
-    () => () => {
-      if (activeThread) {
-        onState?.({
-          status: "closed",
-          busy: false,
-          awaitingApproval: false,
-          sessionId: null,
-        });
-      }
-    },
-    [activeThread?.key, onState],
-  );
   const history = useV2ThreadHistory(token, activeThread?.sessionId ?? null);
   // Restored turns first, then this run's. The live socket never replays what
   // the JSONL already holds, so there is nothing to dedupe.

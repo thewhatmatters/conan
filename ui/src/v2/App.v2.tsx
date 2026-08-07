@@ -75,9 +75,10 @@ import {
 } from "./lib/useV2Projects.ts";
 import type { ActiveThread } from "./lib/types.ts";
 import { asProviderId } from "../chat/model.ts";
+import { closeSession } from "../chat/sessionStore.ts";
 import type { ProjectGroup, ProjectTreeProps } from "./components/ProjectTree.tsx";
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
-import { pillOf, useV2ThreadState } from "./lib/useV2ThreadState.ts";
+import { pillOf, useV2ThreadStates } from "./lib/useV2ThreadState.ts";
 import { writeClipboardText } from "./lib/writeClipboardText.ts";
 import { apiBase } from "../lib/gateway.ts";
 import { MessagesSquare } from "lucide-react";
@@ -197,7 +198,7 @@ export default function AppV2() {
   // consumes it, and neither can see the other.
   const [browserSurface, setBrowserSurface] = useState<BrowserSurfaceReport>();
   const openPalette = useCallback(() => setPaletteOpen(true), []);
-  const { states, reportState } = useV2ThreadState();
+  const states = useV2ThreadStates();
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
     () => {
@@ -368,6 +369,10 @@ export default function AppV2() {
         if (!response.ok) throw new Error(`Delete failed (${response.status})`);
         await refresh();
       }
+      // WHA-105 — sessions outlive their view, so a deleted thread would leave
+      // an agent process running for a conversation that no longer exists.
+      // Deletion is the real end of a thread; navigation is not.
+      closeSession(id);
       setActiveThread((current) => (current?.key === id ? null : current));
     },
     [drafts, refresh, token],
@@ -406,12 +411,22 @@ export default function AppV2() {
         },
       );
       if (!response.ok) throw new Error(`Remove failed (${response.status})`);
+      // Same reasoning as deleteThread: the gateway cascaded these rows away,
+      // so every session they own has to end with them. Drafts are keyed by
+      // their local id, saved threads by session id; closing a key with no
+      // live session is a no-op, so both lists can be swept blindly.
+      for (const draft of drafts) {
+        if (draft.projectId === id) closeSession(draft.id);
+      }
+      for (const thread of projects.find((p) => p.id === id)?.threads ?? []) {
+        closeSession(thread.sessionId);
+      }
       setDrafts((current) => current.filter((draft) => draft.projectId !== id));
       // The open thread may have belonged to the project that just went away.
       setActiveThread((current) => (current?.projectId === id ? null : current));
       await refresh();
     },
-    [refresh, token],
+    [drafts, projects, refresh, token],
   );
 
   // WHA-74 recovery path. Upsert is idempotent by path (`gateway/index.ts:585`),
@@ -587,7 +602,7 @@ export default function AppV2() {
       : "loading";
 
   /**
-   * The chat's state, and the one moment a draft becomes a real thread (WHA-121).
+   * The one moment a draft becomes a real thread (WHA-121).
    *
    * Two things happen on the first send: the gateway writes the `chat_thread`
    * row (titled from the prompt, `src/agent/index.ts:186`), and the socket
@@ -596,16 +611,16 @@ export default function AppV2() {
    * the sidebar row nameable and the thread reopenable.
    *
    * What this deliberately does NOT do is touch `activeThread`. Its `key` is
-   * the chat view's React key, so moving it mid-turn remounts the view and
-   * tears the socket down; and setting `activeThread.sessionId` would start
-   * `useV2ThreadHistory` fetching the transcript of the session still
-   * streaming, prepending a duplicate of what is already on screen. The
-   * promotion is recorded on the DRAFT and only read on the next visit.
+   * the session's identity in the registry, so moving it mid-turn would strand
+   * the running session under the old key and open a second one; and setting
+   * `activeThread.sessionId` would start `useV2ThreadHistory` fetching the
+   * transcript of the session still streaming, prepending a duplicate of what
+   * is already on screen. The promotion is recorded on the DRAFT and only read
+   * on the next visit.
    */
-  const onActiveState = useCallback<NonNullable<V2ChatViewProps["onState"]>>(
-    ({ sessionId, ...pill }) => {
+  const onActiveSessionId = useCallback<NonNullable<V2ChatViewProps["onSessionId"]>>(
+    (sessionId) => {
       if (!activeThread) return;
-      reportState(activeThread.key, pill);
       if (!sessionId) return;
       const draft = drafts.find((candidate) => candidate.id === activeThread.key);
       if (!draft || draft.sessionId === sessionId) return;
@@ -618,7 +633,7 @@ export default function AppV2() {
       // title and preview without the user reloading.
       void refresh();
     },
-    [activeThread, drafts, refresh, reportState],
+    [activeThread, drafts, refresh],
   );
 
   const onSelectThread = useCallback(
@@ -781,10 +796,11 @@ export default function AppV2() {
               onPlacementChange={changeSurfacePlacement}
             />
             <VStack gap={0} xstyle={styles.well}>
-              {/* Keyed by the selection: one useV2Chat per well (docs §9 gotcha
-                  2), so switching threads must tear the socket down and open the
-                  new thread's session rather than replaying the old one's items
-                  under a new descriptor. */}
+              {/* Keyed by the selection so the view never replays one thread's
+                  items under another's descriptor. Since WHA-105 that remount
+                  no longer touches the SESSION: the socket lives in the
+                  registry, keyed by the same thread key, and a background turn
+                  keeps streaming into it while another thread is on screen. */}
               <SurfaceWorkspace
                 header={<SecondaryBar />}
                 activeSurface={activeSurface}
@@ -801,7 +817,7 @@ export default function AppV2() {
                   key={activeThread?.key ?? "no-thread"}
                   token={token}
                   activeThread={activeThread}
-                  onState={activeThread ? onActiveState : undefined}
+                  onSessionId={activeThread ? onActiveSessionId : undefined}
                   browserSurface={browserSurface}
                 />
               </SurfaceWorkspace>
