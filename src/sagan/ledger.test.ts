@@ -84,6 +84,56 @@ test("Needs you is exactly the reopened ticket", () => {
   assert.deepEqual(waiting, ["WHA-130"]);
 });
 
+test("GOLDEN: the revise that reopened a gate survives in the history", () => {
+  // WHA-137.1. `openDecisions` correctly reports only the round-3 request, but
+  // the reason round 3 exists — a human answering `revise` with findings and an
+  // AC amendment — is erased by last-event-wins. The inspector needs the why.
+  const wha130 = ticket(REAL_SHAPE, "WHA-130");
+
+  // The resolver is unchanged.
+  assert.equal(wha130.openDecisions.length, 1);
+  assert.equal(wha130.openDecisions[0]!.round, 3);
+  assert.equal(wha130.resolvedDecisions.length, 0);
+
+  // …and nothing is collapsed in the history.
+  assert.deepEqual(
+    wha130.decisionHistory.map((d) => d.kind),
+    ["needed", "made", "needed"],
+    "history must not be last-only",
+  );
+  const revise = wha130.decisionHistory[1]!;
+  assert.equal(revise.decision, "revise");
+  assert.equal(revise.by, "randy");
+  assert.deepEqual(revise.findings, ["reads-as-slides-not-website", "no-navigation"]);
+  assert.equal(revise.amendment, "AC2 continuous document + sticky mono index");
+  // Each entry carries the fields the inspector renders.
+  assert.equal(wha130.decisionHistory[0]!.evidenceSha, "fee9144");
+  assert.equal(wha130.decisionHistory[2]!.evidenceSha, "9be4459");
+  assert.equal(wha130.decisionHistory[2]!.state, "awaiting-randy");
+  assert.equal(wha130.decisionHistory[2]!.round, 3);
+});
+
+test("history keeps gates in one sequence without mixing their payloads", () => {
+  const two = lines(
+    { event: "decision.needed", ticket: "X-6", gate: "art-direction-approval", state: "awaiting-randy" },
+    { event: "decision.made", ticket: "X-6", gate: "art-direction-approval", decision: "approve", by: "randy" },
+    { event: "decision.needed", ticket: "X-6", gate: "promote", state: "awaiting-randy" },
+  );
+  const t = ticket(two, "X-6");
+  assert.deepEqual(
+    t.decisionHistory.map((d) => `${d.gate}:${d.kind}`),
+    ["art-direction-approval:needed", "art-direction-approval:made", "promote:needed"],
+  );
+  // Resolver still answers per gate, independently.
+  assert.deepEqual(t.openDecisions.map((d) => d.gate), ["promote"]);
+  assert.deepEqual(t.resolvedDecisions.map((d) => d.gate), ["art-direction-approval"]);
+});
+
+test("history is empty for a ticket with no gates, not undefined", () => {
+  const t = ticket(lines({ event: "run.started", ticket: "X-7", store: "linear" }), "X-7");
+  assert.deepEqual(t.decisionHistory, []);
+});
+
 test("a revise carries its findings and its AC amendment", () => {
   // The most interesting event in the ledger: the human rewriting the contract
   // mid-run. A two-verb approve/reject model cannot represent it.
