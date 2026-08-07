@@ -123,7 +123,7 @@ export interface AgentChat {
    *  the queue keeps the UI honest if it ever pipelines. */
   pendingApprovals: PendingApproval[];
   /** Answer a pending permission request. */
-  respondToApproval: (id: string, decision: PermissionDecision) => void;
+  respondToApproval: (id: string, decision: PermissionDecision, updatedInput?: unknown) => void;
   /** Submit a user turn (no-op while busy or disconnected). */
   send: (
     text: string,
@@ -236,10 +236,10 @@ export function useAgentChat(token: string | null): AgentChat {
     ws.send(JSON.stringify({ type: "browser-surface", ...state }));
   }, []);
 
-  const respondToApproval = useCallback((id: string, decision: PermissionDecision) => {
+  const respondToApproval = useCallback((id: string, decision: PermissionDecision, updatedInput?: unknown) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return;
-    ws.send(JSON.stringify({ type: "permission-response", id, decision }));
+    ws.send(JSON.stringify({ type: "permission-response", id, decision, updatedInput }));
     dispatch({ type: "approval-responded", id, decision });
   }, []);
 

@@ -133,4 +133,26 @@ describe("useV2Chat", () => {
       text: "do the thing",
     });
   });
+
+  it("sends interactive answers on the permission-response frame", () => {
+    const { result } = renderHook(() => useV2Chat("tok", "thread-a"));
+    act(() => opened[0]!.onopen?.());
+
+    act(() => {
+      result.current.respondToApproval("ask-1", "accept", {
+        questions: [{ question: "Where?" }],
+        answers: { "Where?": "Vault" },
+      });
+    });
+
+    expect(JSON.parse(opened[0]!.sent[0]!)).toEqual({
+      type: "permission-response",
+      id: "ask-1",
+      decision: "accept",
+      updatedInput: {
+        questions: [{ question: "Where?" }],
+        answers: { "Where?": "Vault" },
+      },
+    });
+  });
 });

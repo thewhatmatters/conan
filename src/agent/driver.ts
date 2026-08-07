@@ -205,6 +205,9 @@ export type AgentEvent =
        *  `detail` string. Additive: `detail` remains the fallback rendering. */
       input: unknown;
       toolName: string;
+      /** True when the provider needs structured user input, not a reusable
+       *  permission grant (for example Claude's AskUserQuestion). */
+      requiresUserInteraction?: boolean;
       /** The tool_use id this request gates — lets the UI pin the approval to
        *  its transcript card (the plan card's proceed buttons, US-022). */
       toolUseId: string | null;
@@ -288,7 +291,7 @@ export interface AgentDriver {
   interrupt(): void;
   /** Answer a pending `permission-request` by its id. Unknown/already-settled
    *  ids are ignored (the request may have been cleared by a turn ending). */
-  respondPermission(id: string, decision: PermissionDecision): void;
+  respondPermission(id: string, decision: PermissionDecision, updatedInput?: unknown): void;
   /** Switch the live session's permission mode (US-022: a plan card's
    *  "Proceed in build" moves the thread off plan for the next turn). Rides
    *  the provider's control channel; confirmation arrives as a

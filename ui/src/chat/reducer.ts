@@ -53,6 +53,7 @@ export interface PendingApproval {
    *  Edit/Write as a real diff (`buildFileDiff`) instead of only `detail`. */
   input: unknown;
   toolName: string;
+  requiresUserInteraction?: boolean;
   toolUseId: string | null;
 }
 
@@ -285,7 +286,7 @@ function reduceEvent(
         ...state,
         pendingApprovals: [
           ...state.pendingApprovals,
-          { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, input: e.input, toolName: e.toolName, toolUseId: e.toolUseId },
+          { id: e.id, toolKind: e.toolKind, summary: e.summary, detail: e.detail, input: e.input, toolName: e.toolName, ...(e.requiresUserInteraction ? { requiresUserInteraction: true } : {}), toolUseId: e.toolUseId },
         ],
         items: [
           ...state.items,

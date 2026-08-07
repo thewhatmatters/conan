@@ -190,7 +190,7 @@ export class ClaudeDriver implements AgentDriver {
    *  The CLI blocks the turn on each until we write a control_response. */
   private readonly pendingPermissions = new Map<
     string,
-    { toolUseId: string | null; input: unknown; toolKind: ToolPermissionKind; toolName: string }
+    { toolUseId: string | null; input: unknown; toolKind: ToolPermissionKind; toolName: string; requiresUserInteraction: boolean }
   >();
   /** Tool kinds the user granted "always allow this session" — answered
    *  driver-side without another permission-request event. */
@@ -308,7 +308,8 @@ export class ClaudeDriver implements AgentDriver {
     }
     const toolName = r.toolName ?? "tool";
     const toolKind = classifyTool(toolName);
-    if (this.sessionApprovedKinds.has(toolKind)) {
+    const requiresUserInteraction = isInteractivePermission(toolName, r.requiresUserInteraction);
+    if (!requiresUserInteraction && this.sessionApprovedKinds.has(toolKind)) {
       this.writeControlResponse(r.requestId, {
         behavior: "allow",
         updatedInput: r.input ?? {},
@@ -321,6 +322,7 @@ export class ClaudeDriver implements AgentDriver {
       input: r.input,
       toolKind,
       toolName,
+      requiresUserInteraction,
     });
     this.emit({
       kind: "permission-request",
@@ -330,6 +332,7 @@ export class ClaudeDriver implements AgentDriver {
       detail: permissionDetail(toolName, r.input),
       input: r.input,
       toolName,
+      requiresUserInteraction,
       toolUseId: r.toolUseId,
     });
   }
@@ -348,17 +351,25 @@ export class ClaudeDriver implements AgentDriver {
     );
   }
 
-  respondPermission(id: string, decision: PermissionDecision): void {
+  respondPermission(id: string, decision: PermissionDecision, updatedInput?: unknown): void {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return; // already settled, or cleared by a turn ending
     this.pendingPermissions.delete(id);
     const toolUseID = pending.toolUseId ? { toolUseID: pending.toolUseId } : {};
-    if (decision === "acceptForSession")
+    if (decision === "acceptForSession" && !pending.requiresUserInteraction)
       this.sessionApprovedKinds.add(pending.toolKind);
     if (decision === "accept" || decision === "acceptForSession") {
+      if (pending.requiresUserInteraction && updatedInput == null) {
+        this.writeControlResponse(id, {
+          behavior: "deny",
+          message: "No answers were supplied for this interactive request.",
+          ...toolUseID,
+        });
+        return;
+      }
       this.writeControlResponse(id, {
         behavior: "allow",
-        updatedInput: pending.input ?? {},
+        updatedInput: pending.requiresUserInteraction ? updatedInput : pending.input ?? {},
         ...toolUseID,
       });
       // Approving ExitPlanMode exits plan mode CLI-side and the turn continues
@@ -538,6 +549,13 @@ export interface ControlRequest {
   toolUseId: string | null;
   /** The model's own one-liner for the call (e.g. Bash description). */
   description: string | null;
+  requiresUserInteraction?: boolean;
+}
+
+/** Interactive prompts need a fresh answer every time. Tool-name fallback
+ * keeps older Claude builds safe if they omit the explicit wire flag. */
+export function isInteractivePermission(toolName: string, reported?: boolean): boolean {
+  return reported === true || toolName === "AskUserQuestion";
 }
 
 /** Coarse permission grouping for the approval UI + acceptForSession. */
@@ -672,6 +690,7 @@ export class ClaudeStreamParser {
         input: req ? (req.input ?? null) : null,
         toolUseId: req ? str(req.tool_use_id) : null,
         description: req ? str(req.description) : null,
+        ...(req?.requires_user_interaction === true ? { requiresUserInteraction: true } : {}),
       });
       return [];
     }

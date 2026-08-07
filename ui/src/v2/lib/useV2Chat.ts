@@ -48,7 +48,7 @@ export interface V2Chat {
   awaitingApproval: boolean;
   pendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
-  respondToApproval: (id: string, decision: PermissionDecision) => void;
+  respondToApproval: (id: string, decision: PermissionDecision, updatedInput?: unknown) => void;
   /** Stop the in-flight turn — ChatSendButton's stop state needs this. */
   interrupt: () => void;
   /** Latest context-window position, null until a turn reports one. */
@@ -156,9 +156,9 @@ export function useV2Chat(token: string | null, threadKey: string | null): V2Cha
   );
 
   const respondToApproval = useCallback(
-    (id: string, decision: PermissionDecision) => {
+    (id: string, decision: PermissionDecision, updatedInput?: unknown) => {
       if (!live) return;
-      if (!sendToSession(threadKey, { type: "permission-response", id, decision })) return;
+      if (!sendToSession(threadKey, { type: "permission-response", id, decision, updatedInput })) return;
       dispatchToSession(threadKey, { type: "approval-responded", id, decision });
     },
     [live, threadKey],
