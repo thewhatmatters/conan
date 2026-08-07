@@ -156,4 +156,12 @@ CREATE TABLE IF NOT EXISTS attempt (
 );
 CREATE INDEX IF NOT EXISTS idx_attempt_session ON attempt (session_id);
 CREATE INDEX IF NOT EXISTS idx_attempt_started ON attempt (started_at);
-CREATE INDEX IF NOT EXISTS idx_attempt_project ON attempt (project_id, started_at);
+-- `idx_attempt_project` is DELIBERATELY NOT HERE, and adding it back bricks
+-- every existing install. This file runs as one `exec` BEFORE `migrate()`, and
+-- `CREATE TABLE IF NOT EXISTS attempt` is a no-op against a database whose
+-- attempt table predates WHA-136 — so indexing `project_id` here throws
+-- "no such column: project_id" and the gateway can never reach the ALTER that
+-- would have added it. The index is created in `migrate()` instead, right
+-- after the column is guaranteed. Any future column added to an existing table
+-- has to follow the same rule: column in this file for fresh databases, column
+-- AND its index in `migrate()` for the ones already on disk.
