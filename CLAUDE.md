@@ -462,3 +462,9 @@ cross-project vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/
 - **Write path:** durable insights go through `/curate-knowledge` (gated) —
   never write vault articles directly.
 <!-- wire-vault:end -->
+
+<!-- wire-sagan:start -->
+## Sagan fleet overlay
+
+This project is wired to the Sagan standard. Read `.sagan/sagan.yaml` for fleet config, role bindings, gate commands, and critique policy; read `.sagan/MEMORY.md` for project memory. All ticket work follows the Sagan loop: acceptance criteria first, then build, critique, verify, and promote.
+<!-- wire-sagan:end -->

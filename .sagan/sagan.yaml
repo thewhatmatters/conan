@@ -1,0 +1,64 @@
+# .sagan/sagan.yaml — per-project fleet config (installed by wire-sagan)
+# Template version: 0.1.0 — probe reports this; --update keys
+# on .sagan/.template-manifest.json, not this line.
+# v0 HONESTY: `enforced:` is aspirational — the PM (a model) interprets
+# everything below. Runtime enforcement is future Conan work.
+
+template_version: "0.1.0"
+runtime: claude-code-session        # v0 stand-in; target is conan
+validation: pm-interpreted
+enforced: []                        # target: [round_caps, critic_isolation, human_gates, containment_floors]
+
+pm:
+  binding: { provider: claude-code }
+  state: ledger                     # events.jsonl + tickets, appended continuously
+  surface_decisions: structured-questions
+  # PROVIDER-NEUTRAL PM REQUIREMENT: at any human gate or open decision, the
+  # PM presents ALL outstanding questions as a structured question set with a
+  # recommended default per question — never buried in prose. In Claude Code
+  # this is the AskUserQuestion tool; other PM bindings must implement an
+  # equivalent.
+
+providers:
+  claude: { containment: prompt-gated }
+
+bindings:
+  frontend: { provider: claude }
+  critic:   { provider: claude, isolation: fresh-subagent }
+  verify:   { provider: claude }    # never the builder subagent
+
+rules:
+  ac_before_dispatch: required
+  builder_neq_verifier: required
+  ship_requires: [critic_approved, verify_evidence_sha]
+
+critique:
+  policy: risk-based
+  mandatory: [user-visible, mergeable]
+  verdict: [APPROVED, REVISE, NEEDS_EVIDENCE, ESCALATE]
+  circuit_breakers:
+    max_rounds: { correctness: 5, quality: 3 }
+    on_cap: ESCALATE
+    quality_extension: human-authorized
+    same_finding_failures: 3        # -> ESCALATE strategy-may-be-wrong
+
+handoff:
+  context_packs: pointers           # paths + ticket id, never paraphrased content
+
+gates:
+  promote: per-ticket
+  # Project gate commands — verify runs THIS project's floor:
+  verify_commands:
+    test: "npm test"
+    typecheck: "npm run typecheck"
+    build: "npm run build"
+
+memory:
+  scratch: .sagan/memory/
+  synthesis: .sagan/MEMORY.md
+  promote_to: CLAUDE.md    # AGENTS.md if the project has one, else CLAUDE.md
+
+ticket:
+  store: local-files           # local-files (.sagan/tickets/) or linear
+  blocks: [ac, frontend, qa, decisions]
+  required_fields: [ac, builder_id, verifier_id, evidence_sha]

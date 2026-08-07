@@ -40,3 +40,8 @@ archive/
 .claude/handoff-archive/
 t3code/
 loop.log
+
+# wire-sagan commit policy: audit trail committed, evidence media ignored
+.sagan/ledger/*/
+!.sagan/ledger/events.jsonl
+.sagan/memory/
