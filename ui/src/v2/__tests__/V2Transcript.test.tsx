@@ -214,6 +214,47 @@ describe("V2Transcript", () => {
     expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
   });
 
+  /**
+   * The orb sits on the assistant TEXT axis, not the user-bubble axis.
+   *
+   * Randy reported the orb reading 16px right of the reply that replaces it,
+   * twice. Cause: the orb was wrapped in `<ChatMessageBubble variant="ghost">`,
+   * and Astryx documents ghost as "no background, but keeps padding for
+   * consistent alignment" — `paddingInline: --spacing-4`, 16px at the default
+   * balanced density. That padding aligns a ghost bubble with a FILLED one;
+   * assistant prose here is unbubbled, so the two never shared an edge.
+   *
+   * jsdom lays nothing out, so this asserts the STRUCTURE that produced the
+   * offset — no bubble in the working slot — rather than a measured px. The
+   * user-bubble assertion is what keeps it honest: it proves the bubble
+   * selector still matches something, so a renamed class turns this into a
+   * failure instead of a test that passes because it found nothing.
+   */
+  it("renders the orb unbubbled, on the same axis as assistant text", () => {
+    const { container } = render(<V2Transcript items={[user]} busy />);
+
+    const working = container.querySelector('[data-slot="v2-working"]');
+    expect(working).not.toBeNull();
+    expect(working!.querySelector(".astryx-chat-message-bubble")).toBeNull();
+    // Not vacuous: the user's message IS bubbled, by the same selector.
+    expect(container.querySelector(".astryx-chat-message-bubble")).not.toBeNull();
+  });
+
+  it("renders the reasoning row unbubbled too — same 16px offset", () => {
+    const reasoningItem: ChatItem = {
+      id: "r-align",
+      role: "reasoning",
+      text: "considering",
+      ts: 1,
+    };
+    render(<V2Transcript items={[user, reasoningItem]} busy />);
+
+    expect(screen.getByText("Thinking…")).toBeInTheDocument();
+    expect(
+      screen.getByText("Thinking…").closest(".astryx-chat-message-bubble"),
+    ).toBeNull();
+  });
+
   it("removes a completed turn's stale reasoning row", () => {
     const reasoning: ChatItem = {
       id: "r1",
