@@ -61,6 +61,31 @@ export interface EvidenceRef {
   checks: number;
 }
 
+/** One decision event, kept verbatim in file order (WHA-137.1).
+ *
+ *  `openDecisions` answers "is this gate waiting on a human" and deliberately
+ *  keeps only the last event per gate. That erases the answer that REOPENED a
+ *  gate: WHA-130's round 3 exists precisely because a human replied `revise`
+ *  with findings and an AC amendment, and last-event-wins throws that away.
+ *  The inspector needs to say WHY a ticket is on round 3, so the full sequence
+ *  is kept alongside — additive, and the resolver is untouched. */
+export interface DecisionEvent {
+  gate: string;
+  kind: "needed" | "made";
+  /** `made` only: `promote` | `approve` | `revise` | … (open set). */
+  decision: string | null;
+  /** `made` only, and only on some verbs: what the human objected to. */
+  findings: string[];
+  /** `made` only: an AC rewritten mid-run. */
+  amendment: string | null;
+  /** `needed` only: e.g. `awaiting-randy`. */
+  state: string | null;
+  evidenceSha: string | null;
+  round: number | null;
+  by: string | null;
+  ts: string | null;
+}
+
 export interface TicketProjection {
   ticket: string;
   /** Last lane touched, and the phase it was left in. */
@@ -72,8 +97,13 @@ export interface TicketProjection {
   verdict: string | null;
   /** Gates whose LAST event is `decision.needed` — the Needs-you queue. */
   openDecisions: OpenDecision[];
-  /** Gates already answered, in ledger order. */
+  /** Gates already answered, in ledger order. Last event per gate only — a
+   *  superseded answer is NOT here; it is in `decisionHistory`. */
   resolvedDecisions: ResolvedDecision[];
+  /** Every decision event for this ticket, in file order, nothing collapsed.
+   *  This is the record the inspector reads; `openDecisions` is the state the
+   *  Needs-you queue reads. They answer different questions. */
+  decisionHistory: DecisionEvent[];
   evidence: EvidenceRef[];
   /** First and last `ts` seen. Day-granular strings; may be null. */
   firstTs: string | null;
@@ -156,6 +186,7 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
         verdict: null,
         openDecisions: [],
         resolvedDecisions: [],
+        decisionHistory: [],
         evidence: [],
         firstTs: null,
         lastTs: null,
@@ -216,6 +247,22 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
           gates.set(id, perGate);
         }
         perGate.set(gate, e); // last write wins — this IS the resolver
+        // …and the same event is appended verbatim, because the resolver's
+        // answer and the ticket's history are different questions.
+        t.decisionHistory.push({
+          gate,
+          kind: e.event === "decision.needed" ? "needed" : "made",
+          decision: str(e.decision),
+          findings: Array.isArray(e.findings)
+            ? e.findings.filter((f): f is string => typeof f === "string")
+            : [],
+          amendment: str(e.amendment),
+          state: str(e.state),
+          evidenceSha: str(e.evidence_sha),
+          round: num(e.round),
+          by: str(e.by),
+          ts,
+        });
         break;
       }
       default:
