@@ -357,6 +357,7 @@ export default function V2Composer({
           token={token}
           cwd={activeThread?.cwd ?? null}
           onFiles={handleFiles}
+          isSubmitDisabled={busy}
         />
       }
       status={contextStatus}

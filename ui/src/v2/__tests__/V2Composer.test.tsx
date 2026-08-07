@@ -114,13 +114,34 @@ describe("V2Composer", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("does not send while busy", () => {
+  it("keeps a busy-turn follow-up as a draft until the turn finishes", () => {
     const send = vi.fn();
-    render(<V2Composer activeThread={thread} send={send} busy />);
+    const { container, rerender } = render(
+      <V2Composer activeThread={thread} send={send} busy />,
+    );
 
-    typeAndSubmit("wait");
+    const textbox = screen.getByLabelText("Message input");
+    textbox.textContent = "follow up";
+    fireEvent.input(textbox);
+    fireEvent.keyDown(textbox, { key: "Enter" });
 
+    expect(container.querySelector('[data-slot="rich-input"]')).toHaveAttribute(
+      "data-submit-disabled",
+      "true",
+    );
     expect(send).not.toHaveBeenCalled();
+    expect(textbox).toHaveTextContent("follow up");
+
+    rerender(<V2Composer activeThread={thread} send={send} />);
+    fireEvent.keyDown(textbox, { key: "Enter" });
+
+    expect(send).toHaveBeenCalledWith(
+      "follow up",
+      expect.objectContaining({ cwd: thread.cwd, provider: "claude" }),
+      [],
+      [],
+    );
+    expect(textbox.textContent).toBe("");
   });
 
   it("locks provider/model after turn one while effort and permission stay interactive", () => {

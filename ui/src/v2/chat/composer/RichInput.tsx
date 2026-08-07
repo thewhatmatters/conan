@@ -41,6 +41,8 @@ export interface RichInputProps {
   cwd: string | null;
   /** Pasted or dropped files (images and text alike). */
   onFiles: (files: File[]) => void;
+  /** Keep the draft editable, but hold Enter until the active turn finishes. */
+  isSubmitDisabled?: boolean;
 }
 
 /** A selected item becomes an inline chip whose serialized value is v1's
@@ -49,7 +51,12 @@ function toToken(item: SearchableItem): ChatComposerToken {
   return { value: item.id, label: item.label };
 }
 
-export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
+export default function RichInput({
+  token,
+  cwd,
+  onFiles,
+  isSubmitDisabled = false,
+}: RichInputProps) {
   const triggers = useMemo<ChatComposerTrigger[]>(
     () => [
       {
@@ -83,6 +90,20 @@ export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
       label="Message input"
       triggers={triggers}
       onFiles={onFiles}
+      onKeyDown={(event) => {
+        if (
+          isSubmitDisabled &&
+          event.key === "Enter" &&
+          !event.shiftKey &&
+          !event.nativeEvent.isComposing &&
+          event.nativeEvent.keyCode !== 229
+        ) {
+          // Astryx clears its contenteditable after calling onSubmit. During
+          // an active turn Conan cannot accept that frame, so consume Enter
+          // here and keep the follow-up as a draft instead of losing it.
+          event.preventDefault();
+        }
+      }}
       onDragOver={(event) => {
         // Without this the browser navigates to the dropped file.
         if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
@@ -94,6 +115,7 @@ export default function RichInput({ token, cwd, onFiles }: RichInputProps) {
         onFiles(files);
       }}
       data-slot="rich-input"
+      data-submit-disabled={isSubmitDisabled ? "true" : undefined}
     />
   );
 }
