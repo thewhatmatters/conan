@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "../db/index.js";
 import type { ContainmentClass } from "./containment.js";
+import { resolveProjectId } from "./project.js";
 
 /** Freeze doc §1.2: one seam, two policies. `chat` skips the fleet predicates
  *  (an interactive turn has no ticket, AC, verifier pair, or round counter);
@@ -27,12 +28,15 @@ export interface AttemptOpen {
 export function openAttempt(open: AttemptOpen): string | null {
   const id = randomUUID();
   try {
+    // WHA-136: resolved here rather than passed in, so every caller of the seam
+    // gets the same answer and no spawn path can forget to anchor its attempt.
+    const projectId = resolveProjectId(open.cwd);
     getDb()
       .prepare(
         `INSERT INTO attempt
            (id, context, session_id, provider, model, permission_mode,
-            containment_observed, cwd, started_at)
-         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+            containment_observed, cwd, project_id, started_at)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -42,6 +46,7 @@ export function openAttempt(open: AttemptOpen): string | null {
         open.permissionMode,
         open.containment,
         open.cwd,
+        projectId,
         Date.now(),
       );
     return id;

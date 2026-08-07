@@ -126,6 +126,7 @@ function migrate(handle: Database.Database): void {
       permission_mode      TEXT,
       containment_observed TEXT NOT NULL,
       cwd                  TEXT,
+      project_id           TEXT REFERENCES project(id) ON DELETE SET NULL,
       started_at           INTEGER NOT NULL,
       ended_at             INTEGER,
       cost_usd             REAL,
@@ -134,6 +135,25 @@ function migrate(handle: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_attempt_session ON attempt (session_id);
     CREATE INDEX IF NOT EXISTS idx_attempt_started ON attempt (started_at);
   `);
+
+  // WHA-136: project_id landed after the attempt table shipped, so an existing
+  // database needs the column added by name — CREATE TABLE IF NOT EXISTS above
+  // only helps a fresh one. SQLite permits a REFERENCES clause on ADD COLUMN
+  // because the default is NULL.
+  const attemptCols = new Set(
+    handle
+      .prepare("PRAGMA table_info(attempt)")
+      .all()
+      .map((c) => (c as { name: string }).name),
+  );
+  if (!attemptCols.has("project_id")) {
+    handle.exec(
+      "ALTER TABLE attempt ADD COLUMN project_id TEXT REFERENCES project(id) ON DELETE SET NULL",
+    );
+  }
+  handle.exec(
+    "CREATE INDEX IF NOT EXISTS idx_attempt_project ON attempt (project_id, started_at)",
+  );
 }
 
 /** Close the database handle (used on shutdown / in tests). */

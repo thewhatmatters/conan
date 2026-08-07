@@ -47,7 +47,7 @@ export interface ProjectWithThreads extends ProjectRow {
 
 /** Nearest ancestor (or the folder itself) containing a `.git` entry. Pure
  *  stat-walk — no git exec — so listing projects stays cheap. */
-function findRepoRoot(dir: string): string | null {
+export function findRepoRoot(dir: string): string | null {
   try {
     let cur = dir;
     for (;;) {

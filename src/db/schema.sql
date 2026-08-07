@@ -133,6 +133,12 @@ CREATE INDEX IF NOT EXISTS idx_prompt_consideration_event ON prompt_consideratio
 -- spawn. Recorded per attempt rather than per binding because claude's permission
 -- mode is live-switchable mid-session, so the configured floor is not necessarily
 -- what the attempt ran under.
+--
+-- `project_id` (WHA-136) is resolved ONCE at spawn from the cwd, symlinks and
+-- monorepo nesting collapsed (src/fleet/project.ts) — never re-derived later by
+-- matching `cwd` strings, which would read one checkout as several projects.
+-- Nullable: a chat can start in a folder the sidebar never adopted. ON DELETE
+-- SET NULL rather than CASCADE, so deleting a project keeps its lineage.
 CREATE TABLE IF NOT EXISTS attempt (
   id                   TEXT PRIMARY KEY,
   context              TEXT NOT NULL,             -- chat | fleet-attempt
@@ -142,6 +148,7 @@ CREATE TABLE IF NOT EXISTS attempt (
   permission_mode      TEXT,                      -- the id requested at spawn; null = provider default
   containment_observed TEXT NOT NULL,             -- none | prompt-gated | fail-closed-cancel | os-sandbox
   cwd                  TEXT,
+  project_id           TEXT REFERENCES project(id) ON DELETE SET NULL,
   started_at           INTEGER NOT NULL,          -- epoch ms
   ended_at             INTEGER,                   -- epoch ms; null while the process is live
   cost_usd             REAL,
@@ -149,3 +156,4 @@ CREATE TABLE IF NOT EXISTS attempt (
 );
 CREATE INDEX IF NOT EXISTS idx_attempt_session ON attempt (session_id);
 CREATE INDEX IF NOT EXISTS idx_attempt_started ON attempt (started_at);
+CREATE INDEX IF NOT EXISTS idx_attempt_project ON attempt (project_id, started_at);
