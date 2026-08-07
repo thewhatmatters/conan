@@ -7,6 +7,7 @@ import ContextProgress from "../chat/composer/ContextProgress.tsx";
 import {
   contextMeterState,
   contextPressureStatus,
+  detectContextCompaction,
   fmtTokens,
 } from "../chat/composer/contextMeterModel.ts";
 
@@ -65,14 +66,34 @@ describe("contextPressureStatus", () => {
   });
 
   it("gives recovery copy at warning and error thresholds", () => {
-    expect(contextPressureStatus(contextMeterState(150_000, 200_000))).toEqual({
+    expect(contextPressureStatus(contextMeterState(150_000, 200_000), true)).toEqual({
       type: "warning",
-      message: expect.stringMatching(/75%.*new thread soon/i),
+      message: expect.stringMatching(/75%.*compact when needed/i),
+    });
+    expect(contextPressureStatus(contextMeterState(180_000, 200_000), true)).toEqual({
+      type: "error",
+      message: expect.stringMatching(/90%.*compact when needed.*new thread/i),
     });
     expect(contextPressureStatus(contextMeterState(180_000, 200_000))).toEqual({
       type: "error",
-      message: expect.stringMatching(/90%.*new thread/i),
+      message: expect.not.stringMatching(/will compact/i),
     });
+  });
+});
+
+describe("detectContextCompaction", () => {
+  it("confirms a large measured reset from pressure territory", () => {
+    expect(detectContextCompaction(192_000, 76_000, 200_000)).toEqual({
+      fromPct: 96,
+      toPct: 38,
+      message: "Context compacted · 96% → 38%",
+    });
+  });
+
+  it("does not mislabel ordinary movement, unknown windows, or low usage", () => {
+    expect(detectContextCompaction(160_000, 140_000, 200_000)).toBeNull();
+    expect(detectContextCompaction(120_000, 40_000, 200_000)).toBeNull();
+    expect(detectContextCompaction(190_000, 60_000, null)).toBeNull();
   });
 });
 

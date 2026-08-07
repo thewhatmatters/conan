@@ -18,6 +18,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import { Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
@@ -101,6 +102,10 @@ export interface V2ComposerProps {
     images?: OutgoingImage[],
   ) => void;
   interrupt?: () => void;
+  /** Recovery path offered when context pressure is actionable. */
+  onStartNewThread?: () => void;
+  /** Measured post-turn context reset, shown briefly by the chat host. */
+  contextCompactionMessage?: string | null;
 }
 
 export default function V2Composer({
@@ -118,6 +123,8 @@ export default function V2Composer({
   gate,
   send,
   interrupt,
+  onStartNewThread,
+  contextCompactionMessage = null,
 }: V2ComposerProps) {
   const [value, setValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,7 +193,10 @@ export default function V2Composer({
   // capabilities frame has long since landed.
   const windowTokens = sessionCapabilities?.contextWindowTokens ?? null;
   const contextState = contextMeterState(contextTokens, windowTokens);
-  const contextStatus = contextPressureStatus(contextState);
+  const contextStatus = contextPressureStatus(
+    contextState,
+    activeThread?.provider === "claude",
+  );
 
   const handleSubmit = useCallback(
     (raw: string) => {
@@ -284,7 +294,8 @@ export default function V2Composer({
   );
 
   return (
-    <ChatComposer
+    <>
+      <ChatComposer
       data-slot="v2-composer"
       value={value}
       onChange={setValue}
@@ -362,7 +373,27 @@ export default function V2Composer({
       }
       status={contextStatus}
       statusPosition="bottom"
+      sendActions={
+        contextStatus && onStartNewThread ? (
+          <Button
+            label="Start new thread"
+            variant="ghost"
+            size="sm"
+            onClick={onStartNewThread}
+          />
+        ) : undefined
+      }
       sendButton={<ChatSendButton />}
-    />
+      />
+      {contextCompactionMessage ? (
+        <Text
+          type="supporting"
+          color="secondary"
+          data-slot="context-compaction-confirmation"
+        >
+          {contextCompactionMessage}
+        </Text>
+      ) : null}
+    </>
   );
 }

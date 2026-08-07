@@ -819,6 +819,11 @@ export default function AppV2() {
                   activeThread={activeThread}
                   onSessionId={activeThread ? onActiveSessionId : undefined}
                   browserSurface={browserSurface}
+                  onStartNewThread={
+                    activeThread?.projectId
+                      ? () => newThreadIn(activeThread.projectId!)
+                      : undefined
+                  }
                 />
               </SurfaceWorkspace>
             </VStack>

@@ -28,6 +28,12 @@ export type ContextPressureStatus = {
   message: string;
 };
 
+export interface ContextCompactionNotice {
+  fromPct: number;
+  toPct: number;
+  message: string;
+}
+
 /** Compact token count — same thresholds as v1's fmtTokens. */
 export function fmtTokens(n: number): string {
   const compact = (v: number, suffix: string) =>
@@ -61,7 +67,7 @@ export function contextMeterState(
       : `${usedLabel} tokens`;
   const detail =
     pct != null
-      ? "Tokens the conversation is carrying (input + cached). Grows each turn."
+      ? "Tokens the conversation is carrying (input + cached). Usually grows each turn, then drops after compaction."
       : "This provider reports no context-window size, so no percentage is shown — only the raw count.";
   return { pct, variant, usedLabel, windowLabel, summary, detail };
 }
@@ -73,18 +79,58 @@ export function contextMeterState(
  */
 export function contextPressureStatus(
   state: ContextMeterState | null,
+  claudeAutoCompaction = false,
 ): ContextPressureStatus | undefined {
   if (state?.variant === "warning") {
     return {
       type: "warning",
-      message: `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread soon to keep responses reliable.`,
+      message: claudeAutoCompaction
+        ? `Context is ${Math.round(state.pct ?? 0)}% full. Claude will compact when needed; usage updates after the turn.`
+        : `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread soon to keep responses reliable.`,
     };
   }
   if (state?.variant === "error") {
     return {
       type: "error",
-      message: `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread to preserve earlier details.`,
+      message: claudeAutoCompaction
+        ? `Context is ${Math.round(state.pct ?? 0)}% full. Claude will compact when needed; start a new thread to preserve exact earlier details.`
+        : `Context is ${Math.round(state.pct ?? 0)}% full. Start a new thread to preserve exact earlier details.`,
     };
   }
   return undefined;
+}
+
+/**
+ * Infer a completed compaction from the only provider-neutral evidence Conan
+ * receives: the context position reported after each turn. A large reset from
+ * pressure territory is strong evidence; ordinary cache jitter and short
+ * follow-up turns cannot satisfy both thresholds.
+ */
+export function detectContextCompaction(
+  previousUsed: number | null | undefined,
+  currentUsed: number | null | undefined,
+  windowTokens: number | null | undefined,
+): ContextCompactionNotice | null {
+  if (
+    previousUsed == null ||
+    currentUsed == null ||
+    windowTokens == null ||
+    !Number.isFinite(windowTokens) ||
+    windowTokens <= 0
+  ) {
+    return null;
+  }
+
+  const fromPct = (previousUsed / windowTokens) * 100;
+  const toPct = (currentUsed / windowTokens) * 100;
+  const dropPct = fromPct - toPct;
+  if (fromPct < 75 || toPct > 65 || dropPct < 20) return null;
+
+  const roundedFrom = Math.round(fromPct);
+  const roundedTo = Math.round(toPct);
+  return {
+    fromPct: roundedFrom,
+    toPct: roundedTo,
+    message: `Context compacted · ${roundedFrom}% → ${roundedTo}%`,
+  };
 }
