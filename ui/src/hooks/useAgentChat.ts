@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { wsUrl } from "../lib/gateway.ts";
 import type { AgentCapabilities } from "./useProviders.ts";
+import { frameToAction } from "../chat/frames.ts";
 import {
   initialChatState,
   reduceChat,
@@ -92,7 +93,7 @@ export type {
   ToolPermissionKind,
   PermissionDecision,
 } from "../../../src/agent/driver.ts";
-import type { AgentEvent, PermissionDecision } from "../../../src/agent/driver.ts";
+import type { PermissionDecision } from "../../../src/agent/driver.ts";
 
 /** The Browser-surface report frame (WHA-109). Type-imported from the gateway's
  *  own definition — same trick as the driver seam above, so the wire shape
@@ -170,24 +171,10 @@ export function useAgentChat(token: string | null): AgentChat {
     };
     ws.onerror = () => dispatch({ type: "connection-error" });
     ws.onmessage = (ev) => {
-      let msg: Record<string, unknown>;
-      try {
-        msg = JSON.parse(ev.data as string) as Record<string, unknown>;
-      } catch {
-        return;
-      }
-      if (msg.type === "busy") {
-        dispatch({ type: "busy", busy: msg.busy === true });
-      } else if (msg.type === "capabilities") {
-        // Sent when the driver is built — what THIS session's provider can
-        // actually do (US-007/US-009). The permission chip and approval UI
-        // adapt to it without ever branching on a provider name.
-        dispatch({ type: "capabilities", capabilities: (msg.capabilities as AgentCapabilities) ?? null });
-      } else if (msg.type === "error") {
-        dispatch({ type: "server-error", message: String(msg.message ?? "error") });
-      } else if (msg.type === "event") {
-        dispatch({ type: "server-event", event: msg.event as AgentEvent, now: Date.now() });
-      }
+      // Shared with the v2 session registry (`ui/src/chat/frames.ts`) so the
+      // two socket owners cannot disagree about the wire contract.
+      const action = frameToAction(ev.data as string, Date.now());
+      if (action) dispatch(action);
     };
     return () => {
       // Null the handlers before closing: this is a LOCAL teardown (unmount /
