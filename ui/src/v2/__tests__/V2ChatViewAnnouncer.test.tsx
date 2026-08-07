@@ -107,6 +107,58 @@ describe("context position navigation", () => {
     );
     expect(screen.queryByRole("progressbar", { name: "Context" })).toBeNull();
   });
+
+  it("confirms and announces a measured reset, then offers the fresh-thread action", () => {
+    const onStartNewThread = vi.fn();
+    const pressuredThread = {
+      key: "context-compaction-thread",
+      sessionId: "session-compaction",
+      cwd: "/tmp/x",
+      projectId: "project-x",
+      projectName: "x",
+      provider: "claude",
+      title: "x",
+    };
+    chat.contextTokens = 192_000;
+    chat.capabilities = {
+      contextWindowTokens: 200_000,
+      permissionModes: [],
+    };
+    const { container, rerender } = render(
+      <V2ChatView
+        token="tok"
+        activeThread={pressuredThread as never}
+        onStartNewThread={onStartNewThread}
+      />,
+    );
+
+    expect(screen.getByText(/Claude will compact when needed/)).toBeInTheDocument();
+    const announcer = container.querySelector(
+      '[data-slot="v2-context-compaction-announcer"]',
+    );
+    expect(announcer).not.toBeNull();
+    expect(announcer).toHaveAttribute("aria-live", "polite");
+    expect(announcer?.textContent).toBe("");
+    screen.getByRole("button", { name: "Start new thread" }).click();
+    expect(onStartNewThread).toHaveBeenCalledOnce();
+
+    chat.contextTokens = 76_000;
+    rerender(
+      <V2ChatView
+        token="tok"
+        activeThread={pressuredThread as never}
+        onStartNewThread={onStartNewThread}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-slot="context-compaction-confirmation"]'),
+    ).toHaveTextContent("Context compacted · 96% → 38%");
+    expect(
+      container.querySelector('[data-slot="v2-context-compaction-announcer"]'),
+    ).toBe(announcer);
+    expect(announcer?.textContent).toBe("Context compacted · 96% → 38%");
+  });
 });
 
 describe("approval announcer (WHA-55)", () => {

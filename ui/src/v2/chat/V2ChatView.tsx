@@ -8,7 +8,7 @@
  * US-501: a selected thread REOPENS — its saved transcript is restored above
  * the live items and the next turn resumes that session.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Text } from "@astryxdesign/core/Text";
@@ -19,6 +19,7 @@ import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
 import V2ApprovalGate from "./V2ApprovalGate.tsx";
+import { detectContextCompaction } from "./composer/contextMeterModel.ts";
 
 interface ContextSnapshot {
   provider: ActiveThread["provider"];
@@ -59,6 +60,8 @@ export interface V2ChatViewProps {
    *  thread (`key`), and re-reporting on remount is what keeps a freshly opened
    *  socket aware of a page that was already loaded. */
   browserSurface?: BrowserSurfaceReport;
+  /** Open a fresh draft in the active project when context pressure warrants it. */
+  onStartNewThread?: () => void;
 }
 
 const styles = stylex.create({
@@ -101,6 +104,7 @@ export default function V2ChatView({
   activeThread,
   onSessionId,
   browserSurface,
+  onStartNewThread,
 }: V2ChatViewProps) {
   // No selection → no socket. Opening /ws/agent for a well that has nothing to
   // chat with holds an agent session open for nothing.
@@ -129,6 +133,27 @@ export default function V2ChatView({
     contextTokens ?? matchingCachedContext?.contextTokens ?? null;
   const visibleSessionCapabilities =
     sessionCapabilities ?? matchingCachedContext?.capabilities ?? null;
+  const previousContextTokens = useRef<number | null>(null);
+  const [contextCompactionMessage, setContextCompactionMessage] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    if (contextTokens == null) return;
+    const notice = detectContextCompaction(
+      previousContextTokens.current,
+      contextTokens,
+      sessionCapabilities?.contextWindowTokens,
+    );
+    previousContextTokens.current = contextTokens;
+    if (!notice) return;
+    setContextCompactionMessage(notice.message);
+  }, [contextTokens, sessionCapabilities?.contextWindowTokens]);
+  useEffect(() => {
+    if (!contextCompactionMessage) return;
+    const timeout = window.setTimeout(() => setContextCompactionMessage(null), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [contextCompactionMessage]);
 
   useEffect(() => {
     if (!activeThread) return;
@@ -187,6 +212,19 @@ export default function V2ChatView({
       }
       composer={
         <VStack gap={0} xstyle={styles.measure}>
+          {/* Like the approval announcer below, this region exists before it
+              has anything to say. A measured context reset mutates its text,
+              which gives assistive technology a reliable polite update while
+              the visible confirmation remains supporting copy. */}
+          <VStack
+            gap={0}
+            role="status"
+            aria-live="polite"
+            data-slot="v2-context-compaction-announcer"
+            xstyle={styles.announcer}
+          >
+            {contextCompactionMessage ?? ""}
+          </VStack>
           {/* WHA-55, and the reason the architecture change was worth making:
               this status node is ALWAYS mounted and only its TEXT changes when
               an approval arrives. The old panel shipped `aria-live` on a node
@@ -257,6 +295,8 @@ export default function V2ChatView({
               setPermissionMode={setPermissionMode}
               contextTokens={visibleContextTokens}
               sessionCapabilities={visibleSessionCapabilities}
+              contextCompactionMessage={contextCompactionMessage}
+              onStartNewThread={onStartNewThread}
               send={send}
               interrupt={interrupt}
           />

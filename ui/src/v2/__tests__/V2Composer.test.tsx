@@ -211,7 +211,8 @@ describe("V2Composer", () => {
     );
   });
 
-  it("uses the native Astryx status rail for real context pressure", () => {
+  it("explains auto-compaction and offers a fresh thread under context pressure", () => {
+    const onStartNewThread = vi.fn();
     const { rerender } = render(
       <V2Composer
         activeThread={thread}
@@ -231,9 +232,12 @@ describe("V2Composer", () => {
           permissionModes: [],
           effortModes: [],
         }}
+        onStartNewThread={onStartNewThread}
       />,
     );
-    expect(screen.getByText(/Context is 75% full/)).toBeInTheDocument();
+    expect(screen.getByText(/Context is 75% full.*compact when needed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start new thread" }));
+    expect(onStartNewThread).toHaveBeenCalledOnce();
 
     rerender(
       <V2Composer
@@ -254,9 +258,25 @@ describe("V2Composer", () => {
           permissionModes: [],
           effortModes: [],
         }}
+        onStartNewThread={onStartNewThread}
       />,
     );
     expect(screen.getByText(/Context is 90% full/)).toBeInTheDocument();
+  });
+
+  it("shows measured compaction confirmation without presenting it as pressure", () => {
+    render(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        contextCompactionMessage="Context compacted · 96% → 38%"
+      />,
+    );
+
+    expect(screen.getByText("Context compacted · 96% → 38%")).toHaveAttribute(
+      "data-slot",
+      "context-compaction-confirmation",
+    );
   });
 
   it("pre-launch selection is local; mid-session selection rides setPermissionMode", () => {
