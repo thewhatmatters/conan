@@ -123,6 +123,31 @@ describe("V2ApprovalGate", () => {
     });
   });
 
+  it("wraps long code-like question copy instead of clipping it", () => {
+    const longToken = "const_reallyLongIdentifierWithoutNaturalBreaks_0123456789";
+    render(
+      <V2ApprovalGate
+        approval={{
+          ...question,
+          input: {
+            questions: [{
+              header: "Implementation",
+              question: `Review this:\n${longToken}`,
+              multiSelect: false,
+              options: [{ label: longToken, description: `Use:\n${longToken}` }],
+            }],
+          },
+        }}
+        count={1}
+        respond={vi.fn()}
+      />,
+    );
+
+    for (const node of screen.getAllByText((content) => content.includes(longToken))) {
+      expect(node).toHaveStyle({ overflowWrap: "anywhere", whiteSpace: "pre-wrap" });
+    }
+  });
+
   it("requires every question and supports a free-text Other answer", () => {
     const respond = vi.fn();
     render(<V2ApprovalGate approval={question} count={1} respond={respond} />);
