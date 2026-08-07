@@ -58,6 +58,26 @@ describe("V2ApprovalContent", () => {
     // The option set for a plan (no "always allow") is the gate's contract now.
   });
 
+  it("wraps long plan code inside the approval card", () => {
+    const code = "const_reallyLongIdentifierWithoutNaturalBreaks_0123456789";
+    render(
+      <V2ApprovalContent
+        approval={{
+          ...approval,
+          toolKind: "other",
+          toolName: "ExitPlanMode",
+          detail: `\`\`\`ts\n${code}\n\`\`\``,
+        }}
+        count={1}
+      />,
+    );
+
+    expect(screen.getByText(code)).toHaveStyle({
+      overflowWrap: "anywhere",
+      whiteSpace: "pre-wrap",
+    });
+  });
+
   it("renders an Edit as a real diff with the full path (Defect 2)", () => {
     render(
       <V2ApprovalContent

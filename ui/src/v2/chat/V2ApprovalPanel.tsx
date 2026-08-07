@@ -94,6 +94,12 @@ const styles = stylex.create({
   planParagraph: {
     marginBlock: "var(--conan-space-2)",
   },
+  planCode: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    overflowWrap: "anywhere",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
 });
 
 export interface V2ApprovalContentProps {
@@ -142,6 +148,7 @@ export default function V2ApprovalContent({
                   h2: (props) => <h3 {...props} {...stylex.props(styles.planHeading)} />,
                   h3: (props) => <h4 {...props} {...stylex.props(styles.planHeading)} />,
                   p: (props) => <p {...props} {...stylex.props(styles.planParagraph)} />,
+                  code: (props) => <code {...props} {...stylex.props(styles.planCode)} />,
                   a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
                 }}
               >

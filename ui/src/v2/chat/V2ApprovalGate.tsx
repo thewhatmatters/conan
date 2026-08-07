@@ -78,6 +78,11 @@ const styles = stylex.create({
     flexGrow: 1,
     minWidth: 0,
   },
+  wrappedCopy: {
+    overflowWrap: "anywhere",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
   optionShortcut: {
     alignSelf: "center",
     marginInlineStart: "auto",
@@ -347,8 +352,16 @@ export default function V2ApprovalGate({
           ) : null}
           <fieldset key={question.question} {...stylex.props(styles.question)}>
             <VStack gap={2}>
-              <legend><Text type="body" weight="medium">{question.header || question.question}</Text></legend>
-              {question.header ? <Text type="supporting" color="secondary">{question.question}</Text> : null}
+              <legend>
+                <Text type="body" weight="medium" xstyle={styles.wrappedCopy}>
+                  {question.header || question.question}
+                </Text>
+              </legend>
+              {question.header ? (
+                <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
+                  {question.question}
+                </Text>
+              ) : null}
               <VStack gap={3}>
                 {question.options.map((option, optionIndex) => {
                 const selected = answers[currentStep]?.includes(option.label) ?? false;
@@ -362,8 +375,12 @@ export default function V2ApprovalGate({
                       {...stylex.props(styles.optionInput)}
                     />
                     <VStack gap={0} xstyle={styles.optionCopy}>
-                      <Text type="body">{option.label}</Text>
-                      {option.description ? <Text type="supporting" color="secondary">{option.description}</Text> : null}
+                      <Text type="body" xstyle={styles.wrappedCopy}>{option.label}</Text>
+                      {option.description ? (
+                        <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
+                          {option.description}
+                        </Text>
+                      ) : null}
                     </VStack>
                     {optionIndex < 9 ? <Kbd keys={String(optionIndex + 1)} xstyle={styles.optionShortcut} /> : null}
                   </label>
