@@ -329,14 +329,17 @@ export default function V2Transcript({
         }
 
         if (item.role === "reasoning" && item.text) {
+          // Unbubbled for the same reason as the working row above: a ghost
+          // bubble's padding aligns to the user's filled bubble, not to the
+          // assistant column this row belongs to. Metadata moves onto
+          // ChatMessage, exactly as the assistant and tool rows already do.
           return (
-            <ChatMessage key={item.id} sender="assistant">
-              <ChatMessageBubble
-                variant="ghost"
-                metadata={<ChatMessageMetadata timestamp={timestamp(item.ts)} />}
-              >
-                <Text type="supporting" color="secondary">Thinking…</Text>
-              </ChatMessageBubble>
+            <ChatMessage
+              key={item.id}
+              sender="assistant"
+              metadata={<ChatMessageMetadata timestamp={timestamp(item.ts)} />}
+            >
+              <Text type="supporting" color="secondary">Thinking…</Text>
             </ChatMessage>
           );
         }
@@ -354,13 +357,18 @@ export default function V2Transcript({
 
       {/* WHA-90: the thinking state occupies the NEXT assistant-message slot,
           so when the first token lands the real message replaces it in place
-          and nothing jumps. `showWorking` already expressed that handoff — this
-          only changes what renders inside it. */}
+          and nothing jumps.
+
+          NO BUBBLE, deliberately. Astryx documents `ghost` as "no background,
+          but keeps padding for consistent alignment" — that padding exists to
+          line a ghost bubble up with a FILLED one, i.e. with the user's own
+          message. Assistant prose here is UNBUBBLED, so wrapping the orb put
+          it 16px (`--spacing-4` at balanced density) to the right of the text
+          that replaces it, and the "nothing jumps" above was not true: it
+          jumped left, every turn. Randy caught it twice. */}
       {showWorking ? (
         <ChatMessage sender="assistant" data-slot="v2-working">
-          <ChatMessageBubble variant="ghost">
-            <V2ThinkingOrb />
-          </ChatMessageBubble>
+          <V2ThinkingOrb />
         </ChatMessage>
       ) : null}
     </ChatMessageList>
