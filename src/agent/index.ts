@@ -377,7 +377,7 @@ export function attachAgent(socket: WebSocket, _req: IncomingMessage): void {
         msg.decision === "decline" ||
         msg.decision === "cancel")
     ) {
-      driver?.respondPermission(msg.id, msg.decision);
+      driver?.respondPermission(msg.id, msg.decision, msg.updatedInput);
     } else if (
       msg.type === "set-permission-mode" &&
       typeof msg.mode === "string" &&

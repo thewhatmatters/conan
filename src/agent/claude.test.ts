@@ -17,6 +17,7 @@ import {
   claudeModeFor,
   classifyTool,
   permissionDetail,
+  isInteractivePermission,
   type ControlRequest,
   type ControlResponse,
 } from "./claude.js";
@@ -327,6 +328,29 @@ test("can_use_tool control_request routes to the callback, not the event stream"
       description: "Remove temp file",
     },
   ]);
+});
+
+test("can_use_tool preserves the interactive flag for AskUserQuestion", () => {
+  const requests: ControlRequest[] = [];
+  const p = new ClaudeStreamParser(undefined, (request) => requests.push(request));
+  p.push(j({
+    type: "control_request",
+    request_id: "ask-1",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      input: { questions: [] },
+      requires_user_interaction: true,
+      tool_use_id: "tool-ask",
+    },
+  }));
+  assert.equal(requests[0]?.requiresUserInteraction, true);
+});
+
+test("AskUserQuestion is never session-approval eligible, even without the wire flag", () => {
+  assert.equal(isInteractivePermission("AskUserQuestion"), true);
+  assert.equal(isInteractivePermission("Bash"), false);
+  assert.equal(isInteractivePermission("future-interactive-tool", true), true);
 });
 
 test("control_request without a callback (and malformed) is ignored safely", () => {

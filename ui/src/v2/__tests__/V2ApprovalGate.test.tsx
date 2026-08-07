@@ -34,6 +34,26 @@ const plan: PendingApproval = {
   detail: "# Approach\n\n- Step one",
 };
 
+const question: PendingApproval = {
+  ...approval,
+  toolKind: "other",
+  toolName: "AskUserQuestion",
+  requiresUserInteraction: true,
+  input: {
+    questions: [
+      {
+        header: "Destination",
+        question: "Where should this note go?",
+        multiSelect: false,
+        options: [
+          { label: "Vault", description: "Curate it to Obsidian" },
+          { label: "Archive", description: "Keep it out of the active vault" },
+        ],
+      },
+    ],
+  },
+};
+
 describe("optionsFor", () => {
   it("offers all four decisions for a tool call", () => {
     expect(optionsFor(approval).map((o) => o.decision)).toEqual([
@@ -47,6 +67,14 @@ describe("optionsFor", () => {
   it("drops 'always allow' for a plan — there is no tool kind to remember", () => {
     const decisions = optionsFor(plan).map((o) => o.decision);
     expect(decisions).toEqual(["accept", "decline", "cancel"]);
+  });
+
+  it("never offers session auto-allow for an interactive question", () => {
+    expect(optionsFor(question).map((o) => o.decision)).toEqual([
+      "accept",
+      "decline",
+      "cancel",
+    ]);
   });
 
   it("keys options from A without gaps in either shape", () => {
@@ -63,6 +91,52 @@ describe("optionsFor", () => {
 });
 
 describe("V2ApprovalGate", () => {
+  it("renders AskUserQuestion as choices and returns answers in updatedInput", () => {
+    const respond = vi.fn();
+    render(<V2ApprovalGate approval={question} count={1} respond={respond} />);
+
+    expect(screen.queryByRole("button", { name: "Always allow this session" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /Vault/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+
+    expect(respond).toHaveBeenCalledWith("approval-1", "accept", {
+      ...(question.input as Record<string, unknown>),
+      answers: { "Where should this note go?": "Vault" },
+    });
+  });
+
+  it("requires every question and supports a free-text Other answer", () => {
+    const respond = vi.fn();
+    render(<V2ApprovalGate approval={question} count={1} respond={respond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+    expect(screen.getByText("Answer each question before continuing.")).toBeTruthy();
+    expect(respond).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Other answer for Destination" }), {
+      target: { value: "Research folder" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+    expect(respond).toHaveBeenCalledWith("approval-1", "accept", {
+      ...(question.input as Record<string, unknown>),
+      answers: { "Where should this note go?": "Research folder" },
+    });
+  });
+
+  it("fails recoverably when an AskUserQuestion payload is malformed", () => {
+    const respond = vi.fn();
+    render(
+      <V2ApprovalGate
+        approval={{ ...question, input: { questions: [] } }}
+        count={1}
+        respond={respond}
+      />,
+    );
+    expect(screen.getByText("This question could not be displayed")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve once" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel turn" }));
+    expect(respond).toHaveBeenCalledWith("approval-1", "cancel");
+  });
+
   it("maps every option to its driver decision", () => {
     const respond = vi.fn();
     render(<V2ApprovalGate approval={approval} count={2} respond={respond} />);
