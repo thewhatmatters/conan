@@ -140,8 +140,8 @@ describe("V2SaganSurface overview", () => {
     expect(row).toHaveFocus();
     fireEvent.click(row);
     expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+    expect(await screen.findByText("Ship the ledger inspector")).toBeVisible();
     expect(screen.getByRole("button", { name: "Overview" })).toHaveFocus();
-    expect(screen.getByText("Ship the ledger inspector")).toBeVisible();
     expect(screen.getByText("prompt-gated")).toBeVisible();
     expect(screen.getByText("attempt-3")).toBeVisible();
     expect(screen.getByText("evidence/inspector.png")).toBeVisible();
@@ -328,7 +328,7 @@ describe("V2SaganSurface pipeline tab", () => {
     node.focus();
     fireEvent.click(node);
     expect(await screen.findByLabelText("Run inspector")).toBeVisible();
-    expect(screen.getByText("Ship the ledger inspector")).toBeVisible();
+    expect(await screen.findByText("Ship the ledger inspector")).toBeVisible();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" })).toHaveFocus(),
