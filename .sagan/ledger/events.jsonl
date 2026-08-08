@@ -10,3 +10,7 @@
 {"event": "lane.updated", "ticket": "WHA-141", "lane": "done", "phase": "merged"}
 
 {"event": "lane.updated", "ticket": "WHA-142", "lane": "frontend", "phase": "building"}
+{"event": "decision.made", "ticket": "WHA-141", "gate": "human-review", "decision": "approve", "by": "Randy", "round": 1, "notes": "Human sign-off via preview at http://localhost:5173; Sagan surface visible for projects with .sagan installed."}
+{"event": "evidence.recorded", "ticket": "WHA-142", "sha": "3ac1983", "verifier": "hermes-pm", "overall": "PASS", "checks": [{"ac_ref": "AC1", "result": "PASS"}, {"ac_ref": "AC2", "result": "PASS"}, {"ac_ref": "AC3", "result": "PASS"}, {"ac_ref": "AC4", "result": "PASS"}, {"ac_ref": "AC5", "result": "PASS"}, {"ac_ref": "AC6", "result": "PASS"}, {"ac_ref": "AC7", "result": "PASS"}, {"gate": "typecheck", "result": "PASS"}, {"gate": "npm test", "result": "PASS", "count": "362/362"}, {"gate": "ui typecheck", "result": "PASS"}, {"gate": "ui test", "result": "PASS", "count": "399/399"}, {"gate": "ui build", "result": "PASS"}]}
+{"event": "decision.needed", "ticket": "WHA-142", "gate": "promote", "state": "awaiting-randy", "evidenceSha": "3ac1983", "round": 1, "notes": "All automated gates pass with Node 22; pending human preview sign-off per channel request."}
+{"event": "lane.updated", "ticket": "WHA-142", "lane": "verify", "phase": "pending-human-gate"}
