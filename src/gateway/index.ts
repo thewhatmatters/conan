@@ -86,6 +86,7 @@ import {
   deleteChatProject,
   getChatThread,
 } from "../agent/threads.js";
+import { getSaganRun, listSaganRuns, resolveSaganProject } from "../sagan/api.js";
 import { detectEditors, openInEditor } from "../editor/index.js";
 import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
 import {
@@ -775,6 +776,54 @@ app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
     row?.cwd ?? null,
   ) ?? { found: false, items: [] };
   res.json({ ...history, provider });
+});
+
+// Sagan read API (WHA-140 / B2). Both routes are project-scoped: `projectId`
+// names a project row, the row's folder is walked to its repo root, and the
+// ledger is read from THAT root — no path comes off the wire, so one project
+// can never read another's runs. Read-only; the only writer is C5.
+//
+// A known project that is not a Sagan project (or whose overlay is broken)
+// answers 200 with an empty list plus the `sagan` capability that says which,
+// because the surface has to draw a different empty state for each. Only an
+// unknown project id is a 404.
+app.get("/api/sagan/runs", (req, res) => {
+  if (!authed(req, res)) return;
+  const projectId = req.query.projectId;
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    res.status(400).json({ error: "projectId required" });
+    return;
+  }
+  const project = resolveSaganProject(projectId.trim());
+  if (!project) {
+    res.status(404).json({ error: `unknown project: ${projectId}` });
+    return;
+  }
+  res.json(listSaganRuns(project));
+});
+
+// One run in full — lanes, verdicts, evidence, decisions, and the whole ledger
+// history for the ticket, which is everything Overview/Inspector/Pipeline need
+// (AC5). The `:id` is a ticket id from the ledger; it is compared to strings
+// read out of the file and never joined onto a path.
+app.get("/api/sagan/runs/:id", (req, res) => {
+  if (!authed(req, res)) return;
+  const projectId = req.query.projectId;
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    res.status(400).json({ error: "projectId required" });
+    return;
+  }
+  const project = resolveSaganProject(projectId.trim());
+  if (!project) {
+    res.status(404).json({ error: `unknown project: ${projectId}` });
+    return;
+  }
+  const result = getSaganRun(project, req.params.id);
+  if (!result) {
+    res.status(404).json({ error: `unknown run: ${req.params.id}` });
+    return;
+  }
+  res.json(result);
 });
 
 // Ingest a Claude Code lifecycle event (US-003). Posted by the hook scripts in

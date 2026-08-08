@@ -119,7 +119,12 @@ export interface LedgerProjection {
   skipped: { unparseable: number; unknownType: number; noTicket: number };
 }
 
-interface RawEvent {
+/** One ledger line, verbatim. Field names and types vary by `event` (see the
+ *  header), so every reader takes the keys it knows on that type's terms.
+ *  Exported because WHA-140's read API replays the SAME events this module
+ *  folds — it derives the per-event-type detail the projection deliberately
+ *  collapses, and re-parsing the file a second way would be a second truth. */
+export interface RawEvent {
   event: string;
   ticket?: string;
   [key: string]: unknown;
@@ -299,16 +304,24 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
   return { tickets: [...byTicket.values()], skipped };
 }
 
-/** Replay a ledger file. Missing file → an empty projection, not a throw: a
- *  Sagan project that has never run is a normal state, not an error. */
-export function readLedger(ledgerPath: string): LedgerProjection {
+/** Read + parse a ledger file. Missing/unreadable file → zero events, not a
+ *  throw: a Sagan project that has never run is a normal state, not an error. */
+export function readLedgerEvents(ledgerPath: string): {
+  events: RawEvent[];
+  unparseable: number;
+} {
   let text: string;
   try {
     text = fs.readFileSync(ledgerPath, "utf8");
   } catch {
-    return { tickets: [], skipped: { unparseable: 0, unknownType: 0, noTicket: 0 } };
+    return { events: [], unparseable: 0 };
   }
-  const { events, unparseable } = parseLedger(text);
+  return parseLedger(text);
+}
+
+/** Replay a ledger file into the projection. */
+export function readLedger(ledgerPath: string): LedgerProjection {
+  const { events, unparseable } = readLedgerEvents(ledgerPath);
   return projectLedger(events, unparseable);
 }
 
