@@ -338,6 +338,26 @@ describe("SurfaceTabs", () => {
     );
   });
 
+  it("offers Sagan only when the active project has valid capability", () => {
+    const { unmount } = render(<SurfaceTabs tabs={TABS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    expect(
+      within(screen.getByRole("menu", { name: "Surface" })).queryByRole("menuitem", {
+        name: "Sagan",
+      }),
+    ).toBeNull();
+
+    unmount();
+    render(<SurfaceTabs tabs={TABS} saganAvailable />);
+    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    expect(
+      within(screen.getByRole("menu", { name: "Surface" })).getByRole("menuitem", {
+        name: "Sagan",
+      }),
+    ).toBeVisible();
+  });
+
   it("dims and disables Surface only after every surface is open", () => {
     render(
       <SurfaceTabs

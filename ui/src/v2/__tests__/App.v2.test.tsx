@@ -75,6 +75,13 @@ function stubGateway(
     const body = (data: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
     if (url.includes("/api/config")) return body(CONFIG);
+    if (url.includes("/api/sagan/runs")) {
+      const valid = url.includes(encodeURIComponent("/repo/conan"));
+      return body({
+        project: { sagan: { state: valid ? "valid" : "absent" } },
+        runs: [],
+      });
+    }
     // Method-guarded: `/api/agent/projects/:id` is also the DELETE target
     // (WHA-74), and an unguarded prefix match would answer it 200 and hide
     // every remove-failure path.
@@ -317,6 +324,39 @@ describe("AppV2 live projects (US-501)", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("removes all Sagan chrome when switching to a non-Sagan project", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(
+        within(screen.getByRole("menu", { name: "Surface" })).getByRole("menuitem", {
+          name: "Sagan",
+        }),
+      ).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sagan" }));
+    expect(await screen.findByRole("tab", { name: /^Sagan/ })).toBeInTheDocument();
+
+    await newChatInProject("empty");
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: /^Sagan/ })).toBeNull();
+      expect(document.querySelector('[data-surface="sagan"]')).toBeNull();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    expect(
+      within(screen.getByRole("menu", { name: "Surface" })).queryByRole("menuitem", {
+        name: "Sagan",
+      }),
+    ).toBeNull();
   });
 
   it("creates one reusable draft in the selected project", async () => {

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurfaceWorkspace from "../components/SurfaceWorkspace.tsx";
+import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 
 describe("SurfaceWorkspace", () => {
   beforeEach(() => {
@@ -106,5 +107,61 @@ describe("SurfaceWorkspace", () => {
     );
     expect(getComputedStyle(screen.getByRole("separator")).order).toBe("-1");
     expect(screen.getByRole("separator")).toHaveAttribute("aria-orientation", "vertical");
+  });
+
+  it("keeps Sagan mounted across thread changes", async () => {
+    const sagan = {
+      available: true,
+      projectPath: "/repo/sagan",
+      status: "ready" as const,
+      error: null,
+      data: {
+        project: { sagan: { state: "valid" } },
+        runs: [],
+      },
+    } as unknown as SaganCapabilityResult;
+    const { rerender } = render(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/sagan"
+        sagan={sagan}
+      >
+        <div>Thread one</div>
+      </SurfaceWorkspace>,
+    );
+
+    const surface = document.querySelector('[data-surface="sagan"]');
+    expect(await screen.findByText("Overview")).toBeVisible();
+
+    rerender(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/sagan"
+        sagan={sagan}
+      >
+        <div>Thread two</div>
+      </SurfaceWorkspace>,
+    );
+    expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+
+    rerender(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/other"
+        sagan={{ ...sagan, projectPath: "/repo/other" }}
+      >
+        <div>Thread three</div>
+      </SurfaceWorkspace>,
+    );
+    expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
   });
 });

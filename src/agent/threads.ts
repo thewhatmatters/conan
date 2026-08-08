@@ -148,6 +148,20 @@ export function listChatProjects(): ProjectWithThreads[] {
   return rows;
 }
 
+/** One project by id, or null when no row carries that id. The read side of
+ *  `upsertChatProject` — a caller that is handed a `projectId` from the client
+ *  (WHA-140's Sagan routes) turns it into the one folder it is allowed to read
+ *  through here, rather than trusting a path off the wire. */
+export function getChatProject(projectId: string): ProjectRow | null {
+  const row = getDb()
+    .prepare("SELECT id, path, name, created_at FROM project WHERE id = ?")
+    .get(projectId) as
+    | { id: string; path: string; name: string; created_at: number }
+    | undefined;
+  if (!row) return null;
+  return { id: row.id, path: row.path, name: row.name, createdAt: row.created_at };
+}
+
 /** Upsert a thread at session-init. A re-init of a known session bumps
  *  activity and fills model/title if they were empty; it never overwrites an
  *  existing title (first-prompt titles are sticky). Throws if the project row

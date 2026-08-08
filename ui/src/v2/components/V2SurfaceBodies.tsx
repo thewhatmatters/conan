@@ -6,10 +6,23 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ArrowLeft, ExternalLink, Folder, RefreshCw, RotateCcw } from "lucide-react";
+import {
+  ArrowLeft,
+  CircleCheck,
+  CircleHelp,
+  ExternalLink,
+  Folder,
+  ListTodo,
+  OctagonAlert,
+  PlayCircle,
+  RefreshCw,
+  RotateCcw,
+} from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
+import type { SaganRunSummary } from "../../../../src/sagan/api.ts";
+import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
@@ -214,12 +227,174 @@ const styles = stylex.create({
     padding: "var(--conan-space-3)",
     whiteSpace: "pre-wrap",
   },
+  saganOverview: {
+    alignItems: "stretch",
+    paddingBlockEnd: "var(--conan-space-6)",
+    paddingBlockStart: "calc(var(--conan-secondary-bar-height) + var(--conan-space-4))",
+    paddingInline: "var(--conan-space-5)",
+  },
+  saganHeader: {
+    borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
+    paddingBlockEnd: "var(--conan-space-4)",
+    width: "100%",
+  },
+  saganSection: { alignItems: "stretch", width: "100%" },
+  saganSectionTitle: { color: "var(--conan-text-primary)" },
+  saganCount: {
+    backgroundColor: "var(--conan-wash-raised)",
+    borderRadius: "var(--conan-radius-full)",
+    minWidth: "var(--conan-icon-size)",
+    paddingInline: "var(--conan-space-2)",
+    textAlign: "center",
+  },
+  saganRow: {
+    alignItems: "center",
+    appearance: "none",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "var(--conan-wash-hover)",
+      ":active": "var(--conan-wash-pressed)",
+    },
+    border: 0,
+    borderRadius: "var(--conan-radius-md)",
+    color: "inherit",
+    cursor: "pointer",
+    display: "grid",
+    gap: "var(--conan-space-3)",
+    gridTemplateColumns: "minmax(8rem, 1.4fr) minmax(7rem, 1fr) minmax(7rem, 1fr) auto",
+    outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
+    outlineOffset: "2px",
+    padding: "var(--conan-space-3)",
+    textAlign: "start",
+    width: "100%",
+  },
+  saganCell: { minWidth: 0 },
+  saganDuration: { justifySelf: "end", whiteSpace: "nowrap" },
+  saganEmpty: {
+    borderRadius: "var(--conan-radius-md)",
+    color: "var(--conan-text-muted)",
+    padding: "var(--conan-space-3)",
+  },
 });
 
 function CenterState({ children }: { children: string }) {
   return (
     <VStack align="center" justify="center" gap={2} xstyle={[styles.body, styles.padded]}>
       <Text color="secondary">{children}</Text>
+    </VStack>
+  );
+}
+
+type SaganSection = "Needs you" | "Running now" | "Up next" | "Blocked" | "Recently completed";
+
+const SAGAN_SECTIONS: SaganSection[] = [
+  "Needs you",
+  "Running now",
+  "Up next",
+  "Blocked",
+  "Recently completed",
+];
+
+function sectionFor(run: SaganRunSummary): SaganSection {
+  if (run.openDecisions.length > 0) return "Needs you";
+  const lane = run.lane?.toLowerCase() ?? "";
+  const phase = run.phase?.toLowerCase() ?? "";
+  const verdict = run.verdict?.toUpperCase() ?? "";
+  if (["ESCALATE", "REVISE", "NEEDS_EVIDENCE"].includes(verdict) || phase.includes("block")) {
+    return "Blocked";
+  }
+  if (["done", "merged"].includes(lane) || ["done", "merged", "complete", "completed"].includes(phase)) {
+    return "Recently completed";
+  }
+  if (["queued", "queue", "backlog"].includes(lane) || ["queued", "backlog", "pending"].includes(phase)) {
+    return "Up next";
+  }
+  return "Running now";
+}
+
+function durationOf(run: SaganRunSummary): string {
+  if (!run.firstTs) return "Duration unknown";
+  const start = Date.parse(run.firstTs);
+  const end = run.lastTs ? Date.parse(run.lastTs) : start;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "Duration unknown";
+  const days = Math.max(0, Math.round((end - start) / 86_400_000));
+  return days === 0 ? "<1 day" : `${days} day${days === 1 ? "" : "s"}`;
+}
+
+const SECTION_STATE = {
+  "Needs you": { icon: CircleHelp, label: "Awaiting decision" },
+  "Running now": { icon: PlayCircle, label: "Running" },
+  "Up next": { icon: ListTodo, label: "Queued" },
+  Blocked: { icon: OctagonAlert, label: "Blocked" },
+  "Recently completed": { icon: CircleCheck, label: "Completed" },
+} satisfies Record<SaganSection, { icon: typeof CircleHelp; label: string }>;
+
+function SaganRow({ run, section }: { run: SaganRunSummary; section: SaganSection }) {
+  const state = SECTION_STATE[section];
+  const StateIcon = state.icon;
+  return (
+    <button type="button" {...stylex.props(styles.saganRow)} aria-label={`${run.ticket}, ${state.label}`}>
+      <VStack gap={0.5} xstyle={styles.saganCell}>
+        <Text weight="semibold">{run.ticket}</Text>
+        <Text color="secondary" type="supporting">{run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}</Text>
+      </VStack>
+      <VStack gap={0.5} xstyle={styles.saganCell}>
+        <Text>{run.agent?.name ?? "Unassigned"}</Text>
+        <Text color="secondary" type="supporting">{run.agent?.role ?? "No role"}</Text>
+      </VStack>
+      <HStack align="center" gap={2} xstyle={styles.saganCell}>
+        <StateIcon size={16} aria-hidden />
+        <Text>{state.label}</Text>
+      </HStack>
+      <Text color="secondary" type="supporting" xstyle={styles.saganDuration}>{durationOf(run)}</Text>
+    </button>
+  );
+}
+
+export function V2SaganSurface({
+  result,
+}: {
+  token: string | null;
+  cwd: string | null;
+  result?: SaganCapabilityResult;
+}) {
+  if (!result || result.status === "idle" || result.status === "loading") {
+    return <CenterState>Loading Sagan overview…</CenterState>;
+  }
+  if (result.status === "error") return <CenterState>{result.error ?? "Sagan runs could not be loaded."}</CenterState>;
+  const data = result.data;
+  const capability = data?.project?.sagan;
+  if (!data || !Array.isArray(data.runs)) return <CenterState>Sagan returned malformed run data.</CenterState>;
+  if (capability?.state === "invalid" || capability?.state === "unsupported-version") {
+    return <CenterState>{capability.reason ?? "The Sagan configuration is malformed."}</CenterState>;
+  }
+  if (capability?.state !== "valid") return <CenterState>Sagan is unavailable for this project.</CenterState>;
+
+  const grouped = new Map<SaganSection, SaganRunSummary[]>(SAGAN_SECTIONS.map((section) => [section, []]));
+  for (const run of data.runs) grouped.get(sectionFor(run))!.push(run);
+  const needsYouCount = grouped.get("Needs you")!.length;
+
+  return (
+    <VStack gap={5} xstyle={[styles.body, styles.saganOverview]} data-sagan-pane="overview">
+      <HStack align="center" justify="between" gap={3} xstyle={styles.saganHeader}>
+        <Text weight="semibold">Overview</Text>
+        <Text color="secondary">{needsYouCount} needs you</Text>
+      </HStack>
+      {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
+      {SAGAN_SECTIONS.map((section) => {
+        const rows = grouped.get(section)!;
+        return (
+          <VStack key={section} gap={2} xstyle={styles.saganSection}>
+            <HStack align="center" gap={2}>
+              <Text weight="semibold" xstyle={styles.saganSectionTitle}>{section}</Text>
+              {section === "Needs you" ? <Text type="supporting" xstyle={styles.saganCount}>{needsYouCount}</Text> : null}
+            </HStack>
+            {rows.length > 0 ? rows.map((run) => <SaganRow key={run.id} run={run} section={section} />) : (
+              <Text type="supporting" xstyle={styles.saganEmpty}>No runs in this section.</Text>
+            )}
+          </VStack>
+        );
+      })}
     </VStack>
   );
 }
