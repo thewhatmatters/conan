@@ -239,6 +239,7 @@ const styles = stylex.create({
     paddingBlockEnd: "var(--conan-space-4)",
     width: "100%",
   },
+  saganHeaderStatus: { alignItems: "flex-end" },
   saganSection: { alignItems: "stretch", width: "100%" },
   saganSectionTitle: { color: "var(--conan-text-primary)" },
   saganCount: {
@@ -449,7 +450,15 @@ export function V2SaganSurface({
     <VStack gap={5} xstyle={[styles.body, styles.saganOverview]} data-sagan-pane="overview">
       <HStack align="center" justify="between" gap={3} xstyle={styles.saganHeader}>
         <Text weight="semibold">Overview</Text>
-        <Text color="secondary">{needsYouCount} needs you</Text>
+        <VStack gap={0.5} xstyle={styles.saganHeaderStatus}>
+          <Text color="secondary">{needsYouCount} needs you</Text>
+          {result.updatedAt ? (
+            <Text color="secondary" type="supporting">
+              Updated {new Date(result.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+            </Text>
+          ) : null}
+          {result.error ? <Text color="secondary" type="supporting" role="status">{result.error}</Text> : null}
+        </VStack>
       </HStack>
       {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
       {SAGAN_SECTIONS.map((section) => {

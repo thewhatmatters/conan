@@ -115,6 +115,7 @@ describe("SurfaceWorkspace", () => {
       projectPath: "/repo/sagan",
       status: "ready" as const,
       error: null,
+      updatedAt: Date.now(),
       data: {
         project: { sagan: { state: "valid" } },
         runs: [],

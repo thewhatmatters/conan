@@ -45,6 +45,7 @@ const result = (patch: Partial<SaganCapabilityResult> = {}): SaganCapabilityResu
   status: "ready",
   data: data(),
   error: null,
+  updatedAt: Date.parse("2026-08-08T15:04:05Z"),
   ...patch,
 });
 
@@ -89,9 +90,16 @@ describe("V2SaganSurface overview", () => {
   it("renders an empty overview with every section", () => {
     renderSurface(result());
     expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
+    expect(screen.getByText(/^Updated /)).toBeVisible();
     for (const label of ["Needs you", "Running now", "Up next", "Blocked", "Recently completed"]) {
       expect(screen.getByText(label)).toBeVisible();
     }
+  });
+
+  it("keeps stale data visible with a non-blocking refresh error", () => {
+    renderSurface(result({ error: "Sagan runs could not be refreshed. Retrying…" }));
+    expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Retrying");
   });
 
   it("renders a fetch error", () => {

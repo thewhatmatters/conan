@@ -204,6 +204,7 @@ export default function AppV2() {
     token,
     activeThread,
     projects,
+    activeSurface === "sagan",
   );
   const saganAvailable = sagan.available;
   const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
