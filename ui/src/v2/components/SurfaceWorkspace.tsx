@@ -179,6 +179,7 @@ function SurfaceBody({
   browserActive,
   onBrowserStateChange,
   sagan,
+  onOpenSaganThread,
 }: {
   id: Exclude<SurfaceId, "chat">;
   token: string | null;
@@ -187,6 +188,7 @@ function SurfaceBody({
   browserActive: boolean;
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
   sagan?: SaganCapabilityResult;
+  onOpenSaganThread?: (id: string) => void;
 }) {
   if (id === "terminal") return <V2TerminalSurface token={token} cwd={cwd} />;
   if (id === "browser") {
@@ -199,7 +201,7 @@ function SurfaceBody({
     );
   }
   if (id === "files") return <V2FilesSurface token={token} cwd={cwd} />;
-  if (id === "sagan") return <V2SaganSurface token={token} cwd={cwd} result={sagan} />;
+  if (id === "sagan") return <V2SaganSurface token={token} cwd={cwd} result={sagan} onOpenOwningThread={onOpenSaganThread} />;
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
 
@@ -214,6 +216,7 @@ export default function SurfaceWorkspace({
   onUndock,
   onBrowserStateChange,
   sagan,
+  onOpenSaganThread,
 }: {
   children: ReactNode;
   header: ReactNode;
@@ -226,6 +229,7 @@ export default function SurfaceWorkspace({
   /** Browser-surface reports headed for the agent socket (WHA-109). */
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
   sagan?: SaganCapabilityResult;
+  onOpenSaganThread?: (id: string) => void;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [size, setSize] = useState(DEFAULT_SIZE);
@@ -384,6 +388,7 @@ export default function SurfaceWorkspace({
                     browserActive={activeSurface === "browser"}
                     onBrowserStateChange={onBrowserStateChange}
                     sagan={sagan}
+                    onOpenSaganThread={onOpenSaganThread}
                   />
                 </HStack>
               ))}

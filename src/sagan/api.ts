@@ -52,6 +52,7 @@ export const LEDGER_RELATIVE = path.join(".sagan", "ledger", "events.jsonl");
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+const timestampOf = (e: RawEvent): string | null => str(e.ts) ?? str(e.timestamp);
 /** `flags`/`not_verified`/`artifacts` are arrays of strings — except when they
  *  are a single string (`artifacts` is both in the reference ledger). */
 const strings = (v: unknown): string[] => {
@@ -140,6 +141,20 @@ export interface SaganHistoryEntry {
   data: Record<string, unknown>;
 }
 
+export interface SaganOwningTarget {
+  kind: "thread" | "session" | "nostr-event";
+  id: string;
+}
+
+/** Inspector facts which are not part of the list projection. */
+export interface SaganRunContext {
+  objective: string | null;
+  provider: string | null;
+  containment: string | null;
+  attemptId: string | null;
+  owningTarget: SaganOwningTarget | null;
+}
+
 /** A run in the list. Ticket id IS the run id in Sagan v0. */
 export interface SaganRunSummary {
   /** The route key for `/api/sagan/runs/:id`. Same value as `ticket`. */
@@ -169,6 +184,7 @@ export interface SaganRunSummary {
 
 /** A run in full — the inspector's (C3) and pipeline's (C4) whole payload. */
 export interface SaganRunDetail extends SaganRunSummary {
+  context: SaganRunContext;
   lanes: SaganLaneEntry[];
   verdicts: SaganVerdictEntry[];
   evidence: SaganEvidenceEntry[];
@@ -378,6 +394,51 @@ const linesFor = (
 ): Array<{ index: number; event: RawEvent }> =>
   indexed.filter(({ event }) => str(event.ticket) === ticket);
 
+const firstString = (events: RawEvent[], keys: string[]): string | null => {
+  for (const event of events) {
+    for (const key of keys) {
+      const value = str(event[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+};
+
+function ticketObjective(root: string, ticketId: string): string | null {
+  if (!/^[A-Za-z0-9._-]+$/.test(ticketId)) return null;
+  const ticketsDir = path.join(root, ".sagan", "tickets");
+  const candidate = path.join(ticketsDir, `${ticketId}.md`);
+  try {
+    const realDir = fs.realpathSync(ticketsDir);
+    const realFile = fs.realpathSync(candidate);
+    const rel = path.relative(realDir, realFile);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+    const heading = fs.readFileSync(realFile, "utf8").match(/^#\s+(.+)$/m)?.[1]?.trim();
+    if (!heading) return null;
+    return heading.replace(new RegExp(`^${ticketId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[—–:-]\\s*`), "").trim() || heading;
+  } catch {
+    return null;
+  }
+}
+
+function manifestAssignment(root: string, lane: string | null): {
+  provider: string | null;
+  containment: string | null;
+} {
+  if (!lane) return { provider: null, containment: null };
+  try {
+    const manifest = fs.readFileSync(path.join(root, ".sagan", "sagan.yaml"), "utf8");
+    const escapedLane = lane.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const provider = manifest.match(new RegExp(`^\\s*${escapedLane}:\\s*\\{[^}]*provider:\\s*([^,}\\s]+)`, "m"))?.[1] ?? null;
+    if (!provider) return { provider: null, containment: null };
+    const escapedProvider = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const containment = manifest.match(new RegExp(`^\\s*${escapedProvider}:\\s*\\{[^}]*containment:\\s*([^,}\\s]+)`, "m"))?.[1] ?? null;
+    return { provider, containment };
+  } catch {
+    return { provider: null, containment: null };
+  }
+}
+
 /**
  * Every run in a project, most recently touched first.
  *
@@ -433,6 +494,7 @@ export function getSaganRun(
   if (!t) return null;
 
   const lines = linesFor(indexed, ticketId);
+  const events = lines.map(({ event }) => event);
   const lanes: SaganLaneEntry[] = [];
   const verdicts: SaganVerdictEntry[] = [];
   const evidence: SaganEvidenceEntry[] = [];
@@ -442,7 +504,7 @@ export function getSaganRun(
     history.push({
       index,
       event: e.event,
-      ts: str(e.ts),
+      ts: timestampOf(e),
       data: e as Record<string, unknown>,
     });
     switch (e.event) {
@@ -456,7 +518,7 @@ export function getSaganRun(
           artifact: str(e.artifact),
           sha: str(e.sha) ?? str(e.artifact_sha),
           flags: strings(e.flags),
-          ts: str(e.ts),
+          ts: timestampOf(e),
         });
         break;
       case "critique.verdict":
@@ -470,7 +532,7 @@ export function getSaganRun(
           high: num(e.high),
           artifactSha: str(e.artifact_sha) ?? str(e.sha),
           evidenceNeeded: str(e.evidence_needed),
-          ts: str(e.ts),
+          ts: timestampOf(e),
         });
         break;
       case "evidence.recorded":
@@ -485,7 +547,7 @@ export function getSaganRun(
           artifacts: strings(e.artifacts),
           deltaOf: str(e.delta_of),
           note: str(e.note) ?? str(e.for),
-          ts: str(e.ts),
+          ts: timestampOf(e),
         });
         break;
       default:
@@ -493,6 +555,16 @@ export function getSaganRun(
     }
   }
 
+  let assignment = manifestAssignment(project.root, t.lane);
+  if (!assignment.provider) {
+    for (const event of events) {
+      assignment = manifestAssignment(project.root, str(event.lane));
+      if (assignment.provider) break;
+    }
+  }
+  const threadId = firstString(events, ["thread_id"]);
+  const sessionId = firstString(events, ["session_id"]);
+  const nostrEventId = firstString(events, ["nostr_event_id"]);
   return {
     project,
     ledgerPath,
@@ -501,6 +573,21 @@ export function getSaganRun(
         t,
         lines.map((l) => l.event),
       ),
+      context: {
+        objective:
+          firstString(events, ["objective", "title", "task", "prompt"]) ??
+          ticketObjective(project.root, ticketId),
+        provider: firstString(events, ["provider"]) ?? assignment.provider,
+        containment: firstString(events, ["containment", "permission_mode", "sandbox"]) ?? assignment.containment,
+        attemptId: firstString(events, ["attempt_id", "attempt", "run_id"]),
+        owningTarget: threadId
+          ? { kind: "thread", id: threadId }
+          : sessionId
+            ? { kind: "session", id: sessionId }
+            : nostrEventId
+              ? { kind: "nostr-event", id: nostrEventId }
+              : null,
+      },
       lanes,
       verdicts,
       evidence,

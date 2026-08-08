@@ -837,6 +837,7 @@ export default function AppV2() {
                 onUndock={undockSurface}
                 onBrowserStateChange={setBrowserSurface}
                 sagan={sagan}
+                onOpenSaganThread={selectThreadByKey}
               >
                 <V2ChatView
                   key={activeThread?.key ?? "no-thread"}
