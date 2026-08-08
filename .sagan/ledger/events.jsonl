@@ -3,3 +3,4 @@
 {"event": "evidence.recorded", "ticket": "WHA-140", "sha": "b8709fd", "verifier": "hermes-pm", "overall": "PASS", "checks": [{"ac_ref": "AC1", "result": "PASS"}, {"ac_ref": "AC2", "result": "PASS"}, {"ac_ref": "AC3", "result": "PASS"}, {"ac_ref": "AC4", "result": "PASS"}, {"ac_ref": "AC5", "result": "PASS"}, {"gate": "typecheck", "result": "PASS"}, {"gate": "npm test", "result": "PASS", "count": "362/362"}, {"gate": "ui build", "result": "PASS"}]}
 {"event": "decision.made", "ticket": "WHA-140", "gate": "promote", "decision": "promote", "by": "hermes-pm", "round": 1, "notes": "All gates pass with Node 22; promoted per owner directive to complete Sagan tasks tonight."}
 {"event": "lane.updated", "ticket": "WHA-140", "lane": "done", "phase": "merged"}
+{"event": "lane.updated", "ticket": "WHA-141", "lane": "frontend", "phase": "building"}
