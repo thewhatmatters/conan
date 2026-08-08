@@ -10,6 +10,7 @@ import { ArrowLeft, ExternalLink, Folder, RefreshCw, RotateCcw } from "lucide-re
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
+import type { SaganRunsResult } from "../../../../src/sagan/api.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
@@ -222,6 +223,42 @@ function CenterState({ children }: { children: string }) {
       <Text color="secondary">{children}</Text>
     </VStack>
   );
+}
+
+export function V2SaganSurface({ token, cwd }: { token: string | null; cwd: string | null }) {
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    if (!token || !cwd) {
+      setState("loading");
+      return;
+    }
+    const controller = new AbortController();
+    setState("loading");
+    void (async () => {
+      try {
+        const response = await fetch(
+          apiBase() + `/api/sagan/runs?projectId=${encodeURIComponent(cwd)}`,
+          {
+            headers: { "x-conan-token": token },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) throw new Error(String(response.status));
+        const data = (await response.json()) as SaganRunsResult;
+        if (!controller.signal.aborted) {
+          setState(data.project?.sagan.state === "valid" ? "ready" : "error");
+        }
+      } catch {
+        if (!controller.signal.aborted) setState("error");
+      }
+    })();
+    return () => controller.abort();
+  }, [cwd, token]);
+
+  if (state === "loading") return <CenterState>Loading Sagan…</CenterState>;
+  if (state === "error") return <CenterState>Sagan is unavailable for this project.</CenterState>;
+  return <CenterState>Sagan project connected.</CenterState>;
 }
 
 export function V2TerminalSurface({ token, cwd }: { token: string | null; cwd: string | null }) {

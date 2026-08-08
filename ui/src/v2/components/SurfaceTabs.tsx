@@ -24,12 +24,13 @@ import {
   MoreVertical,
   PanelLeft,
   PanelRight,
+  Orbit,
   Terminal,
   X,
   type LucideIcon,
 } from "lucide-react";
 
-export type SurfaceId = "chat" | "browser" | "terminal" | "diff" | "files";
+export type SurfaceId = "chat" | "browser" | "terminal" | "diff" | "files" | "sagan";
 export type SurfacePlacement = "right" | "left";
 
 export interface SurfaceTab {
@@ -47,6 +48,7 @@ export interface SurfaceTab {
 
 export interface SurfaceTabsProps {
   tabs?: SurfaceTab[];
+  saganAvailable?: boolean;
   onSelect?: (id: SurfaceId) => void;
   onOpen?: (id: Exclude<SurfaceId, "chat">) => void;
   onClose?: (id: Exclude<SurfaceId, "chat">) => void;
@@ -65,6 +67,7 @@ export const SURFACE_OPTIONS: ReadonlyArray<
   { id: "terminal", label: "Terminal", icon: Terminal, isCloseable: true },
   { id: "diff", label: "Diff", icon: Diff, isCloseable: true },
   { id: "files", label: "Files", icon: FileText, isCloseable: true },
+  { id: "sagan", label: "Sagan", icon: Orbit, isCloseable: true },
 ];
 
 const DEFAULT_TABS: SurfaceTab[] = [
@@ -420,6 +423,7 @@ function SurfaceTabItem({
 
 export default function SurfaceTabs({
   tabs = DEFAULT_TABS,
+  saganAvailable = false,
   onSelect,
   onOpen,
   onClose,
@@ -431,7 +435,10 @@ export default function SurfaceTabs({
     hasRovingTabIndex: true,
   });
   const openIds = new Set(tabs.map((tab) => tab.id));
-  const allOpen = SURFACE_OPTIONS.every((surface) => openIds.has(surface.id));
+  const availableOptions = SURFACE_OPTIONS.filter(
+    (surface) => surface.id !== "sagan" || saganAvailable,
+  );
+  const allOpen = availableOptions.every((surface) => openIds.has(surface.id));
   const dockedTabs = tabs.filter((tab) => tab.id !== "chat" && tab.placement != null);
   const visibleTabs = tabs.filter((tab) => tab.placement == null || tab.isDocked);
   const handleTabListKeyDown = useCallback(
@@ -493,7 +500,7 @@ export default function SurfaceTabs({
             isDisabled: allOpen,
             xstyle: [styles.opener, allOpen && styles.openerDim],
           }}
-          items={SURFACE_OPTIONS.map((surface) => ({
+          items={availableOptions.map((surface) => ({
             label: surface.label,
             icon: <surface.icon size={ICON} aria-hidden />,
             onClick: () => onOpen?.(surface.id),

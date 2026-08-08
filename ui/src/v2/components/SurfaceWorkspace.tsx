@@ -8,6 +8,7 @@ import {
   V2BrowserSurface,
   V2DiffSurface,
   V2FilesSurface,
+  V2SaganSurface,
   V2TerminalSurface,
 } from "./V2SurfaceBodies.tsx";
 import {
@@ -195,6 +196,7 @@ function SurfaceBody({
     );
   }
   if (id === "files") return <V2FilesSurface token={token} cwd={cwd} />;
+  if (id === "sagan") return <V2SaganSurface token={token} cwd={cwd} />;
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
 

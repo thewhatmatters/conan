@@ -107,4 +107,57 @@ describe("SurfaceWorkspace", () => {
     expect(getComputedStyle(screen.getByRole("separator")).order).toBe("-1");
     expect(screen.getByRole("separator")).toHaveAttribute("aria-orientation", "vertical");
   });
+
+  it("keeps Sagan mounted across thread changes and refetches on project changes", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ({ project: { sagan: { state: "valid" } } }),
+      } as Response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/sagan"
+      >
+        <div>Thread one</div>
+      </SurfaceWorkspace>,
+    );
+
+    const surface = document.querySelector('[data-surface="sagan"]');
+    expect(await screen.findByText("Sagan project connected.")).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/sagan"
+      >
+        <div>Thread two</div>
+      </SurfaceWorkspace>,
+    );
+    expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <SurfaceWorkspace
+        header={<div>Chat actions</div>}
+        activeSurface="sagan"
+        openSurfaces={["sagan"]}
+        token="tok"
+        cwd="/repo/other"
+      >
+        <div>Thread three</div>
+      </SurfaceWorkspace>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+  });
 });

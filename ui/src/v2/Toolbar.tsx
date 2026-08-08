@@ -52,6 +52,7 @@ export default function Toolbar({
   activeThreadId,
   onSelectThread,
   tabs,
+  saganAvailable,
   onSelect,
   onOpen,
   onClose,
@@ -76,6 +77,7 @@ export default function Toolbar({
       <HStack align="center" gap={6} xstyle={styles.tabGroup}>
         <SurfaceTabs
           tabs={tabs}
+          saganAvailable={saganAvailable}
           onSelect={onSelect}
           onOpen={onOpen}
           onClose={onClose}
