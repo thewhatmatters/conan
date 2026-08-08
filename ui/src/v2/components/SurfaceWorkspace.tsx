@@ -21,6 +21,7 @@ import {
   type SurfacePlacement,
 } from "./SurfaceTabs.tsx";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
+import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 
 const DEFAULT_SIZE = 420;
 const STEP_SIZE = 24;
@@ -177,6 +178,7 @@ function SurfaceBody({
   cwd,
   browserActive,
   onBrowserStateChange,
+  sagan,
 }: {
   id: Exclude<SurfaceId, "chat">;
   token: string | null;
@@ -184,6 +186,7 @@ function SurfaceBody({
   /** True when Browser is the surface currently on screen (WHA-109). */
   browserActive: boolean;
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
+  sagan?: SaganCapabilityResult;
 }) {
   if (id === "terminal") return <V2TerminalSurface token={token} cwd={cwd} />;
   if (id === "browser") {
@@ -196,7 +199,7 @@ function SurfaceBody({
     );
   }
   if (id === "files") return <V2FilesSurface token={token} cwd={cwd} />;
-  if (id === "sagan") return <V2SaganSurface token={token} cwd={cwd} />;
+  if (id === "sagan") return <V2SaganSurface token={token} cwd={cwd} result={sagan} />;
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
 
@@ -210,6 +213,7 @@ export default function SurfaceWorkspace({
   cwd,
   onUndock,
   onBrowserStateChange,
+  sagan,
 }: {
   children: ReactNode;
   header: ReactNode;
@@ -221,6 +225,7 @@ export default function SurfaceWorkspace({
   onUndock?: (id: Exclude<SurfaceId, "chat">) => void;
   /** Browser-surface reports headed for the agent socket (WHA-109). */
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
+  sagan?: SaganCapabilityResult;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [size, setSize] = useState(DEFAULT_SIZE);
@@ -378,6 +383,7 @@ export default function SurfaceWorkspace({
                     cwd={cwd}
                     browserActive={activeSurface === "browser"}
                     onBrowserStateChange={onBrowserStateChange}
+                    sagan={sagan}
                   />
                 </HStack>
               ))}

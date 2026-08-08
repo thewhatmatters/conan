@@ -44,6 +44,7 @@ export interface SurfaceTab {
   joinedSide?: "start" | "end";
   dockedDescription?: string;
   placement?: SurfacePlacement;
+  count?: number;
 }
 
 export interface SurfaceTabsProps {
@@ -192,6 +193,13 @@ const styles = stylex.create({
     paddingBlock: "var(--conan-space-1)",
     paddingInline: "var(--conan-space-2)",
   },
+  badge: {
+    backgroundColor: "var(--conan-wash-raised)",
+    borderRadius: "var(--conan-radius-full)",
+    minWidth: "var(--conan-icon-size)",
+    paddingInline: "var(--conan-space-1)",
+    textAlign: "center",
+  },
   divider: {
     border: 0,
     borderTop: "var(--conan-border-width) solid var(--conan-color-border)",
@@ -323,6 +331,11 @@ function SurfaceTabItem({
         >
           {label}
         </Text>
+        {tab.count != null ? (
+          <Text color="inherit" type="supporting" xstyle={styles.badge}>
+            {tab.count}
+          </Text>
+        ) : null}
       </HStack>
       {isDocked && surfaceId && dockedTabs.length > 1 ? (
         <HStack

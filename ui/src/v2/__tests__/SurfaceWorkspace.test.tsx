@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurfaceWorkspace from "../components/SurfaceWorkspace.tsx";
+import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 
 describe("SurfaceWorkspace", () => {
   beforeEach(() => {
@@ -108,14 +109,17 @@ describe("SurfaceWorkspace", () => {
     expect(screen.getByRole("separator")).toHaveAttribute("aria-orientation", "vertical");
   });
 
-  it("keeps Sagan mounted across thread changes and refetches on project changes", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: async () => ({ project: { sagan: { state: "valid" } } }),
-      } as Response),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it("keeps Sagan mounted across thread changes", async () => {
+    const sagan = {
+      available: true,
+      projectPath: "/repo/sagan",
+      status: "ready" as const,
+      error: null,
+      data: {
+        project: { sagan: { state: "valid" } },
+        runs: [],
+      },
+    } as unknown as SaganCapabilityResult;
     const { rerender } = render(
       <SurfaceWorkspace
         header={<div>Chat actions</div>}
@@ -123,14 +127,14 @@ describe("SurfaceWorkspace", () => {
         openSurfaces={["sagan"]}
         token="tok"
         cwd="/repo/sagan"
+        sagan={sagan}
       >
         <div>Thread one</div>
       </SurfaceWorkspace>,
     );
 
     const surface = document.querySelector('[data-surface="sagan"]');
-    expect(await screen.findByText("Sagan project connected.")).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Overview")).toBeVisible();
 
     rerender(
       <SurfaceWorkspace
@@ -139,12 +143,12 @@ describe("SurfaceWorkspace", () => {
         openSurfaces={["sagan"]}
         token="tok"
         cwd="/repo/sagan"
+        sagan={sagan}
       >
         <div>Thread two</div>
       </SurfaceWorkspace>,
     );
     expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     rerender(
       <SurfaceWorkspace
@@ -153,11 +157,11 @@ describe("SurfaceWorkspace", () => {
         openSurfaces={["sagan"]}
         token="tok"
         cwd="/repo/other"
+        sagan={{ ...sagan, projectPath: "/repo/other" }}
       >
         <div>Thread three</div>
       </SurfaceWorkspace>,
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
   });
 });

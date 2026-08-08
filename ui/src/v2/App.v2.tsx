@@ -200,11 +200,13 @@ export default function AppV2() {
   const [browserSurface, setBrowserSurface] = useState<BrowserSurfaceReport>();
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const states = useV2ThreadStates();
-  const { available: saganAvailable } = useSaganCapability(
+  const sagan = useSaganCapability(
     token,
     activeThread,
     projects,
   );
+  const saganAvailable = sagan.available;
+  const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
 
   useEffect(() => {
     if (saganAvailable) return;
@@ -248,6 +250,7 @@ export default function AppV2() {
         const surface = SURFACE_OPTIONS.find((candidate) => candidate.id === id)!;
         return {
           ...surface,
+          count: id === "sagan" ? saganNeedsYou : undefined,
           placement: surfacePlacements[id],
           isSelected: activeSurface === id,
           isDocked: id === dockedId,
@@ -262,7 +265,7 @@ export default function AppV2() {
       }),
       ];
     },
-    [activeDockedSurface, activeSurface, openSurfaces, surfacePlacements],
+    [activeDockedSurface, activeSurface, openSurfaces, saganNeedsYou, surfacePlacements],
   );
   const openSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
     if (id === "sagan" && !saganAvailable) return;
@@ -833,6 +836,7 @@ export default function AppV2() {
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
                 onUndock={undockSurface}
                 onBrowserStateChange={setBrowserSurface}
+                sagan={sagan}
               >
                 <V2ChatView
                   key={activeThread?.key ?? "no-thread"}
