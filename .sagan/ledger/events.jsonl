@@ -1,0 +1,2 @@
+{"event": "run.started", "run_id": "sagan-conan-2026-08-08", "epic": "WHA-135", "tickets": ["WHA-140", "WHA-141", "WHA-142", "WHA-143", "WHA-144", "WHA-145"], "blocked": ["WHA-134"], "branch": "hermes/sagan-run", "worktree": "/Users/randydigital/Development/conan", "timestamp": "2026-08-08T02:00:00Z"}
+{"event": "critique.verdict", "ticket": "WHA-140", "round": 1, "critic": "hermes-pm", "verdict": "REVISE", "findings": 2, "notes": "src/sagan/api.test.ts strict-null errors on result.project; tests must run with Node 22"}

@@ -779,14 +779,18 @@ app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
 });
 
 // Sagan read API (WHA-140 / B2). Both routes are project-scoped: `projectId`
-// names a project row, the row's folder is walked to its repo root, and the
-// ledger is read from THAT root — no path comes off the wire, so one project
-// can never read another's runs. Read-only; the only writer is C5.
+// names either a project row or an absolute path, it is walked to its repo
+// root, and the ledger is read from THAT root and re-checked to be inside it —
+// so one project can never read another's runs. Read-only; the only writer
+// is C5.
 //
 // A known project that is not a Sagan project (or whose overlay is broken)
 // answers 200 with an empty list plus the `sagan` capability that says which,
-// because the surface has to draw a different empty state for each. Only an
-// unknown project id is a 404.
+// because the surface has to draw a different empty state for each. An id that
+// resolves to NO project is also an empty list (with `reason`) rather than a
+// 404: a list route that has nothing to list is not an error. A blank/absent
+// `projectId` is still a 400 — a malformed request is a different thing from a
+// project that isn't there.
 app.get("/api/sagan/runs", (req, res) => {
   if (!authed(req, res)) return;
   const projectId = req.query.projectId;
@@ -794,12 +798,7 @@ app.get("/api/sagan/runs", (req, res) => {
     res.status(400).json({ error: "projectId required" });
     return;
   }
-  const project = resolveSaganProject(projectId.trim());
-  if (!project) {
-    res.status(404).json({ error: `unknown project: ${projectId}` });
-    return;
-  }
-  res.json(listSaganRuns(project));
+  res.json(listSaganRuns(resolveSaganProject(projectId)));
 });
 
 // One run in full — lanes, verdicts, evidence, decisions, and the whole ledger
@@ -813,7 +812,7 @@ app.get("/api/sagan/runs/:id", (req, res) => {
     res.status(400).json({ error: "projectId required" });
     return;
   }
-  const project = resolveSaganProject(projectId.trim());
+  const project = resolveSaganProject(projectId);
   if (!project) {
     res.status(404).json({ error: `unknown project: ${projectId}` });
     return;

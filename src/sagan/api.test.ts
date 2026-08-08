@@ -3,9 +3,11 @@
 // Three things here are worth more than the rest:
 //
 //   1. PROJECT SCOPING. `resolveSaganProject` is the only door to a ledger, and
-//      it opens onto exactly one folder. Two Sagan projects on disk must never
-//      see each other's runs, and an id that names no project must not fall
-//      back to whatever project happens to be open.
+//      it opens onto exactly one folder — whether the id is a project row or a
+//      path on disk. Two Sagan projects must never see each other's runs, an id
+//      that names no project must not fall back to whatever project happens to
+//      be open, and a ledger that is textually inside the root but symlinked
+//      out of it must not be read.
 //   2. The `:id` never touches the filesystem. A ticket id shaped like a path
 //      traversal is a miss, not a read — asserted, because the day someone
 //      "helpfully" joins the id onto a directory this is the test that fails.
@@ -28,8 +30,13 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conan-sagan-api-"));
 process.env.CONAN_DATA_DIR = dataDir;
 process.env.CONAN_DB_PATH = path.join(dataDir, "conan.db");
 
-const { listSaganRuns, getSaganRun, resolveSaganProject, saganLedgerPath } =
-  await import("./api.js");
+const {
+  listSaganRuns,
+  getSaganRun,
+  resolveSaganProject,
+  saganLedgerPath,
+  ledgerWithinRoot,
+} = await import("./api.js");
 const { upsertChatProject } = await import("../agent/threads.js");
 
 const lines = (...rows: unknown[]): string =>
@@ -153,8 +160,8 @@ test("AC1: lists every ticket in the project's ledger, most recent first", () =>
     "ordering is the last ledger LINE per ticket — `ts` is day-granular and cannot order",
   );
   assert.equal(result.ledgerPath, saganLedgerPath(root));
-  assert.equal(result.project.root, root);
-  assert.equal(result.project.sagan.state, "valid");
+  assert.equal(result.project?.root, root);
+  assert.equal(result.project?.sagan.state, "valid");
   // The run id IS the ticket id — no Linear title fetch (non-goal).
   for (const run of result.runs) assert.equal(run.id, run.ticket);
 });
@@ -358,7 +365,7 @@ test("AC4: a Sagan project with no ledger yet is an empty list, not an error", (
   const { root } = saganRepo("no-ledger");
   const result = listSaganRuns(projectFor(root));
   assert.deepEqual(result.runs, []);
-  assert.equal(result.project.sagan.state, "valid");
+  assert.equal(result.project?.sagan.state, "valid");
   assert.deepEqual(result.skipped, { unparseable: 0, unknownType: 0, noTicket: 0 });
 });
 
@@ -367,7 +374,7 @@ test("AC4: a non-Sagan project answers empty plus the reason", () => {
   fs.mkdirSync(path.join(base, ".git"), { recursive: true });
   const result = listSaganRuns(projectFor(base));
   assert.deepEqual(result.runs, []);
-  assert.equal(result.project.sagan.state, "absent");
+  assert.equal(result.project?.sagan.state, "absent");
 });
 
 test("a half-written ledger still lists, with the damage counted", () => {
@@ -389,4 +396,133 @@ test("an event type this build has never seen is counted, not fatal", () => {
   // …and the inspector still shows the line, because history drops nothing.
   const run = getSaganRun(projectFor(root), "WHA-130")!.run;
   assert.equal(run.history.at(-1)!.event, "gate.escalated");
+});
+
+// ─── projectId as a PATH ────────────────────────────────────────────────────
+// The id may also be an absolute path on disk. It buys the same one folder and
+// nothing more, so every test below is really asking the same question: does
+// this string get to name a folder the routes will read?
+
+test("a projectId that is an absolute repo path lists that repo's runs", () => {
+  const { root } = saganRepo("path-root", REFERENCE);
+  const project = resolveSaganProject(root);
+  assert.ok(project);
+  assert.equal(project.source, "path");
+  assert.equal(project.root, root);
+  assert.equal(project.path, root);
+  assert.deepEqual(
+    listSaganRuns(project).runs.map((r) => r.id),
+    ["WHA-130", "WHA-131", "T-001"],
+  );
+  // …and the detail route reaches the same ledger through the same id.
+  assert.equal(getSaganRun(project, "WHA-130")?.run.round, 3);
+});
+
+test("a path inside the repo resolves to the repo root's ledger", () => {
+  const { root, nested } = saganRepo("path-nested", REFERENCE);
+  const project = resolveSaganProject(nested);
+  assert.ok(project);
+  assert.equal(project.path, nested);
+  assert.equal(project.root, root, "the ledger lives at the repo root, not the cwd");
+  assert.equal(listSaganRuns(project).runs.length, 3);
+});
+
+test("a path with `..` segments is judged as the folder it actually names", () => {
+  const { root, nested } = saganRepo("path-dotdot", REFERENCE);
+  // `repo/packages/api/../..` IS the root — normalised, then accepted on its
+  // own merits, not refused for its shape.
+  const project = resolveSaganProject(path.join(nested, "..", ".."));
+  assert.equal(project?.root, root);
+
+  // …and one that climbs OUT of every repo has no root to scope to.
+  assert.equal(resolveSaganProject(path.join(root, "..", "..", "..", "..", "..")), null);
+});
+
+test("a path that is not a project is a miss, not a read", () => {
+  const { root } = saganRepo("path-reject", REFERENCE);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "conan-sagan-api-outside-"));
+  fs.writeFileSync(path.join(outside, "secrets.txt"), "nope");
+
+  for (const [id, why] of [
+    ["", "empty"],
+    ["   ", "blank"],
+    ["relative/path", "relative — would resolve against the gateway's own cwd"],
+    ["../../etc", "relative traversal"],
+    [path.join(root, "does-not-exist"), "no such directory"],
+    [saganLedgerPath(root), "a file, not a directory"],
+    [outside, "a real directory, but inside no git repo"],
+    ["/", "the filesystem root is inside no repo"],
+  ] as const) {
+    assert.equal(resolveSaganProject(id), null, `${JSON.stringify(id)} must miss: ${why}`);
+  }
+});
+
+test("AC4: an id that resolves to nothing is an empty list, never a throw", () => {
+  const result = listSaganRuns(resolveSaganProject("/no/such/project"));
+  assert.deepEqual(result.runs, []);
+  assert.equal(result.project, null);
+  assert.equal(result.ledgerPath, null);
+  assert.ok(result.reason, "the empty list says why");
+  assert.deepEqual(result.skipped, { unparseable: 0, unknownType: 0, noTicket: 0 });
+});
+
+test("AC3: two repo paths never see each other's runs", () => {
+  const a = saganRepo("path-scope-a", REFERENCE);
+  const b = saganRepo(
+    "path-scope-b",
+    lines({
+      event: "lane.updated", ticket: "OTHER-1", lane: "frontend", phase: "built",
+      ts: "2026-08-07",
+    }),
+  );
+  const projectA = resolveSaganProject(a.root)!;
+  const projectB = resolveSaganProject(b.root)!;
+  assert.deepEqual(listSaganRuns(projectB).runs.map((r) => r.id), ["OTHER-1"]);
+  assert.equal(listSaganRuns(projectA).runs.some((r) => r.id === "OTHER-1"), false);
+  assert.equal(getSaganRun(projectA, "OTHER-1"), null);
+});
+
+test("AC3: a ledger symlinked out of the root is refused, not followed", () => {
+  const inside = saganRepo("symlink-inside", REFERENCE);
+  const { root } = saganRepo("symlink-host");
+  // The composed path is textually contained — `root/.sagan/ledger/…` — but
+  // `.sagan/ledger` points at another project's ledger directory. Containment
+  // of the STRING is not containment of the FILE.
+  fs.symlinkSync(
+    path.join(inside.root, ".sagan", "ledger"),
+    path.join(root, ".sagan", "ledger"),
+  );
+  assert.ok(fs.existsSync(saganLedgerPath(root)), "the symlink does resolve to a real file");
+
+  const project = resolveSaganProject(root)!;
+  const result = listSaganRuns(project);
+  assert.deepEqual(result.runs, [], "nothing outside the root is read");
+  assert.equal(result.ledgerOutsideRoot, true, "…and the empty list says so");
+  assert.equal(getSaganRun(project, "WHA-130"), null);
+});
+
+test("ledgerWithinRoot: a real in-root ledger reads, a missing one is fine", () => {
+  const withLedger = saganRepo("within-yes", REFERENCE);
+  assert.equal(ledgerWithinRoot(withLedger.root), true);
+  const noLedger = saganRepo("within-none");
+  assert.equal(
+    ledgerWithinRoot(noLedger.root),
+    true,
+    "a project that has never run reads nothing, so nothing escapes",
+  );
+  assert.equal(ledgerWithinRoot(path.join(noLedger.root, "no-such-root")), false);
+});
+
+test("a project row id still resolves, and reports which door it came through", () => {
+  const { root } = saganRepo("row-still-works", REFERENCE);
+  const byRow = projectFor(root);
+  assert.equal(byRow.source, "project-row");
+  const byPath = resolveSaganProject(root)!;
+  assert.equal(byPath.source, "path");
+  // Different ids, same folder, same runs — the id is a door, not a scope.
+  assert.notEqual(byRow.id, byPath.id);
+  assert.deepEqual(
+    listSaganRuns(byRow).runs.map((r) => r.id),
+    listSaganRuns(byPath).runs.map((r) => r.id),
+  );
 });
