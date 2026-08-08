@@ -215,7 +215,10 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
     const t = ticketOf(id);
     t.eventCount += 1;
 
-    const ts = str(e.ts);
+    // Early Sagan ledgers used `ts`; current fleet events use the more explicit
+    // `timestamp`. Treat them as one field so a mixed ledger still has an
+    // honest range instead of making current runs look undated.
+    const ts = str(e.ts) ?? str(e.timestamp);
     if (ts) {
       if (!t.firstTs) t.firstTs = ts;
       t.lastTs = ts;

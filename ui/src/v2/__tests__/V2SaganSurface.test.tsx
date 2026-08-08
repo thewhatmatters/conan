@@ -1,8 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { V2SaganSurface } from "../components/V2SurfaceBodies.tsx";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
-import type { SaganRunSummary, SaganRunsResult } from "../../../../src/sagan/api.ts";
+import type { SaganRunDetail, SaganRunSummary, SaganRunsResult } from "../../../../src/sagan/api.ts";
 
 const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   id: "WHA-130",
@@ -51,6 +51,35 @@ const result = (patch: Partial<SaganCapabilityResult> = {}): SaganCapabilityResu
 const renderSurface = (value: SaganCapabilityResult) =>
   render(<V2SaganSurface token="tok" cwd="/repo/sagan" result={value} />);
 
+const detail = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null): SaganRunDetail => ({
+  ...run({}),
+  context: {
+    objective: "Ship the ledger inspector",
+    provider: "claude",
+    containment: "prompt-gated",
+    attemptId: "attempt-3",
+    owningTarget,
+  },
+  lanes: [{ index: 0, lane: "frontend", phase: "built", round: 3, agent: { name: "Booker", role: "builder" }, artifact: "dist/report.html", sha: "abc123", flags: [], ts: "2026-08-05T10:00:00Z" }],
+  verdicts: [],
+  evidence: [{ index: 1, sha: "abc123", verifier: "Barkley", producer: null, overall: "PASS", checks: 5, notVerified: [], artifacts: ["evidence/inspector.png"], deltaOf: null, note: null, ts: "2026-08-07T11:00:00Z" }],
+  resolvedDecisions: [],
+  decisionHistory: [],
+  history: [
+    { index: 0, event: "lane.updated", ts: "2026-08-05T10:00:00Z", data: { event: "lane.updated", ticket: "WHA-130", lane: "frontend", output: "Built inspector" } },
+    { index: 1, event: "evidence.recorded", ts: "2026-08-07T11:00:00Z", data: { event: "evidence.recorded", ticket: "WHA-130", overall: "PASS" } },
+  ],
+});
+
+const mockDetail = (value: SaganRunDetail) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ run: value }),
+  }));
+};
+
+afterEach(() => vi.unstubAllGlobals());
+
 describe("V2SaganSurface overview", () => {
   it("renders loading", () => {
     renderSurface(result({ status: "loading", data: null }));
@@ -94,12 +123,41 @@ describe("V2SaganSurface overview", () => {
     expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveTextContent("critic-claude-freshcriticAwaiting decision2 days");
   });
 
-  it("supports keyboard focus and activation for overview rows", () => {
+  it("opens a read-only in-surface inspector and returns focus on Escape", async () => {
+    mockDetail(detail());
     renderSurface(result({ data: data([run({})]) }));
     const row = screen.getByRole("button", { name: /WHA-130, Awaiting decision/ });
     row.focus();
     expect(row).toHaveFocus();
-    fireEvent.keyDown(row, { key: "Enter" });
-    expect(row).toHaveFocus();
+    fireEvent.click(row);
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveFocus();
+    expect(screen.getByText("Ship the ledger inspector")).toBeVisible();
+    expect(screen.getByText("prompt-gated")).toBeVisible();
+    expect(screen.getByText("attempt-3")).toBeVisible();
+    expect(screen.getByText("evidence/inspector.png")).toBeVisible();
+    expect(screen.getByText("Read only · 2 events")).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open owning thread/session" })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveFocus());
+    expect(screen.getByText("Overview")).toBeVisible();
+  });
+
+  it("shows the owning-session action only for a real ledger target", async () => {
+    const onOpen = vi.fn();
+    mockDetail(detail({ kind: "session", id: "session-42" }));
+    render(
+      <V2SaganSurface
+        token="tok"
+        cwd="/repo/sagan"
+        result={result({ data: data([run({})]) })}
+        onOpenOwningThread={onOpen}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ }));
+    const action = await screen.findByRole("button", { name: "Open owning thread/session" });
+    fireEvent.click(action);
+    expect(onOpen).toHaveBeenCalledWith("session-42");
   });
 });

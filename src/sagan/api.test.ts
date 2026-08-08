@@ -123,7 +123,7 @@ const REFERENCE = lines(
 );
 
 /** v0 manifest, trimmed from the reference repo's own `sagan.yaml`. */
-const MANIFEST = `pm:\n  state: ledger\nbindings:\n  frontend: { provider: claude }\n`;
+const MANIFEST = `pm:\n  state: ledger\nproviders:\n  claude: { containment: prompt-gated }\nbindings:\n  frontend: { provider: claude }\n`;
 
 /** A repo root that is a Sagan project, optionally carrying a ledger. Returns
  *  the root and a nested folder inside it (the sidebar can hold either). */
@@ -300,6 +300,39 @@ test("AC5: history is every ledger line for the ticket, verbatim", () => {
   assert.deepEqual(run.history[0]!.data.pack, ["/abs/agent-fleet", "tickets/T-001.md"]);
   // …and no other ticket's lines leak into it.
   assert.ok(run.history.every((h) => h.data.ticket === "T-001"));
+});
+
+test("WHA-143: detail normalizes inspector context and current timestamps", () => {
+  const { root } = saganRepo("inspector", lines(
+    { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "dispatched",
+      builder: "Booker", attempt_id: "attempt-7", session_id: "session-42",
+      timestamp: "2026-08-08T15:07:46Z" },
+    { event: "evidence.recorded", ticket: "WHA-143", artifacts: ["evidence/inspector.png"],
+      output: "Inspector verified", timestamp: "2026-08-08T16:00:00Z" },
+  ));
+  fs.mkdirSync(path.join(root, ".sagan", "tickets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".sagan", "tickets", "WHA-143.md"),
+    "# WHA-143 — C3: Inspector from ledger timeline\n",
+  );
+
+  const run = getSaganRun(projectFor(root), "WHA-143")!.run;
+  assert.equal(run.context.objective, "C3: Inspector from ledger timeline");
+  assert.equal(run.context.provider, "claude");
+  assert.equal(run.context.containment, "prompt-gated");
+  assert.equal(run.context.attemptId, "attempt-7");
+  assert.deepEqual(run.context.owningTarget, { kind: "session", id: "session-42" });
+  assert.equal(run.firstTs, "2026-08-08T15:07:46Z");
+  assert.equal(run.lastTs, "2026-08-08T16:00:00Z");
+  assert.equal(run.history[0]!.ts, "2026-08-08T15:07:46Z");
+});
+
+test("WHA-143: owning target stays absent when the ledger has no real id", () => {
+  const { root } = saganRepo("no-owner", lines(
+    { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "building",
+      builder: "Booker", timestamp: "2026-08-08T15:07:46Z" },
+  ));
+  assert.equal(getSaganRun(projectFor(root), "WHA-143")!.run.context.owningTarget, null);
 });
 
 test("AC4: an unknown ticket id is 404 material, not a throw", () => {

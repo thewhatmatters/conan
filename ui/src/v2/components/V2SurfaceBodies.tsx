@@ -21,11 +21,12 @@ import {
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
-import type { SaganRunSummary } from "../../../../src/sagan/api.ts";
+import type { SaganRunDetail, SaganRunResult, SaganRunSummary } from "../../../../src/sagan/api.ts";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
+import SaganInspector from "./SaganInspector.tsx";
 import {
   buildFileTree,
   rollupFileStatus,
@@ -329,11 +330,25 @@ const SECTION_STATE = {
   "Recently completed": { icon: CircleCheck, label: "Completed" },
 } satisfies Record<SaganSection, { icon: typeof CircleHelp; label: string }>;
 
-function SaganRow({ run, section }: { run: SaganRunSummary; section: SaganSection }) {
+function SaganRow({
+  run,
+  section,
+  onSelect,
+}: {
+  run: SaganRunSummary;
+  section: SaganSection;
+  onSelect: (run: SaganRunSummary, trigger: HTMLButtonElement) => void;
+}) {
   const state = SECTION_STATE[section];
   const StateIcon = state.icon;
   return (
-    <button type="button" {...stylex.props(styles.saganRow)} aria-label={`${run.ticket}, ${state.label}`}>
+    <button
+      type="button"
+      onClick={(event) => onSelect(run, event.currentTarget)}
+      data-sagan-ticket={run.ticket}
+      {...stylex.props(styles.saganRow)}
+      aria-label={`${run.ticket}, ${state.label}`}
+    >
       <VStack gap={0.5} xstyle={styles.saganCell}>
         <Text weight="semibold">{run.ticket}</Text>
         <Text color="secondary" type="supporting">{run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}</Text>
@@ -352,12 +367,68 @@ function SaganRow({ run, section }: { run: SaganRunSummary; section: SaganSectio
 }
 
 export function V2SaganSurface({
+  token,
+  cwd,
   result,
+  onOpenOwningThread,
 }: {
   token: string | null;
   cwd: string | null;
   result?: SaganCapabilityResult;
+  onOpenOwningThread?: (id: string) => void;
 }) {
+  const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
+  const [detail, setDetail] = useState<SaganRunDetail | null>(null);
+  const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedTicket || !token || !cwd) return;
+    const controller = new AbortController();
+    setDetail(null);
+    setDetailStatus("loading");
+    void (async () => {
+      try {
+        const response = await fetch(
+          apiBase() + `/api/sagan/runs/${encodeURIComponent(selectedTicket)}?projectId=${encodeURIComponent(cwd)}`,
+          { headers: { "x-conan-token": token }, signal: controller.signal },
+        );
+        if (!response.ok) throw new Error(String(response.status));
+        const payload = (await response.json()) as SaganRunResult;
+        if (!controller.signal.aborted) {
+          setDetail(payload.run);
+          setDetailStatus("idle");
+        }
+      } catch {
+        if (!controller.signal.aborted) setDetailStatus("error");
+      }
+    })();
+    return () => controller.abort();
+  }, [cwd, selectedTicket, token]);
+
+  const closeInspector = useCallback(() => {
+    const ticket = selectedTicket;
+    setSelectedTicket(null);
+    setDetail(null);
+    setDetailStatus("idle");
+    requestAnimationFrame(() => {
+      const nextTrigger = [...document.querySelectorAll<HTMLButtonElement>("[data-sagan-ticket]")]
+        .find((candidate) => candidate.dataset.saganTicket === ticket);
+      (nextTrigger ?? triggerRef.current)?.focus();
+    });
+  }, [selectedTicket]);
+
+  if (selectedTicket) {
+    return (
+      <SaganInspector
+        run={detail}
+        loading={detailStatus === "loading"}
+        error={detailStatus === "error" ? "Run details could not be loaded." : null}
+        onClose={closeInspector}
+        onOpenOwningTarget={onOpenOwningThread}
+      />
+    );
+  }
   if (!result || result.status === "idle" || result.status === "loading") {
     return <CenterState>Loading Sagan overview…</CenterState>;
   }
@@ -389,7 +460,18 @@ export function V2SaganSurface({
               <Text weight="semibold" xstyle={styles.saganSectionTitle}>{section}</Text>
               {section === "Needs you" ? <Text type="supporting" xstyle={styles.saganCount}>{needsYouCount}</Text> : null}
             </HStack>
-            {rows.length > 0 ? rows.map((run) => <SaganRow key={run.id} run={run} section={section} />) : (
+            {rows.length > 0 ? rows.map((run) => (
+              <SaganRow
+                key={run.id}
+                run={run}
+                section={section}
+                onSelect={(selected, trigger) => {
+                  triggerRef.current = trigger;
+                  setDetailStatus("loading");
+                  setSelectedTicket(selected.id);
+                }}
+              />
+            )) : (
               <Text type="supporting" xstyle={styles.saganEmpty}>No runs in this section.</Text>
             )}
           </VStack>
