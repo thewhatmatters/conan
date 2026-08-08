@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
+import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -12,11 +13,13 @@ import {
   CircleHelp,
   ExternalLink,
   Folder,
+  LayoutList,
   ListTodo,
   OctagonAlert,
   PlayCircle,
   RefreshCw,
   RotateCcw,
+  Workflow,
 } from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
@@ -27,6 +30,7 @@ import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 import SaganInspector from "./SaganInspector.tsx";
+import SaganPipeline, { SAGAN_PIPELINE_MIN_WIDTH } from "./SaganPipeline.tsx";
 import {
   buildFileTree,
   rollupFileStatus,
@@ -277,6 +281,10 @@ const styles = stylex.create({
     color: "var(--conan-text-muted)",
     padding: "var(--conan-space-3)",
   },
+  saganTabs: { flexShrink: 0 },
+  // WHA-144 — the narrow-width note above the Overview list the Pipeline tab
+  // falls back to, so the swap is explained rather than looking like a bug.
+  saganFallbackNote: { color: "var(--conan-text-muted)" },
 });
 
 function CenterState({ children }: { children: string }) {
@@ -367,6 +375,10 @@ function SaganRow({
   );
 }
 
+/** The Sagan surface's internal views. The SurfaceId stays `sagan` — these are
+ *  tabs INSIDE the one surface, and both drive the same inspector (AC5). */
+type SaganTab = "overview" | "pipeline";
+
 export function V2SaganSurface({
   token,
   cwd,
@@ -378,10 +390,13 @@ export function V2SaganSurface({
   result?: SaganCapabilityResult;
   onOpenOwningThread?: (id: string) => void;
 }) {
+  const [tab, setTab] = useState<SaganTab>("overview");
+  const [narrow, setNarrow] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [detail, setDetail] = useState<SaganRunDetail | null>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!selectedTicket || !token || !cwd) return;
@@ -406,6 +421,38 @@ export function V2SaganSurface({
     })();
     return () => controller.abort();
   }, [cwd, selectedTicket, token]);
+
+  /**
+   * WHA-144 (AC7) — the narrow-width fallback is a MEASUREMENT, not a guess.
+   *
+   * The Sagan surface is a resizable pane, so its width has nothing to do with
+   * the viewport's and a media query would answer the wrong question. Below
+   * `SAGAN_PIPELINE_MIN_WIDTH` the board is replaced by the Overview list (whose
+   * rows open the same full-height inspector) rather than being squeezed into an
+   * unreadable mini-map.
+   *
+   * A width of 0 — a pane that has not laid out yet, or jsdom, which lays
+   * nothing out — is UNMEASURED, not narrow, so the board is the default and
+   * only a real measurement takes it away.
+   */
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const width = root.getBoundingClientRect().width;
+      if (width > 0) setNarrow(width < SAGAN_PIPELINE_MIN_WIDTH);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [selectedTicket, result?.status]);
+
+  const selectRun = useCallback((selected: SaganRunSummary, trigger: HTMLButtonElement) => {
+    triggerRef.current = trigger;
+    setDetailStatus("loading");
+    setSelectedTicket(selected.id);
+  }, []);
 
   const closeInspector = useCallback(() => {
     const ticket = selectedTicket;
@@ -445,11 +492,25 @@ export function V2SaganSurface({
   const grouped = new Map<SaganSection, SaganRunSummary[]>(SAGAN_SECTIONS.map((section) => [section, []]));
   for (const run of data.runs) grouped.get(sectionFor(run))!.push(run);
   const needsYouCount = grouped.get("Needs you")!.length;
+  const showPipeline = tab === "pipeline" && !narrow;
 
   return (
-    <VStack gap={5} xstyle={[styles.body, styles.saganOverview]} data-sagan-pane="overview">
+    <VStack
+      ref={rootRef}
+      gap={5}
+      xstyle={[styles.body, styles.saganOverview]}
+      data-sagan-pane={showPipeline ? "pipeline" : "overview"}
+    >
       <HStack align="center" justify="between" gap={3} xstyle={styles.saganHeader}>
-        <Text weight="semibold">Overview</Text>
+        <TabList
+          value={tab}
+          onChange={(value) => setTab(value as SaganTab)}
+          aria-label="Sagan views"
+          xstyle={styles.saganTabs}
+        >
+          <Tab value="overview" label="Overview" icon={<LayoutList size={16} aria-hidden />} />
+          <Tab value="pipeline" label="Pipeline" icon={<Workflow size={16} aria-hidden />} />
+        </TabList>
         <VStack gap={0.5} xstyle={styles.saganHeaderStatus}>
           <Text color="secondary">{needsYouCount} needs you</Text>
           {result.updatedAt ? (
@@ -460,32 +521,35 @@ export function V2SaganSurface({
           {result.error ? <Text color="secondary" type="supporting" role="status">{result.error}</Text> : null}
         </VStack>
       </HStack>
-      {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
-      {SAGAN_SECTIONS.map((section) => {
-        const rows = grouped.get(section)!;
-        return (
-          <VStack key={section} gap={2} xstyle={styles.saganSection}>
-            <HStack align="center" gap={2}>
-              <Text weight="semibold" xstyle={styles.saganSectionTitle}>{section}</Text>
-              {section === "Needs you" ? <Text type="supporting" xstyle={styles.saganCount}>{needsYouCount}</Text> : null}
-            </HStack>
-            {rows.length > 0 ? rows.map((run) => (
-              <SaganRow
-                key={run.id}
-                run={run}
-                section={section}
-                onSelect={(selected, trigger) => {
-                  triggerRef.current = trigger;
-                  setDetailStatus("loading");
-                  setSelectedTicket(selected.id);
-                }}
-              />
-            )) : (
-              <Text type="supporting" xstyle={styles.saganEmpty}>No runs in this section.</Text>
-            )}
-          </VStack>
-        );
-      })}
+      {showPipeline ? (
+        <SaganPipeline runs={data.runs} onSelect={selectRun} />
+      ) : (
+        <>
+          {tab === "pipeline" ? (
+            <Text type="supporting" role="status" xstyle={styles.saganFallbackNote}>
+              Too narrow for the pipeline board — showing the Overview list. Widen
+              the surface to bring it back.
+            </Text>
+          ) : null}
+          {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
+          {SAGAN_SECTIONS.map((section) => {
+            const rows = grouped.get(section)!;
+            return (
+              <VStack key={section} gap={2} xstyle={styles.saganSection}>
+                <HStack align="center" gap={2}>
+                  <Text weight="semibold" xstyle={styles.saganSectionTitle}>{section}</Text>
+                  {section === "Needs you" ? <Text type="supporting" xstyle={styles.saganCount}>{needsYouCount}</Text> : null}
+                </HStack>
+                {rows.length > 0 ? rows.map((run) => (
+                  <SaganRow key={run.id} run={run} section={section} onSelect={selectRun} />
+                )) : (
+                  <Text type="supporting" xstyle={styles.saganEmpty}>No runs in this section.</Text>
+                )}
+              </VStack>
+            );
+          })}
+        </>
+      )}
     </VStack>
   );
 }
