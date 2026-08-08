@@ -17,3 +17,4 @@
 {"event":"decision.made","ticket":"WHA-142","gate":"promote","decision":"promote","by":"hermes-pm","round":1,"promotedSha":"ab7a1a46dc7eb9c8976d43bd1950585d7dfaa91a","notes":"All gates pass with Node 22 at ab7a1a46dc7eb9c8976d43bd1950585d7dfaa91a; promoted per owner sign-off.","timestamp":"2026-08-08T14:48:26Z"}
 {"event":"decision.made","ticket":"WHA-142","gate":"human-review","decision":"approve","by":"Randy","round":1,"notes":"Human sign-off via preview at http://localhost:5173; overview looks good.","timestamp":"2026-08-08T14:48:26Z"}
 {"event":"lane.updated","ticket":"WHA-142","lane":"done","phase":"merged","timestamp":"2026-08-08T14:48:26Z"}
+{"event": "lane.updated", "ticket": "WHA-143", "lane": "frontend", "phase": "building", "builder": "claude", "worktree": "/Users/randydigital/Development/conan-worktrees/wha-143-c3-inspector", "branch": "randy/wha-143-c3-inspector-from-ledger-timeline", "timestamp": "2026-08-08T15:07:46Z"}
