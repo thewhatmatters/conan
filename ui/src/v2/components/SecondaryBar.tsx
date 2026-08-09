@@ -1,25 +1,24 @@
 /**
- * SecondaryBar — Paper RJ-0 node LN-0 (Actions · Open · Commit & Push).
+ * SecondaryBar — WHA-156 surface navigation + Actions.
  *
- * T0 STUB (owned by US-006). The three menu triggers are real focusable
- * buttons with menu ARIA (haspopup + expanded); menus themselves land in the
- * wiring pass. v1's `ThreadToolbar` holds the real behaviour.
+ * The menu triggers are real focusable buttons with menu ARIA (haspopup +
+ * expanded). The shell currently owns their disclosure state; menu panels land
+ * with their respective workflows.
  *
  * The bar is the FIRST thing inside the lifted content well (4N-0), not a
  * continuation of the toolbar above it — which is why it inherits the well's
  * tone and its 24px top-left round rather than drawing chrome of its own. Same
  * geometry as the toolbar: a 16px inset around one 32px control row.
  *
- * One asymmetry is deliberate, and it is the artboard's: "Actions" is semibold
- * where "Open" and "Commit & Push" are regular. Actions is the primary verb;
- * the other two are conveniences. Splitting them left/right says the same thing
- * a second way.
+ * Open and Commit & Push move to the top toolbar. This glass bar now keeps the
+ * view switcher on the left and the labelled Actions menu on the right.
  */
 import { useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
+import SurfaceTabs, { type SurfaceTabsProps } from "./SurfaceTabs.tsx";
 import {
   ChevronDown,
   FolderDown,
@@ -40,6 +39,7 @@ const styles = stylex.create({
   row: {
     flexShrink: 0,
     height: "var(--conan-control-height)",
+    minWidth: 0,
     width: "100%",
   },
   // Real <button> — reset UA chrome so the control still reads as RJ-0's
@@ -106,7 +106,36 @@ function MenuControl({
   );
 }
 
-export default function SecondaryBar() {
+export function WorkflowControls() {
+  const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
+
+  const toggle = (id: MenuId) => {
+    setOpenMenu((current) => (current === id ? null : id));
+  };
+
+  return (
+    <HStack gap={0.5} align="center" data-slot="workflow-controls">
+      <MenuControl
+        id="open"
+        label="Open"
+        ariaLabel="Open menu"
+        icon={FolderDown}
+        isExpanded={openMenu === "open"}
+        onToggle={() => toggle("open")}
+      />
+      <MenuControl
+        id="commit"
+        label="Commit & Push"
+        ariaLabel="Commit and Push menu"
+        icon={GitCommitHorizontal}
+        isExpanded={openMenu === "commit"}
+        onToggle={() => toggle("commit")}
+      />
+    </HStack>
+  );
+}
+
+export default function SecondaryBar(props: SurfaceTabsProps) {
   // Only one menu open at a time; shell stub — no panel yet, just the ARIA state.
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
@@ -122,6 +151,7 @@ export default function SecondaryBar() {
       data-slot="secondary-bar"
     >
       <HStack gap={0.5} justify="between" align="center" xstyle={styles.row}>
+        <SurfaceTabs {...props} />
         <MenuControl
           id="actions"
           label="Actions"
@@ -131,24 +161,6 @@ export default function SecondaryBar() {
           isExpanded={openMenu === "actions"}
           onToggle={() => toggle("actions")}
         />
-        <HStack gap={0.5} align="center">
-          <MenuControl
-            id="open"
-            label="Open"
-            ariaLabel="Open menu"
-            icon={FolderDown}
-            isExpanded={openMenu === "open"}
-            onToggle={() => toggle("open")}
-          />
-          <MenuControl
-            id="commit"
-            label="Commit & Push"
-            ariaLabel="Commit and Push menu"
-            icon={GitCommitHorizontal}
-            isExpanded={openMenu === "commit"}
-            onToggle={() => toggle("commit")}
-          />
-        </HStack>
       </HStack>
     </VStack>
   );

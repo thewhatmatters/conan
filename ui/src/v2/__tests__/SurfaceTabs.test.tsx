@@ -1,17 +1,9 @@
 /**
  * SurfaceTabs — Paper RJ-0 node HL-0.
  *
- * The strip's ROLES and KEYBOARD behaviour are the contract this suite guards
- * (US-101): a `tablist` of `tab`s, one Tab stop for the group with the roving
- * tabindex moving under arrow keys, and a real named close button per closeable
- * surface. Those were the four things the T0 stub got wrong — it rendered bare
- * `<div>`s no keyboard could reach — so each gets an explicit test rather than
- * one broad smoke render.
- *
- * Keyboard tests drive the real DOM: focus a tab, dispatch a keydown, and assert
- * on `document.activeElement`. The arrow handling belongs to Astryx's
- * `useListFocus`, so these read as integration checks on the wiring, not on the
- * hook's internals.
+ * WHA-156 turns the strip into Astryx's single-select ToggleButtonGroup. These
+ * tests pin its pressed semantics, equal sizing, persistent selection, and the
+ * existing surface menus/docking behaviour around it.
  */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
@@ -25,86 +17,60 @@ const TABS: SurfaceTab[] = [
   { id: "diff", label: "Diff", icon: Diff, isCloseable: true },
 ];
 
-const tabNames = () =>
-  screen.getAllByRole("tab").map((tab) => tab.textContent?.trim());
+const toggleNames = () =>
+  within(screen.getByRole("group", { name: "Chat and surfaces" }))
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
 
-/** Tabs expose their visible label as the accessible name. */
-const tab = (label: string) =>
-  screen.getByRole("tab", { name: new RegExp(`^${label}`) });
+const toggle = (label: string) =>
+  screen.getByRole("button", { name: new RegExp(`^${label}$`) });
 
 describe("SurfaceTabs", () => {
-  it("is a labelled tablist of tabs, in the artboard's order", () => {
+  it("is a labelled Astryx toggle group in the artboard's order", () => {
     render(<SurfaceTabs />);
 
-    const tablist = screen.getByRole("tablist", { name: "Surfaces" });
-    expect(tablist).toBeInTheDocument();
-    expect(tabNames()).toEqual(["Chat"]);
-    screen
-      .getAllByRole("tab")
-      .forEach((tab) => expect(tablist).toContainElement(tab));
+    const group = screen.getByRole("group", { name: "Chat and surfaces" });
+    expect(group).toBeInTheDocument();
+    expect(toggleNames()).toEqual(["Chat"]);
+    expect(group).toContainElement(toggle("Chat"));
   });
 
-  it("marks the selected surface with aria-selected, the rest false", () => {
+  it("marks exactly the selected surface pressed", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
-    expect(tab("Chat")).toHaveAttribute("aria-selected", "true");
-    expect(tab("Browser")).toHaveAttribute("aria-selected", "false");
-    expect(tab("Diff")).toHaveAttribute("aria-selected", "false");
+    expect(toggle("Chat")).toHaveAttribute("aria-pressed", "true");
+    expect(toggle("Browser")).toHaveAttribute("aria-pressed", "false");
+    expect(toggle("Diff")).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("is ONE Tab stop: the selected tab is tabbable, the others are not", () => {
+  it("sizes every mode to its content", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
-    expect(tab("Chat")).toHaveAttribute("tabindex", "0");
-    expect(tab("Browser")).toHaveAttribute("tabindex", "-1");
-    expect(tab("Diff")).toHaveAttribute("tabindex", "-1");
+    for (const label of ["Chat", "Browser", "Diff"]) {
+      expect(getComputedStyle(toggle(label)).width).toBe("fit-content");
+    }
   });
 
-  it("lets keyboard focus land on a tab", () => {
+  it("centers icons eight pixels from their labels", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
-    tab("Chat").focus();
-
-    expect(tab("Chat")).toHaveFocus();
+    for (const label of ["Chat", "Browser", "Diff"]) {
+      const labelRow = toggle(label).querySelector('[data-slot="surface-tab-label"]');
+      expect(labelRow).not.toBeNull();
+      expect(getComputedStyle(labelRow!).columnGap).toBe("var(--conan-space-2)");
+      expect(getComputedStyle(labelRow!).justifyContent).toBe("center");
+      expect(getComputedStyle(labelRow!).top).toBe("var(--conan-space-hair)");
+      expect(getComputedStyle(labelRow!).whiteSpace).toBe("nowrap");
+    }
   });
 
-  it("moves focus between tabs with the arrow keys, wrapping at the ends", () => {
+  it("keeps every mode keyboard focusable as a native button", () => {
     render(<SurfaceTabs tabs={TABS} />);
-    tab("Chat").focus();
 
-    fireEvent.keyDown(tab("Chat"), { key: "ArrowRight" });
-    expect(tab("Browser")).toHaveFocus();
-
-    fireEvent.keyDown(tab("Browser"), { key: "ArrowRight" });
-    expect(tab("Diff")).toHaveFocus();
-
-    // Past the last tab, focus wraps to the first.
-    fireEvent.keyDown(tab("Diff"), { key: "ArrowRight" });
-    expect(tab("Chat")).toHaveFocus();
-
-    fireEvent.keyDown(tab("Chat"), { key: "ArrowLeft" });
-    expect(tab("Diff")).toHaveFocus();
-  });
-
-  it("carries the tab stop with the arrow keys, so Tab returns where it left", () => {
-    render(<SurfaceTabs tabs={TABS} />);
-    tab("Chat").focus();
-
-    fireEvent.keyDown(tab("Chat"), { key: "ArrowRight" });
-
-    expect(tab("Browser")).toHaveAttribute("tabindex", "0");
-    expect(tab("Chat")).toHaveAttribute("tabindex", "-1");
-  });
-
-  it("jumps to the first and last tab with Home and End", () => {
-    render(<SurfaceTabs tabs={TABS} />);
-    tab("Chat").focus();
-
-    fireEvent.keyDown(tab("Chat"), { key: "End" });
-    expect(tab("Diff")).toHaveFocus();
-
-    fireEvent.keyDown(tab("Diff"), { key: "Home" });
-    expect(tab("Chat")).toHaveFocus();
+    for (const label of ["Chat", "Browser", "Diff"]) {
+      toggle(label).focus();
+      expect(toggle(label)).toHaveFocus();
+    }
   });
 
   it("reveals a named kebab menu for an undocked surface", () => {
@@ -174,21 +140,20 @@ describe("SurfaceTabs", () => {
   it("draws no close affordance on the permanent Chat tab", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
-    expect(tab("Chat").querySelector("button")).toBeNull();
+    expect(toggle("Chat").querySelector("button")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Close Chat tab" }),
     ).not.toBeInTheDocument();
   });
 
-  it("reports the tab a click, Enter or Space selected", () => {
+  it("reports a new mode and ignores active-mode deselection", () => {
     const onSelect = vi.fn();
     render(<SurfaceTabs tabs={TABS} onSelect={onSelect} />);
 
-    fireEvent.click(tab("Browser"));
-    fireEvent.keyDown(tab("Browser"), { key: "Enter" });
-    fireEvent.keyDown(tab("Browser"), { key: " " });
+    fireEvent.click(toggle("Browser"));
+    fireEvent.click(toggle("Chat"));
 
-    expect(onSelect).toHaveBeenCalledTimes(3);
+    expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenLastCalledWith("browser");
   });
 
@@ -223,7 +188,7 @@ describe("SurfaceTabs", () => {
     render(
       <SurfaceTabs
         tabs={[
-          TABS[0]!,
+          { ...TABS[0]!, isSelected: false },
           {
             id: "browser",
             label: "Browser",
@@ -238,14 +203,14 @@ describe("SurfaceTabs", () => {
       />,
     );
 
-    expect(tab("Browser")).toHaveAttribute("aria-selected", "true");
-    expect(tab("Browser")).toHaveAttribute("aria-description", "Docked right to Chat");
+    expect(toggle("Browser")).toHaveAttribute("aria-pressed", "true");
+    expect(toggle("Browser")).toHaveAttribute("aria-description", "Docked right to Chat");
     expect(screen.queryByRole("button", { name: "Switch docked surface" })).toBeNull();
-    expect(tab("Browser").querySelector('[data-slot="docked-surface-switcher"]')).toBeNull();
+    expect(toggle("Browser").querySelector('[data-slot="docked-surface-switcher"]')).toBeNull();
     expect(screen.queryByRole("button", { name: "Browser surface options" })).toBeNull();
-    fireEvent.contextMenu(tab("Browser"));
+    fireEvent.contextMenu(toggle("Browser"));
     expect(screen.queryByRole("menu", { name: "Browser surface options" })).toBeNull();
-    fireEvent.keyDown(tab("Browser"), { key: "F10", shiftKey: true });
+    fireEvent.keyDown(toggle("Browser"), { key: "F10", shiftKey: true });
     expect(screen.queryByRole("menu", { name: "Browser surface options" })).toBeNull();
   });
 
@@ -278,7 +243,7 @@ describe("SurfaceTabs", () => {
     const group = document.querySelector('[data-slot="docked-tab-group"]')!;
     expect(getComputedStyle(group).height).toBe("var(--conan-control-height)");
     expect(getComputedStyle(group).boxShadow).toContain("inset");
-    expect(group.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(group.querySelectorAll('[data-slot="surface-tab"]')).toHaveLength(2);
   });
 
   it("cycles the one visible dock slot through every docked surface", () => {
@@ -308,8 +273,10 @@ describe("SurfaceTabs", () => {
     );
 
     expect(screen.getAllByRole("button", { name: "Switch docked surface" })).toHaveLength(1);
-    expect(screen.queryByRole("tab", { name: "Terminal" })).toBeNull();
-    expect(tab("Browser").querySelector('[data-slot="docked-surface-switcher"]')).toHaveStyle({
+    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    expect(toggle("Browser").closest('[data-slot="surface-tab-shell"]')?.querySelector(
+      '[data-slot="docked-surface-switcher"]',
+    )).toHaveStyle({
       backgroundImage: "",
     });
     fireEvent.click(screen.getByRole("button", { name: "Switch docked surface" }));

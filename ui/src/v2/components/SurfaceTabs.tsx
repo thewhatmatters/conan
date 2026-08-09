@@ -1,8 +1,5 @@
 import { useCallback, useState } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-} from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
   DropdownMenu,
@@ -12,7 +9,10 @@ import {
 import { HStack } from "@astryxdesign/core/HStack";
 import { Item } from "@astryxdesign/core/Item";
 import { Text } from "@astryxdesign/core/Text";
-import { useListFocus } from "@astryxdesign/core/hooks";
+import {
+  ToggleButton,
+  ToggleButtonGroup,
+} from "./astryx/ToggleButton/index.ts";
 import {
   Diff,
   Check,
@@ -86,8 +86,14 @@ const ICON = 16;
 
 const styles = stylex.create({
   strip: {
-    flexShrink: 0,
+    flexShrink: 1,
     height: "var(--conan-control-height)",
+    minWidth: 0,
+    overflowX: "auto",
+    overscrollBehaviorInline: "contain",
+  },
+  toggleGroup: {
+    flexShrink: 0,
   },
   tab: {
     boxSizing: "border-box",
@@ -99,6 +105,7 @@ const styles = stylex.create({
     outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
     outlineOffset: { default: "0", ":focus-visible": "2px" },
     position: "relative",
+    width: "fit-content",
   },
   tabSelected: {
     backgroundColor: "var(--conan-wash-tab-selected)",
@@ -113,7 +120,13 @@ const styles = stylex.create({
     borderStartStartRadius: 0,
     marginInlineStart: "calc(-1 * var(--conan-space-hair))",
   },
-  tabLabel: { paddingInline: "var(--conan-space-3)" },
+  tabLabel: {
+    columnGap: "var(--conan-space-2)",
+    justifyContent: "center",
+    position: "relative",
+    top: "var(--conan-space-hair)",
+    whiteSpace: "nowrap",
+  },
   dockGroup: {
     borderRadius: "var(--conan-radius-md)",
     boxSizing: "border-box",
@@ -289,41 +302,26 @@ function SurfaceTabItem({
   } = tab;
   const isVisuallyActive = tab.isVisuallyActive ?? (isSelected || isDocked);
   const [actionsVisible, setActionsVisible] = useState(false);
-  const handleSelect = useCallback(() => onSelect?.(id), [id, onSelect]);
-  const handleKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLElement>) => {
-      if (event.target !== event.currentTarget) return;
-      if (event.shiftKey && event.key === "F10" && isDocked) return;
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      onSelect?.(id);
-    },
-    [id, isDocked, onSelect],
-  );
   const stopControlClick = useCallback((event: ReactMouseEvent) => {
     event.stopPropagation();
   }, []);
   const surfaceId = id === "chat" ? null : id;
 
   const tabNode = (
-    <HStack
-      align="center"
-      gap={1}
+    <ToggleButton
+      label={label}
+      value={id}
+      size="sm"
       xstyle={[
         styles.tab,
         isVisuallyActive && styles.tabSelected,
         joinedSide === "start" && styles.joinedStart,
         joinedSide === "end" && styles.joinedEnd,
       ]}
-      role="tab"
-      aria-selected={isSelected ?? false}
       aria-description={dockedDescription}
-      tabIndex={isSelected ? 0 : -1}
-      onClick={handleSelect}
-      onKeyDown={handleKeyDown}
       data-slot="surface-tab"
     >
-      <HStack align="center" gap={1} xstyle={styles.tabLabel}>
+      <HStack align="center" xstyle={styles.tabLabel} data-slot="surface-tab-label">
         <Icon size={ICON} aria-hidden />
         <Text
           color={isVisuallyActive ? "primary" : "secondary"}
@@ -337,37 +335,45 @@ function SurfaceTabItem({
           </Text>
         ) : null}
       </HStack>
-      {isDocked && surfaceId && dockedTabs.length > 1 ? (
+    </ToggleButton>
+  );
+
+  if (isDocked && surfaceId && dockedTabs.length > 1) {
+    return (
+      <HStack xstyle={styles.tabShell} data-slot="surface-tab-shell">
+        {tabNode}
         <HStack
-          xstyle={styles.dockSwitcher}
+          xstyle={styles.tabActions}
           onClick={stopControlClick}
           data-slot="docked-surface-switcher"
         >
-          <DropdownMenu
-            button={{
-              label: "Switch docked surface",
-              icon: <ChevronDown size={ICON} aria-hidden />,
-              isIconOnly: true,
-              variant: "ghost",
-              size: "sm",
-              xstyle: styles.switcherButton,
-            }}
-            hasChevron={false}
-            placement="below"
-          >
-            {dockedTabs.map((candidate) => (
-              <DockedSurfaceMenuItem
-                key={candidate.id}
-                tab={candidate}
-                current={candidate.id === id}
-                onSelect={() => onSelect?.(candidate.id)}
-              />
-            ))}
-          </DropdownMenu>
+          <HStack xstyle={styles.dockSwitcher}>
+            <DropdownMenu
+              button={{
+                label: "Switch docked surface",
+                icon: <ChevronDown size={ICON} aria-hidden />,
+                isIconOnly: true,
+                variant: "ghost",
+                size: "sm",
+                xstyle: styles.switcherButton,
+              }}
+              hasChevron={false}
+              placement="below"
+            >
+              {dockedTabs.map((candidate) => (
+                <DockedSurfaceMenuItem
+                  key={candidate.id}
+                  tab={candidate}
+                  current={candidate.id === id}
+                  onSelect={() => onSelect?.(candidate.id)}
+                />
+              ))}
+            </DropdownMenu>
+          </HStack>
         </HStack>
-      ) : null}
-    </HStack>
-  );
+      </HStack>
+    );
+  }
 
   if (!isCloseable || !surfaceId || isDocked) return tabNode;
 
@@ -442,11 +448,6 @@ export default function SurfaceTabs({
   onClose,
   onPlacementChange,
 }: SurfaceTabsProps) {
-  const { listRef, handleKeyDown, handleFocus } = useListFocus<HTMLElement>({
-    itemSelector: '[role="tab"]',
-    orientation: "both",
-    hasRovingTabIndex: true,
-  });
   const openIds = new Set(tabs.map((tab) => tab.id));
   const availableOptions = SURFACE_OPTIONS.filter(
     (surface) => surface.id !== "sagan" || saganAvailable,
@@ -454,73 +455,74 @@ export default function SurfaceTabs({
   const allOpen = availableOptions.every((surface) => openIds.has(surface.id));
   const dockedTabs = tabs.filter((tab) => tab.id !== "chat" && tab.placement != null);
   const visibleTabs = tabs.filter((tab) => tab.placement == null || tab.isDocked);
-  const handleTabListKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLElement>) => {
-      if ((event.target as Element).closest('[role="menu"]')) return;
-      handleKeyDown(event);
-    },
-    [handleKeyDown],
-  );
+  const selectedId = tabs.find((tab) => tab.isSelected)?.id ?? null;
 
   return (
     <HStack
-      ref={listRef}
       align="center"
       gap={0.5}
       xstyle={styles.strip}
-      role="tablist"
-      aria-label="Surfaces"
-      onKeyDown={handleTabListKeyDown}
-      onFocus={handleFocus}
       data-slot="surface-tabs"
     >
-      {visibleTabs.map((tab, index) => {
-        if (tab.joinedSide === "end") return null;
-        const joinedTab = tab.joinedSide === "start" ? visibleTabs[index + 1] : undefined;
-        const item = (candidate: SurfaceTab) => (
-          <SurfaceTabItem
-            key={candidate.id}
-            tab={candidate}
-            dockedTabs={dockedTabs}
-            onSelect={onSelect}
-            onClose={onClose}
-            onPlacementChange={onPlacementChange}
-          />
-        );
-        if (!joinedTab || joinedTab.joinedSide !== "end") return item(tab);
-        return (
-          <HStack
-            key="docked-tab-group"
-            gap={0}
-            xstyle={[
-              styles.dockGroup,
-              !tab.isVisuallyActive && styles.dockGroupInactive,
-            ]}
-            data-slot="docked-tab-group"
-          >
-            {item(tab)}
-            {item(joinedTab)}
-          </HStack>
-        );
-      })}
+      <ToggleButtonGroup
+        value={selectedId}
+        onChange={(id) => {
+          // Astryx single-select groups allow deselection. View navigation
+          // always has an active mode, so clicking the current mode is a no-op.
+          if (id) onSelect?.(id as SurfaceId);
+        }}
+        label="Chat and surfaces"
+        size="sm"
+        xstyle={styles.toggleGroup}
+      >
+        {visibleTabs.map((tab, index) => {
+          if (tab.joinedSide === "end") return null;
+          const joinedTab = tab.joinedSide === "start" ? visibleTabs[index + 1] : undefined;
+          const item = (candidate: SurfaceTab) => (
+            <SurfaceTabItem
+              key={candidate.id}
+              tab={candidate}
+              dockedTabs={dockedTabs}
+              onSelect={onSelect}
+              onClose={onClose}
+              onPlacementChange={onPlacementChange}
+            />
+          );
+          if (!joinedTab || joinedTab.joinedSide !== "end") return item(tab);
+          return (
+            <HStack
+              key="docked-tab-group"
+              gap={0}
+              xstyle={[
+                styles.dockGroup,
+                !tab.isVisuallyActive && styles.dockGroupInactive,
+              ]}
+              data-slot="docked-tab-group"
+            >
+              {item(tab)}
+              {item(joinedTab)}
+            </HStack>
+          );
+        })}
+      </ToggleButtonGroup>
       <DropdownMenu
-          button={{
-            label: "Surface",
-            icon: <Layers size={ICON} aria-hidden />,
-            children: <Text color="inherit">Surface</Text>,
-            variant: "ghost",
-            size: "sm",
-            isDisabled: allOpen,
-            xstyle: [styles.opener, allOpen && styles.openerDim],
-          }}
-          items={availableOptions.map((surface) => ({
-            label: surface.label,
-            icon: <surface.icon size={ICON} aria-hidden />,
-            onClick: () => onOpen?.(surface.id),
-            isDisabled: openIds.has(surface.id),
-          }))}
-          data-slot="surface-opener"
-        />
+        button={{
+          label: "Surface",
+          icon: <Layers size={ICON} aria-hidden />,
+          children: <Text color="inherit">Surface</Text>,
+          variant: "ghost",
+          size: "sm",
+          isDisabled: allOpen,
+          xstyle: [styles.opener, allOpen && styles.openerDim],
+        }}
+        items={availableOptions.map((surface) => ({
+          label: surface.label,
+          icon: <surface.icon size={ICON} aria-hidden />,
+          onClick: () => onOpen?.(surface.id),
+          isDisabled: openIds.has(surface.id),
+        }))}
+        data-slot="surface-opener"
+      />
     </HStack>
   );
 }

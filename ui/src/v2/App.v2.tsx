@@ -813,12 +813,6 @@ export default function AppV2() {
               threads={crumbThreads}
               activeThreadId={activeThread?.key ?? null}
               onSelectThread={selectThreadByKey}
-              tabs={surfaceTabs}
-              saganAvailable={saganAvailable}
-              onSelect={selectSurface}
-              onOpen={openSurface}
-              onClose={closeSurface}
-              onPlacementChange={changeSurfacePlacement}
             />
             <VStack gap={0} xstyle={styles.well}>
               {/* Keyed by the selection so the view never replays one thread's
@@ -827,7 +821,16 @@ export default function AppV2() {
                   registry, keyed by the same thread key, and a background turn
                   keeps streaming into it while another thread is on screen. */}
               <SurfaceWorkspace
-                header={<SecondaryBar />}
+                header={(
+                  <SecondaryBar
+                    tabs={surfaceTabs}
+                    saganAvailable={saganAvailable}
+                    onSelect={selectSurface}
+                    onOpen={openSurface}
+                    onClose={closeSurface}
+                    onPlacementChange={changeSurfacePlacement}
+                  />
+                )}
                 activeSurface={activeSurface}
                 openSurfaces={openSurfaces}
                 placement={

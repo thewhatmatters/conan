@@ -2,7 +2,7 @@
  * Toolbar — Paper RJ-0 node EK-0.
  *
  * The toolbar is a COMPOSITION file (contract §4.4): its whole job is to seat
- * `Breadcrumb` left and `SurfaceTabs` right. So the test asserts composition —
+ * `Breadcrumb` left and workflow controls right. So the test asserts composition —
  * that both leaves are mounted and in the artboard's order — rather than
  * re-asserting each leaf's internals, which belong to the leaf's own suite.
  *
@@ -22,22 +22,23 @@ import Breadcrumb from "../components/Breadcrumb.tsx";
 import SecondaryBar from "../components/SecondaryBar.tsx";
 
 describe("Toolbar", () => {
-  it("mounts the breadcrumb and the surface tab strip", () => {
+  it("mounts the breadcrumb and workflow controls", () => {
     const { container } = render(<Toolbar />);
 
     const toolbar = container.querySelector('[data-slot="toolbar"]');
     expect(toolbar).not.toBeNull();
     expect(toolbar?.querySelector('[data-slot="breadcrumb"]')).not.toBeNull();
-    expect(toolbar?.querySelector('[data-slot="surface-tabs"]')).not.toBeNull();
+    expect(toolbar?.querySelector('[data-slot="workflow-controls"]')).not.toBeNull();
+    expect(toolbar?.querySelector('[data-slot="surface-tabs"]')).toBeNull();
   });
 
-  it("puts the crumb before the tab strip, as RJ-0 does", () => {
+  it("puts the crumb before the workflow controls", () => {
     const { container } = render(<Toolbar />);
     const slots = Array.from(
-      container.querySelectorAll('[data-slot="breadcrumb"], [data-slot="surface-tabs"]'),
+      container.querySelectorAll('[data-slot="breadcrumb"], [data-slot="workflow-controls"]'),
     ).map((node) => node.getAttribute("data-slot"));
 
-    expect(slots).toEqual(["breadcrumb", "surface-tabs"]);
+    expect(slots).toEqual(["breadcrumb", "workflow-controls"]);
   });
 
   it("renders the crumb's project and thread text", () => {
@@ -47,13 +48,12 @@ describe("Toolbar", () => {
     expect(screen.getByText("Analyze my project")).toBeInTheDocument();
   });
 
-  it("starts with only the permanent Chat surface selected", () => {
+  it("moves Open and Commit & Push into the top toolbar", () => {
     render(<Toolbar />);
 
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Chat"]);
-    expect(screen.getByRole("tablist", { name: "Surfaces" })).toBeInTheDocument();
-    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Commit and Push menu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions menu" })).toBeNull();
   });
 });
 
@@ -87,44 +87,51 @@ describe("Breadcrumb a11y (US-101 C)", () => {
 });
 
 describe("SecondaryBar a11y (US-101 C)", () => {
-  it("exposes Actions, Open, and Commit & Push as real menu buttons", () => {
+  it("exposes the Chat/surfaces toggle group and right-side Actions button", () => {
     render(<SecondaryBar />);
 
-    for (const name of ["Actions menu", "Open menu", "Commit and Push menu"]) {
-      const btn = screen.getByRole("button", { name });
-      expect(btn.tagName).toBe("BUTTON");
-      expect(btn).toHaveAttribute("type", "button");
-      expect(btn).toHaveAttribute("aria-haspopup", "menu");
-      expect(btn).toHaveAttribute("aria-expanded", "false");
-    }
+    expect(screen.getByRole("group", { name: "Chat and surfaces" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const actions = screen.getByRole("button", { name: "Actions menu" });
+    expect(actions.tagName).toBe("BUTTON");
+    expect(actions).toHaveAttribute("type", "button");
+    expect(actions).toHaveAttribute("aria-haspopup", "menu");
+    expect(actions).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("toggles aria-expanded on the clicked menu and collapses the others", () => {
+  it("toggles aria-expanded on Actions", () => {
     render(<SecondaryBar />);
 
     const actions = screen.getByRole("button", { name: "Actions menu" });
-    const open = screen.getByRole("button", { name: "Open menu" });
-    const commit = screen.getByRole("button", { name: "Commit and Push menu" });
 
     fireEvent.click(actions);
     expect(actions).toHaveAttribute("aria-expanded", "true");
-    expect(open).toHaveAttribute("aria-expanded", "false");
-    expect(commit).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(open);
+    fireEvent.click(actions);
     expect(actions).toHaveAttribute("aria-expanded", "false");
-    expect(open).toHaveAttribute("aria-expanded", "true");
-    expect(commit).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(open);
-    expect(open).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("still paints the visible labels from RJ-0", () => {
-    render(<SecondaryBar />);
+  it("keeps workflow menu expansion exclusive in the toolbar", () => {
+    render(<Toolbar />);
 
-    for (const label of ["Actions", "Open", "Commit & Push"]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-    }
+    const open = screen.getByRole("button", { name: "Open menu" });
+    const commit = screen.getByRole("button", { name: "Commit and Push menu" });
+
+    fireEvent.click(open);
+    expect(open).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(commit);
+    expect(open).toHaveAttribute("aria-expanded", "false");
+    expect(commit).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("paints the WHA-156 labels in their new bars", () => {
+    const { rerender } = render(<Toolbar />);
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.getByText("Commit & Push")).toBeInTheDocument();
+
+    rerender(<SecondaryBar />);
+    expect(screen.getByText("Actions")).toBeInTheDocument();
   });
 });

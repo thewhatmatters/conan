@@ -182,12 +182,13 @@ describe("AppV2 shell", () => {
     ).toBeTruthy();
   });
 
-  it("renders the secondary bar's three controls", () => {
+  it("renders workflow controls above and surface/Actions controls below", () => {
     render(<AppV2 />);
 
     for (const label of ["Actions", "Open", "Commit & Push"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+    expect(screen.getByRole("group", { name: "Chat and surfaces" })).toBeInTheDocument();
   });
 
   it("hosts V2ChatView (ChatLayout) in the content well", () => {
@@ -205,27 +206,27 @@ describe("AppV2 shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
-    fireEvent.contextMenu(screen.getByRole("tab", { name: /^Browser/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Browser surface options" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Right" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
-    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
-      "aria-selected",
+    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
+      "aria-pressed",
       "false",
     );
-    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
       "aria-description",
       "Docked right to Chat",
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
-    expect(screen.getByRole("tab", { name: /^Browser/ })).toHaveAttribute(
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
       "aria-description",
       "Docked right to Chat",
     );
-    expect(screen.getByRole("tab", { name: /^Diff/ })).toHaveAttribute(
-      "aria-selected",
+    expect(screen.getByRole("button", { name: "Diff" })).toHaveAttribute(
+      "aria-pressed",
       "false",
     );
   });
@@ -344,11 +345,11 @@ describe("AppV2 live projects (US-501)", () => {
       ).toBeVisible();
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Sagan" }));
-    expect(await screen.findByRole("tab", { name: /^Sagan/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sagan" })).toBeInTheDocument();
 
     await newChatInProject("empty");
     await waitFor(() => {
-      expect(screen.queryByRole("tab", { name: /^Sagan/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
       expect(document.querySelector('[data-surface="sagan"]')).toBeNull();
     });
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
