@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { V2SaganSurface } from "../components/V2SurfaceBodies.tsx";
 import { nodeStateFor, stageFor } from "../components/SaganPipeline.tsx";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 import type { SaganRunDetail, SaganRunSummary, SaganRunsResult } from "../../../../src/sagan/api.ts";
+
+afterEach(() => cleanup());
 
 const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   id: "WHA-130",
@@ -72,6 +74,34 @@ const detail = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null):
     { index: 1, event: "evidence.recorded", ts: "2026-08-07T11:00:00Z", data: { event: "evidence.recorded", ticket: "WHA-130", overall: "PASS" } },
   ],
 });
+
+const detailWithOpenDecisions = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null): SaganRunDetail => ({
+  ...detail(owningTarget),
+  openDecisions: run({}).openDecisions,
+  decisionHistory: [
+    {
+      gate: "promote",
+      kind: "needed",
+      decision: null,
+      findings: [],
+      amendment: null,
+      state: "awaiting-randy",
+      evidenceSha: "9be4459",
+      round: 3,
+      by: null,
+      ts: "2026-08-07T11:00:00Z",
+    },
+  ],
+});
+
+const mockFetch = (value: SaganRunDetail) => {
+  const fn = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ run: value }),
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+};
 
 const mockDetail = (value: SaganRunDetail) => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -354,5 +384,77 @@ describe("V2SaganSurface pipeline tab", () => {
     openPipeline();
     expect(stageColumn(1, "Build")).toBeVisible();
     expect(screen.queryByText(/Too narrow for the pipeline board/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Sagan inspector decision gates (WHA-145)", () => {
+  const renderWithDecision = () => renderSurface(result({ data: data([run({})]) }));
+
+  it("renders action buttons for an open decision gate", async () => {
+    mockDetail(detailWithOpenDecisions());
+    renderWithDecision();
+    openPipeline();
+    fireEvent.click(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" }));
+    await screen.findByLabelText("Run inspector");
+    expect(screen.getByText("Decision gates")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Promote" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Revise" })).toBeVisible();
+  });
+
+  it("POSTs approve and refreshes the run detail", async () => {
+    const value = detailWithOpenDecisions();
+    const fetchMock = mockFetch(value);
+    renderWithDecision();
+    openPipeline();
+    fireEvent.click(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" }));
+    await screen.findByLabelText("Run inspector");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const post = fetchMock.mock.calls.find(([url]) => String(url).startsWith("/api/sagan/runs/WHA-130/decisions"));
+    expect(post).toBeTruthy();
+    const [url, options] = post!;
+    expect(options.method).toBe("POST");
+    expect(options.headers).toMatchObject({ "x-conan-token": "tok" });
+    const body = JSON.parse(options.body as string);
+    expect(body).toEqual({ gate: "promote", decision: "approve" });
+    expect(String(url)).toContain("projectId=%2Frepo%2Fsagan");
+  });
+
+  it("expands revise inputs and submits findings and amendment", async () => {
+    const value = detailWithOpenDecisions();
+    const fetchMock = mockFetch(value);
+    renderWithDecision();
+    openPipeline();
+    fireEvent.click(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" }));
+    await screen.findByLabelText("Run inspector");
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    expect(await screen.findByLabelText("Revise findings")).toBeVisible();
+    expect(await screen.findByLabelText("Revise amendment")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Revise findings"), { target: { value: "missing tests\nneeds UI polish" } });
+    fireEvent.change(screen.getByLabelText("Revise amendment"), { target: { value: "Add UI tests before re-critique" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit revise" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const post = fetchMock.mock.calls.find(([url]) => String(url).startsWith("/api/sagan/runs/WHA-130/decisions"));
+    const body = JSON.parse(post![1].body as string);
+    expect(body).toEqual({
+      gate: "promote",
+      decision: "revise",
+      findings: ["missing tests", "needs UI polish"],
+      amendment: "Add UI tests before re-critique",
+    });
+  });
+
+  it("cancels revise mode without posting", async () => {
+    mockDetail(detailWithOpenDecisions());
+    renderWithDecision();
+    openPipeline();
+    fireEvent.click(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" }));
+    await screen.findByLabelText("Run inspector");
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    await screen.findByLabelText("Revise findings");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByLabelText("Revise findings")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Revise" })).toBeVisible();
   });
 });
