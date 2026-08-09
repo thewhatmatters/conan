@@ -21,6 +21,7 @@
 //      wrote it. Each event type is read on its own terms rather than through
 //      one merged shape.
 import fs from "node:fs";
+import path from "node:path";
 
 /** Every event type observed in the reference ledger. Unknown types are skipped,
  *  not fatal — the standard is v0 and will grow types before Conan learns them. */
@@ -331,4 +332,75 @@ export function readLedger(ledgerPath: string): LedgerProjection {
 /** Every ticket with at least one gate waiting on a human — the Needs-you set. */
 export function needsYou(projection: LedgerProjection): TicketProjection[] {
   return projection.tickets.filter((t) => t.openDecisions.length > 0);
+}
+
+export interface DecisionAppendInput {
+  ticket: string;
+  gate: string;
+  decision: "approve" | "promote" | "revise" | string;
+  by: string;
+  round: number | null;
+  findings?: string[];
+  amendment?: string;
+}
+
+export interface DecisionAppendResult {
+  event: DecisionAppendInput & { event: "decision.made"; timestamp: string };
+}
+
+/**
+ * Append a `decision.made` line to the ledger for a human gate decision.
+ *
+ * The gate MUST currently have an open `decision.needed` event — the last
+ * decision event for `(ticket, gate)` in file order must be `needed`, not
+ * `made`. This is the same rule the projection uses; a `made` on a closed
+ * gate would silently reopen a decision that was already answered, or write a
+ * duplicate answer to a closed gate.
+ *
+ * The round is copied from the matching open `decision.needed` event so the
+ * ledger stays internally consistent. The caller may supply an explicit round
+ * only when no open decision is found, which is always an error path.
+ */
+export function appendDecisionMade(
+  ledgerPath: string,
+  input: DecisionAppendInput,
+): DecisionAppendResult {
+  const { events } = readLedgerEvents(ledgerPath);
+  const lastDecision = new Map<string, RawEvent>();
+  const key = `${input.ticket}\0${input.gate}`;
+  for (const e of events) {
+    if (e.event !== "decision.needed" && e.event !== "decision.made") continue;
+    const ticket = str(e.ticket);
+    const gate = str(e.gate);
+    if (!ticket || !gate) continue;
+    lastDecision.set(`${ticket}\0${gate}`, e);
+  }
+  const open = lastDecision.get(key);
+  if (!open || open.event !== "decision.needed") {
+    throw new Error(`Gate ${input.gate} for ${input.ticket} has no open decision.needed event`);
+  }
+
+  const round = input.round ?? num(open.round) ?? null;
+  const event = {
+    event: "decision.made" as const,
+    ticket: input.ticket,
+    gate: input.gate,
+    decision: input.decision,
+    by: input.by,
+    round,
+    timestamp: new Date().toISOString(),
+    ...(input.findings && input.findings.length > 0 ? { findings: input.findings } : {}),
+    ...(input.amendment ? { amendment: input.amendment } : {}),
+  };
+
+  const line = JSON.stringify(event) + "\n";
+  const dir = path.dirname(ledgerPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const fd = fs.openSync(ledgerPath, "a");
+  try {
+    fs.writeSync(fd, line);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return { event };
 }

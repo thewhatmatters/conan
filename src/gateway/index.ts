@@ -86,7 +86,8 @@ import {
   deleteChatProject,
   getChatThread,
 } from "../agent/threads.js";
-import { getSaganRun, listSaganRuns, resolveSaganProject } from "../sagan/api.js";
+import { getSaganRun, listSaganRuns, resolveSaganProject, saganLedgerPath } from "../sagan/api.js";
+import { appendDecisionMade } from "../sagan/ledger.js";
 import { detectEditors, openInEditor } from "../editor/index.js";
 import { commitAll, createPullRequest, pushCurrentBranch } from "../git/index.js";
 import {
@@ -823,6 +824,57 @@ app.get("/api/sagan/runs/:id", (req, res) => {
     return;
   }
   res.json(result);
+});
+
+// C5 — append a human `decision.made` answer to a gate. Project-scoped like the
+// read routes; the ledger path is composed from the resolved repo root. The gate
+// must currently have an open `decision.needed` event in file order.
+app.post("/api/sagan/runs/:id/decisions", (req, res) => {
+  if (!authed(req, res)) return;
+  const projectId = req.query.projectId;
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    res.status(400).json({ error: "projectId required" });
+    return;
+  }
+  const project = resolveSaganProject(projectId);
+  if (!project) {
+    res.status(404).json({ error: `unknown project: ${projectId}` });
+    return;
+  }
+  const ticket = req.params.id;
+  if (!ticket || typeof ticket !== "string" || !ticket.trim()) {
+    res.status(400).json({ error: "ticket required" });
+    return;
+  }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const gate = typeof body.gate === "string" ? body.gate.trim() : "";
+  if (!gate) {
+    res.status(400).json({ error: "gate required" });
+    return;
+  }
+  const decision = typeof body.decision === "string" ? body.decision.trim() : "";
+  if (!["approve", "promote", "revise"].includes(decision)) {
+    res.status(400).json({ error: "decision must be approve, promote, or revise" });
+    return;
+  }
+  const findings = Array.isArray(body.findings)
+    ? body.findings.filter((f): f is string => typeof f === "string" && f.trim() !== "")
+    : [];
+  const amendment = typeof body.amendment === "string" ? body.amendment.trim() || undefined : undefined;
+  try {
+    appendDecisionMade(saganLedgerPath(project.root), {
+      ticket: ticket.trim(),
+      gate,
+      decision,
+      by: "randy",
+      round: null,
+      ...(findings.length > 0 ? { findings } : {}),
+      ...(amendment ? { amendment } : {}),
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
 });
 
 // Ingest a Claude Code lifecycle event (US-003). Posted by the hook scripts in

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -6,7 +6,9 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { ArrowLeft, ExternalLink } from "lucide-react";
+import { apiBase } from "../../lib/gateway.ts";
 import type { SaganRunDetail } from "../../../../src/sagan/api.ts";
+import type { OpenDecision } from "../../../../src/sagan/ledger.ts";
 
 const styles = stylex.create({
   root: {
@@ -79,6 +81,31 @@ const styles = stylex.create({
     whiteSpace: "pre-wrap",
   },
   center: { flexGrow: 1, minHeight: 0 },
+  decisionCard: {
+    alignItems: "stretch",
+    backgroundColor: "var(--conan-wash-raised)",
+    borderInlineStart: "4px solid var(--conan-color-warning)",
+    borderRadius: "var(--conan-radius-md)",
+    padding: "var(--conan-space-3)",
+  },
+  decisionActions: {
+    flexWrap: "wrap",
+  },
+  textarea: {
+    backgroundColor: "var(--conan-color-field)",
+    border: "var(--conan-border-width) solid var(--conan-color-border-strong)",
+    borderRadius: "var(--conan-radius-md)",
+    color: "var(--conan-text-primary)",
+    fontFamily: "var(--conan-font-sans)",
+    fontSize: "var(--conan-text-body)",
+    minHeight: "4rem",
+    outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
+    outlineOffset: "2px",
+    padding: "var(--conan-space-2)",
+    resize: "vertical",
+    width: "100%",
+  },
+  error: { color: "var(--conan-color-error)" },
 });
 
 const display = (value: string | number | null | undefined): string =>
@@ -106,18 +133,167 @@ function eventBody(data: Record<string, unknown>): string {
   return Object.keys(details).length > 0 ? JSON.stringify(details, null, 2) : "No additional fields";
 }
 
+function DecisionPanel({
+  ticket,
+  decision,
+  token,
+  cwd,
+  onDecisionMade,
+}: {
+  ticket: string;
+  decision: OpenDecision;
+  token: string | null;
+  cwd: string | null;
+  onDecisionMade: () => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "revise">("idle");
+  const [findings, setFindings] = useState("");
+  const [amendment, setAmendment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = useCallback(
+    async (value: "approve" | "promote" | "revise") => {
+      if (!token || !cwd) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const body: Record<string, unknown> = {
+          gate: decision.gate,
+          decision: value,
+        };
+        if (value === "revise") {
+          const findingLines = findings
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+          if (findingLines.length > 0) body.findings = findingLines;
+          if (amendment.trim()) body.amendment = amendment.trim();
+        }
+        const response = await fetch(
+          apiBase() + `/api/sagan/runs/${encodeURIComponent(ticket)}/decisions?projectId=${encodeURIComponent(cwd)}`,
+          {
+            method: "POST",
+            headers: { "x-conan-token": token, "content-type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(payload.error ?? `HTTP ${response.status}`);
+        }
+        setMode("idle");
+        setFindings("");
+        setAmendment("");
+        onDecisionMade();
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [amendment, cwd, decision.gate, findings, onDecisionMade, ticket, token],
+  );
+
+  return (
+    <VStack gap={3} xstyle={styles.decisionCard} data-slot="sagan-decision-card">
+      <HStack align="center" justify="between" gap={2}>
+        <Text weight="semibold">{decision.gate}</Text>
+        {decision.round != null ? (
+          <Text color="secondary" type="supporting">Round {decision.round}</Text>
+        ) : null}
+      </HStack>
+      {decision.evidenceSha ? (
+        <Text color="secondary" type="supporting">Evidence: {decision.evidenceSha}</Text>
+      ) : null}
+      {mode === "revise" ? (
+        <VStack gap={2}>
+          <textarea
+            value={findings}
+            onChange={(e) => setFindings(e.target.value)}
+            placeholder="Findings — one per line"
+            rows={3}
+            disabled={busy}
+            {...stylex.props(styles.textarea)}
+            aria-label="Revise findings"
+          />
+          <textarea
+            value={amendment}
+            onChange={(e) => setAmendment(e.target.value)}
+            placeholder="Amendment (optional)"
+            rows={2}
+            disabled={busy}
+            {...stylex.props(styles.textarea)}
+            aria-label="Revise amendment"
+          />
+        </VStack>
+      ) : null}
+      <HStack gap={2} xstyle={styles.decisionActions}>
+        <Button
+          label="Approve"
+          variant="secondary"
+          isDisabled={busy || mode === "revise"}
+          clickAction={() => void submit("approve")}
+        />
+        <Button
+          label="Promote"
+          variant="secondary"
+          isDisabled={busy || mode === "revise"}
+          clickAction={() => void submit("promote")}
+        />
+        {mode === "revise" ? (
+          <Button
+            label="Submit revise"
+            variant="primary"
+            isDisabled={busy}
+            clickAction={() => void submit("revise")}
+          />
+        ) : (
+          <Button
+            label="Revise"
+            variant="secondary"
+            isDisabled={busy}
+            clickAction={() => setMode("revise")}
+          />
+        )}
+        {mode === "revise" ? (
+          <Button
+            label="Cancel"
+            variant="ghost"
+            isDisabled={busy}
+            clickAction={() => {
+              setMode("idle");
+              setFindings("");
+              setAmendment("");
+              setError(null);
+            }}
+          />
+        ) : null}
+        {busy ? <Spinner label="Submitting decision" /> : null}
+      </HStack>
+      {error ? <Text xstyle={styles.error}>{error}</Text> : null}
+    </VStack>
+  );
+}
+
 export default function SaganInspector({
   run,
   loading,
   error,
   onClose,
   onOpenOwningTarget,
+  token,
+  cwd,
+  onDecisionMade,
 }: {
   run: SaganRunDetail | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
   onOpenOwningTarget?: (id: string) => void;
+  token: string | null;
+  cwd: string | null;
+  onDecisionMade: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -190,6 +366,21 @@ export default function SaganInspector({
             <Fact label="Started" value={formatTime(run.firstTs)} />
             <Fact label="Last updated" value={formatTime(run.lastTs)} />
           </VStack>
+          {run.openDecisions.length > 0 ? (
+            <VStack gap={2} xstyle={styles.section}>
+              <Text weight="semibold">Decision gates</Text>
+              {run.openDecisions.map((decision) => (
+                <DecisionPanel
+                  key={decision.gate}
+                  ticket={run.ticket}
+                  decision={decision}
+                  token={token}
+                  cwd={cwd}
+                  onDecisionMade={onDecisionMade}
+                />
+              ))}
+            </VStack>
+          ) : null}
           <VStack gap={2} xstyle={styles.section}>
             <Text weight="semibold">Output & artifacts</Text>
             {uniqueArtifacts.length > 0 ? uniqueArtifacts.map((artifact) => (

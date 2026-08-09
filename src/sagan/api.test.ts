@@ -559,3 +559,79 @@ test("a project row id still resolves, and reports which door it came through", 
     listSaganRuns(byPath).runs.map((r) => r.id),
   );
 });
+
+// C5 — append decision.made for human gates.
+const OPEN_LEDGER = lines(
+  { event: "lane.updated", ticket: "WHA-145", lane: "frontend", phase: "built", ts: "2026-08-09" },
+  { event: "critique.verdict", ticket: "WHA-145", round: 1, critic: "critic-claude-fresh", verdict: "APPROVED", ts: "2026-08-09" },
+  { event: "decision.needed", ticket: "WHA-145", gate: "promote", state: "awaiting-randy", round: 1, evidence_sha: "abc123", ts: "2026-08-09" },
+);
+
+test("WHA-145: appendDecisionMade writes an approve decision to an open gate", async () => {
+  const { root } = saganRepo("append-approve", OPEN_LEDGER);
+  const { appendDecisionMade, readLedger } = await import("./ledger.js");
+  const result = appendDecisionMade(saganLedgerPath(root), {
+    ticket: "WHA-145",
+    gate: "promote",
+    decision: "approve",
+    by: "randy",
+    round: null,
+  });
+  assert.equal(result.event.decision, "approve");
+  assert.equal(result.event.by, "randy");
+  assert.equal(result.event.round, 1, "round is copied from the open decision.needed");
+  assert.ok(result.event.timestamp);
+  const projection = readLedger(saganLedgerPath(root));
+  const ticket = projection.tickets.find((t) => t.ticket === "WHA-145");
+  assert.equal(ticket?.openDecisions.length, 0, "gate is now closed");
+  assert.equal(ticket?.resolvedDecisions[0]?.decision, "approve");
+});
+
+test("WHA-145: appendDecisionMade writes a revise decision with findings and amendment", async () => {
+  const { root } = saganRepo("append-revise", OPEN_LEDGER);
+  const { appendDecisionMade, readLedger } = await import("./ledger.js");
+  appendDecisionMade(saganLedgerPath(root), {
+    ticket: "WHA-145",
+    gate: "promote",
+    decision: "revise",
+    by: "randy",
+    round: null,
+    findings: ["missing tests", "needs UI polish"],
+    amendment: "Add UI tests before re-critique",
+  });
+  const projection = readLedger(saganLedgerPath(root));
+  const history = projection.tickets.find((t) => t.ticket === "WHA-145")?.decisionHistory;
+  const revise = history?.find((d) => d.kind === "made");
+  assert.ok(revise);
+  assert.deepEqual(revise?.findings, ["missing tests", "needs UI polish"]);
+  assert.equal(revise?.amendment, "Add UI tests before re-critique");
+  // A revise decision is recorded as a resolved decision; the gate is no longer
+  // open until a later round posts a fresh decision.needed (the WHA-130 ledger
+  // does exactly that: round 2 revise, then a round 3 decision.needed).
+  const ticket = projection.tickets.find((t) => t.ticket === "WHA-145");
+  assert.equal(ticket?.openDecisions.length, 0);
+  assert.equal(ticket?.resolvedDecisions.length, 1);
+  assert.equal(ticket?.resolvedDecisions[0]?.decision, "revise");
+});
+
+test("WHA-145: appendDecisionMade refuses to write to a closed gate", async () => {
+  const { root } = saganRepo("append-closed", OPEN_LEDGER);
+  const { appendDecisionMade } = await import("./ledger.js");
+  appendDecisionMade(saganLedgerPath(root), {
+    ticket: "WHA-145",
+    gate: "promote",
+    decision: "approve",
+    by: "randy",
+    round: null,
+  });
+  assert.throws(
+    () => appendDecisionMade(saganLedgerPath(root), {
+      ticket: "WHA-145",
+      gate: "promote",
+      decision: "approve",
+      by: "randy",
+      round: null,
+    }),
+    /no open decision\.needed event/,
+  );
+});

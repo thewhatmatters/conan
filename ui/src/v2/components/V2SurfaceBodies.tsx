@@ -395,6 +395,7 @@ export function V2SaganSurface({
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [detail, setDetail] = useState<SaganRunDetail | null>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -420,7 +421,7 @@ export function V2SaganSurface({
       }
     })();
     return () => controller.abort();
-  }, [cwd, selectedTicket, token]);
+  }, [cwd, selectedTicket, token, detailRefreshKey]);
 
   /**
    * WHA-144 (AC7) — the narrow-width fallback is a MEASUREMENT, not a guess.
@@ -474,6 +475,9 @@ export function V2SaganSurface({
         error={detailStatus === "error" ? "Run details could not be loaded." : null}
         onClose={closeInspector}
         onOpenOwningTarget={onOpenOwningThread}
+        token={token}
+        cwd={cwd}
+        onDecisionMade={() => setDetailRefreshKey((k) => k + 1)}
       />
     );
   }
