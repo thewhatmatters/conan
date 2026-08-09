@@ -135,7 +135,10 @@ describe("SurfaceWorkspace", () => {
     );
 
     const surface = document.querySelector('[data-surface="sagan"]');
-    expect(await screen.findByText("Overview")).toBeVisible();
+    // WHA-144 — the Sagan surface's header is a tab strip now (Overview /
+    // Pipeline), and Astryx's Tab renders its label twice (the second copy is
+    // aria-hidden, sizing the tab for its own bold state).
+    expect(await screen.findByRole("button", { name: "Overview" })).toBeVisible();
 
     rerender(
       <SurfaceWorkspace

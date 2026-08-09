@@ -335,6 +335,15 @@
   animation: conan-status-pulse 1.5s ease-in-out infinite;
 }
 
+/* WHA-144 — the Sagan pipeline board's ONLY motion. A running node's state icon
+ * borrows the sidebar's status pulse; every other state is static, so movement
+ * on the board means "this is working right now" and nothing else. It rides the
+ * same keyframe as the thread dot deliberately: one rhythm across the shell, and
+ * one place below where `prefers-reduced-motion` turns both of them off. */
+[data-sagan-node-state="running"] [data-slot="sagan-node-activity"] {
+  animation: conan-status-pulse 1.5s ease-in-out infinite;
+}
+
 /* WHA-87's hover swap is GONE (WHA-103, reworked 2026-08-04). The trailing lane
  * held the timestamp at rest and a kebab on hover; the kebab no longer exists —
  * thread actions are right-click on the row — so the timestamp simply stays.
@@ -407,7 +416,8 @@
   }
 
   [data-thread-status="working"],
-  [data-thread-status="awaiting"] {
+  [data-thread-status="awaiting"],
+  [data-sagan-node-state="running"] [data-slot="sagan-node-activity"] {
     animation: none;
   }
 
