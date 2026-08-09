@@ -214,6 +214,59 @@ describe("V2Transcript", () => {
     expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
   });
 
+  it("streams only the current turn's live assistant tail while busy", () => {
+    const secondUser: ChatItem = { ...user, id: "u2", text: "Next turn" };
+    const liveAssistant: ChatItem = {
+      ...assistant,
+      id: "a2",
+      text: "Live reply",
+    };
+    const { container } = render(
+      <V2Transcript
+        items={[user, assistant, secondUser, liveAssistant]}
+        busy
+      />,
+    );
+
+    const assistantRows = container.querySelectorAll(
+      '[data-slot="assistant-message-content"]',
+    );
+    expect(assistantRows).toHaveLength(2);
+    expect(assistantRows[0]).toHaveAttribute("data-is-streaming", "false");
+    expect(assistantRows[1]).toHaveAttribute("data-is-streaming", "true");
+  });
+
+  it("settles the live assistant tail when busy becomes false", () => {
+    const { container, rerender } = render(
+      <V2Transcript items={[user, assistant]} busy />,
+    );
+    const content = container.querySelector(
+      '[data-slot="assistant-message-content"]',
+    );
+    expect(content).toHaveAttribute("data-is-streaming", "true");
+
+    rerender(<V2Transcript items={[user, assistant]} busy={false} />);
+    expect(content).toHaveAttribute("data-is-streaming", "false");
+    expect(screen.getByText("Hello human")).toBeInTheDocument();
+  });
+
+  it("never marks tool result detail as streaming", () => {
+    const { container } = render(<V2Transcript items={[user, tool]} busy />);
+
+    fireEvent.click(screen.getByRole("button"));
+    expect(
+      container.querySelector('[data-slot="assistant-message-content"]'),
+    ).toHaveAttribute("data-is-streaming", "false");
+  });
+
+  it("does not treat assistant-only loaded history as a live turn", () => {
+    const { container } = render(<V2Transcript items={[assistant]} busy />);
+
+    expect(
+      container.querySelector('[data-slot="assistant-message-content"]'),
+    ).toHaveAttribute("data-is-streaming", "false");
+  });
+
   /**
    * The orb sits on the assistant TEXT axis, not the user-bubble axis.
    *

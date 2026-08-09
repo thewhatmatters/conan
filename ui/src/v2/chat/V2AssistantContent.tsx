@@ -132,9 +132,21 @@ function AssistantCodeBlock({
 
 const markdownComponents = { code: AssistantCodeBlock };
 
-export default function V2AssistantContent({ text }: { text: string }) {
+export interface V2AssistantContentProps {
+  text: string;
+  isStreaming?: boolean;
+}
+
+export default function V2AssistantContent({
+  text,
+  isStreaming = false,
+}: V2AssistantContentProps) {
   return (
-    <div data-slot="assistant-message-content" {...stylex.props(styles.root)}>
+    <div
+      data-slot="assistant-message-content"
+      data-is-streaming={isStreaming ? "true" : "false"}
+      {...stylex.props(styles.root)}
+    >
       {parseAssistantContent(text).map((part) =>
         part.kind === "prose" ? (
           part.text ? (
@@ -145,6 +157,7 @@ export default function V2AssistantContent({ text }: { text: string }) {
               autolink="gfm"
               contentWidth="100%"
               components={markdownComponents}
+              isStreaming={isStreaming}
               xstyle={styles.prose}
             >
               {part.text}

@@ -242,6 +242,19 @@ function hasAssistantText(items: ChatItem[]): boolean {
   );
 }
 
+/** The only assistant row eligible for progressive Markdown rendering. */
+function liveAssistantId(items: ChatItem[]): string | null {
+  let candidate: string | null = null;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.role === "user") return candidate;
+    if (candidate == null && item?.role === "assistant" && item.text) {
+      candidate = item.id;
+    }
+  }
+  return null;
+}
+
 const styles = stylex.create({
   // The chat column's measure — the SAME axis the composer sits on, so message
   // text and the input line up. Applied to ChatMessageList itself rather than a
@@ -266,6 +279,7 @@ export default function V2Transcript({
 }: V2TranscriptProps) {
   const showWorking = busy && !hasAssistantText(items);
   const rows = transcriptRows(items);
+  const streamingAssistantId = busy ? liveAssistantId(items) : null;
 
   return (
     <ChatMessageList
@@ -310,7 +324,10 @@ export default function V2Transcript({
               sender="assistant"
               metadata={<ChatMessageMetadata timestamp={timestamp(item.ts)} />}
             >
-              <V2AssistantContent text={item.text} />
+              <V2AssistantContent
+                text={item.text}
+                isStreaming={item.id === streamingAssistantId}
+              />
             </ChatMessage>
           );
         }
