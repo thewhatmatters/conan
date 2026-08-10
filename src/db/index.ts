@@ -154,6 +154,47 @@ function migrate(handle: Database.Database): void {
   handle.exec(
     "CREATE INDEX IF NOT EXISTS idx_attempt_project ON attempt (project_id, started_at)",
   );
+
+  // WHA-125 (fleet phase 1b): lineage attribution on `attempt`. Same rule as
+  // project_id and for the same reason — schema.sql declares these columns for
+  // a FRESH database, and they have to be ALTERed in by name for one already on
+  // disk, because `CREATE TABLE IF NOT EXISTS attempt` is a no-op there.
+  //
+  // Additive only: six nullable columns, no default, nothing dropped, nothing
+  // rewritten. Existing rows read as "no lineage", which is the truth about
+  // them. The down path is `ALTER TABLE attempt DROP COLUMN <name>` per column
+  // (SQLite >= 3.35) plus dropping the fleet_* tables; it is NOT run here and
+  // is not needed to roll back the code, since every reader of these columns is
+  // new in this release.
+  //
+  // The lineage TABLES are not repeated here: schema.sql is exec'd in full on
+  // every boot, so a brand-new `CREATE TABLE IF NOT EXISTS` reaches an existing
+  // database already. Only pre-existing tables need an ALTER.
+  const attemptLineageCols: Array<[string, string]> = [
+    ["run_id", "TEXT REFERENCES fleet_run(run_id) ON DELETE RESTRICT"],
+    ["ticket_id", "TEXT REFERENCES fleet_ticket(ticket_id) ON DELETE RESTRICT"],
+    ["task_id", "TEXT REFERENCES fleet_task(task_id) ON DELETE RESTRICT"],
+    ["role", "TEXT"],
+    [
+      "principal_id",
+      "TEXT REFERENCES fleet_principal(principal_id) ON DELETE RESTRICT",
+    ],
+    ["binding_id", "TEXT REFERENCES fleet_binding(binding_id) ON DELETE RESTRICT"],
+  ];
+  for (const [name, type] of attemptLineageCols) {
+    // SQLite allows a REFERENCES clause on ADD COLUMN only when the default is
+    // NULL — which it is. The referenced tables were created by schema.sql
+    // above, so this ordering is safe.
+    if (!attemptCols.has(name)) {
+      handle.exec(`ALTER TABLE attempt ADD COLUMN ${name} ${type}`);
+    }
+  }
+  // Indexes on the columns just guaranteed — never in schema.sql (see the
+  // comment at the bottom of that file).
+  handle.exec(`
+    CREATE INDEX IF NOT EXISTS idx_attempt_task ON attempt (task_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_attempt_ticket ON attempt (ticket_id, started_at);
+  `);
 }
 
 /** Close the database handle (used on shutdown / in tests). */
