@@ -381,8 +381,9 @@ export default function SurfaceWorkspace({
   const handleDragEnter = useCallback((event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
     if (!event.dataTransfer.types.includes(SURFACE_DRAG_MIME_TYPE)) return;
+    if (!leftAvailable && !rightAvailable) return;
     setDragActive(true);
-  }, []);
+  }, [leftAvailable, rightAvailable]);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();

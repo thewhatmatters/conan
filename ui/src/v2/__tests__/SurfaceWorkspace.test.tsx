@@ -355,4 +355,26 @@ describe("SurfaceWorkspace", () => {
     expect(screen.getByText("Chat body")).toBeVisible();
     expect(document.querySelectorAll('[role="separator"]')).toHaveLength(2);
   });
+
+  it("does not show dropzones when both left and right docks are occupied", () => {
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["terminal", "browser"]}
+        placements={{ terminal: "left", browser: "right" }}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    fireEvent(workspace, dragEvent("dragenter", dataTransferWithSurface("diff")));
+
+    expect(screen.queryByText("Add left split")).toBeNull();
+    expect(screen.queryByText("Add right split")).toBeNull();
+    expect(document.querySelector('[data-slot="surface-drop-overlay"]')).toBeNull();
+  });
 });
