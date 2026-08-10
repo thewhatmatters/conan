@@ -49,12 +49,12 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
 
-    expect(screen.getByText("Chat body").closest('[data-slot="chat-surface"]')).not.toBeVisible();
-    expect(document.querySelector('[data-slot="surface-dock"]')).toHaveAttribute(
-      "data-placement",
-      "tab",
-    );
-    expect(document.querySelector('[role="separator"]')).not.toBeVisible();
+    // The active non-docked surface renders in the center pane; the chat body
+    // is swapped out until the surface is docked.
+    expect(screen.queryByText("Chat body")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-surface="browser"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="surface-dock"]')).toBeNull();
+    expect(document.querySelector('[role="separator"]')).toBeNull();
   });
 
   it("docks to Chat only after placement and reports the real 60% bound", async () => {
@@ -63,7 +63,7 @@ describe("SurfaceWorkspace", () => {
         header={<div>Chat header</div>}
         activeSurface="browser"
         openSurfaces={["browser"]}
-        placement="right"
+        placements={{ browser: "right" }}
         token={null}
         cwd={null}
       >
@@ -72,7 +72,7 @@ describe("SurfaceWorkspace", () => {
     );
 
     expect(screen.getByText("Chat body").closest('[data-slot="chat-surface"]')).toBeVisible();
-    const separator = screen.getByRole("separator", { name: "Resize surface" });
+    const separator = screen.getByRole("separator", { name: "Resize right surface" });
     await waitFor(() => expect(separator).toHaveAttribute("aria-valuemax", "1152"));
 
     fireEvent.keyDown(separator, { key: "End" });
@@ -86,7 +86,7 @@ describe("SurfaceWorkspace", () => {
         header={<div>Chat actions</div>}
         activeSurface="diff"
         openSurfaces={["diff"]}
-        placement="right"
+        placements={{ diff: "right" }}
         token={null}
         cwd={null}
         onUndock={onUndock}
@@ -106,13 +106,13 @@ describe("SurfaceWorkspace", () => {
     expect(onUndock).toHaveBeenCalledWith("diff");
   });
 
-  it("orders a left dock, splitter, and Chat at the pane boundary", () => {
+  it("renders a left dock, splitter, and Chat in DOM order", () => {
     render(
       <SurfaceWorkspace
         header={<div>Chat actions</div>}
         activeSurface="browser"
         openSurfaces={["browser"]}
-        placement="left"
+        placements={{ browser: "left" }}
         token={null}
         cwd={null}
       >
@@ -120,10 +120,11 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
 
-    expect(getComputedStyle(document.querySelector('[data-slot="surface-dock"]')!).order).toBe(
-      "-2",
-    );
-    expect(getComputedStyle(screen.getByRole("separator")).order).toBe("-1");
+    const children = document.querySelector('[data-slot="surface-workspace"]')!.children;
+    expect(children[0]).toHaveAttribute("data-slot", "surface-header-rule");
+    expect(children[1]).toHaveAttribute("data-placement", "left");
+    expect(children[2]).toHaveAttribute("role", "separator");
+    expect(children[3]).toHaveAttribute("data-slot", "chat-surface");
     expect(screen.getByRole("separator")).toHaveAttribute("aria-orientation", "vertical");
   });
 
@@ -289,7 +290,7 @@ describe("SurfaceWorkspace", () => {
         header={<div>Chat header</div>}
         activeSurface="browser"
         openSurfaces={["browser"]}
-        placement="right"
+        placements={{ browser: "right" }}
         token={null}
         cwd={null}
         onPlacementChange={onPlacementChange}
@@ -329,5 +330,29 @@ describe("SurfaceWorkspace", () => {
     fireEvent(workspace, dragEvent("drop", dt, 960));
 
     expect(onPlacementChange).not.toHaveBeenCalled();
+  });
+
+  it("renders both a left and a right docked surface simultaneously", () => {
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="browser"
+        openSurfaces={["terminal", "browser"]}
+        placements={{ terminal: "left", browser: "right" }}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const docks = document.querySelectorAll('[data-slot="surface-dock"]');
+    expect(docks).toHaveLength(2);
+    expect(docks[0]).toHaveAttribute("data-placement", "left");
+    expect(docks[0]!.querySelector('[data-surface]')).toHaveAttribute("data-surface", "terminal");
+    expect(docks[1]).toHaveAttribute("data-placement", "right");
+    expect(docks[1]!.querySelector('[data-surface]')).toHaveAttribute("data-surface", "browser");
+    expect(screen.getByText("Chat body")).toBeVisible();
+    expect(document.querySelectorAll('[role="separator"]')).toHaveLength(2);
   });
 });

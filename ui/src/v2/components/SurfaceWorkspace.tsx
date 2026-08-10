@@ -112,13 +112,8 @@ const styles = stylex.create({
     // Containing block for this pane's own glass header (WHA-115).
     position: "relative",
   },
-  standalone: { flexBasis: "auto", flexGrow: 1 },
   hidden: { display: "none" },
   surfaceBody: { flexGrow: 1, minHeight: 0, minWidth: 0, width: "100%" },
-  dockBefore: { order: -2 },
-  separatorBefore: { order: -1 },
-  separatorAfter: { order: 1 },
-  dockAfter: { order: 2 },
   separatorVertical: {
     alignSelf: "stretch",
     cursor: "col-resize",
@@ -244,12 +239,98 @@ function SurfaceBody({
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
 
+function ResizeSeparator({
+  size,
+  maxSize,
+  side,
+  onResize,
+}: {
+  size: number;
+  maxSize: number;
+  side: "left" | "right";
+  onResize: (size: number) => void;
+}) {
+  const clamp = useCallback(
+    (value: number) =>
+      Math.min(maxSize, Math.max(SURFACE_PANEL_MIN_WIDTH, value)),
+    [maxSize],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      const root = target.parentElement;
+      if (!root) return;
+      const rect = root.getBoundingClientRect();
+      const onMove = (move: PointerEvent) => {
+        const raw = move.clientX - rect.left;
+        const available = rect.width;
+        onResize(clamp(side === "left" ? raw : available - raw));
+      };
+      const onEnd = () => {
+        target.removeEventListener("pointermove", onMove);
+        target.removeEventListener("pointerup", onEnd);
+        target.removeEventListener("pointercancel", onEnd);
+      };
+      target.addEventListener("pointermove", onMove);
+      target.addEventListener("pointerup", onEnd);
+      target.addEventListener("pointercancel", onEnd);
+    },
+    [clamp, side, onResize],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      const decrease = event.key === "ArrowLeft";
+      const increase = event.key === "ArrowRight";
+      if (!decrease && !increase && event.key !== "Home" && event.key !== "End") return;
+      event.preventDefault();
+      if (event.key === "Home") {
+        onResize(SURFACE_PANEL_MIN_WIDTH);
+        return;
+      }
+      if (event.key === "End") {
+        onResize(maxSize);
+        return;
+      }
+      const delta = increase === (side === "left") ? STEP_SIZE : -STEP_SIZE;
+      onResize(clamp(size + delta));
+    },
+    [clamp, maxSize, onResize, side, size],
+  );
+
+  return (
+    <HStack
+      role="separator"
+      aria-label={`Resize ${side} surface`}
+      aria-orientation="vertical"
+      aria-valuemin={SURFACE_PANEL_MIN_WIDTH}
+      aria-valuemax={Math.round(maxSize)}
+      aria-valuenow={Math.round(size)}
+      data-slot="surface-splitter"
+      data-orientation="vertical"
+      data-side={side}
+      tabIndex={0}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      xstyle={[styles.separatorVertical, styles.separatorLine]}
+    >
+      <HStack
+        aria-hidden
+        xstyle={styles.separatorPaintVertical}
+        data-slot="surface-divider-line"
+      />
+    </HStack>
+  );
+}
+
 export default function SurfaceWorkspace({
   children,
   header,
   activeSurface,
   openSurfaces,
-  placement,
+  placements,
   token,
   cwd,
   onUndock,
@@ -262,7 +343,7 @@ export default function SurfaceWorkspace({
   header: ReactNode;
   activeSurface: SurfaceId;
   openSurfaces: Array<Exclude<SurfaceId, "chat">>;
-  placement?: SurfacePlacement;
+  placements?: Partial<Record<Exclude<SurfaceId, "chat">, SurfacePlacement>>;
   token: string | null;
   cwd: string | null;
   onUndock?: (id: Exclude<SurfaceId, "chat">) => void;
@@ -280,17 +361,22 @@ export default function SurfaceWorkspace({
   );
   const [dragActive, setDragActive] = useState(false);
   const [dragSide, setDragSide] = useState<SurfacePlacement | null>(null);
-  const resolvedPlacement = placement ?? "right";
-  const isBefore = resolvedPlacement === "left";
-  const surfaceActive = activeSurface !== "chat";
-  const isDocked = surfaceActive && placement != null;
+
+  const leftSurface = openSurfaces.find((id) => placements?.[id] === "left");
+  const rightSurface = openSurfaces.find((id) => placements?.[id] === "right");
+  const activeNonDockedSurface =
+    activeSurface !== "chat" && placements?.[activeSurface] == null
+      ? activeSurface
+      : null;
+  const browserActive =
+    activeSurface === "browser" || placements?.browser != null;
+
   const maxSize = Math.max(
     SURFACE_PANEL_MIN_WIDTH,
     availableSize * SURFACE_PANEL_MAX_FRACTION,
   );
-  const occupiedSide = isDocked ? placement : null;
-  const leftAvailable = occupiedSide !== "left";
-  const rightAvailable = occupiedSide !== "right";
+  const leftAvailable = leftSurface == null;
+  const rightAvailable = rightSurface == null;
 
   const handleDragEnter = useCallback((event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
@@ -354,53 +440,6 @@ export default function SurfaceWorkspace({
     observer.observe(root);
     return () => observer.disconnect();
   }, []);
-  const clamp = useCallback(
-    (value: number) => {
-      return Math.min(
-        maxSize,
-        Math.max(SURFACE_PANEL_MIN_WIDTH, value),
-      );
-    },
-    [maxSize],
-  );
-  const resizeFromPointer = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      const root = rootRef.current;
-      if (!root) return;
-      const target = event.currentTarget;
-      target.setPointerCapture(event.pointerId);
-      const rect = root.getBoundingClientRect();
-      const onMove = (move: PointerEvent) => {
-        const raw = move.clientX - rect.left;
-        const available = rect.width;
-        setSize(clamp(isBefore ? raw : available - raw));
-      };
-      const onEnd = () => {
-        target.removeEventListener("pointermove", onMove);
-        target.removeEventListener("pointerup", onEnd);
-        target.removeEventListener("pointercancel", onEnd);
-      };
-      target.addEventListener("pointermove", onMove);
-      target.addEventListener("pointerup", onEnd);
-      target.addEventListener("pointercancel", onEnd);
-    },
-    [clamp, isBefore],
-  );
-  const resizeFromKeyboard = useCallback(
-    (event: React.KeyboardEvent<HTMLElement>) => {
-      const decrease = event.key === "ArrowLeft";
-      const increase = event.key === "ArrowRight";
-      if (!decrease && !increase && event.key !== "Home" && event.key !== "End") return;
-      event.preventDefault();
-      setSize((current) => {
-        if (event.key === "Home") return SURFACE_PANEL_MIN_WIDTH;
-        if (event.key === "End") return maxSize;
-        const delta = increase === isBefore ? STEP_SIZE : -STEP_SIZE;
-        return clamp(current + delta);
-      });
-    },
-    [clamp, isBefore, maxSize],
-  );
 
   return (
     <HStack
@@ -414,76 +453,90 @@ export default function SurfaceWorkspace({
       onDrop={handleDrop}
     >
       <HStack aria-hidden xstyle={styles.headerRule} data-slot="surface-header-rule" />
+      {leftSurface ? (
+        <>
+          <VStack
+            gap={0}
+            xstyle={styles.dock}
+            style={{ flexBasis: size }}
+            data-slot="surface-dock"
+            data-placement="left"
+          >
+            <DockHeader surface={leftSurface} onUndock={onUndock} />
+            <HStack xstyle={styles.paneBody}>
+              <HStack xstyle={styles.surfaceBody} data-surface={leftSurface}>
+                <SurfaceBody
+                  id={leftSurface}
+                  token={token}
+                  cwd={cwd}
+                  browserActive={browserActive}
+                  onBrowserStateChange={onBrowserStateChange}
+                  sagan={sagan}
+                  onOpenSaganThread={onOpenSaganThread}
+                />
+              </HStack>
+            </HStack>
+          </VStack>
+          <ResizeSeparator
+            size={size}
+            maxSize={maxSize}
+            side="left"
+            onResize={setSize}
+          />
+        </>
+      ) : null}
       <VStack
         gap={0}
-        xstyle={[styles.chat, surfaceActive && !isDocked && styles.hidden]}
+        xstyle={styles.chat}
         data-slot="chat-surface"
       >
         <HStack xstyle={styles.paneHeader}>{header}</HStack>
-        <HStack xstyle={styles.paneBody}>{children}</HStack>
+        <HStack xstyle={styles.paneBody}>
+          {activeNonDockedSurface ? (
+            <HStack xstyle={styles.surfaceBody} data-surface={activeNonDockedSurface}>
+              <SurfaceBody
+                id={activeNonDockedSurface}
+                token={token}
+                cwd={cwd}
+                browserActive={browserActive}
+                onBrowserStateChange={onBrowserStateChange}
+                sagan={sagan}
+                onOpenSaganThread={onOpenSaganThread}
+              />
+            </HStack>
+          ) : (
+            children
+          )}
+        </HStack>
       </VStack>
-      {openSurfaces.length > 0 ? (
+      {rightSurface ? (
         <>
-          <HStack
-            role="separator"
-            aria-label="Resize surface"
-            aria-orientation="vertical"
-            aria-valuemin={SURFACE_PANEL_MIN_WIDTH}
-            aria-valuemax={Math.round(maxSize)}
-            aria-valuenow={Math.round(size)}
-            data-slot="surface-splitter"
-            data-orientation="vertical"
-            tabIndex={0}
-            onPointerDown={resizeFromPointer}
-            onKeyDown={resizeFromKeyboard}
-            xstyle={[
-              styles.separatorVertical,
-              styles.separatorLine,
-              isBefore ? styles.separatorBefore : styles.separatorAfter,
-              !isDocked && styles.hidden,
-            ]}
-          >
-            <HStack
-              aria-hidden
-              xstyle={styles.separatorPaintVertical}
-              data-slot="surface-divider-line"
-            />
-          </HStack>
+          <ResizeSeparator
+            size={size}
+            maxSize={maxSize}
+            side="right"
+            onResize={setSize}
+          />
           <VStack
             gap={0}
-            xstyle={[
-              styles.dock,
-              surfaceActive && !isDocked && styles.standalone,
-              isBefore ? styles.dockBefore : styles.dockAfter,
-              !surfaceActive && styles.hidden,
-            ]}
-            style={isDocked ? { flexBasis: size } : undefined}
+            xstyle={styles.dock}
+            style={{ flexBasis: size }}
             data-slot="surface-dock"
-            data-placement={placement ?? "tab"}
+            data-placement="right"
           >
-            {isDocked ? (
-              <DockHeader surface={activeSurface} onUndock={onUndock} />
-            ) : (
-              <HStack xstyle={styles.paneHeader}>{header}</HStack>
-            )}
+            <DockHeader surface={rightSurface} onUndock={onUndock} />
             <HStack xstyle={styles.paneBody}>
-              {openSurfaces.map((surface) => (
-                <HStack
-                  key={surface}
-                  xstyle={[styles.surfaceBody, activeSurface !== surface && styles.hidden]}
-                  data-surface={surface}
-                >
-                  <SurfaceBody
-                    id={surface}
-                    token={token}
-                    cwd={cwd}
-                    browserActive={activeSurface === "browser"}
-                    onBrowserStateChange={onBrowserStateChange}
-                    sagan={sagan}
-                    onOpenSaganThread={onOpenSaganThread}
-                  />
-                </HStack>
-              ))}
+              <HStack xstyle={styles.surfaceBody} data-surface={rightSurface}>
+                <SurfaceBody
+                  id={rightSurface}
+                  token={token}
+                  cwd={cwd}
+                  browserActive={browserActive}
+                  onBrowserStateChange={onBrowserStateChange}
+                  sagan={sagan}
+                  onOpenSaganThread={onOpenSaganThread}
+                />
+              </HStack>
             </HStack>
           </VStack>
         </>

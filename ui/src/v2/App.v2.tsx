@@ -833,9 +833,7 @@ export default function AppV2() {
                 )}
                 activeSurface={activeSurface}
                 openSurfaces={openSurfaces}
-                placement={
-                  activeSurface === "chat" ? undefined : surfacePlacements[activeSurface]
-                }
+                placements={surfacePlacements}
                 token={token}
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
                 onUndock={undockSurface}
