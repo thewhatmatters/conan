@@ -458,3 +458,66 @@ describe("Sagan inspector decision gates (WHA-145)", () => {
     expect(screen.getByRole("button", { name: "Revise" })).toBeVisible();
   });
 });
+
+/**
+ * WHA-169 — the rendered half of the section fix. The rule itself is a table in
+ * `saganSection.test.ts`; what is asserted here is that the board actually
+ * draws these three runs in the sections that rule names, and that moving two
+ * verdicts out of Blocked did not take the verdict off the row with them.
+ *
+ * All three shapes are real: WHA-140 as it stands in the ledger at `5cd617a`,
+ * WHA-125 as it stood mid-verify on Aug 10, and an ESCALATE row for the one
+ * verdict that still stops.
+ */
+describe("Sagan overview sections (WHA-169)", () => {
+  // The section title's own row is the first match; a run's state label can
+  // carry the same word further down the list.
+  const section = (title: string) => screen.getAllByText(title)[0]!.closest("div")!.parentElement!;
+
+  const board = () =>
+    data([
+      bare({ id: "WHA-140", ticket: "WHA-140", lane: "done", phase: "merged", round: 1, verdict: "REVISE", agent: null }),
+      bare({
+        id: "WHA-125",
+        ticket: "WHA-125",
+        lane: "verify",
+        phase: "verifying",
+        round: 1,
+        verdict: "NEEDS_EVIDENCE",
+        agent: { name: "hamilton", role: "verifier" },
+      }),
+      bare({ id: "T-ESC", ticket: "T-ESC", lane: "critique", phase: "critique", verdict: "ESCALATE" }),
+    ]);
+
+  it("files a merged run under Recently completed despite a stale REVISE", () => {
+    renderSurface(result({ data: board() }));
+    expect(section("Recently completed")).toHaveTextContent("WHA-140");
+    expect(section("Blocked")).not.toHaveTextContent("WHA-140");
+    expect(screen.getByRole("button", { name: "WHA-140, Completed" })).toBeVisible();
+  });
+
+  it("files a run being verified under Running now and keeps its verdict on the row", () => {
+    renderSurface(result({ data: board() }));
+    expect(section("Running now")).toHaveTextContent("WHA-125");
+    expect(section("Blocked")).not.toHaveTextContent("WHA-125");
+    const row = screen.getByRole("button", { name: "WHA-125, Running · NEEDS_EVIDENCE" });
+    expect(row).toHaveTextContent("verify · verifying · NEEDS_EVIDENCE");
+  });
+
+  it("leaves ESCALATE — and only ESCALATE — under Blocked", () => {
+    renderSurface(result({ data: board() }));
+    const blocked = section("Blocked");
+    expect(blocked).toHaveTextContent("T-ESC");
+    expect(blocked).not.toHaveTextContent("WHA-1");
+  });
+
+  // Scoped to in-flight on purpose: a Blocked row's state label already says
+  // ESCALATE in other words, and printing a merged run's last verdict is the
+  // stale-signal noise WHA-167 exists to reconcile, not something to surface
+  // here.
+  it("prints the verdict only on an in-flight row", () => {
+    renderSurface(result({ data: board() }));
+    expect(screen.getByRole("button", { name: "T-ESC, Blocked" })).not.toHaveTextContent("ESCALATE");
+    expect(screen.getByRole("button", { name: "WHA-140, Completed" })).not.toHaveTextContent("REVISE");
+  });
+});
