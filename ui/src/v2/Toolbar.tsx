@@ -1,9 +1,9 @@
 /**
  * Toolbar — Paper RJ-0 node EK-0. Composition file for the top toolbar.
  *
- * WHA-156 swaps the workflow controls into the top bar: crumb left, Open and
- * Commit & Push right. Surface navigation now belongs to the glass bar inside
- * the content well.
+ * WHA-158 swaps surface navigation into the top bar: crumb left, Chat/surfaces
+ * tab strip right. The workflow controls (Actions/Open/Commit & Push) now live
+ * inside the Chat surface only.
  *
  * The toolbar sits on the app tone (#1B1B1B), NOT on the lifted content well:
  * the well begins below it, which is what lets its 24px corner show.
@@ -11,7 +11,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import Breadcrumb from "./components/Breadcrumb.tsx";
-import { WorkflowControls } from "./components/SecondaryBar.tsx";
+import SurfaceTabs, { type SurfaceTabsProps } from "./components/SurfaceTabs.tsx";
 import type { BreadcrumbProps } from "./components/Breadcrumb.tsx";
 
 const styles = stylex.create({
@@ -29,10 +29,9 @@ const styles = stylex.create({
     minWidth: 0,
     overflow: "hidden",
   },
-  workflowGroup: {
-    backgroundColor: "var(--conan-color-sidebar)",
+  tabsSlot: {
     flexShrink: 0,
-    height: "var(--conan-control-height)",
+    minWidth: 0,
   },
 });
 
@@ -43,7 +42,8 @@ export interface ToolbarProps
   extends Pick<
     BreadcrumbProps,
     "project" | "thread" | "threads" | "activeThreadId" | "onSelectThread"
-  > {}
+  >,
+    SurfaceTabsProps {}
 
 export default function Toolbar({
   project,
@@ -51,6 +51,11 @@ export default function Toolbar({
   threads,
   activeThreadId,
   onSelectThread,
+  tabs,
+  saganAvailable,
+  onSelect,
+  onOpen,
+  onClose,
 }: ToolbarProps) {
   return (
     <HStack
@@ -70,8 +75,14 @@ export default function Toolbar({
           onSelectThread={onSelectThread}
         />
       </HStack>
-      <HStack align="center" xstyle={styles.workflowGroup}>
-        <WorkflowControls />
+      <HStack align="center" xstyle={styles.tabsSlot}>
+        <SurfaceTabs
+          tabs={tabs}
+          saganAvailable={saganAvailable}
+          onSelect={onSelect}
+          onOpen={onOpen}
+          onClose={onClose}
+        />
       </HStack>
     </HStack>
   );

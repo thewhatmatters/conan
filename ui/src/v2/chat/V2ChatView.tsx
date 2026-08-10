@@ -19,6 +19,7 @@ import type { ActiveThread } from "../lib/types.ts";
 import V2Transcript from "./V2Transcript.tsx";
 import V2Composer from "./V2Composer.tsx";
 import V2ApprovalGate from "./V2ApprovalGate.tsx";
+import ChatSurfaceToolbar from "../components/ChatSurfaceToolbar.tsx";
 import { detectContextCompaction } from "./composer/contextMeterModel.ts";
 
 interface ContextSnapshot {
@@ -65,15 +66,16 @@ export interface V2ChatViewProps {
 }
 
 const styles = stylex.create({
+  root: {
+    flexGrow: 1,
+    height: "100%",
+    minHeight: 0,
+    overflow: "clip",
+  },
   layout: {
     flexGrow: 1,
     height: "100%",
     minHeight: 0,
-    // WHA-115 — ChatLayout's root IS the scroll container, and the pane's
-    // header is now a glass bar overlaying its top. Padding on a scroll
-    // container belongs to the scrollable area, so this starts the first
-    // message below the bar while letting the transcript slide under it.
-    paddingBlockStart: "var(--conan-secondary-bar-height)",
   },
   // The composer is intentionally narrower than the transcript: it is an
   // action surface, not a reading column. The dock still spans the whole well
@@ -199,17 +201,19 @@ export default function V2ChatView({
         : "Send a message to start this thread.";
 
   return (
-    <ChatLayout
-      data-slot="content"
-      data-chat-view="v2"
-      xstyle={styles.layout}
-      emptyState={
-        hasItems ? undefined : (
-          <Text type="supporting" color="secondary">
-            {emptyLabel}
-          </Text>
-        )
-      }
+    <VStack gap={0} xstyle={styles.root} data-slot="chat-surface-root">
+      <ChatSurfaceToolbar />
+      <ChatLayout
+        data-slot="content"
+        data-chat-view="v2"
+        xstyle={styles.layout}
+        emptyState={
+          hasItems ? undefined : (
+            <Text type="supporting" color="secondary">
+              {emptyLabel}
+            </Text>
+          )
+        }
       composer={
         <VStack gap={0} xstyle={styles.measure}>
           {/* Like the approval announcer below, this region exists before it
@@ -311,5 +315,6 @@ export default function V2ChatView({
         <V2Transcript items={items} busy={busy} />
       ) : null}
     </ChatLayout>
+    </VStack>
   );
 }

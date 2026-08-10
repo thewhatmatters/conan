@@ -1,24 +1,17 @@
 /**
- * SecondaryBar — WHA-156 surface navigation + Actions.
+ * ChatSurfaceToolbar — Paper 2SJ-0 node HL-0, relocated.
  *
- * The menu triggers are real focusable buttons with menu ARIA (haspopup +
- * expanded). The shell currently owns their disclosure state; menu panels land
- * with their respective workflows.
+ * This row belongs to the Chat surface only: Actions (left), Open and
+ * Commit & Push (right). It renders inside V2ChatView, not in the shell,
+ * so Terminal/Browser/Diff/etc. surfaces appear full-pane without it.
  *
- * The bar is the FIRST thing inside the lifted content well (4N-0), not a
- * continuation of the toolbar above it — which is why it inherits the well's
- * tone and its 24px top-left round rather than drawing chrome of its own. Same
- * geometry as the toolbar: a 16px inset around one 32px control row.
- *
- * Open and Commit & Push move to the top toolbar. This glass bar now keeps the
- * view switcher on the left and the labelled Actions menu on the right.
+ * The menu triggers are real focusable buttons with menu ARIA. Menu panels
+ * are still shell-level workflows; only the trigger row lives here.
  */
 import { useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
-import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
-import SurfaceTabs, { type SurfaceTabsProps } from "./SurfaceTabs.tsx";
 import {
   ChevronDown,
   FolderDown,
@@ -32,18 +25,17 @@ const ICON = 16;
 const styles = stylex.create({
   bar: {
     boxSizing: "border-box",
+    borderBottomColor: "var(--conan-color-border)",
+    borderBottomStyle: "solid",
+    borderBottomWidth: "var(--conan-border-width)",
     flexShrink: 0,
     height: "var(--conan-secondary-bar-height)",
     width: "100%",
   },
   row: {
-    flexShrink: 0,
     height: "var(--conan-control-height)",
     minWidth: 0,
-    width: "100%",
   },
-  // Real <button> — reset UA chrome so the control still reads as RJ-0's
-  // icon+label+chevron pill (32px tall, 10px radius, 12px inline pad).
   control: {
     alignItems: "center",
     appearance: "none",
@@ -95,7 +87,7 @@ function MenuControl({
       aria-haspopup="menu"
       aria-expanded={isExpanded}
       onClick={onToggle}
-      data-slot="secondary-bar-control"
+      data-slot="chat-surface-toolbar-control"
     >
       <Icon size={ICON} aria-hidden />
       <Text color="secondary" weight={isPrimary ? "semibold" : "normal"}>
@@ -106,36 +98,7 @@ function MenuControl({
   );
 }
 
-export function WorkflowControls() {
-  const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
-
-  const toggle = (id: MenuId) => {
-    setOpenMenu((current) => (current === id ? null : id));
-  };
-
-  return (
-    <HStack gap={0.5} align="center" data-slot="workflow-controls">
-      <MenuControl
-        id="open"
-        label="Open"
-        ariaLabel="Open menu"
-        icon={FolderDown}
-        isExpanded={openMenu === "open"}
-        onToggle={() => toggle("open")}
-      />
-      <MenuControl
-        id="commit"
-        label="Commit & Push"
-        ariaLabel="Commit and Push menu"
-        icon={GitCommitHorizontal}
-        isExpanded={openMenu === "commit"}
-        onToggle={() => toggle("commit")}
-      />
-    </HStack>
-  );
-}
-
-export default function SecondaryBar(props: SurfaceTabsProps) {
+export default function ChatSurfaceToolbar() {
   // Only one menu open at a time; shell stub — no panel yet, just the ARIA state.
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
@@ -144,24 +107,41 @@ export default function SecondaryBar(props: SurfaceTabsProps) {
   };
 
   return (
-    <VStack
-      align="stretch"
+    <HStack
+      align="center"
+      justify="between"
+      gap={0.5}
       padding={4}
       xstyle={styles.bar}
-      data-slot="secondary-bar"
+      data-slot="chat-surface-toolbar"
     >
-      <HStack gap={0.5} justify="between" align="center" xstyle={styles.row}>
-        <SurfaceTabs {...props} />
+      <MenuControl
+        id="actions"
+        label="Actions"
+        ariaLabel="Actions menu"
+        icon={Zap}
+        isPrimary
+        isExpanded={openMenu === "actions"}
+        onToggle={() => toggle("actions")}
+      />
+      <HStack gap={0.5} align="center" justify="end" xstyle={styles.row} data-slot="workflow-controls">
         <MenuControl
-          id="actions"
-          label="Actions"
-          ariaLabel="Actions menu"
-          icon={Zap}
-          isPrimary
-          isExpanded={openMenu === "actions"}
-          onToggle={() => toggle("actions")}
+          id="open"
+          label="Open"
+          ariaLabel="Open menu"
+          icon={FolderDown}
+          isExpanded={openMenu === "open"}
+          onToggle={() => toggle("open")}
+        />
+        <MenuControl
+          id="commit"
+          label="Commit & Push"
+          ariaLabel="Commit and Push menu"
+          icon={GitCommitHorizontal}
+          isExpanded={openMenu === "commit"}
+          onToggle={() => toggle("commit")}
         />
       </HStack>
-    </VStack>
+    </HStack>
   );
 }

@@ -1,16 +1,16 @@
 /**
- * SurfaceTabs — Paper RJ-0 node HL-0.
+ * SurfaceTabs — Paper 2SJ-0 tab strip.
  *
- * WHA-156 turns the strip into Astryx's single-select ToggleButtonGroup. These
- * tests pin its pressed semantics, equal sizing, persistent selection, and the
- * existing surface menus/docking behaviour around it.
+ * WHA-158 turns the strip into a simple tab bar: permanent Chat tab,
+ * closeable opened-surface tabs, and a Surface opener dropdown. No docking,
+ * no placement menus.
  */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Diff, Globe, MessagesSquare, Terminal } from "lucide-react";
 import SurfaceTabs, { type SurfaceTab } from "../components/SurfaceTabs.tsx";
 
-/** A three-tab strip: one permanent + two closeable, as RJ-0 has it. */
+/** A three-tab strip: one permanent + two closeable, as 2SJ-0 has it. */
 const TABS: SurfaceTab[] = [
   { id: "chat", label: "Chat", icon: MessagesSquare, isSelected: true },
   { id: "browser", label: "Browser", icon: Globe, isCloseable: true },
@@ -51,6 +51,84 @@ describe("SurfaceTabs", () => {
     }
   });
 
+  it("draws the selected pill on the tab shell, not the toggle button", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const browserToggle = toggle("Browser");
+    const browserShell = browserToggle.closest('[data-slot="surface-tab-shell"]');
+    expect(browserShell).not.toBeNull();
+
+    // The toggle button itself is transparent so the shell is the visual pill.
+    expect(getComputedStyle(browserToggle).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("draws the selected pill behind the permanent Chat tab too", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const chatToggle = toggle("Chat");
+    const chatShell = chatToggle.closest('[data-slot="surface-tab-shell"]');
+    expect(chatShell).not.toBeNull();
+    expect(getComputedStyle(chatShell!).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("keeps the close button inside the tab shell", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const closeButton = screen.getByRole("button", { name: "Close Browser tab" });
+    expect(closeButton.closest('[data-slot="surface-tab-shell"]')).not.toBeNull();
+  });
+
+  it("pads the close button horizontally and sizes the reveal to match", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const browserToggle = toggle("Browser");
+    const shell = browserToggle.closest('[data-slot="surface-tab-shell"]')!;
+    const actions = shell.querySelector('[data-slot="surface-tab-actions"]')!;
+    const closeButton = screen.getByRole("button", { name: "Close Browser tab" });
+
+    fireEvent.mouseEnter(shell);
+
+    expect(getComputedStyle(closeButton).paddingInline).toBe("var(--conan-space-1)");
+    expect(getComputedStyle(actions).width).toBe(
+      "calc(var(--conan-icon-size) + var(--conan-space-1) * 2)",
+    );
+  });
+
+  it("paints a dark opaque segment behind the ✕ via the actions area", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const browserToggle = toggle("Browser");
+    const shell = browserToggle.closest('[data-slot="surface-tab-shell"]')!;
+    const actions = shell.querySelector('[data-slot="surface-tab-actions"]')!;
+
+    // The dark fill is a static StyleX class; the width transition reveals it.
+    expect(getComputedStyle(actions).backgroundColor).toBe("var(--conan-color-content)");
+  });
+
+  it("paints a hover pill behind the ✕ on unselected tabs", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const browserToggle = toggle("Browser");
+    const browserShell = browserToggle.closest('[data-slot="surface-tab-shell"]')!;
+
+    expect(getComputedStyle(browserShell).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+
+    fireEvent.mouseEnter(browserShell);
+
+    expect(getComputedStyle(browserShell).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("keeps the selected wash on selected tabs during hover", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const chatToggle = toggle("Chat");
+    const chatShell = chatToggle.closest('[data-slot="surface-tab-shell"]')!;
+
+    fireEvent.mouseEnter(chatShell);
+
+    expect(getComputedStyle(chatShell).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
   it("centers icons eight pixels from their labels", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
@@ -73,54 +151,34 @@ describe("SurfaceTabs", () => {
     }
   });
 
-  it("reveals a named kebab menu for an undocked surface", () => {
+  it("draws a close button on closeable tabs, not on Chat", () => {
     render(<SurfaceTabs tabs={TABS} />);
 
-    const options = screen.getByRole("button", { name: "Browser surface options" });
-    expect(options).toBeInTheDocument();
-    const actions = options.closest('[data-slot="surface-tab-actions"]')!;
-    expect(getComputedStyle(actions).width).toBe("var(--conan-icon-size)");
-    expect(getComputedStyle(actions).pointerEvents).toBe("auto");
-    const fade = actions.querySelector('[data-slot="surface-tab-action-fade"]')!;
-    expect(getComputedStyle(fade).width).toBe(
-      "calc(var(--conan-space-6) + var(--conan-space-4))",
-    );
-    expect(getComputedStyle(fade).pointerEvents).toBe("none");
-    const shell = options.closest('[data-slot="surface-tab-shell"]')!;
-    expect(getComputedStyle(shell).borderRadius).toBe("var(--conan-radius-md)");
-    expect(getComputedStyle(shell).overflow).toBe("hidden");
-    expect(screen.queryByRole("button", { name: "Close Browser tab" })).toBeNull();
-    fireEvent.click(options);
-    const menu = screen.getByRole("menu", { name: "Browser surface options" });
-    expect(menu).toBeVisible();
-    expect(getComputedStyle(menu).pointerEvents).toBe("auto");
+    expect(toggle("Chat").querySelector('[data-slot="surface-tab-close"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Close Browser tab" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close Diff tab" })).toBeInTheDocument();
   });
 
-  it("opens surface actions from the keyboard-focusable kebab", () => {
-    render(<SurfaceTabs tabs={TABS} />);
+  it("closes a tab from its close button without selecting it", () => {
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    render(<SurfaceTabs tabs={TABS} onSelect={onSelect} onClose={onClose} />);
 
-    const options = screen.getByRole("button", { name: "Browser surface options" });
-    options.focus();
-    expect(options).toHaveFocus();
-    fireEvent.click(options);
+    fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
 
-    const menu = screen.getByRole("menu", { name: "Browser surface options" });
-    expect(menu).toBeVisible();
-    expect(within(menu).getByRole("menuitemradio", { name: "Right" })).toBeVisible();
+    expect(onClose).toHaveBeenCalledWith("browser");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("keeps arrow navigation inside a surface context menu", () => {
-    render(<SurfaceTabs tabs={TABS} />);
+  it("reports a new mode and ignores active-mode deselection", () => {
+    const onSelect = vi.fn();
+    render(<SurfaceTabs tabs={TABS} onSelect={onSelect} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser surface options" }));
-    const menu = screen.getByRole("menu", { name: "Browser surface options" });
-    const right = within(menu).getByRole("menuitemradio", { name: "Right" });
-    const left = within(menu).getByRole("menuitemradio", { name: "Left" });
-    right.focus();
-    expect(right).toHaveFocus();
+    fireEvent.click(toggle("Browser"));
+    fireEvent.click(toggle("Chat"));
 
-    fireEvent.keyDown(right, { key: "ArrowDown" });
-    expect(left).toHaveFocus();
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenLastCalledWith("browser");
   });
 
   it("keeps arrow navigation inside the Surface dropdown", () => {
@@ -144,149 +202,6 @@ describe("SurfaceTabs", () => {
     expect(
       screen.queryByRole("button", { name: "Close Chat tab" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("reports a new mode and ignores active-mode deselection", () => {
-    const onSelect = vi.fn();
-    render(<SurfaceTabs tabs={TABS} onSelect={onSelect} />);
-
-    fireEvent.click(toggle("Browser"));
-    fireEvent.click(toggle("Chat"));
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(onSelect).toHaveBeenLastCalledWith("browser");
-  });
-
-  it("closes from the context menu without also selecting the tab", () => {
-    const onSelect = vi.fn();
-    const onClose = vi.fn();
-    render(<SurfaceTabs tabs={TABS} onSelect={onSelect} onClose={onClose} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Diff surface options" }));
-    const menu = screen.getByRole("menu", { name: "Diff surface options" });
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Close Surface" }));
-
-    expect(onClose).toHaveBeenCalledWith("diff");
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("offers only Left and Right placement plus Close on an undocked surface", () => {
-    render(<SurfaceTabs tabs={TABS} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Browser surface options" }));
-    const menu = within(screen.getByRole("menu", { name: "Browser surface options" }));
-    expect(menu.getByText("Dock & Surface")).toBeVisible();
-    expect(menu.getByRole("menuitemradio", { name: "Left" })).toBeVisible();
-    expect(menu.getByRole("menuitemradio", { name: "Right" })).toBeVisible();
-    expect(menu.queryByRole("menuitemradio", { name: "Top" })).toBeNull();
-    expect(menu.queryByRole("menuitemradio", { name: "Bottom" })).toBeNull();
-    expect(menu.queryByRole("menuitem", { name: "Undock" })).toBeNull();
-    expect(menu.getByRole("menuitem", { name: "Close Surface" })).toBeVisible();
-  });
-
-  it("gives a docked surface no kebab or context menu and makes Shift+F10 a no-op", () => {
-    render(
-      <SurfaceTabs
-        tabs={[
-          { ...TABS[0]!, isSelected: false },
-          {
-            id: "browser",
-            label: "Browser",
-            icon: Globe,
-            isCloseable: true,
-            isSelected: true,
-            isDocked: true,
-            placement: "right",
-            dockedDescription: "Docked right to Chat",
-          },
-        ]}
-      />,
-    );
-
-    expect(toggle("Browser")).toHaveAttribute("aria-pressed", "true");
-    expect(toggle("Browser")).toHaveAttribute("aria-description", "Docked right to Chat");
-    expect(screen.queryByRole("button", { name: "Switch docked surface" })).toBeNull();
-    expect(toggle("Browser").querySelector('[data-slot="docked-surface-switcher"]')).toBeNull();
-    expect(screen.queryByRole("button", { name: "Browser surface options" })).toBeNull();
-    fireEvent.contextMenu(toggle("Browser"));
-    expect(screen.queryByRole("menu", { name: "Browser surface options" })).toBeNull();
-    fireEvent.keyDown(toggle("Browser"), { key: "F10", shiftKey: true });
-    expect(screen.queryByRole("menu", { name: "Browser surface options" })).toBeNull();
-  });
-
-  it("outlines the whole inactive dock group without changing its height", () => {
-    render(
-      <SurfaceTabs
-        tabs={[
-          {
-            ...TABS[0]!,
-            isSelected: false,
-            isDocked: true,
-            isVisuallyActive: false,
-            joinedSide: "start",
-          },
-          {
-            id: "browser",
-            label: "Browser",
-            icon: Globe,
-            isCloseable: true,
-            isDocked: true,
-            isVisuallyActive: false,
-            joinedSide: "end",
-            placement: "right",
-          },
-          { id: "terminal", label: "Terminal", icon: Terminal, isSelected: true },
-        ]}
-      />,
-    );
-
-    const group = document.querySelector('[data-slot="docked-tab-group"]')!;
-    expect(getComputedStyle(group).height).toBe("var(--conan-control-height)");
-    expect(getComputedStyle(group).boxShadow).toContain("inset");
-    expect(group.querySelectorAll('[data-slot="surface-tab"]')).toHaveLength(2);
-  });
-
-  it("cycles the one visible dock slot through every docked surface", () => {
-    const onSelect = vi.fn();
-    render(
-      <SurfaceTabs
-        tabs={[
-          TABS[0]!,
-          {
-            id: "browser",
-            label: "Browser",
-            icon: Globe,
-            isCloseable: true,
-            isDocked: true,
-            placement: "right",
-          },
-          {
-            id: "terminal",
-            label: "Terminal",
-            icon: Terminal,
-            isCloseable: true,
-            placement: "right",
-          },
-        ]}
-        onSelect={onSelect}
-      />,
-    );
-
-    expect(screen.getAllByRole("button", { name: "Switch docked surface" })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
-    expect(toggle("Browser").closest('[data-slot="surface-tab-shell"]')?.querySelector(
-      '[data-slot="docked-surface-switcher"]',
-    )).toHaveStyle({
-      backgroundImage: "",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Switch docked surface" }));
-    const switcher = screen.getByRole("menu", { name: "Switch docked surface" });
-    expect(within(switcher).getByRole("menuitemradio", { name: "Browser" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    fireEvent.click(within(switcher).getByRole("menuitemradio", { name: "Terminal" }));
-    expect(onSelect).toHaveBeenCalledWith("terminal");
   });
 
   it("offers every surface and disables only the ones already open", () => {
@@ -337,5 +252,4 @@ describe("SurfaceTabs", () => {
     );
     expect(screen.getByRole("button", { name: "Surface" })).toBeDisabled();
   });
-
 });

@@ -53,7 +53,6 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useHotkeys } from "@astryxdesign/core/hooks";
 import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
-import SecondaryBar from "./components/SecondaryBar.tsx";
 import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import AddProjectDialog from "./components/AddProjectDialog.tsx";
 import V2CommandPalette from "./command/CommandPalette.tsx";
@@ -64,7 +63,6 @@ import type { BrowserSurfaceReport } from "../hooks/useAgentChat.ts";
 import {
   SURFACE_OPTIONS,
   type SurfaceId,
-  type SurfacePlacement,
   type SurfaceTab,
 } from "./components/SurfaceTabs.tsx";
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
@@ -188,12 +186,6 @@ export default function AppV2() {
     Array<Exclude<SurfaceId, "chat">>
   >([]);
   const [activeSurface, setActiveSurface] = useState<SurfaceId>("chat");
-  const [activeDockedSurface, setActiveDockedSurface] = useState<
-    Exclude<SurfaceId, "chat"> | null
-  >(null);
-  const [surfacePlacements, setSurfacePlacements] = useState<
-    Partial<Record<Exclude<SurfaceId, "chat">, SurfacePlacement>>
-  >({});
   // WHA-109: the shell owns what the Browser surface is showing, because the
   // surface and the chat are siblings — the surface produces this, the chat
   // consumes it, and neither can see the other.
@@ -212,123 +204,40 @@ export default function AppV2() {
   useEffect(() => {
     if (saganAvailable) return;
     setOpenSurfaces((current) => current.filter((id) => id !== "sagan"));
-    setSurfacePlacements((current) => {
-      if (current.sagan == null) return current;
-      const next = { ...current };
-      delete next.sagan;
-      return next;
-    });
-    setActiveDockedSurface((current) => (current === "sagan" ? null : current));
     setActiveSurface((current) => (current === "sagan" ? "chat" : current));
   }, [saganAvailable]);
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
-    () => {
-      const dockedId =
-        activeDockedSurface && surfacePlacements[activeDockedSurface]
-          ? activeDockedSurface
-          : openSurfaces.find((id) => surfacePlacements[id] != null) ?? null;
-      const dockGroupActive =
-        activeSurface !== "chat" && surfacePlacements[activeSurface] != null;
-      const ordered = dockedId
-        ? [dockedId, ...openSurfaces.filter((id) => id !== dockedId)]
-        : openSurfaces;
-      const dockedLabel = dockedId
-        ? SURFACE_OPTIONS.find((candidate) => candidate.id === dockedId)?.label
-        : null;
-      return [
-        {
+    () => [
+      {
         id: "chat",
         label: "Chat",
         icon: MessagesSquare,
         isSelected: activeSurface === "chat",
-        isDocked: dockedId != null,
-        isVisuallyActive: dockedId ? dockGroupActive : activeSurface === "chat",
-        joinedSide: dockedId ? ("start" as const) : undefined,
-        dockedDescription: dockedLabel ? `Joined with ${dockedLabel}` : undefined,
-        },
-      ...ordered.map((id) => {
+      },
+      ...openSurfaces.map((id) => {
         const surface = SURFACE_OPTIONS.find((candidate) => candidate.id === id)!;
         return {
           ...surface,
           count: id === "sagan" ? saganNeedsYou : undefined,
-          placement: surfacePlacements[id],
           isSelected: activeSurface === id,
-          isDocked: id === dockedId,
-          isVisuallyActive:
-            id === dockedId ? dockGroupActive : activeSurface === id,
-          joinedSide: id === dockedId ? ("end" as const) : undefined,
-          dockedDescription:
-            id === dockedId
-              ? `Docked ${surfacePlacements[id]} to Chat`
-              : undefined,
         };
       }),
-      ];
-    },
-    [activeDockedSurface, activeSurface, openSurfaces, saganNeedsYou, surfacePlacements],
+    ],
+    [activeSurface, openSurfaces, saganNeedsYou],
   );
   const openSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
     if (id === "sagan" && !saganAvailable) return;
     setOpenSurfaces((current) => (current.includes(id) ? current : [...current, id]));
     setActiveSurface(id);
   }, [saganAvailable]);
-  const selectSurface = useCallback(
-    (id: SurfaceId) => {
-      if (id === "chat") {
-        const restoredDock =
-          activeDockedSurface && surfacePlacements[activeDockedSurface]
-            ? activeDockedSurface
-            : openSurfaces.find((candidate) => surfacePlacements[candidate] != null);
-        setActiveSurface(restoredDock ?? "chat");
-        return;
-      }
-      if (surfacePlacements[id]) setActiveDockedSurface(id);
-      setActiveSurface(id);
-    },
-    [activeDockedSurface, openSurfaces, surfacePlacements],
-  );
+  const selectSurface = useCallback((id: SurfaceId) => {
+    setActiveSurface(id);
+  }, []);
   const closeSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
     setOpenSurfaces((current) => current.filter((candidate) => candidate !== id));
-    setSurfacePlacements((current) => {
-      const next = { ...current };
-      delete next[id];
-      setActiveDockedSurface((activeDock) =>
-        activeDock === id
-          ? openSurfaces.find((candidate) => candidate !== id && next[candidate] != null) ?? null
-          : activeDock,
-      );
-      return next;
-    });
-    setActiveSurface((current) =>
-      current === id
-        ? activeDockedSurface && surfacePlacements[activeDockedSurface]
-          ? activeDockedSurface
-          : "chat"
-        : current,
-    );
-  }, [activeDockedSurface, openSurfaces, surfacePlacements]);
-  const changeSurfacePlacement = useCallback(
-    (id: Exclude<SurfaceId, "chat">, placement: SurfacePlacement) => {
-      setSurfacePlacements((current) => ({ ...current, [id]: placement }));
-      setActiveDockedSurface(id);
-      setActiveSurface(id);
-    },
-    [],
-  );
-  const undockSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
-    setSurfacePlacements((current) => {
-      const next = { ...current };
-      delete next[id];
-      setActiveDockedSurface((activeDock) =>
-        activeDock === id
-          ? openSurfaces.find((candidate) => candidate !== id && next[candidate] != null) ?? null
-          : activeDock,
-      );
-      return next;
-    });
-    setActiveSurface(id);
-  }, [openSurfaces]);
+    setActiveSurface((current) => (current === id ? "chat" : current));
+  }, []);
 
   // ⌘K / Ctrl+K opens the palette (allowInInputs: true so it works while the
   // composer or sidebar search is focused). Esc is owned by Astryx CommandPalette.
@@ -813,6 +722,11 @@ export default function AppV2() {
               threads={crumbThreads}
               activeThreadId={activeThread?.key ?? null}
               onSelectThread={selectThreadByKey}
+              tabs={surfaceTabs}
+              saganAvailable={saganAvailable}
+              onSelect={selectSurface}
+              onOpen={openSurface}
+              onClose={closeSurface}
             />
             <VStack gap={0} xstyle={styles.well}>
               {/* Keyed by the selection so the view never replays one thread's
@@ -821,24 +735,10 @@ export default function AppV2() {
                   registry, keyed by the same thread key, and a background turn
                   keeps streaming into it while another thread is on screen. */}
               <SurfaceWorkspace
-                header={(
-                  <SecondaryBar
-                    tabs={surfaceTabs}
-                    saganAvailable={saganAvailable}
-                    onSelect={selectSurface}
-                    onOpen={openSurface}
-                    onClose={closeSurface}
-                    onPlacementChange={changeSurfacePlacement}
-                  />
-                )}
                 activeSurface={activeSurface}
                 openSurfaces={openSurfaces}
-                placement={
-                  activeSurface === "chat" ? undefined : surfacePlacements[activeSurface]
-                }
                 token={token}
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
-                onUndock={undockSurface}
                 onBrowserStateChange={setBrowserSurface}
                 sagan={sagan}
                 onOpenSaganThread={selectThreadByKey}
