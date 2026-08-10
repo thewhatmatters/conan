@@ -839,6 +839,7 @@ export default function AppV2() {
                 token={token}
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
                 onUndock={undockSurface}
+                onPlacementChange={changeSurfacePlacement}
                 onBrowserStateChange={setBrowserSurface}
                 sagan={sagan}
                 onOpenSaganThread={selectThreadByKey}

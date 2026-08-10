@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
-import { X } from "lucide-react";
+import { PanelLeft, PanelRight, X } from "lucide-react";
 import {
   V2BrowserSurface,
   V2DiffSurface,
@@ -16,6 +16,7 @@ import {
   SURFACE_PANEL_MIN_WIDTH,
 } from "../../components/SurfacePanel.tsx";
 import {
+  SURFACE_DRAG_MIME_TYPE,
   SURFACE_OPTIONS,
   type SurfaceId,
   type SurfacePlacement,
@@ -25,6 +26,9 @@ import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 
 const DEFAULT_SIZE = 420;
 const STEP_SIZE = 24;
+const DROP_ICON_SIZE = 16;
+/** Width of each dropzone rail during a surface drag, measured from RJ-0 (~17%). */
+const DROP_ZONE_FRACTION = 0.17;
 
 const styles = stylex.create({
   root: {
@@ -133,6 +137,41 @@ const styles = stylex.create({
     backgroundColor: "var(--conan-color-border)",
     width: "var(--conan-border-width)",
   },
+  dropOverlay: {
+    boxSizing: "border-box",
+    flexWrap: "nowrap",
+    inset: 0,
+    padding: "var(--conan-space-4)",
+    pointerEvents: "auto",
+    position: "absolute",
+    zIndex: 10,
+  },
+  dropZone: {
+    alignItems: "center",
+    borderColor: "var(--conan-color-border-strong)",
+    borderRadius: "var(--conan-radius-md)",
+    borderStyle: "dashed",
+    borderWidth: "var(--conan-border-width)",
+    boxSizing: "border-box",
+    color: "var(--conan-icon-muted)",
+    gap: "var(--conan-space-2)",
+    justifyContent: "center",
+    transitionDuration: "var(--conan-duration-fast)",
+    transitionProperty: "border-color, color, background-color",
+    width: `${DROP_ZONE_FRACTION * 100}%`,
+  },
+  dropZoneActive: {
+    borderColor: "var(--conan-color-accent)",
+    color: "var(--conan-icon-strong)",
+    backgroundColor: "var(--conan-wash-hover)",
+  },
+  dropZoneDisabled: {
+    opacity: 0.3,
+    pointerEvents: "none",
+  },
+  dropZoneSpacer: {
+    flexGrow: 1,
+  },
 });
 
 function DockHeader({
@@ -214,6 +253,7 @@ export default function SurfaceWorkspace({
   token,
   cwd,
   onUndock,
+  onPlacementChange,
   onBrowserStateChange,
   sagan,
   onOpenSaganThread,
@@ -226,6 +266,8 @@ export default function SurfaceWorkspace({
   token: string | null;
   cwd: string | null;
   onUndock?: (id: Exclude<SurfaceId, "chat">) => void;
+  /** Called when a dragged surface tab is dropped on a dropzone rail. */
+  onPlacementChange?: (id: Exclude<SurfaceId, "chat">, placement: SurfacePlacement) => void;
   /** Browser-surface reports headed for the agent socket (WHA-109). */
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
   sagan?: SaganCapabilityResult;
@@ -236,6 +278,8 @@ export default function SurfaceWorkspace({
   const [availableSize, setAvailableSize] = useState(
     DEFAULT_SIZE / SURFACE_PANEL_MAX_FRACTION,
   );
+  const [dragActive, setDragActive] = useState(false);
+  const [dragSide, setDragSide] = useState<SurfacePlacement | null>(null);
   const resolvedPlacement = placement ?? "right";
   const isBefore = resolvedPlacement === "left";
   const surfaceActive = activeSurface !== "chat";
@@ -243,6 +287,50 @@ export default function SurfaceWorkspace({
   const maxSize = Math.max(
     SURFACE_PANEL_MIN_WIDTH,
     availableSize * SURFACE_PANEL_MAX_FRACTION,
+  );
+  const occupiedSide = isDocked ? placement : null;
+  const leftAvailable = occupiedSide !== "left";
+  const rightAvailable = occupiedSide !== "right";
+
+  const handleDragEnter = useCallback((event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (!event.dataTransfer.types.includes(SURFACE_DRAG_MIME_TYPE)) return;
+    setDragActive(true);
+  }, []);
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (!event.dataTransfer.types.includes(SURFACE_DRAG_MIME_TYPE)) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const ratio = x / rect.width;
+    let next: SurfacePlacement | null = null;
+    if (ratio < DROP_ZONE_FRACTION) next = "left";
+    else if (ratio > 1 - DROP_ZONE_FRACTION) next = "right";
+    setDragSide(next);
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!rootRef.current?.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false);
+      setDragSide(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      const id = event.dataTransfer.getData(SURFACE_DRAG_MIME_TYPE) as Exclude<SurfaceId, "chat">;
+      if (dragSide) {
+        const available = dragSide === "left" ? leftAvailable : rightAvailable;
+        if (available) onPlacementChange?.(id, dragSide);
+      }
+      setDragActive(false);
+      setDragSide(null);
+    },
+    [dragSide, leftAvailable, rightAvailable, onPlacementChange],
   );
 
   useEffect(() => {
@@ -320,6 +408,10 @@ export default function SurfaceWorkspace({
       gap={0}
       xstyle={styles.root}
       data-slot="surface-workspace"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <HStack aria-hidden xstyle={styles.headerRule} data-slot="surface-header-rule" />
       <VStack
@@ -395,6 +487,41 @@ export default function SurfaceWorkspace({
             </HStack>
           </VStack>
         </>
+      ) : null}
+      {dragActive ? (
+        <HStack xstyle={styles.dropOverlay} data-slot="surface-drop-overlay">
+          <VStack
+            align="center"
+            justify="center"
+            xstyle={[
+              styles.dropZone,
+              dragSide === "left" && styles.dropZoneActive,
+              !leftAvailable && styles.dropZoneDisabled,
+            ]}
+            data-slot="surface-drop-zone-left"
+            data-active={dragSide === "left" ? "true" : undefined}
+            aria-hidden
+          >
+            <PanelLeft size={DROP_ICON_SIZE} aria-hidden />
+            <Text color="inherit" type="supporting">Add left split</Text>
+          </VStack>
+          <HStack xstyle={styles.dropZoneSpacer} data-slot="surface-drop-spacer" />
+          <VStack
+            align="center"
+            justify="center"
+            xstyle={[
+              styles.dropZone,
+              dragSide === "right" && styles.dropZoneActive,
+              !rightAvailable && styles.dropZoneDisabled,
+            ]}
+            data-slot="surface-drop-zone-right"
+            data-active={dragSide === "right" ? "true" : undefined}
+            aria-hidden
+          >
+            <PanelRight size={DROP_ICON_SIZE} aria-hidden />
+            <Text color="inherit" type="supporting">Add right split</Text>
+          </VStack>
+        </HStack>
       ) : null}
     </HStack>
   );

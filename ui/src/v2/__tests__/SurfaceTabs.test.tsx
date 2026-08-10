@@ -8,7 +8,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Diff, Globe, MessagesSquare, Terminal } from "lucide-react";
-import SurfaceTabs, { type SurfaceTab } from "../components/SurfaceTabs.tsx";
+import SurfaceTabs, {
+  SURFACE_DRAG_MIME_TYPE,
+  type SurfaceTab,
+} from "../components/SurfaceTabs.tsx";
 
 /** A three-tab strip: one permanent + two closeable, as RJ-0 has it. */
 const TABS: SurfaceTab[] = [
@@ -336,6 +339,45 @@ describe("SurfaceTabs", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Surface" })).toBeDisabled();
+  });
+
+  it("makes undocked surface tabs draggable and keeps Chat static", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    expect(toggle("Browser")).toHaveAttribute("draggable", "true");
+    expect(toggle("Diff")).toHaveAttribute("draggable", "true");
+    expect(toggle("Chat")).toHaveAttribute("draggable", "false");
+  });
+
+  it("does not let a docked surface tab be dragged", () => {
+    render(
+      <SurfaceTabs
+        tabs={[
+          TABS[0]!,
+          {
+            id: "browser",
+            label: "Browser",
+            icon: Globe,
+            isCloseable: true,
+            isDocked: true,
+            placement: "right",
+          },
+        ]}
+      />,
+    );
+
+    expect(toggle("Browser")).toHaveAttribute("draggable", "false");
+  });
+
+  it("sets the surface id on drag start", () => {
+    render(<SurfaceTabs tabs={TABS} />);
+
+    const browser = toggle("Browser");
+    const dataTransfer = { setData: vi.fn(), effectAllowed: "" as DataTransfer["effectAllowed"] };
+    fireEvent.dragStart(browser, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(SURFACE_DRAG_MIME_TYPE, "browser");
+    expect(dataTransfer.effectAllowed).toBe("move");
   });
 
 });

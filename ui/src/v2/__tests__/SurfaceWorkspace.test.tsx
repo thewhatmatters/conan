@@ -1,7 +1,25 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurfaceWorkspace from "../components/SurfaceWorkspace.tsx";
+import { SURFACE_DRAG_MIME_TYPE } from "../components/SurfaceTabs.tsx";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
+
+function dataTransferWithSurface(surfaceId: string) {
+  const store = new Map<string, string>([[SURFACE_DRAG_MIME_TYPE, surfaceId]]);
+  return {
+    types: [SURFACE_DRAG_MIME_TYPE],
+    setData: (type: string, value: string) => store.set(type, value),
+    getData: (type: string) => store.get(type) ?? "",
+    effectAllowed: "" as DataTransfer["effectAllowed"],
+  };
+}
+
+function dragEvent(type: string, dataTransfer: object, clientX = 0) {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent;
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  Object.defineProperty(event, "clientX", { value: clientX });
+  return event;
+}
 
 describe("SurfaceWorkspace", () => {
   beforeEach(() => {
@@ -167,5 +185,149 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
     expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+  });
+
+  it("shows the left/right dropzones while a surface tab is dragged", () => {
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["browser"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    expect(screen.queryByText("Add left split")).toBeNull();
+
+    fireEvent(workspace, dragEvent("dragenter", dataTransferWithSurface("browser")));
+
+    expect(screen.getByText("Add left split")).toBeInTheDocument();
+    expect(screen.getByText("Add right split")).toBeInTheDocument();
+  });
+
+  it("ignores drags that do not carry a surface id", () => {
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["browser"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    fireEvent(workspace, dragEvent("dragenter", { types: ["text/plain"], getData: () => "" }));
+
+    expect(screen.queryByText("Add left split")).toBeNull();
+  });
+
+  it("highlights the drop side under the cursor", () => {
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["browser"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    const dt = dataTransferWithSurface("browser");
+    fireEvent(workspace, dragEvent("dragenter", dt));
+
+    fireEvent(workspace, dragEvent("dragover", dt, 100));
+    expect(document.querySelector('[data-slot="surface-drop-zone-left"]')).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+
+    fireEvent(workspace, dragEvent("dragover", dt, 1800));
+    expect(document.querySelector('[data-slot="surface-drop-zone-right"]')).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
+
+  it("docks the dragged surface to the available side on drop", () => {
+    const onPlacementChange = vi.fn();
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["browser"]}
+        token={null}
+        cwd={null}
+        onPlacementChange={onPlacementChange}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    const dt = dataTransferWithSurface("browser");
+    fireEvent(workspace, dragEvent("dragenter", dt));
+    fireEvent(workspace, dragEvent("dragover", dt, 100));
+    fireEvent(workspace, dragEvent("drop", dt, 100));
+
+    expect(onPlacementChange).toHaveBeenCalledWith("browser", "left");
+  });
+
+  it("does not dock when the targeted side is already occupied", () => {
+    const onPlacementChange = vi.fn();
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="browser"
+        openSurfaces={["browser"]}
+        placement="right"
+        token={null}
+        cwd={null}
+        onPlacementChange={onPlacementChange}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    const dt = dataTransferWithSurface("browser");
+    fireEvent(workspace, dragEvent("dragenter", dt));
+    fireEvent(workspace, dragEvent("dragover", dt, 1800));
+    fireEvent(workspace, dragEvent("drop", dt, 1800));
+
+    expect(onPlacementChange).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when dropped in the center spacer", () => {
+    const onPlacementChange = vi.fn();
+    render(
+      <SurfaceWorkspace
+        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={["browser"]}
+        token={null}
+        cwd={null}
+        onPlacementChange={onPlacementChange}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const workspace = document.querySelector('[data-slot="surface-workspace"]')!;
+    const dt = dataTransferWithSurface("browser");
+    fireEvent(workspace, dragEvent("dragenter", dt));
+    fireEvent(workspace, dragEvent("dragover", dt, 960));
+    fireEvent(workspace, dragEvent("drop", dt, 960));
+
+    expect(onPlacementChange).not.toHaveBeenCalled();
   });
 });

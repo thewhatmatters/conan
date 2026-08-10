@@ -1,5 +1,8 @@
 import { useCallback, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+  DragEvent as ReactDragEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
   DropdownMenu,
@@ -32,6 +35,9 @@ import {
 
 export type SurfaceId = "chat" | "browser" | "terminal" | "diff" | "files" | "sagan";
 export type SurfacePlacement = "right" | "left";
+
+/** MIME type used to identify a dragged surface tab during HTML5 drag-and-drop. */
+export const SURFACE_DRAG_MIME_TYPE = "application/conan-surface-id";
 
 export interface SurfaceTab {
   id: SurfaceId;
@@ -306,6 +312,14 @@ function SurfaceTabItem({
     event.stopPropagation();
   }, []);
   const surfaceId = id === "chat" ? null : id;
+  const handleDragStart = useCallback(
+    (event: ReactDragEvent<HTMLButtonElement>) => {
+      if (!surfaceId) return;
+      event.dataTransfer.setData(SURFACE_DRAG_MIME_TYPE, surfaceId);
+      event.dataTransfer.effectAllowed = "move";
+    },
+    [surfaceId],
+  );
 
   const tabNode = (
     <ToggleButton
@@ -319,6 +333,8 @@ function SurfaceTabItem({
         joinedSide === "end" && styles.joinedEnd,
       ]}
       aria-description={dockedDescription}
+      draggable={surfaceId != null && !isDocked}
+      onDragStart={handleDragStart}
       data-slot="surface-tab"
     >
       <HStack align="center" xstyle={styles.tabLabel} data-slot="surface-tab-label">
