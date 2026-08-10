@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurfaceWorkspace from "../components/SurfaceWorkspace.tsx";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
@@ -18,10 +18,26 @@ describe("SurfaceWorkspace", () => {
     });
   });
 
-  it("opens a new surface as a full-workspace tab until placement is chosen", () => {
+  it("renders chat when chat is the active surface", () => {
     render(
       <SurfaceWorkspace
-        header={<div>Chat header</div>}
+        activeSurface="chat"
+        openSurfaces={[]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    expect(screen.getByText("Chat body")).toBeVisible();
+    expect(document.querySelector('[data-slot="chat-surface"]')).toBeVisible();
+    expect(document.querySelector('[data-surface]')).toBeNull();
+  });
+
+  it("renders the active non-chat surface full-pane", () => {
+    render(
+      <SurfaceWorkspace
         activeSurface="browser"
         openSurfaces={["browser"]}
         token={null}
@@ -31,21 +47,16 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
 
-    expect(screen.getByText("Chat body").closest('[data-slot="chat-surface"]')).not.toBeVisible();
-    expect(document.querySelector('[data-slot="surface-dock"]')).toHaveAttribute(
-      "data-placement",
-      "tab",
-    );
-    expect(document.querySelector('[role="separator"]')).not.toBeVisible();
+    expect(screen.getByText("Chat body")).not.toBeVisible();
+    expect(document.querySelector('[data-slot="chat-surface"]')).not.toBeVisible();
+    expect(document.querySelector('[data-surface="browser"]')).toBeVisible();
   });
 
-  it("docks to Chat only after placement and reports the real 60% bound", async () => {
+  it("keeps inactive surfaces mounted but hidden", () => {
     render(
       <SurfaceWorkspace
-        header={<div>Chat header</div>}
-        activeSurface="browser"
-        openSurfaces={["browser"]}
-        placement="right"
+        activeSurface="terminal"
+        openSurfaces={["browser", "terminal"]}
         token={null}
         cwd={null}
       >
@@ -53,60 +64,8 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
 
-    expect(screen.getByText("Chat body").closest('[data-slot="chat-surface"]')).toBeVisible();
-    const separator = screen.getByRole("separator", { name: "Resize surface" });
-    await waitFor(() => expect(separator).toHaveAttribute("aria-valuemax", "1152"));
-
-    fireEvent.keyDown(separator, { key: "End" });
-    expect(separator).toHaveAttribute("aria-valuenow", "1152");
-  });
-
-  it("gives the docked pane a matching header with an explicit Undock action", () => {
-    const onUndock = vi.fn();
-    render(
-      <SurfaceWorkspace
-        header={<div>Chat actions</div>}
-        activeSurface="diff"
-        openSurfaces={["diff"]}
-        placement="right"
-        token={null}
-        cwd={null}
-        onUndock={onUndock}
-      >
-        <div>Chat body</div>
-      </SurfaceWorkspace>,
-    );
-
-    expect(screen.getByText("Chat actions")).toBeVisible();
-    expect(document.querySelector('[data-slot="docked-surface-header"]')).toHaveTextContent(
-      "Diff",
-    );
-    expect(document.querySelector('[data-slot="surface-header-rule"]')).toBeVisible();
-    const undock = screen.getByRole("button", { name: "Undock Diff" });
-    expect(undock).toHaveAttribute("title", "Undock Diff");
-    fireEvent.click(undock);
-    expect(onUndock).toHaveBeenCalledWith("diff");
-  });
-
-  it("orders a left dock, splitter, and Chat at the pane boundary", () => {
-    render(
-      <SurfaceWorkspace
-        header={<div>Chat actions</div>}
-        activeSurface="browser"
-        openSurfaces={["browser"]}
-        placement="left"
-        token={null}
-        cwd={null}
-      >
-        <div>Chat body</div>
-      </SurfaceWorkspace>,
-    );
-
-    expect(getComputedStyle(document.querySelector('[data-slot="surface-dock"]')!).order).toBe(
-      "-2",
-    );
-    expect(getComputedStyle(screen.getByRole("separator")).order).toBe("-1");
-    expect(screen.getByRole("separator")).toHaveAttribute("aria-orientation", "vertical");
+    expect(document.querySelector('[data-surface="browser"]')).not.toBeVisible();
+    expect(document.querySelector('[data-surface="terminal"]')).toBeVisible();
   });
 
   it("keeps Sagan mounted across thread changes", async () => {
@@ -123,7 +82,6 @@ describe("SurfaceWorkspace", () => {
     } as unknown as SaganCapabilityResult;
     const { rerender } = render(
       <SurfaceWorkspace
-        header={<div>Chat actions</div>}
         activeSurface="sagan"
         openSurfaces={["sagan"]}
         token="tok"
@@ -142,7 +100,6 @@ describe("SurfaceWorkspace", () => {
 
     rerender(
       <SurfaceWorkspace
-        header={<div>Chat actions</div>}
         activeSurface="sagan"
         openSurfaces={["sagan"]}
         token="tok"
@@ -156,7 +113,6 @@ describe("SurfaceWorkspace", () => {
 
     rerender(
       <SurfaceWorkspace
-        header={<div>Chat actions</div>}
         activeSurface="sagan"
         openSurfaces={["sagan"]}
         token="tok"
@@ -167,5 +123,73 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
     expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+  });
+
+  it("renders no workspace toolbar when Chat is the active surface", () => {
+    render(
+      <SurfaceWorkspace
+        activeSurface="chat"
+        openSurfaces={["terminal"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    expect(document.querySelector('[data-slot="surface-pane-header"]')).toBeNull();
+    expect(document.querySelector('[data-slot="surface-toolbar"]')).toBeNull();
+  });
+
+  it("renders a glass header with the surface name on the left for non-chat surfaces", () => {
+    render(
+      <SurfaceWorkspace
+        activeSurface="terminal"
+        openSurfaces={["terminal"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const header = document.querySelector('[data-slot="surface-pane-header"]');
+    expect(header).not.toBeNull();
+
+    const toolbar = document.querySelector('[data-slot="surface-toolbar"]');
+    expect(toolbar).not.toBeNull();
+
+    const label = within(toolbar as HTMLElement).getByText("Terminal");
+    expect(label).toBeVisible();
+    expect(label.closest('[data-slot="surface-toolbar-left"]')).not.toBeNull();
+  });
+
+  it("updates the toolbar label when the active surface changes", () => {
+    const { rerender } = render(
+      <SurfaceWorkspace
+        activeSurface="browser"
+        openSurfaces={["browser", "terminal"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    expect(screen.getByText("Browser")).toBeVisible();
+
+    rerender(
+      <SurfaceWorkspace
+        activeSurface="terminal"
+        openSurfaces={["browser", "terminal"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    expect(screen.getByText("Terminal")).toBeVisible();
+    expect(screen.queryByText("Browser")).toBeNull();
   });
 });

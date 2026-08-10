@@ -2,10 +2,11 @@
  * AppV2 — the v2 shell. Paper artboard RJ-0 "Application Shell".
  *
  * The shell's contract is a region layout: sidebar beside a main column of
- * toolbar → lifted content well, and the secondary bar is the FIRST thing
- * INSIDE that well rather than part of the toolbar. That placement is a design
- * decision worth pinning (it is what lets the well's 24px corner show), so the
- * test asserts containment, not just presence.
+ * toolbar → lifted content well. WHA-158 puts the Chat/surfaces tab strip in the
+ * top toolbar and the chat-surface toolbar (Actions/Open/Commit & Push) as the
+ * first thing INSIDE the content well, not part of the toolbar row. That
+ * placement is a design decision worth pinning (it is what lets the well's
+ * 24px corner show), so the test asserts containment, not just presence.
  *
  * Note the title bar: RJ-0 draws one (RK-0) and `App.v2.tsx` deliberately does
  * not render it, because Conan's Tauri window keeps its native chrome. Asserted
@@ -163,32 +164,33 @@ describe("AppV2 shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("seats the secondary bar inside the content well, below the toolbar", () => {
+  it("seats surface tabs in the toolbar and the chat toolbar inside the content well below", () => {
     const { container } = render(<AppV2 />);
 
     const main = container.querySelector('[data-slot="main"]');
     const toolbar = main?.querySelector('[data-slot="toolbar"]') ?? null;
-    const secondaryBar = main?.querySelector('[data-slot="secondary-bar"]') ?? null;
+    const chatToolbar = container.querySelector('[data-slot="chat-surface-toolbar"]');
 
     expect(toolbar).not.toBeNull();
-    expect(secondaryBar).not.toBeNull();
-    if (!toolbar || !secondaryBar) return;
+    expect(toolbar?.querySelector('[data-slot="surface-tabs"]')).not.toBeNull();
+    expect(chatToolbar).not.toBeNull();
+    if (!toolbar || !chatToolbar) return;
 
-    // Nesting would mean the bar is part of the toolbar row; it is not — it
-    // belongs to the well below, which is what lets the well's corner show.
-    expect(toolbar.contains(secondaryBar)).toBe(false);
+    // The chat toolbar lives in the well, not in the top toolbar row.
+    expect(toolbar.contains(chatToolbar)).toBe(false);
     expect(
-      toolbar.compareDocumentPosition(secondaryBar) & Node.DOCUMENT_POSITION_FOLLOWING,
+      toolbar.compareDocumentPosition(chatToolbar) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("renders workflow controls above and surface/Actions controls below", () => {
+  it("renders Actions/Open/Commit & Push inside the chat surface, and the surface tab strip above", () => {
     render(<AppV2 />);
 
+    expect(screen.getByRole("group", { name: "Chat and surfaces" })).toBeInTheDocument();
     for (const label of ["Actions", "Open", "Commit & Push"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
-    expect(screen.getByRole("group", { name: "Chat and surfaces" })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="chat-surface-toolbar"]')).not.toBeNull();
   });
 
   it("hosts V2ChatView (ChatLayout) in the content well", () => {
@@ -201,34 +203,21 @@ describe("AppV2 shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the joined dock pill visible while another surface is selected", () => {
+  it("opens and closes surfaces as tabs while Chat stays visible", () => {
     render(<AppV2 />);
 
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
-    fireEvent.click(screen.getByRole("button", { name: "Browser surface options" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Right" }));
+    expect(screen.getByRole("button", { name: "Browser" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
-    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
-      "aria-description",
-      "Docked right to Chat",
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminal" }));
+    expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
-    expect(screen.getByRole("button", { name: "Browser" })).toHaveAttribute(
-      "aria-description",
-      "Docked right to Chat",
-    );
-    expect(screen.getByRole("button", { name: "Diff" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    fireEvent.click(screen.getByLabelText("Close Browser tab"));
+    expect(screen.queryByRole("button", { name: "Browser" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
   });
 
   it("says loading, not 'no projects', while the gateway is unreachable", () => {

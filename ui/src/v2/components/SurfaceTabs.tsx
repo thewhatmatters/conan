@@ -1,13 +1,8 @@
 import { useCallback, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import * as stylex from "@stylexjs/stylex";
-import {
-  DropdownMenu,
-  DropdownMenuItem,
-  useDropdownMenuContext,
-} from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Item } from "@astryxdesign/core/Item";
 import { Text } from "@astryxdesign/core/Text";
 import {
   ToggleButton,
@@ -15,15 +10,10 @@ import {
 } from "./astryx/ToggleButton/index.ts";
 import {
   Diff,
-  Check,
-  ChevronDown,
   FileText,
   Globe,
   Layers,
   MessagesSquare,
-  MoreVertical,
-  PanelLeft,
-  PanelRight,
   Orbit,
   Terminal,
   X,
@@ -31,7 +21,6 @@ import {
 } from "lucide-react";
 
 export type SurfaceId = "chat" | "browser" | "terminal" | "diff" | "files" | "sagan";
-export type SurfacePlacement = "right" | "left";
 
 export interface SurfaceTab {
   id: SurfaceId;
@@ -39,11 +28,6 @@ export interface SurfaceTab {
   icon: LucideIcon;
   isCloseable?: boolean;
   isSelected?: boolean;
-  isDocked?: boolean;
-  isVisuallyActive?: boolean;
-  joinedSide?: "start" | "end";
-  dockedDescription?: string;
-  placement?: SurfacePlacement;
   count?: number;
 }
 
@@ -53,14 +37,10 @@ export interface SurfaceTabsProps {
   onSelect?: (id: SurfaceId) => void;
   onOpen?: (id: Exclude<SurfaceId, "chat">) => void;
   onClose?: (id: Exclude<SurfaceId, "chat">) => void;
-  onPlacementChange?: (
-    id: Exclude<SurfaceId, "chat">,
-    placement: SurfacePlacement,
-  ) => void;
 }
 
 export const SURFACE_OPTIONS: ReadonlyArray<
-  Omit<SurfaceTab, "id" | "isSelected" | "placement"> & {
+  Omit<SurfaceTab, "id" | "isSelected"> & {
     id: Exclude<SurfaceId, "chat">;
   }
 > = [
@@ -73,14 +53,6 @@ export const SURFACE_OPTIONS: ReadonlyArray<
 
 const DEFAULT_TABS: SurfaceTab[] = [
   { id: "chat", label: "Chat", icon: MessagesSquare, isSelected: true },
-];
-const PLACEMENTS: ReadonlyArray<{
-  id: SurfacePlacement;
-  label: string;
-  icon: LucideIcon;
-}> = [
-  { id: "right", label: "Right", icon: PanelRight },
-  { id: "left", label: "Left", icon: PanelLeft },
 ];
 const ICON = 16;
 
@@ -96,29 +68,27 @@ const styles = stylex.create({
     flexShrink: 0,
   },
   tab: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "transparent",
+    },
+    backgroundImage: "none",
     boxSizing: "border-box",
-    borderRadius: "var(--conan-radius-md)",
     color: "var(--conan-icon-muted)",
     cursor: "pointer",
     flexShrink: 0,
     height: "var(--conan-control-height)",
     outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
     outlineOffset: { default: "0", ":focus-visible": "2px" },
-    position: "relative",
     width: "fit-content",
   },
   tabSelected: {
-    backgroundColor: "var(--conan-wash-tab-selected)",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": "transparent",
+    },
+    backgroundImage: "none",
     color: "var(--conan-icon-strong)",
-  },
-  joinedStart: {
-    borderEndEndRadius: 0,
-    borderStartEndRadius: 0,
-  },
-  joinedEnd: {
-    borderEndStartRadius: 0,
-    borderStartStartRadius: 0,
-    marginInlineStart: "calc(-1 * var(--conan-space-hair))",
   },
   tabLabel: {
     columnGap: "var(--conan-space-2)",
@@ -127,74 +97,56 @@ const styles = stylex.create({
     top: "var(--conan-space-hair)",
     whiteSpace: "nowrap",
   },
-  dockGroup: {
-    borderRadius: "var(--conan-radius-md)",
-    boxSizing: "border-box",
-    height: "var(--conan-control-height)",
-  },
-  dockGroupInactive: {
-    boxShadow: "inset 0 0 0 var(--conan-border-width) var(--conan-color-border)",
-  },
   tabShell: {
     borderRadius: "var(--conan-radius-md)",
-    display: "flex",
+    flexShrink: 0,
     overflow: "hidden",
     position: "relative",
+    backgroundColor: {
+      default: null,
+      ":hover": "var(--conan-wash-hover)",
+    },
+  },
+  tabShellSelected: {
+    // Flat backgroundColor intentionally replaces tabShell's :hover entry,
+    // so the selected tab keeps only its selected wash and no extra hover state.
+    backgroundColor: "var(--conan-wash-tab-selected)",
   },
   tabActions: {
+    // A raised, bounded segment behind the ✕ so it reads as contained against
+    // the strip and still darker than the label half of a selected/hovered tab.
+    backgroundColor: "var(--conan-color-content)",
     alignItems: "center",
     display: "flex",
+    flexShrink: 0,
     height: "var(--conan-control-height)",
-    insetInlineEnd: 0,
-    justifyContent: "flex-end",
-    position: "absolute",
-    top: 0,
-    width: "var(--conan-icon-size)",
-    zIndex: 1,
-  },
-  tabActionFade: {
-    backgroundImage: "linear-gradient(to right, transparent 0%, var(--conan-color-popover) 45%)",
-    height: "100%",
-    insetInlineEnd: 0,
-    opacity: 0,
-    pointerEvents: "none",
-    position: "absolute",
-    top: 0,
-    transitionDuration: "var(--conan-duration-fast)",
-    transitionProperty: "opacity",
-    width: "calc(var(--conan-space-6) + var(--conan-space-4))",
-  },
-  tabActionFadeSelected: {
-    backgroundImage: "linear-gradient(to right, transparent 0%, var(--conan-wash-tab-selected) 45%), linear-gradient(to right, transparent 0%, var(--conan-color-popover) 45%)",
-  },
-  tabActionVisible: { opacity: 1 },
-  optionsButton: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": "transparent",
-      ":active": "transparent",
+    justifyContent: "center",
+    overflow: "hidden",
+    transition: {
+      default: "width var(--conan-duration-fast) var(--conan-ease)",
+      "@media (prefers-reduced-motion: reduce)": "none",
     },
+    width: 0,
+  },
+  tabActionsVisible: {
+    width: "calc(var(--conan-icon-size) + var(--conan-space-1) * 2)",
+  },
+  tabActionVisible: { opacity: 1, pointerEvents: "auto" },
+  closeButton: {
+    alignItems: "center",
+    appearance: "none",
+    backgroundColor: "transparent",
     borderRadius: "var(--conan-radius-xs)",
+    borderStyle: "none",
     color: "inherit",
+    cursor: "pointer",
+    display: "inline-flex",
     height: "var(--conan-icon-size)",
+    justifyContent: "center",
     opacity: 0,
     outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
-    width: "var(--conan-icon-size)",
-  },
-  dockSwitcher: {
-    alignItems: "center",
-    display: "flex",
-    height: "var(--conan-control-height)",
-    opacity: 1,
-    transitionProperty: "opacity",
-    transitionDuration: "var(--conan-duration-fast)",
-    paddingInlineEnd: "var(--conan-space-1)",
-  },
-  switcherButton: {
-    borderRadius: "var(--conan-radius-xs)",
-    color: "inherit",
-    height: "var(--conan-icon-size)",
-    width: "var(--conan-icon-size)",
+    paddingInline: "var(--conan-space-1)",
+    pointerEvents: "none",
   },
   opener: {
     borderRadius: "var(--conan-radius-md)",
@@ -202,10 +154,6 @@ const styles = stylex.create({
     height: "var(--conan-control-height)",
   },
   openerDim: { opacity: 0.2 },
-  sectionLabel: {
-    paddingBlock: "var(--conan-space-1)",
-    paddingInline: "var(--conan-space-2)",
-  },
   badge: {
     backgroundColor: "var(--conan-wash-raised)",
     borderRadius: "var(--conan-radius-full)",
@@ -213,82 +161,14 @@ const styles = stylex.create({
     paddingInline: "var(--conan-space-1)",
     textAlign: "center",
   },
-  divider: {
-    border: 0,
-    borderTop: "var(--conan-border-width) solid var(--conan-color-border)",
-    marginBlock: "var(--conan-space-1)",
-    width: "100%",
-  },
 });
-
-function PlacementMenuItem({
-  placement,
-  current,
-  onSelect,
-}: {
-  placement: (typeof PLACEMENTS)[number];
-  current: boolean;
-  onSelect: () => void;
-}) {
-  const menu = useDropdownMenuContext();
-  const PlacementIcon = placement.icon;
-
-  return (
-    <Item
-      role="menuitemradio"
-      aria-checked={current}
-      tabIndex={-1}
-      label={placement.label}
-      startContent={<PlacementIcon size={ICON} aria-hidden />}
-      endContent={current ? <Check size={ICON} aria-hidden /> : undefined}
-      onClick={() => {
-        onSelect();
-        menu?.closeMenu();
-      }}
-    />
-  );
-}
-
-function DockedSurfaceMenuItem({
-  tab,
-  current,
-  onSelect,
-}: {
-  tab: SurfaceTab;
-  current: boolean;
-  onSelect: () => void;
-}) {
-  const menu = useDropdownMenuContext();
-  const SurfaceIcon = tab.icon;
-
-  return (
-    <Item
-      role="menuitemradio"
-      aria-checked={current}
-      tabIndex={-1}
-      label={tab.label}
-      startContent={<SurfaceIcon size={ICON} aria-hidden />}
-      endContent={current ? <Check size={ICON} aria-hidden /> : undefined}
-      onClick={() => {
-        onSelect();
-        menu?.closeMenu();
-      }}
-    />
-  );
-}
 
 function SurfaceTabItem({
   tab,
-  dockedTabs,
-  onSelect,
   onClose,
-  onPlacementChange,
 }: {
   tab: SurfaceTab;
-  dockedTabs: SurfaceTab[];
-  onSelect?: SurfaceTabsProps["onSelect"];
   onClose?: SurfaceTabsProps["onClose"];
-  onPlacementChange?: SurfaceTabsProps["onPlacementChange"];
 }) {
   const {
     id,
@@ -296,11 +176,7 @@ function SurfaceTabItem({
     icon: Icon,
     isCloseable,
     isSelected,
-    isDocked,
-    joinedSide,
-    dockedDescription,
   } = tab;
-  const isVisuallyActive = tab.isVisuallyActive ?? (isSelected || isDocked);
   const [actionsVisible, setActionsVisible] = useState(false);
   const stopControlClick = useCallback((event: ReactMouseEvent) => {
     event.stopPropagation();
@@ -312,20 +188,14 @@ function SurfaceTabItem({
       label={label}
       value={id}
       size="sm"
-      xstyle={[
-        styles.tab,
-        isVisuallyActive && styles.tabSelected,
-        joinedSide === "start" && styles.joinedStart,
-        joinedSide === "end" && styles.joinedEnd,
-      ]}
-      aria-description={dockedDescription}
+      xstyle={[styles.tab, isSelected && styles.tabSelected]}
       data-slot="surface-tab"
     >
       <HStack align="center" xstyle={styles.tabLabel} data-slot="surface-tab-label">
         <Icon size={ICON} aria-hidden />
         <Text
-          color={isVisuallyActive ? "primary" : "secondary"}
-          weight={isVisuallyActive ? "semibold" : "normal"}
+          color={isSelected ? "primary" : "secondary"}
+          weight={isSelected ? "semibold" : "normal"}
         >
           {label}
         </Text>
@@ -338,48 +208,10 @@ function SurfaceTabItem({
     </ToggleButton>
   );
 
-  if (isDocked && surfaceId && dockedTabs.length > 1) {
-    return (
-      <HStack xstyle={styles.tabShell} data-slot="surface-tab-shell">
-        {tabNode}
-        <HStack
-          xstyle={styles.tabActions}
-          onClick={stopControlClick}
-          data-slot="docked-surface-switcher"
-        >
-          <HStack xstyle={styles.dockSwitcher}>
-            <DropdownMenu
-              button={{
-                label: "Switch docked surface",
-                icon: <ChevronDown size={ICON} aria-hidden />,
-                isIconOnly: true,
-                variant: "ghost",
-                size: "sm",
-                xstyle: styles.switcherButton,
-              }}
-              hasChevron={false}
-              placement="below"
-            >
-              {dockedTabs.map((candidate) => (
-                <DockedSurfaceMenuItem
-                  key={candidate.id}
-                  tab={candidate}
-                  current={candidate.id === id}
-                  onSelect={() => onSelect?.(candidate.id)}
-                />
-              ))}
-            </DropdownMenu>
-          </HStack>
-        </HStack>
-      </HStack>
-    );
-  }
-
-  if (!isCloseable || !surfaceId || isDocked) return tabNode;
-
   return (
     <HStack
-      xstyle={styles.tabShell}
+      align="center"
+      xstyle={[styles.tabShell, isSelected && styles.tabShellSelected]}
       data-slot="surface-tab-shell"
       onMouseEnter={() => setActionsVisible(true)}
       onMouseLeave={() => setActionsVisible(false)}
@@ -391,51 +223,29 @@ function SurfaceTabItem({
       }}
     >
       {tabNode}
-      <HStack
-        xstyle={styles.tabActions}
-        data-slot="surface-tab-actions"
-      >
+      {isCloseable && surfaceId ? (
         <HStack
-          aria-hidden
-          xstyle={[
-            styles.tabActionFade,
-            isVisuallyActive && styles.tabActionFadeSelected,
-            actionsVisible && styles.tabActionVisible,
-          ]}
-          data-slot="surface-tab-action-fade"
-        />
-        <DropdownMenu
-          button={{
-            label: `${label} surface options`,
-            icon: <MoreVertical size={ICON} aria-hidden />,
-            isIconOnly: true,
-            variant: "ghost",
-            size: "sm",
-            xstyle: [styles.optionsButton, actionsVisible && styles.tabActionVisible],
-          }}
-          hasChevron={false}
-          placement="below"
-          data-testid="surface-options-trigger"
+          align="center"
+          justify="center"
+          xstyle={[styles.tabActions, actionsVisible && styles.tabActionsVisible]}
+          data-slot="surface-tab-actions"
         >
-          <Text color="secondary" xstyle={styles.sectionLabel}>
-            Dock &amp; Surface
-          </Text>
-          {PLACEMENTS.map((placement) => (
-            <PlacementMenuItem
-              key={placement.id}
-              placement={placement}
-              current={tab.placement === placement.id}
-              onSelect={() => onPlacementChange?.(surfaceId, placement.id)}
-            />
-          ))}
-          <hr {...stylex.props(styles.divider)} />
-          <DropdownMenuItem
-            label="Close Surface"
-            icon={<X size={ICON} aria-hidden />}
-            onClick={() => onClose?.(surfaceId)}
-          />
-        </DropdownMenu>
-      </HStack>
+          <button
+            type="button"
+            aria-label={`Close ${label} tab`}
+            title={`Close ${label} tab`}
+            tabIndex={actionsVisible ? 0 : -1}
+            onClick={(event) => {
+              stopControlClick(event);
+              onClose?.(surfaceId);
+            }}
+            {...stylex.props([styles.closeButton, actionsVisible && styles.tabActionVisible])}
+            data-slot="surface-tab-close"
+          >
+            <X size={ICON} aria-hidden />
+          </button>
+        </HStack>
+      ) : null}
     </HStack>
   );
 }
@@ -446,15 +256,12 @@ export default function SurfaceTabs({
   onSelect,
   onOpen,
   onClose,
-  onPlacementChange,
 }: SurfaceTabsProps) {
   const openIds = new Set(tabs.map((tab) => tab.id));
   const availableOptions = SURFACE_OPTIONS.filter(
     (surface) => surface.id !== "sagan" || saganAvailable,
   );
   const allOpen = availableOptions.every((surface) => openIds.has(surface.id));
-  const dockedTabs = tabs.filter((tab) => tab.id !== "chat" && tab.placement != null);
-  const visibleTabs = tabs.filter((tab) => tab.placement == null || tab.isDocked);
   const selectedId = tabs.find((tab) => tab.isSelected)?.id ?? null;
 
   return (
@@ -475,35 +282,13 @@ export default function SurfaceTabs({
         size="sm"
         xstyle={styles.toggleGroup}
       >
-        {visibleTabs.map((tab, index) => {
-          if (tab.joinedSide === "end") return null;
-          const joinedTab = tab.joinedSide === "start" ? visibleTabs[index + 1] : undefined;
-          const item = (candidate: SurfaceTab) => (
-            <SurfaceTabItem
-              key={candidate.id}
-              tab={candidate}
-              dockedTabs={dockedTabs}
-              onSelect={onSelect}
-              onClose={onClose}
-              onPlacementChange={onPlacementChange}
-            />
-          );
-          if (!joinedTab || joinedTab.joinedSide !== "end") return item(tab);
-          return (
-            <HStack
-              key="docked-tab-group"
-              gap={0}
-              xstyle={[
-                styles.dockGroup,
-                !tab.isVisuallyActive && styles.dockGroupInactive,
-              ]}
-              data-slot="docked-tab-group"
-            >
-              {item(tab)}
-              {item(joinedTab)}
-            </HStack>
-          );
-        })}
+        {tabs.map((tab) => (
+          <SurfaceTabItem
+            key={tab.id}
+            tab={tab}
+            onClose={onClose}
+          />
+        ))}
       </ToggleButtonGroup>
       <DropdownMenu
         button={{

@@ -1,59 +1,72 @@
 /**
- * Toolbar — Paper RJ-0 node EK-0.
+ * Toolbar — Paper 2SJ-0 node EK-0.
  *
  * The toolbar is a COMPOSITION file (contract §4.4): its whole job is to seat
- * `Breadcrumb` left and workflow controls right. So the test asserts composition —
- * that both leaves are mounted and in the artboard's order — rather than
- * re-asserting each leaf's internals, which belong to the leaf's own suite.
+ * `Breadcrumb` left and the surface tab strip right. Workflow controls
+ * (Actions/Open/Commit & Push) now live inside the Chat surface, not here.
  *
- * US-101 part C also pins breadcrumb + secondary-bar a11y here: real focusable
- * buttons with accessible names (and menu ARIA on the secondary-bar triggers).
- * SecondaryBar lives in the content well (App.v2), not the toolbar composition
- * file — still tested here as the toolbar-region a11y sweep, and via direct
- * render so the suite stays free of App.v2 coupling.
- *
- * Queries go through the `data-slot` attributes the components already carry;
- * no test-only markup was added.
+ * US-101 part C also pins breadcrumb a11y here: real focusable buttons with
+ * accessible names. The tab strip's own a11y is tested in SurfaceTabs.test.tsx.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MessagesSquare, Terminal } from "lucide-react";
 import Toolbar from "../Toolbar.tsx";
 import Breadcrumb from "../components/Breadcrumb.tsx";
-import SecondaryBar from "../components/SecondaryBar.tsx";
+import ChatSurfaceToolbar from "../components/ChatSurfaceToolbar.tsx";
+import type { SurfaceTab } from "../components/SurfaceTabs.tsx";
+
+const TABS: SurfaceTab[] = [
+  { id: "chat", label: "Chat", icon: MessagesSquare, isSelected: true },
+  { id: "terminal", label: "Terminal", icon: Terminal, isCloseable: true },
+];
 
 describe("Toolbar", () => {
-  it("mounts the breadcrumb and workflow controls", () => {
-    const { container } = render(<Toolbar />);
+  it("mounts the breadcrumb and surface tabs", () => {
+    const { container } = render(<Toolbar tabs={TABS} />);
 
     const toolbar = container.querySelector('[data-slot="toolbar"]');
     expect(toolbar).not.toBeNull();
     expect(toolbar?.querySelector('[data-slot="breadcrumb"]')).not.toBeNull();
-    expect(toolbar?.querySelector('[data-slot="workflow-controls"]')).not.toBeNull();
-    expect(toolbar?.querySelector('[data-slot="surface-tabs"]')).toBeNull();
+    expect(toolbar?.querySelector('[data-slot="surface-tabs"]')).not.toBeNull();
+    expect(toolbar?.querySelector('[data-slot="workflow-controls"]')).toBeNull();
   });
 
-  it("puts the crumb before the workflow controls", () => {
-    const { container } = render(<Toolbar />);
+  it("puts the crumb before the surface tabs", () => {
+    const { container } = render(<Toolbar tabs={TABS} />);
     const slots = Array.from(
-      container.querySelectorAll('[data-slot="breadcrumb"], [data-slot="workflow-controls"]'),
+      container.querySelectorAll('[data-slot="breadcrumb"], [data-slot="surface-tabs"]'),
     ).map((node) => node.getAttribute("data-slot"));
 
-    expect(slots).toEqual(["breadcrumb", "workflow-controls"]);
+    expect(slots).toEqual(["breadcrumb", "surface-tabs"]);
   });
 
   it("renders the crumb's project and thread text", () => {
-    render(<Toolbar />);
+    render(<Toolbar tabs={TABS} />);
 
     expect(screen.getByText("Conan")).toBeInTheDocument();
     expect(screen.getByText("Analyze my project")).toBeInTheDocument();
   });
 
-  it("moves Open and Commit & Push into the top toolbar", () => {
-    render(<Toolbar />);
+  it("does not render workflow controls in the toolbar", () => {
+    render(<Toolbar tabs={TABS} />);
 
-    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Commit and Push menu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open menu" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Commit and Push menu" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Actions menu" })).toBeNull();
+  });
+
+  it("forwards surface tab callbacks", () => {
+    const onSelect = vi.fn();
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
+    render(<Toolbar tabs={TABS} onSelect={onSelect} onOpen={onOpen} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    expect(onSelect).toHaveBeenCalledWith("terminal");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Terminal tab" }));
+    expect(onClose).toHaveBeenCalledWith("terminal");
   });
 });
 
@@ -69,7 +82,7 @@ describe("Breadcrumb a11y (US-101 C)", () => {
 
   // WHA-104 made the leaf a switcher when the project has siblings to switch
   // to; with no `threads` prop it is still the static current-page text. The
-  // switcher's own contract lives in `BreadcrumbThreadMenu.test.tsx`.
+  // switcher's own contract lives in BreadcrumbThreadMenu.test.tsx.
   it("keeps the leaf thread title as static text, not a button", () => {
     render(<Breadcrumb project="Conan" thread="Analyze my project" />);
 
@@ -86,24 +99,21 @@ describe("Breadcrumb a11y (US-101 C)", () => {
   });
 });
 
-describe("SecondaryBar a11y (US-101 C)", () => {
-  it("exposes the Chat/surfaces toggle group and right-side Actions button", () => {
-    render(<SecondaryBar />);
+describe("ChatSurfaceToolbar a11y (WHA-158)", () => {
+  it("exposes Actions, Open, and Commit & Push as real menu buttons", () => {
+    render(<ChatSurfaceToolbar />);
 
-    expect(screen.getByRole("group", { name: "Chat and surfaces" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    const actions = screen.getByRole("button", { name: "Actions menu" });
-    expect(actions.tagName).toBe("BUTTON");
-    expect(actions).toHaveAttribute("type", "button");
-    expect(actions).toHaveAttribute("aria-haspopup", "menu");
-    expect(actions).toHaveAttribute("aria-expanded", "false");
+    for (const name of ["Actions menu", "Open menu", "Commit and Push menu"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button.tagName).toBe("BUTTON");
+      expect(button).toHaveAttribute("type", "button");
+      expect(button).toHaveAttribute("aria-haspopup", "menu");
+      expect(button).toHaveAttribute("aria-expanded", "false");
+    }
   });
 
   it("toggles aria-expanded on Actions", () => {
-    render(<SecondaryBar />);
+    render(<ChatSurfaceToolbar />);
 
     const actions = screen.getByRole("button", { name: "Actions menu" });
 
@@ -113,8 +123,8 @@ describe("SecondaryBar a11y (US-101 C)", () => {
     expect(actions).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("keeps workflow menu expansion exclusive in the toolbar", () => {
-    render(<Toolbar />);
+  it("keeps workflow menu expansion exclusive", () => {
+    render(<ChatSurfaceToolbar />);
 
     const open = screen.getByRole("button", { name: "Open menu" });
     const commit = screen.getByRole("button", { name: "Commit and Push menu" });
@@ -126,12 +136,4 @@ describe("SecondaryBar a11y (US-101 C)", () => {
     expect(commit).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("paints the WHA-156 labels in their new bars", () => {
-    const { rerender } = render(<Toolbar />);
-    expect(screen.getByText("Open")).toBeInTheDocument();
-    expect(screen.getByText("Commit & Push")).toBeInTheDocument();
-
-    rerender(<SecondaryBar />);
-    expect(screen.getByText("Actions")).toBeInTheDocument();
-  });
 });
