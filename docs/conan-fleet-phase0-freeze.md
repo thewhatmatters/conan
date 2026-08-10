@@ -1,10 +1,12 @@
 # Conan Fleet Phase 0 Freeze
 
-> Status: draft — pending Randy approval of defaults / product forks.  
+> Status: **accepted 2026-08-10 — as-built.** Randy approved in #conan.  
 > Owner: Hermes (architecture review + ADR drafting).  
 > Source: #ideas thread `5b12360a…` and review passes by Booker, Nash, Barkley.
 
 This document freezes the load-bearing decisions for the first fleet/lineage vertical slice. The goal is to stop re-arguing semantics while the schema and dispatcher are being built. Code for Phases 1–4 references this ADR as the contract.
+
+**Read this as a record of what was built, not a proposal for what to build.** The doc sat unmerged from 2026-08-06 to 2026-08-10 while Phases 1a onward shipped anyway, so the decisions below were settled by implementation rather than by the review meeting this document was drafted for. §10's two questions were resolved the same way — see the note there. Where a section describes something the code does not do, it now says so inline; §8 is the only such case.
 
 ## 1. Invariants
 
@@ -107,6 +109,8 @@ A ticket's `qa` block maps to the **verify** role, with optional critic. Critic 
 
 `same_finding_failures` cap is **3**. One integer, enforced as a value-object predicate.
 
+> ⚠️ **NOT IMPLEMENTED as of 2026-08-10.** `same_finding` appears nowhere in `src/`. Every other decision in this document is load-bearing in shipped code; this one is still only an intention. Tracked separately — do not read §9's "round and same-finding caps" as describing current behaviour.
+
 ## 9. Phase 1 enforced predicates
 
 The dispatcher and lineage layer enforce these as pure value-object checks with table-driven unit tests (zero model calls):
@@ -120,12 +124,12 @@ Promote-gate checks live on the promote path, not in the dispatcher. This includ
 - Promote gate cannot clear without admissible evidence per §6.
 - Stale digest/SHA invalidates evidence and approval.
 
-## 10. Open product decisions for Randy
+## 10. Open product decisions for Randy — RESOLVED 2026-08-10
 
-Two decisions remain outside the architecture defaults:
+Both were settled by what happened between drafting and acceptance, not by a review pass.
 
-1. **Approve the defaults above, or override any?** Silence = accept.
-2. **Walking-skeleton ticket:** a real user-visible frontend bug from the open backlog (recommended), or a synthetic "fleet demo" ticket? Real bugs keep the first vertical slice honest; synthetic risks theatre.
+1. **Approve the defaults above, or override any?** ~~Silence = accept.~~ **Accepted, no overrides.** The defaults shipped into `src/fleet/` on 2026-08-06 and have been load-bearing under every Sagan run since; Randy confirmed explicitly in #conan on 2026-08-10.
+2. **Walking-skeleton ticket:** ~~a real user-visible frontend bug, or a synthetic "fleet demo"?~~ **Real tickets.** Answered in practice before it was answered on paper — `.sagan/tickets/` holds WHA-134, 140, 141, 142, 143, 144, 145 and 153, each with recorded dispatch, verifier evidence and promote decisions. No synthetic demo ticket was ever created.
 
 ## 11. Builder/verifier pairs for the first slice
 
@@ -133,10 +137,12 @@ Two decisions remain outside the architecture defaults:
 |---|---|---|---|
 | Phase 0 ADR | Hermes | Barkley (trust semantics), Nash (seam fit), Booker (UI vocab) | Review, not code |
 | Phase 1a dispatcher | Nash | Barkley | Same machine, different principals |
-| Phase 1b schema | Nash | Barkley | Blocked until this ADR lands |
+| Phase 1b schema | Nash | Barkley | ~~Blocked until this ADR lands~~ — shipped ahead of it |
 | Phase 2 trust predicates | Barkley | Nash | Pure value-object tests, zero DB/model |
-| Phase 3 UI surface | Booker | Nash or Barkley | Work/Reviews/Needs-you only |
-| Phase 4 walking skeleton | Hermes orchestrates | Randy final gate | Real ticket or synthetic per decision #2 |
+| Phase 3 UI surface | Booker | Nash or Barkley | Shipped as the **Sagan** surface — see below |
+| Phase 4 walking skeleton | Hermes orchestrates | Randy final gate | Real tickets, per resolved decision #2 |
+
+**Phase 3 as built.** The planned "Work / Reviews / Needs-you" split is not what shipped. Sagan is a first-class entry in the v2 surface model (`SurfaceId` in `ui/src/v2/components/SurfaceTabs.tsx`, alongside Browser, Terminal, Diff and Files, gated on `saganAvailable`), with two tabs of its own — **Overview** and **Pipeline** — and the Overview list grouped into **Needs you · Running now · Up next · Blocked · Recently completed** (`ui/src/v2/components/V2SurfaceBodies.tsx`). Only "Needs you" survived from the original three names. Anyone checking §7's `qa` mapping or the event vocabulary against the UI should read those sections, not this row's original wording.
 
 ## 12. References
 
