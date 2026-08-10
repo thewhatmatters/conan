@@ -2,7 +2,7 @@
  * V2Transcript — text-only streaming rows (US-202).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import V2Transcript from "../chat/V2Transcript.tsx";
 import type { ChatItem } from "../lib/useV2Chat.ts";
 
@@ -174,8 +174,43 @@ describe("V2Transcript", () => {
     expect(screen.getByRole("group", { name: "json" })).toBeInTheDocument();
     expect(container.textContent).not.toContain("```json");
 
-    fireEvent.click(screen.getByRole("button", { name: /copy code/i }));
+    const jsonBlock = screen.getByRole("group", { name: "json" }).closest("pre");
+    expect(jsonBlock).not.toBeNull();
+    fireEvent.click(
+      within(jsonBlock!).getByRole("button", {
+        name: /copy code/i,
+      }),
+    );
     expect(writeText).toHaveBeenCalledWith(code);
+  });
+
+  it("renders a completed Bash input as a rich shell card and keeps prose results", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const command = "printf '  alpha  \\n'\necho done\n";
+    const bashTool: ChatItem = {
+      ...tool,
+      id: "t-bash",
+      name: "Bash",
+      input: { command },
+      result: "Command completed successfully.",
+    };
+    const { container } = render(<V2Transcript items={[bashTool]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Bash printf/i }));
+    const bash = screen.getByRole("group", { name: "bash" });
+    expect(bash).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="v2-bash-tool-detail"]')).not.toBeNull();
+    expect(screen.getByText("Command completed successfully.")).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="assistant-code-block"]')).toHaveLength(0);
+
+    const bashBlock = bash.closest("pre");
+    expect(bashBlock).not.toBeNull();
+    fireEvent.click(within(bashBlock!).getByRole("button", { name: /copy code/i }));
+    expect(writeText).toHaveBeenCalledWith(command);
   });
 
   it("keeps long commands out of the scan row and preserves them in detail", () => {

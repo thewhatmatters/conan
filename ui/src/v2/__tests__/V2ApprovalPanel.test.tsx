@@ -25,7 +25,7 @@ describe("V2ApprovalContent", () => {
   it("renders the tool's detail and the queue depth", () => {
     render(<V2ApprovalContent approval={approval} count={2} />);
 
-    expect(screen.getByText("npm test")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "bash" })).toHaveTextContent("npm test");
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 
@@ -131,11 +131,21 @@ describe("V2ApprovalContent", () => {
     expect(screen.queryByText("line 40")).not.toBeInTheDocument();
   });
 
-  it("shows a structured summary for non-file tools instead of raw JSON", () => {
-    render(<V2ApprovalContent approval={approval} count={1} />);
+  it("shows a structured summary for non-Bash tools instead of raw JSON", () => {
+    render(
+      <V2ApprovalContent
+        approval={{
+          ...approval,
+          toolName: "WebSearch",
+          input: { query: "Astryx CodeBlock" },
+        }}
+        count={1}
+      />,
+    );
 
-    expect(screen.getByText("command")).toBeInTheDocument();
-    expect(screen.getByText("npm test")).toBeInTheDocument();
+    expect(screen.getByText("query")).toBeInTheDocument();
+    expect(screen.getByText("Astryx CodeBlock")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "bash" })).not.toBeInTheDocument();
   });
 
   it("falls back to the detail mono block when input has no summarizable fields", () => {
