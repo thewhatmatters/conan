@@ -40,13 +40,43 @@ const PRE_WHA136_ATTEMPT = `
   );
 `;
 
+/** The chat tables as they stand today. WHA-125's AC 7 is about THESE rows:
+ *  the lineage migration must not cost an existing install its chat threads. */
+const EXISTING_CHAT_TABLES = `
+  CREATE TABLE project (
+    id         TEXT PRIMARY KEY,
+    path       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE chat_thread (
+    session_id    TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    cwd           TEXT NOT NULL,
+    model         TEXT,
+    title         TEXT,
+    created_at    INTEGER NOT NULL,
+    last_activity INTEGER NOT NULL
+  );
+`;
+
 const seed = new Database(dbPath);
 seed.exec(PRE_WHA136_ATTEMPT);
+seed.exec(EXISTING_CHAT_TABLES);
 seed
   .prepare(
     "INSERT INTO attempt (id, context, provider, containment_observed, started_at) VALUES (?,?,?,?,?)",
   )
   .run("a1", "chat", "claude", "none", 1);
+seed
+  .prepare("INSERT INTO project (id, path, name, created_at) VALUES (?,?,?,?)")
+  .run("p1", "/tmp/legacy-project", "legacy", 1);
+seed
+  .prepare(
+    `INSERT INTO chat_thread (session_id, project_id, cwd, model, title, created_at, last_activity)
+     VALUES (?,?,?,?,?,?,?)`,
+  )
+  .run("s1", "p1", "/tmp/legacy-project", "opus", "a thread from before", 1, 2);
 seed.close();
 
 const { getDb, closeDb } = await import("./index.js");
@@ -79,6 +109,90 @@ test("opens a database whose attempt table predates project_id (WHA-148)", () =>
   };
   assert.equal(row.id, "a1");
   assert.equal(row.project_id, null);
+
+  closeDb();
+});
+
+test("WHA-125 AC 7: the lineage migration is additive — no chat data is lost", () => {
+  // Re-opening after closeDb() re-runs schema.sql AND migrate() against the
+  // same file, so this also proves the whole boot is idempotent.
+  const db = getDb();
+
+  // 1. What was already on disk is untouched, values and all.
+  const thread = db
+    .prepare("SELECT * FROM chat_thread WHERE session_id = ?")
+    .get("s1") as Record<string, unknown>;
+  assert.equal(thread.project_id, "p1");
+  assert.equal(thread.title, "a thread from before");
+  assert.equal(thread.model, "opus");
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM chat_thread").get()!["n" as never],
+    1,
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM project").get()!["n" as never],
+    1,
+  );
+  const attempt = db
+    .prepare("SELECT * FROM attempt WHERE id = ?")
+    .get("a1") as Record<string, unknown>;
+  assert.equal(attempt.context, "chat");
+  assert.equal(attempt.provider, "claude");
+
+  // 2. The six new attempt columns exist and read as null for the old row —
+  // "no lineage" is the truth about an attempt recorded before lineage existed.
+  const cols = new Set(
+    (db.prepare("PRAGMA table_info(attempt)").all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    ),
+  );
+  for (const col of [
+    "run_id",
+    "ticket_id",
+    "task_id",
+    "role",
+    "principal_id",
+    "binding_id",
+  ]) {
+    assert.ok(cols.has(col), `migrate() never added attempt.${col}`);
+    assert.equal(attempt[col], null);
+  }
+
+  // 3. Their indexes were created AFTER the ALTERs, never in schema.sql — the
+  // WHA-148 trap. If this file's ordering ever regresses, getDb() throws above
+  // and this assertion is never reached.
+  const indexes = new Set(
+    (db.prepare("PRAGMA index_list(attempt)").all() as Array<{ name: string }>).map(
+      (i) => i.name,
+    ),
+  );
+  assert.ok(indexes.has("idx_attempt_task"));
+  assert.ok(indexes.has("idx_attempt_ticket"));
+
+  // 4. The new tables reached an EXISTING database, not just a fresh one.
+  const tables = new Set(
+    (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as Array<{ name: string }>
+    ).map((t) => t.name),
+  );
+  for (const t of [
+    "fleet_principal",
+    "fleet_binding",
+    "fleet_ticket",
+    "fleet_run",
+    "fleet_task",
+    "fleet_role_assignment",
+    "attempt_session",
+    "fleet_artifact",
+    "fleet_evidence",
+    "fleet_evidence_command",
+    "fleet_critique",
+    "fleet_decision",
+  ]) {
+    assert.ok(tables.has(t), `${t} is missing on an upgraded database`);
+  }
 
   closeDb();
 });

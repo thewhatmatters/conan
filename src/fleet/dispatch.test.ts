@@ -208,6 +208,50 @@ test("a socket closing mid-build spawns no process and records no row", async ()
   assert.equal(d.current(), null);
 });
 
+test("WHA-125 AC 2: an ordinary chat turn writes a row with NO lineage", async () => {
+  // AC 2 is a claim about today's traffic, not about fleet runs: every
+  // interactive turn is already in the ledger, with the columns that make it
+  // comparable (cost, duration, containment) and none of the ones that would
+  // make it claim a ticket. The type refuses `{ context: "chat", lineage }`;
+  // this is the row-level half of the same statement.
+  const before = rows().length;
+  const d = newDispatcher("chat");
+  await d.spawn(async () => ({
+    provider: stubProvider("claude"),
+    model: null,
+    permissionMode: "default",
+    cwd: null,
+  }));
+  d.bindSession("sess-chat-125");
+  d.recordCost(0.1);
+  d.dispose();
+
+  const row = rows().slice(before)[0]!;
+  assert.equal(row.context, "chat");
+  for (const col of [
+    "run_id",
+    "ticket_id",
+    "task_id",
+    "role",
+    "principal_id",
+    "binding_id",
+  ]) {
+    assert.equal(row[col], null, `a chat turn claimed lineage in ${col}`);
+  }
+  assert.equal(row.cost_usd, 0.1, "cost where available (AC 2)");
+  assert.equal(typeof row.duration_ms, "number", "duration where available (AC 2)");
+  assert.equal(row.containment_observed, "prompt-gated");
+
+  const bridge = getDb()
+    .prepare("SELECT session_id FROM attempt_session WHERE attempt_id = ?")
+    .all(row.id as string) as Array<{ session_id: string }>;
+  assert.deepEqual(
+    bridge.map((b) => b.session_id),
+    ["sess-chat-125"],
+    "the session bridge must record a chat session too",
+  );
+});
+
 test("shutdown closes every live attempt", async () => {
   const before = rows().length;
   const a = newDispatcher();

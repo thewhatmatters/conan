@@ -12,13 +12,21 @@
 import type { AgentDriver, AgentEvent } from "../agent/driver.js";
 import type { ProviderEntry } from "../agent/registry.js";
 import {
+  admitFleetDispatch,
+  DispatchRefused,
+  type FleetDispatchRequest,
+  type TrustPredicates,
+} from "./admission.js";
+import {
   addAttemptCost,
   bindAttemptSession,
   closeAttempt,
   openAttempt,
+  type AttemptLineage,
   type DispatchContext,
 } from "./attempts.js";
 import { resolveContainment, type ContainmentClass } from "./containment.js";
+import { recordDecision } from "./lineage.js";
 
 /** What the caller resolved before a process exists: which provider, and the
  *  launch parameters that decide containment. */
@@ -64,10 +72,26 @@ export interface Dispatcher {
  *  forever and every duration in the ledger is a lie. */
 const live = new Set<Dispatcher>();
 
+/** WHA-125: what a `fleet-attempt` dispatch has to declare about itself.
+ *
+ *  `containment` is absent by construction — it is resolved here from the plan,
+ *  so no caller can hand the predicates a friendlier class than the one the
+ *  process will really run under. */
+export interface FleetDispatch {
+  request: Omit<FleetDispatchRequest, "containment">;
+  /** WHA-126's real predicates; the shipped default admits everything. */
+  predicates?: TrustPredicates;
+}
+
 export function createDispatcher(opts: {
   context: DispatchContext;
   emit: (e: AgentEvent) => void;
   fallbackCwd: () => string | null;
+  /** Only meaningful when `context` is `fleet-attempt`. Absent means no
+   *  admission check and no lineage attribution — which is where every fleet
+   *  caller stands today. WHA-126 can make it mandatory once they all supply
+   *  it; making it mandatory now would only add an unreachable branch. */
+  fleet?: FleetDispatch;
 }): Dispatcher {
   let spawned: Spawned | null = null;
   let building: Promise<Spawned> | null = null;
@@ -93,15 +117,70 @@ export function createDispatcher(opts: {
             p.provider.id,
             p.permissionMode ?? undefined,
           );
+          // WHA-125: admission runs BEFORE createDriver. A refused dispatch
+          // must leave no process and no attempt row behind — a refusal that
+          // still spawned would be advisory, and freeze §1.1's whole point is
+          // that these checks are not.
+          const fleet = opts.context === "fleet-attempt" ? opts.fleet : undefined;
+          if (fleet) {
+            const request: FleetDispatchRequest = {
+              ...fleet.request,
+              containment,
+            };
+            const refusal = admitFleetDispatch(request, fleet.predicates);
+            if (refusal) {
+              // The refusal is a fact about the run, so it is recorded as one.
+              // Best-effort: a ledger write that fails must not turn a clean
+              // refusal into an unexplained one, so the throw happens either
+              // way and carries the reason itself.
+              try {
+                recordDecision({
+                  runId: request.runId,
+                  taskId: request.taskId,
+                  gate: "dispatch",
+                  state: "made",
+                  decision: "refuse",
+                  reasonCode: refusal.code,
+                  reason: refusal.message,
+                  decidedByPrincipalId: null,
+                });
+              } catch (err) {
+                console.warn(
+                  `[fleet] refusal not recorded: ${(err as Error).message}`,
+                );
+              }
+              throw new DispatchRefused(refusal);
+            }
+          }
           const driver = p.provider.createDriver(opts.emit, opts.fallbackCwd);
-          const attemptId = openAttempt({
-            context: opts.context,
-            provider: p.provider.id,
-            model: p.model,
-            permissionMode: p.permissionMode,
-            containment,
-            cwd: p.cwd,
-          });
+          const lineage: AttemptLineage | null = fleet
+            ? {
+                runId: fleet.request.runId,
+                ticketId: fleet.request.ticketId,
+                taskId: fleet.request.taskId,
+                role: fleet.request.role,
+                identity: fleet.request.candidate,
+              }
+            : null;
+          const attemptId =
+            opts.context === "fleet-attempt"
+              ? openAttempt({
+                  context: "fleet-attempt",
+                  provider: p.provider.id,
+                  model: p.model,
+                  permissionMode: p.permissionMode,
+                  containment,
+                  cwd: p.cwd,
+                  lineage,
+                })
+              : openAttempt({
+                  context: "chat",
+                  provider: p.provider.id,
+                  model: p.model,
+                  permissionMode: p.permissionMode,
+                  containment,
+                  cwd: p.cwd,
+                });
           spawned = { driver, provider: p.provider, attemptId, containment };
           live.add(dispatcher);
           return spawned;
