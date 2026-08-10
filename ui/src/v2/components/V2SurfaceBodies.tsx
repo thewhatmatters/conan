@@ -26,6 +26,7 @@ import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
 import type { SaganRunDetail, SaganRunResult, SaganRunSummary } from "../../../../src/sagan/api.ts";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
+import { SAGAN_SECTIONS, sectionFor, type SaganSection } from "../lib/saganSection.ts";
 import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
@@ -295,33 +296,6 @@ function CenterState({ children }: { children: string }) {
   );
 }
 
-type SaganSection = "Needs you" | "Running now" | "Up next" | "Blocked" | "Recently completed";
-
-const SAGAN_SECTIONS: SaganSection[] = [
-  "Needs you",
-  "Running now",
-  "Up next",
-  "Blocked",
-  "Recently completed",
-];
-
-function sectionFor(run: SaganRunSummary): SaganSection {
-  if (run.openDecisions.length > 0) return "Needs you";
-  const lane = run.lane?.toLowerCase() ?? "";
-  const phase = run.phase?.toLowerCase() ?? "";
-  const verdict = run.verdict?.toUpperCase() ?? "";
-  if (["ESCALATE", "REVISE", "NEEDS_EVIDENCE"].includes(verdict) || phase.includes("block")) {
-    return "Blocked";
-  }
-  if (["done", "merged"].includes(lane) || ["done", "merged", "complete", "completed"].includes(phase)) {
-    return "Recently completed";
-  }
-  if (["queued", "queue", "backlog"].includes(lane) || ["queued", "backlog", "pending"].includes(phase)) {
-    return "Up next";
-  }
-  return "Running now";
-}
-
 function durationOf(run: SaganRunSummary): string {
   if (!run.firstTs) return "Duration unknown";
   const start = Date.parse(run.firstTs);
@@ -350,17 +324,26 @@ function SaganRow({
 }) {
   const state = SECTION_STATE[section];
   const StateIcon = state.icon;
+  // WHA-169 AC3 — an in-flight row keeps showing its last verdict. `REVISE` and
+  // `NEEDS_EVIDENCE` moved out of Blocked and into Running now; the point was
+  // to stop calling live work stopped, not to hide that a critic sent it back.
+  // It rides the existing lane · phase line — one more term, no new column and
+  // no new control — and the ledger's own casing, the same string the inspector
+  // prints, so nothing acquires a second display name.
+  const verdictNote = section === "Running now" && run.verdict ? ` · ${run.verdict}` : "";
   return (
     <button
       type="button"
       onClick={(event) => onSelect(run, event.currentTarget)}
       data-sagan-ticket={run.ticket}
       {...stylex.props(styles.saganRow)}
-      aria-label={`${run.ticket}, ${state.label}`}
+      aria-label={`${run.ticket}, ${state.label}${verdictNote}`}
     >
       <VStack gap={0.5} xstyle={styles.saganCell}>
         <Text weight="semibold">{run.ticket}</Text>
-        <Text color="secondary" type="supporting">{run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}</Text>
+        <Text color="secondary" type="supporting">
+          {run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}{verdictNote}
+        </Text>
       </VStack>
       <VStack gap={0.5} xstyle={styles.saganCell}>
         <Text>{run.agent?.name ?? "Unassigned"}</Text>
