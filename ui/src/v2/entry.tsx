@@ -81,6 +81,7 @@ export function loadV2Styles(): Promise<void> {
     await import("@astryxdesign/theme-neutral/theme.css");
     await import("./fonts.css");
     await import("./tokens.css");
+    await document.fonts?.ready;
   })();
   return stylesPromise;
 }
