@@ -73,6 +73,12 @@ let stylesPromise: Promise<void> | null = null;
  * before the reset that it is supposed to override. Order is
  * reset → astryx → theme → fonts → tokens, mirroring the order Astryx's own
  * setup docs prescribe, with our bridge layer last so it always wins.
+ *
+ * After the font stylesheet is injected we explicitly load the Figtree weights
+ * the v2 type scale uses (400/500/600/700). WebKit will resolve
+ * `document.fonts.ready` immediately if no element references the faces yet,
+ * so the explicit `fonts.load()` calls are what actually keep v2 from painting
+ * before the custom glyphs are available (WHA-197).
  */
 export function loadV2Styles(): Promise<void> {
   stylesPromise ??= (async () => {
@@ -81,7 +87,15 @@ export function loadV2Styles(): Promise<void> {
     await import("@astryxdesign/theme-neutral/theme.css");
     await import("./fonts.css");
     await import("./tokens.css");
-    await document.fonts?.ready;
+    if (document.fonts) {
+      await Promise.all([
+        document.fonts.load("400 1em Figtree"),
+        document.fonts.load("500 1em Figtree"),
+        document.fonts.load("600 1em Figtree"),
+        document.fonts.load("700 1em Figtree"),
+      ]);
+      await document.fonts.ready;
+    }
   })();
   return stylesPromise;
 }
