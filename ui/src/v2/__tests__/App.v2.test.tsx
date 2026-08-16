@@ -342,21 +342,35 @@ describe("AppV2 live projects (US-501)", () => {
     ).toBe(false);
   });
 
-  it("surfaces a recoverable error when the boot POST fails", async () => {
+  it("retries a failed boot POST and creates/opens a draft on success", async () => {
+    let projects: unknown[] = [];
+    let postOk = false;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const body = (data: unknown) =>
         Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
       if (url.includes("/api/config")) return body(CONFIG);
       if (url.includes("/api/agent/projects") && !init?.method) {
-        return body({ projects: [] });
+        return body({ projects });
       }
       if (url.includes("/api/agent/projects") && init?.method === "POST") {
-        return Promise.resolve({
-          ok: false,
-          status: 400,
-          json: async () => ({}),
-        } as Response);
+        const payload = JSON.parse(init.body as string) as { path: string };
+        if (!postOk) {
+          return Promise.resolve({
+            ok: false,
+            status: 400,
+            json: async () => ({}),
+          } as Response);
+        }
+        const project = {
+          id: "p-auto",
+          path: payload.path,
+          name: payload.path.split("/").pop() || payload.path,
+          createdAt: 1,
+          threads: [],
+        };
+        projects = [project];
+        return body(project);
       }
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
     });
@@ -369,7 +383,29 @@ describe("AppV2 live projects (US-501)", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Collapse conan" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New chat: No messages yet" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "New chat: No messages yet" }),
+    ).not.toBeInTheDocument();
+
+    // Succeed on retry: the button must actually retry, not just exist.
+    postOk = true;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("button", { name: "Collapse conan" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New chat: No messages yet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't create the first project. Try again."),
+    ).not.toBeInTheDocument();
+
+    const postCalls = fetchMock.mock.calls.filter(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(postCalls).toHaveLength(2);
+    for (const [, init] of postCalls) {
+      expect(JSON.parse(String((init as RequestInit).body))).toEqual({ path: CONFIG.cwd });
+    }
   });
 
   it("selecting a thread opens it — the row goes current and the chat follows", async () => {
