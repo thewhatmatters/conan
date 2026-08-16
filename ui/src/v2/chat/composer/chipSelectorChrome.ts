@@ -12,10 +12,15 @@
  * into library internals.
  *
  * Focus: the combobox button sets `outline: none` and documents that the
- * wrapper's `:focus-within` inset ring is the only focus treatment. A pure
+ * wrapper's `:focus-within` inset is the only focus treatment. A pure
  * `:focus-visible` rule on this wrapper never matches (focus is on the child
- * button). Zero resting border/shadow; restore the Astryx focus-within inset
- * so keyboard focus still paints without bringing back the form face.
+ * button). Zero resting border/shadow; paint a focus-within inset so keyboard
+ * focus is visible without restoring the form face.
+ *
+ * Token: Astryx uses `--color-accent-muted` against a light input surface.
+ * On this ghost chip the ring sits on the composer's near-black (~rgb(27,27,27));
+ * accent-muted (~rgb(38,38,38)) paints but fails WCAG non-text contrast (~1.14:1).
+ * Use `--conan-color-accent` (same as ThreadRow/WHA-117 focus) for a readable ring.
  */
 import * as stylex from "@stylexjs/stylex";
 
@@ -26,7 +31,7 @@ export const chipSelectorChrome = stylex.create({
     minWidth: 0,
     pointerEvents: "auto",
   },
-  // Ghost resting face + Astryx focus-within inset (inputStyles.stylex.ts).
+  // Ghost resting face + visible focus-within inset on composer chrome.
   trigger: {
     backgroundColor: {
       default: "transparent",
@@ -43,9 +48,10 @@ export const chipSelectorChrome = stylex.create({
     boxShadow: {
       default: "none",
       ":hover:not(:focus-within)": "none",
-      // Same token/shape Astryx uses for Selector focus (inputStyles.stylex.ts).
+      // 2px inset shape matches Astryx; accent (not accent-muted) for contrast
+      // on the transparent/ghost face over the composer.
       ":focus-within":
-        "inset 0px 0px 0px 2px var(--color-accent-muted)",
+        "inset 0px 0px 0px 2px var(--conan-color-accent)",
     },
     maxWidth: "100%",
     minWidth: 0,
