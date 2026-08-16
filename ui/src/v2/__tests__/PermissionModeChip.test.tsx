@@ -28,11 +28,11 @@ describe("PermissionModeChip", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
     expect(select).toHaveBeenCalledWith("plan");
   });
 
-  it("marks the current permission mode as a selected radio row", () => {
+  it("marks the current permission mode with aria-current + selected bar (no radio)", () => {
     render(
       <PermissionModeChip
         providers={[provider]}
@@ -43,13 +43,17 @@ describe("PermissionModeChip", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Plan" }));
-    expect(screen.getByRole("menuitemradio", { name: "Plan" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    expect(
-      screen.getByRole("menuitemradio", { name: "Supervised" }),
-    ).toHaveAttribute("aria-checked", "false");
+
+    // WHA-117: same selected-bar language as EffortChip / ModelPicker.
+    const selected = screen.getByRole("menuitem", { name: "Plan" });
+    expect(selected).toHaveAttribute("aria-current", "true");
+    expect(selected).toHaveAttribute("data-selected", "true");
+    expect(selected.querySelector("[aria-hidden]")).not.toBeNull();
+
+    const other = screen.getByRole("menuitem", { name: "Supervised" });
+    expect(other).not.toHaveAttribute("aria-current");
+    expect(other).not.toHaveAttribute("data-selected");
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
   });
 
   it("is absent when the provider exposes no permission vocabulary", () => {

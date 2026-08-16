@@ -81,7 +81,7 @@ describe("EffortChip", () => {
     expect(onEffortSelect).toHaveBeenCalledWith("ultrathink");
   });
 
-  it("marks the current effort as a selected radio row", () => {
+  it("marks the current effort with aria-current + selected bar (no radio)", () => {
     render(
       <EffortChip
         providers={[provider()]}
@@ -92,13 +92,16 @@ describe("EffortChip", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Think/ }));
 
-    expect(screen.getByRole("menuitemradio", { name: "Think" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    expect(
-      screen.getByRole("menuitemradio", { name: "Ultrathink" }),
-    ).toHaveAttribute("aria-checked", "false");
+    // WHA-117: ModelPicker language — menuitem + aria-current, not menuitemradio.
+    const selected = screen.getByRole("menuitem", { name: "Think" });
+    expect(selected).toHaveAttribute("aria-current", "true");
+    expect(selected).toHaveAttribute("data-selected", "true");
+    expect(selected.querySelector("[aria-hidden]")).not.toBeNull();
+
+    const other = screen.getByRole("menuitem", { name: "Ultrathink" });
+    expect(other).not.toHaveAttribute("aria-current");
+    expect(other).not.toHaveAttribute("data-selected");
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
   });
 
   it("follows the ACTIVE provider's vocabulary, not a shared list", () => {

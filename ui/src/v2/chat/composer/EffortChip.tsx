@@ -18,14 +18,14 @@
  *
  * Copy must not imply this reveals thinking — reasoning TEXT stays redacted for
  * claude and encrypted for codex (docs D2).
+ *
+ * Selection chrome (WHA-117): selected-bar + aria-current via SelectedBarMenuItem,
+ * not DropdownMenuRadioItem (radio dots).
  */
 import * as stylex from "@stylexjs/stylex";
-import {
-  DropdownMenu,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
+import SelectedBarMenuItem from "./SelectedBarMenuItem.tsx";
 
 export interface EffortChipProps {
   /** Registry rows (`GET /api/agent/providers`). Empty until the fetch lands. */
@@ -49,20 +49,6 @@ const styles = stylex.create({
     borderRadius: "var(--conan-radius-pill)",
     height: "var(--conan-control-height)",
     pointerEvents: "auto",
-  },
-  menuItem: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": "var(--conan-wash-hover)",
-      ":focus": "var(--conan-wash-hover)",
-    },
-  },
-  menuItemSelected: {
-    backgroundColor: {
-      default: "var(--conan-wash-row-selected)",
-      ":hover": "var(--conan-wash-row-selected)",
-      ":focus": "var(--conan-wash-row-selected)",
-    },
   },
 });
 
@@ -94,31 +80,19 @@ export default function EffortChip({
       }}
       data-slot="effort-chip"
     >
-      <DropdownMenuRadioGroup
-        value={effort}
-        onChange={onEffortSelect}
-        aria-label="Reasoning effort"
-      >
-        <DropdownMenuRadioItem
-          value={DEFAULT_ID}
-          label="Default effort"
-          xstyle={[
-            styles.menuItem,
-            effort === DEFAULT_ID && styles.menuItemSelected,
-          ]}
+      <SelectedBarMenuItem
+        label="Default effort"
+        isSelected={effort === DEFAULT_ID}
+        onSelect={() => onEffortSelect(DEFAULT_ID)}
+      />
+      {effortModes.map((mode) => (
+        <SelectedBarMenuItem
+          key={mode.id}
+          label={mode.label}
+          isSelected={effort === mode.id}
+          onSelect={() => onEffortSelect(mode.id)}
         />
-        {effortModes.map((mode) => (
-          <DropdownMenuRadioItem
-            key={mode.id}
-            value={mode.id}
-            label={mode.label}
-            xstyle={[
-              styles.menuItem,
-              effort === mode.id && styles.menuItemSelected,
-            ]}
-          />
-        ))}
-      </DropdownMenuRadioGroup>
+      ))}
     </DropdownMenu>
   );
 }

@@ -4,14 +4,15 @@
  * The provider owns the vocabulary. v2 only forwards the selected id through
  * AgentOpts, which lets Plan mode exercise the existing ExitPlanMode approval
  * channel without hard-coding Claude-specific choices here.
+ *
+ * Selection chrome (WHA-117): selected-bar + aria-current via SelectedBarMenuItem,
+ * not DropdownMenuRadioItem (radio dots) — same language as EffortChip and
+ * ModelPicker.
  */
 import * as stylex from "@stylexjs/stylex";
-import {
-  DropdownMenu,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
+import SelectedBarMenuItem from "./SelectedBarMenuItem.tsx";
 
 export interface PermissionModeChipProps {
   providers: ProviderStatus[];
@@ -29,20 +30,6 @@ const styles = stylex.create({
     borderRadius: "var(--conan-radius-pill)",
     height: "var(--conan-control-height)",
     pointerEvents: "auto",
-  },
-  menuItem: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": "var(--conan-wash-hover)",
-      ":focus": "var(--conan-wash-hover)",
-    },
-  },
-  menuItemSelected: {
-    backgroundColor: {
-      default: "var(--conan-wash-row-selected)",
-      ":hover": "var(--conan-wash-row-selected)",
-      ":focus": "var(--conan-wash-row-selected)",
-    },
   },
 });
 
@@ -70,23 +57,14 @@ export default function PermissionModeChip({
       placement="above"
       data-slot="permission-mode-chip"
     >
-      <DropdownMenuRadioGroup
-        value={current?.id}
-        onChange={onPermissionModeSelect}
-        aria-label="Permission mode"
-      >
-        {modes.map((mode) => (
-          <DropdownMenuRadioItem
-            key={mode.id}
-            value={mode.id}
-            label={mode.label}
-            xstyle={[
-              styles.menuItem,
-              current?.id === mode.id && styles.menuItemSelected,
-            ]}
-          />
-        ))}
-      </DropdownMenuRadioGroup>
+      {modes.map((mode) => (
+        <SelectedBarMenuItem
+          key={mode.id}
+          label={mode.label}
+          isSelected={current?.id === mode.id}
+          onSelect={() => onPermissionModeSelect(mode.id)}
+        />
+      ))}
     </DropdownMenu>
   );
 }
