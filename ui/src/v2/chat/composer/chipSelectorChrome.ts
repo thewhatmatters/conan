@@ -10,6 +10,12 @@
  * (see Selector.tsx: stylex.props(inputWrapperStyles.base, …, xstyle)). So
  * these overrides hit the bordered element directly — no descendant selectors
  * into library internals.
+ *
+ * Focus: the combobox button sets `outline: none` and documents that the
+ * wrapper's `:focus-within` inset ring is the only focus treatment. A pure
+ * `:focus-visible` rule on this wrapper never matches (focus is on the child
+ * button). Zero resting border/shadow; restore the Astryx focus-within inset
+ * so keyboard focus still paints without bringing back the form face.
  */
 import * as stylex from "@stylexjs/stylex";
 
@@ -20,9 +26,7 @@ export const chipSelectorChrome = stylex.create({
     minWidth: 0,
     pointerEvents: "auto",
   },
-  // Ghost face: transparent, pill, wash on hover — same language as ModelPicker
-  // / the previous DropdownMenu chip triggers. Explicitly zero every border and
-  // box-shadow state that inputWrapperStyles.base sets (default, hover, focus).
+  // Ghost resting face + Astryx focus-within inset (inputStyles.stylex.ts).
   trigger: {
     backgroundColor: {
       default: "transparent",
@@ -30,6 +34,7 @@ export const chipSelectorChrome = stylex.create({
     },
     borderColor: {
       default: "transparent",
+      // Stay transparent under focus — ring is box-shadow, not form border.
       ":focus-within": "transparent",
     },
     borderRadius: "var(--conan-radius-pill)",
@@ -37,8 +42,10 @@ export const chipSelectorChrome = stylex.create({
     borderWidth: 0,
     boxShadow: {
       default: "none",
-      ":focus-within": "none",
       ":hover:not(:focus-within)": "none",
+      // Same token/shape Astryx uses for Selector focus (inputStyles.stylex.ts).
+      ":focus-within":
+        "inset 0px 0px 0px 2px var(--color-accent-muted)",
     },
     maxWidth: "100%",
     minWidth: 0,
