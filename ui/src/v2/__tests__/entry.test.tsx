@@ -40,11 +40,20 @@ describe("loadV2Styles", () => {
     expect(resolveFonts).toBeDefined();
     await Promise.resolve();
     await Promise.resolve();
-    // The stylesheets are mocked to resolve immediately; fonts.ready is still
-    // pending because we have not called resolveFonts yet.
-    expect(stylesPromise).not.toBeUndefined();
+    // The stylesheets are mocked to resolve immediately, so if the production
+    // await on document.fonts.ready were missing, stylesPromise would already
+    // be settled. Prove it is still pending before we resolve fonts.
+    let settled = false;
+    stylesPromise.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
     resolveFonts!();
     await stylesPromise;
+    expect(settled).toBe(true);
   });
 
   it("returns the same promise on repeated calls", async () => {

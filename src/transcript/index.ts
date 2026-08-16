@@ -13,6 +13,11 @@ import { HOME } from "../paths.js";
  */
 const PROJECTS_DIR = path.join(HOME, ".claude", "projects");
 
+/** Env override for tests and non-standard Claude installs. */
+function projectsDir(): string {
+  return process.env.CONAN_CLAUDE_PROJECTS_DIR || PROJECTS_DIR;
+}
+
 /** Encode a cwd the way Claude Code names its per-project transcript folder. */
 function encodeCwd(cwd: string): string {
   return cwd.replace(/[/.]/g, "-");
@@ -25,19 +30,20 @@ function encodeCwd(cwd: string): string {
  * when no matching file exists.
  */
 export function transcriptPath(sessionId: string, cwd?: string | null): string | null {
+  const root = projectsDir();
   const file = `${sessionId}.jsonl`;
   if (cwd) {
-    const direct = path.join(PROJECTS_DIR, encodeCwd(cwd), file);
+    const direct = path.join(root, encodeCwd(cwd), file);
     if (fs.existsSync(direct)) return direct;
   }
   let dirs: string[];
   try {
-    dirs = fs.readdirSync(PROJECTS_DIR);
+    dirs = fs.readdirSync(root);
   } catch {
     return null;
   }
   for (const dir of dirs) {
-    const candidate = path.join(PROJECTS_DIR, dir, file);
+    const candidate = path.join(root, dir, file);
     if (fs.existsSync(candidate)) return candidate;
   }
   return null;
@@ -252,6 +258,20 @@ export function resolveContextWindow(
 /** Coerce a usage field to a non-negative integer, defaulting to 0. */
 function usageInt(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+
+/**
+ * The input-side tokens that occupy the context window going into the next
+ * turn: input + cache_read + cache_creation. Output is excluded because it is
+ * not part of the prompt. This is the single arithmetic shared by the context
+ * meter and the transcript reader.
+ */
+export function contextWindowInputTokens(usage: Record<string, unknown>): number {
+  return (
+    usageInt(usage.input_tokens) +
+    usageInt(usage.cache_read_input_tokens) +
+    usageInt(usage.cache_creation_input_tokens)
+  );
 }
 
 /** One assistant turn's total token consumption (v4.5-timeline post-loop). */
@@ -559,10 +579,7 @@ export function readContextUsage(
     const msg = (o.message ?? {}) as Record<string, unknown>;
     const usage = (msg.usage ?? null) as Record<string, unknown> | null;
     if (!usage) continue;
-    const used =
-      usageInt(usage.input_tokens) +
-      usageInt(usage.cache_read_input_tokens) +
-      usageInt(usage.cache_creation_input_tokens);
+    const used = contextWindowInputTokens(usage);
     if (used === 0) continue;
     latest = { used, model: typeof msg.model === "string" ? msg.model : null };
   }

@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ClaudeStreamParser,
@@ -418,10 +418,12 @@ test("result counts cache_creation_input_tokens toward context window, matching 
   assert.equal(result.contextTokens, 250);
 
   // Prove the same arithmetic in src/transcript/index.ts:198 agrees.
-  // readContextUsage scans $HOME/.claude/projects, so write a temp project
-  // there and clean it up afterward.
-  const projectsDir = join(homedir(), ".claude", "projects");
-  const testDir = mkdtempSync(join(projectsDir, "conan-context-"));
+  // readContextUsage normally scans $HOME/.claude/projects; point it at a
+  // temp directory so the test is hermetic and does not touch operator state.
+  const projectsDir = mkdtempSync(join(tmpdir(), "conan-context-"));
+  const testDir = mkdtempSync(join(projectsDir, "project-"));
+  const previous = process.env.CONAN_CLAUDE_PROJECTS_DIR;
+  process.env.CONAN_CLAUDE_PROJECTS_DIR = projectsDir;
   try {
     const sessionId = "sess-cache-create";
     writeFileSync(
@@ -441,6 +443,11 @@ test("result counts cache_creation_input_tokens toward context window, matching 
     const fromTranscript = readContextUsage(sessionId);
     assert.equal(fromTranscript?.used, 250);
   } finally {
-    rmSync(testDir, { recursive: true, force: true });
+    if (previous === undefined) {
+      delete process.env.CONAN_CLAUDE_PROJECTS_DIR;
+    } else {
+      process.env.CONAN_CLAUDE_PROJECTS_DIR = previous;
+    }
+    rmSync(projectsDir, { recursive: true, force: true });
   }
 });
