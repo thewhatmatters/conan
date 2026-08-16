@@ -209,3 +209,27 @@ test("grok driver: declares the verified capabilities; respondPermission is a no
   assert.deepEqual(events, [{ kind: "permission-mode", mode: "bypassPermissions" }]);
   driver.dispose();
 });
+
+test("grok parser: result counts cache_creation_input_tokens toward context window", () => {
+  const parser = new GrokStreamParser({ cwd: "/tmp/conan-probe", mode: "default" });
+  const events = parser.push(
+    JSON.stringify({
+      type: "end",
+      stopReason: "EndTurn",
+      sessionId: "sess-cache-create",
+      usage: {
+        input_tokens: 1000,
+        cache_read_input_tokens: 200,
+        cache_creation_input_tokens: 300,
+        output_tokens: 50,
+        reasoning_tokens: 10,
+      },
+      num_turns: 1,
+    }),
+  );
+  const result = events.find((e) => e.kind === "result") as Extract<
+    AgentEvent,
+    { kind: "result" }
+  >;
+  assert.equal(result.contextTokens, 1500);
+});

@@ -393,6 +393,7 @@ export class GrokStreamParser {
         const usage = record(msg.usage);
         const input = usage ? num(usage.input_tokens) : null;
         const cachedInput = usage ? num(usage.cache_read_input_tokens) : null;
+        const cacheCreationInput = usage ? num(usage.cache_creation_input_tokens) : null;
         return [
           {
             kind: "system",
@@ -410,7 +411,7 @@ export class GrokStreamParser {
             costUsd: num(msg.total_cost_usd),
             durationMs: null, // the driver stamps wall time on emit
             numTurns: num(msg.num_turns),
-            contextTokens: sumReported(input, cachedInput),
+            contextTokens: sumReported(input, cachedInput, cacheCreationInput),
             tokens: {
               input,
               cachedInput,

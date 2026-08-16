@@ -139,6 +139,37 @@ test("codex parser: turn.failed closes the turn as an error result", () => {
   assert.equal(result.contextTokens, null);
 });
 
+test("codex parser: result counts cache_creation_input_tokens toward context window", () => {
+  const parser = new CodexStreamParser({ cwd: "/tmp/conan-probe", sandbox: "read-only" });
+  const evs = parser.push(
+    JSON.stringify({
+      type: "thread.started",
+      sessionId: "sess-cache-create",
+      cwd: "/tmp/conan-probe",
+      sandbox: "read-only",
+    }),
+  );
+  evs.push(
+    ...parser.push(
+      JSON.stringify({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1000,
+          cached_input_tokens: 200,
+          cache_creation_input_tokens: 300,
+          output_tokens: 50,
+          reasoning_output_tokens: 10,
+        },
+      }),
+    ),
+  );
+  const result = evs.find((e) => e.kind === "result") as Extract<
+    AgentEvent,
+    { kind: "result" }
+  >;
+  assert.equal(result.contextTokens, 1500);
+});
+
 test("codex args: global flags precede resume and text-only argv stays unchanged", () => {
   // Fresh turn — no resume subcommand.
   assert.deepEqual(

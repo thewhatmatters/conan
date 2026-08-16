@@ -416,6 +416,7 @@ export class CodexStreamParser {
         const usage = record(msg.usage);
         const input = usage ? num(usage.input_tokens) : null;
         const cachedInput = usage ? num(usage.cached_input_tokens) : null;
+        const cacheCreationInput = usage ? num(usage.cache_creation_input_tokens) : null;
         return [
           {
             kind: "result",
@@ -424,7 +425,7 @@ export class CodexStreamParser {
             durationMs: null, // the driver stamps wall time on emit
             numTurns: null,
             text: this.lastMessage,
-            contextTokens: sumReported(input, cachedInput),
+            contextTokens: sumReported(input, cachedInput, cacheCreationInput),
             tokens: {
               input,
               cachedInput,

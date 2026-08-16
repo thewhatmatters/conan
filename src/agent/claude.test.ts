@@ -9,7 +9,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
+import { join } from "node:path";
 import {
   ClaudeStreamParser,
   buildClaudeUserMessage,
@@ -21,7 +23,7 @@ import {
   type ControlRequest,
   type ControlResponse,
 } from "./claude.js";
-
+import { readContextUsage } from "../transcript/index.js";
 const j = (o: unknown): string => JSON.stringify(o);
 
 const messageStart = (id: string) =>
@@ -390,4 +392,55 @@ test("claudeModeFor floors unknown mode ids to default (US-009)", () => {
   assert.equal(claudeModeFor("read-only"), "default");
   assert.equal(claudeModeFor("danger-full-access"), "default");
   assert.equal(claudeModeFor(undefined), "default");
+});
+
+test("result counts cache_creation_input_tokens toward context window, matching the transcript path", () => {
+  const p = new ClaudeStreamParser();
+  const events = p.push(
+    j({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      total_cost_usd: 0.01,
+      duration_ms: 1200,
+      num_turns: 1,
+      result: "done",
+      usage: {
+        input_tokens: 120,
+        cache_read_input_tokens: 80,
+        cache_creation_input_tokens: 50,
+        output_tokens: 7,
+      },
+    }),
+  );
+  assert.equal(events.length, 1);
+  const result = events[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>;
+  assert.equal(result.contextTokens, 250);
+
+  // Prove the same arithmetic in src/transcript/index.ts:198 agrees.
+  // readContextUsage scans $HOME/.claude/projects, so write a temp project
+  // there and clean it up afterward.
+  const projectsDir = join(homedir(), ".claude", "projects");
+  const testDir = mkdtempSync(join(projectsDir, "conan-context-"));
+  try {
+    const sessionId = "sess-cache-create";
+    writeFileSync(
+      join(testDir, `${sessionId}.jsonl`),
+      j({
+        type: "assistant",
+        message: {
+          usage: {
+            input_tokens: 120,
+            cache_read_input_tokens: 80,
+            cache_creation_input_tokens: 50,
+            output_tokens: 7,
+          },
+        },
+      }) + "\n",
+    );
+    const fromTranscript = readContextUsage(sessionId);
+    assert.equal(fromTranscript?.used, 250);
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+  }
 });
