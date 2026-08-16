@@ -410,6 +410,15 @@
   display: none;
 }
 
+/* WHA-197 probe B — force system UI font on the contenteditable only.
+ * Chips/labels already paint crisp Figtree in the same frame, so if garble
+ * vanishes under system-ui the bug is Figtree × contenteditable (not a global
+ * font failure). If it still garbles, Figtree is eliminated as the cause.
+ * No isolation or multi-property text-pipeline changes. */
+[data-slot="rich-input"] [contenteditable="true"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif !important;
+}
+
 /* Keep the composer controls compressible before the send action. Astryx's
  * footer correctly reserves the send button, but the three trigger wrappers
  * otherwise use their content width as a floor and push that primary action

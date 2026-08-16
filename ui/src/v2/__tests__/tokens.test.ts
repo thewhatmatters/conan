@@ -127,4 +127,12 @@ describe("v2 tokens.css", () => {
       /\[data-slot=["']composer-controls["']\] button\s*{[^}]*min-width:\s*0/s,
     );
   });
+
+  it("forces system UI font on the rich-input contenteditable only (WHA-197 probe B)", () => {
+    const css = injectedCss();
+    // Contract only — packaged app is the paint gate. Scoped to CE, not chips.
+    expect(css).toMatch(
+      /\[data-slot=["']rich-input["']\] \[contenteditable=["']true["']\]\s*{[^}]*font-family:\s*[^;]*system-ui/s,
+    );
+  });
 });
