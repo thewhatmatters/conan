@@ -11,10 +11,14 @@ import { useDirGit, type DirGit } from "../../hooks/useDirGit.ts";
 export type { DirGit };
 
 /** Branch + uncommitted count for the active thread's cwd, or null until the
- *  first poll lands (and for a directory that is not a repo). */
+ *  first poll lands (and for a directory that is not a repo).
+ *
+ *  `refreshKey` (WHA-196) forwards to `useDirGit` — bump when a turn `result`
+ *  lands so the chip re-pulls without waiting for the 15s backstop. */
 export function useThreadGit(
   token: string | null,
   cwd: string | null,
+  refreshKey: unknown = 0,
 ): DirGit | null {
-  return useDirGit(token, cwd);
+  return useDirGit(token, cwd, refreshKey);
 }

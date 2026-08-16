@@ -79,6 +79,11 @@ export interface V2ComposerProps {
    */
   contextTokens?: number | null;
   /**
+   * Bumps when a chat turn `result` lands (WHA-196) so the branch chip
+   * re-pulls immediately instead of waiting for the 15s poll backstop.
+   */
+  gitRefreshKey?: unknown;
+  /**
    * Session driver capabilities (WHA-97/101) — the ONLY source of the context
    * meter's window size (WHA-102). Null until the driver is built, in which
    * case the meter shows the raw token count with no percentage.
@@ -119,6 +124,7 @@ export default function V2Composer({
   sessionId = null,
   setPermissionMode,
   contextTokens = null,
+  gitRefreshKey = 0,
   sessionCapabilities = null,
   gate,
   send,
@@ -170,7 +176,8 @@ export default function V2Composer({
   const effectiveMode = livePermissionMode ?? permission;
 
   // Branch for THIS thread's directory — the same poll v1's status bar uses.
-  const git = useThreadGit(token, activeThread?.cwd ?? null);
+  // gitRefreshKey re-pulls on turn result (WHA-196); 15s interval stays as backstop.
+  const git = useThreadGit(token, activeThread?.cwd ?? null, gitRefreshKey);
   // Not a repo, or the first poll hasn't landed → no chip at all, rather than
   // a chip that states something untrue. `undefined` (not a null-rendering
   // element) because ChatComposer paints its 28px header band for ANY truthy

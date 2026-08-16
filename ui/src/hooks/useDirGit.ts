@@ -14,11 +14,27 @@ export interface DirGit {
  * (US-011). The terminal surface derives git from the correlated session's
  * widgets; chat threads have a cwd but not necessarily a correlated session,
  * so this polls the path directly (light: two 2s-capped git children server-side).
+ *
+ * `refreshKey` (WHA-196): when it changes, re-pull immediately. Callers pass a
+ * value that moves when a chat turn `result` lands so the branch chip reflects
+ * agent-side git work without waiting for the next 15s poll. The interval stays
+ * as the backstop — do not shorten it (four git children per open thread).
  */
-export function useDirGit(token: string | null, cwd: string | null): DirGit | null {
+export function useDirGit(
+  token: string | null,
+  cwd: string | null,
+  refreshKey: unknown = 0,
+): DirGit | null {
   const [git, setGit] = useState<DirGit | null>(null);
+
+  // Path/auth change → drop stale status so we never show another cwd's branch.
+  // Refresh-key bumps deliberately do NOT clear: the previous reading stays
+  // until the new pull lands (no chip flash on every turn end).
   useEffect(() => {
     setGit(null);
+  }, [token, cwd]);
+
+  useEffect(() => {
     if (!token || !cwd) return;
     let cancelled = false;
     const pull = () => {
@@ -37,6 +53,6 @@ export function useDirGit(token: string | null, cwd: string | null): DirGit | nu
       cancelled = true;
       clearInterval(timer);
     };
-  }, [token, cwd]);
+  }, [token, cwd, refreshKey]);
   return git;
 }

@@ -420,8 +420,14 @@ export default function ChatPane({
     return [...seen];
   }, [history, items]);
   // Branch/dirty for THIS thread's directory — per-thread, so a hidden thread
-  // on another repo never shows the active thread's branch.
-  const git = useDirGit(token, effectiveCwd);
+  // on another repo never shows the active thread's branch. Count of turn
+  // `result` items (WHA-196) re-pulls immediately when an agent turn ends so
+  // branch/dirty don't lag the 15s poll after git-mutating tools.
+  const gitRefreshKey = useMemo(
+    () => items.reduce((n, it) => (it.role === "result" ? n + 1 : n), 0),
+    [items],
+  );
+  const git = useDirGit(token, effectiveCwd, gitRefreshKey);
 
   // `@` files/folders autocomplete (US-018) — bounded recursive search under
   // THIS thread's cwd. The inserted `@path` is a reference only; the agent

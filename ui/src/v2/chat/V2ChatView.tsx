@@ -188,6 +188,13 @@ export default function V2ChatView({
     [history.items, live],
   );
   const hasItems = items.length > 0;
+  // Live-turn results only (WHA-196) — restored history results would re-fire a
+  // pull on every reopen without reflecting new git work. Count moves when a
+  // turn ends so useDirGit re-pulls without waiting for the 15s backstop.
+  const gitRefreshKey = useMemo(
+    () => live.reduce((n, it) => (it.role === "result" ? n + 1 : n), 0),
+    [live],
+  );
 
   const emptyLabel = !activeThread
     ? "Select a thread to start chatting."
@@ -299,6 +306,7 @@ export default function V2ChatView({
               setPermissionMode={setPermissionMode}
               contextTokens={visibleContextTokens}
               sessionCapabilities={visibleSessionCapabilities}
+              gitRefreshKey={gitRefreshKey}
               contextCompactionMessage={contextCompactionMessage}
               onStartNewThread={onStartNewThread}
               send={send}
