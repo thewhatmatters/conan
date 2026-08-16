@@ -5,14 +5,13 @@
  * AgentOpts, which lets Plan mode exercise the existing ExitPlanMode approval
  * channel without hard-coding Claude-specific choices here.
  *
- * Selection chrome (WHA-117): selected-bar + aria-current via SelectedBarMenuItem,
- * not DropdownMenuRadioItem (radio dots) — same language as EffortChip and
- * ModelPicker.
+ * Selection chrome (WHA-200): Astryx Selector — same as EffortChip. Checkmark +
+ * aria-selected on role=option; whole chip is the form control (hidden label),
+ * not a DropdownMenu with reinvented row chrome.
  */
 import * as stylex from "@stylexjs/stylex";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { Selector } from "@astryxdesign/core/Selector";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
-import SelectedBarMenuItem from "./SelectedBarMenuItem.tsx";
 
 export interface PermissionModeChipProps {
   providers: ProviderStatus[];
@@ -22,14 +21,13 @@ export interface PermissionModeChipProps {
 }
 
 const styles = stylex.create({
-  trigger: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": "var(--conan-wash-hover)",
-    },
-    borderRadius: "var(--conan-radius-pill)",
-    height: "var(--conan-control-height)",
+  root: {
+    minWidth: 0,
     pointerEvents: "auto",
+  },
+  trigger: {
+    maxWidth: "100%",
+    minWidth: 0,
   },
 });
 
@@ -45,26 +43,21 @@ export default function PermissionModeChip({
 
   const fallback = modes.find((mode) => mode.id === "default") ?? modes[0];
   const current = modes.find((mode) => mode.id === permissionMode) ?? fallback;
+  const options = modes.map((mode) => ({ value: mode.id, label: mode.label }));
 
   return (
-    <DropdownMenu
-      button={{
-        label: current?.label ?? "Default permissions",
-        variant: "ghost",
-        size: "md",
-        xstyle: styles.trigger,
-      }}
-      placement="above"
-      data-slot="permission-mode-chip"
-    >
-      {modes.map((mode) => (
-        <SelectedBarMenuItem
-          key={mode.id}
-          label={mode.label}
-          isSelected={current?.id === mode.id}
-          onSelect={() => onPermissionModeSelect(mode.id)}
-        />
-      ))}
-    </DropdownMenu>
+    <div data-slot="permission-mode-chip" {...stylex.props(styles.root)}>
+      <Selector
+        label="Permission mode"
+        isLabelHidden
+        size="md"
+        placement="above"
+        options={options}
+        value={current?.id}
+        onChange={onPermissionModeSelect}
+        placeholder="Default permissions"
+        xstyle={styles.trigger}
+      />
+    </div>
   );
 }

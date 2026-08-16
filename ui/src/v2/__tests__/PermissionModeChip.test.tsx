@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import PermissionModeChip from "../chat/composer/PermissionModeChip.tsx";
 import type { ProviderStatus } from "../lib/useV2Providers.ts";
 
@@ -27,12 +27,12 @@ describe("PermissionModeChip", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Supervised" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("combobox", { name: /Permission mode/i }));
+    fireEvent.click(screen.getByRole("option", { name: "Plan" }));
     expect(select).toHaveBeenCalledWith("plan");
   });
 
-  it("marks the current permission mode with aria-current + selected bar (no radio)", () => {
+  it("marks the current permission mode with aria-selected (Selector check)", () => {
     render(
       <PermissionModeChip
         providers={[provider]}
@@ -42,18 +42,16 @@ describe("PermissionModeChip", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    fireEvent.click(screen.getByRole("combobox", { name: /Permission mode/i }));
 
-    // WHA-117: same selected-bar language as EffortChip / ModelPicker.
-    const selected = screen.getByRole("menuitem", { name: "Plan" });
-    expect(selected).toHaveAttribute("aria-current", "true");
-    expect(selected).toHaveAttribute("data-selected", "true");
-    expect(selected.querySelector("[aria-hidden]")).not.toBeNull();
+    const listbox = screen.getByRole("listbox");
+    const selected = within(listbox).getByRole("option", { name: /Plan/ });
+    expect(selected).toHaveAttribute("aria-selected", "true");
 
-    const other = screen.getByRole("menuitem", { name: "Supervised" });
-    expect(other).not.toHaveAttribute("aria-current");
-    expect(other).not.toHaveAttribute("data-selected");
+    const other = within(listbox).getByRole("option", { name: /Supervised/ });
+    expect(other).toHaveAttribute("aria-selected", "false");
     expect(screen.queryByRole("menuitemradio")).toBeNull();
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
 
   it("is absent when the provider exposes no permission vocabulary", () => {

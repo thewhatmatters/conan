@@ -19,13 +19,15 @@
  * Copy must not imply this reveals thinking — reasoning TEXT stays redacted for
  * claude and encrypted for codex (docs D2).
  *
- * Selection chrome (WHA-117): selected-bar + aria-current via SelectedBarMenuItem,
- * not DropdownMenuRadioItem (radio dots).
+ * Selection chrome (WHA-200): Astryx Selector — checkmark + aria-selected on
+ * role=option. The 2px selected-bar (WHA-117) was correct to the ModelPicker
+ * tokens and still unreadable on 32px plain-text rows; Randy rejected it.
+ * Selector is a form control (required label, isLabelHidden for the compact
+ * composer face), not a menu item — the whole chip is the Selector.
  */
 import * as stylex from "@stylexjs/stylex";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { Selector } from "@astryxdesign/core/Selector";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
-import SelectedBarMenuItem from "./SelectedBarMenuItem.tsx";
 
 export interface EffortChipProps {
   /** Registry rows (`GET /api/agent/providers`). Empty until the fetch lands. */
@@ -38,17 +40,16 @@ export interface EffortChipProps {
 }
 
 const styles = stylex.create({
-  // Matches the sibling model chip's geometry (32px pill). ChatComposer sets
-  // `pointer-events: none` while disabled; effort stays reachable because it
-  // applies to the NEXT turn, which is exactly when the composer is busy.
-  trigger: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": "var(--conan-wash-hover)",
-    },
-    borderRadius: "var(--conan-radius-pill)",
-    height: "var(--conan-control-height)",
+  // ChatComposer sets `pointer-events: none` while disabled; effort stays
+  // reachable because it applies to the NEXT turn. minWidth:0 lets the flex
+  // row compress at narrow width (labels ellipsize inside Selector).
+  root: {
+    minWidth: 0,
     pointerEvents: "auto",
+  },
+  trigger: {
+    maxWidth: "100%",
+    minWidth: 0,
   },
 });
 
@@ -67,32 +68,24 @@ export default function EffortChip({
   // Absent, not disabled: a provider without effort levels has nothing to say.
   if (effortModes.length === 0) return null;
 
-  const current = effortModes.find((e) => e.id === effort);
-  const label = current?.label ?? "Default effort";
+  const options = [
+    { value: DEFAULT_ID, label: "Default effort" },
+    ...effortModes.map((mode) => ({ value: mode.id, label: mode.label })),
+  ];
 
   return (
-    <DropdownMenu
-      button={{
-        label,
-        variant: "ghost",
-        size: "md",
-        xstyle: styles.trigger,
-      }}
-      data-slot="effort-chip"
-    >
-      <SelectedBarMenuItem
-        label="Default effort"
-        isSelected={effort === DEFAULT_ID}
-        onSelect={() => onEffortSelect(DEFAULT_ID)}
+    <div data-slot="effort-chip" {...stylex.props(styles.root)}>
+      <Selector
+        label="Reasoning effort"
+        isLabelHidden
+        size="md"
+        placement="above"
+        options={options}
+        value={effort}
+        onChange={onEffortSelect}
+        placeholder="Default effort"
+        xstyle={styles.trigger}
       />
-      {effortModes.map((mode) => (
-        <SelectedBarMenuItem
-          key={mode.id}
-          label={mode.label}
-          isSelected={effort === mode.id}
-          onSelect={() => onEffortSelect(mode.id)}
-        />
-      ))}
-    </DropdownMenu>
+    </div>
   );
 }

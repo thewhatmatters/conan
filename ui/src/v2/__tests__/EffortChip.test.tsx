@@ -6,7 +6,7 @@
  * Its vocabulary is capability-driven, never provider-name branching.
  */
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import EffortChip from "../chat/composer/EffortChip.tsx";
 import type { ProviderStatus } from "../lib/useV2Providers.ts";
 
@@ -49,7 +49,9 @@ describe("EffortChip", () => {
         onEffortSelect={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /Think/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /Reasoning effort/i }),
+    ).toHaveTextContent("Think");
   });
 
   it("reads 'Default effort' until a level is chosen", () => {
@@ -62,8 +64,8 @@ describe("EffortChip", () => {
       />,
     );
     expect(
-      screen.getByRole("button", { name: /Default effort/ }),
-    ).toBeInTheDocument();
+      screen.getByRole("combobox", { name: /Reasoning effort/i }),
+    ).toHaveTextContent("Default effort");
   });
 
   it("commits a level", () => {
@@ -76,12 +78,12 @@ describe("EffortChip", () => {
         onEffortSelect={onEffortSelect}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Default effort/ }));
-    fireEvent.click(screen.getByText("Ultrathink"));
+    fireEvent.click(screen.getByRole("combobox", { name: /Reasoning effort/i }));
+    fireEvent.click(screen.getByRole("option", { name: "Ultrathink" }));
     expect(onEffortSelect).toHaveBeenCalledWith("ultrathink");
   });
 
-  it("marks the current effort with aria-current + selected bar (no radio)", () => {
+  it("marks the current effort with aria-selected + check (Selector, not radio/bar)", () => {
     render(
       <EffortChip
         providers={[provider()]}
@@ -90,18 +92,18 @@ describe("EffortChip", () => {
         onEffortSelect={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Think/ }));
+    fireEvent.click(screen.getByRole("combobox", { name: /Reasoning effort/i }));
 
-    // WHA-117: ModelPicker language — menuitem + aria-current, not menuitemradio.
-    const selected = screen.getByRole("menuitem", { name: "Think" });
-    expect(selected).toHaveAttribute("aria-current", "true");
-    expect(selected).toHaveAttribute("data-selected", "true");
-    expect(selected.querySelector("[aria-hidden]")).not.toBeNull();
+    const listbox = screen.getByRole("listbox");
+    const selected = within(listbox).getByRole("option", { name: /Think/ });
+    expect(selected).toHaveAttribute("aria-selected", "true");
 
-    const other = screen.getByRole("menuitem", { name: "Ultrathink" });
-    expect(other).not.toHaveAttribute("aria-current");
-    expect(other).not.toHaveAttribute("data-selected");
+    const other = within(listbox).getByRole("option", { name: /Ultrathink/ });
+    expect(other).toHaveAttribute("aria-selected", "false");
+
+    // No menu-radio / selected-bar residue.
     expect(screen.queryByRole("menuitemradio")).toBeNull();
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
 
   it("follows the ACTIVE provider's vocabulary, not a shared list", () => {
@@ -124,8 +126,10 @@ describe("EffortChip", () => {
       />,
     );
     // Codex's level, NOT Claude's Think/Ultrathink — capability-driven.
-    expect(screen.getByRole("button", { name: /High/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Ultrathink/ })).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: /Reasoning effort/i }),
+    ).toHaveTextContent("High");
+    expect(screen.queryByText("Ultrathink")).toBeNull();
   });
 
   it("has no locked concept — effort is per-turn, so it can never freeze", () => {
@@ -140,10 +144,10 @@ describe("EffortChip", () => {
         onEffortSelect={onEffortSelect}
       />,
     );
-    const trigger = screen.getByRole("button", { name: /Default effort/ });
+    const trigger = screen.getByRole("combobox", { name: /Reasoning effort/i });
     expect(trigger).toBeEnabled();
     fireEvent.click(trigger);
-    fireEvent.click(screen.getByText("Think"));
+    fireEvent.click(screen.getByRole("option", { name: "Think" }));
     expect(onEffortSelect).toHaveBeenCalledWith("think");
   });
 
