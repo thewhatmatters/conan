@@ -20,14 +20,13 @@
  * claude and encrypted for codex (docs D2).
  *
  * Selection chrome (WHA-200): Astryx Selector — checkmark + aria-selected on
- * role=option. The 2px selected-bar (WHA-117) was correct to the ModelPicker
- * tokens and still unreadable on 32px plain-text rows; Randy rejected it.
- * Selector is a form control (required label, isLabelHidden for the compact
- * composer face), not a menu item — the whole chip is the Selector.
+ * role=option. Trigger face is ghost (no form border) via chipSelectorChrome —
+ * xstyle lands on the bordered wrapper, not a descendant hack.
  */
 import * as stylex from "@stylexjs/stylex";
 import { Selector } from "@astryxdesign/core/Selector";
 import type { ProviderStatus } from "../../lib/useV2Providers.ts";
+import { chipSelectorChrome } from "./chipSelectorChrome.ts";
 
 export interface EffortChipProps {
   /** Registry rows (`GET /api/agent/providers`). Empty until the fetch lands. */
@@ -38,20 +37,6 @@ export interface EffortChipProps {
   effort: string;
   onEffortSelect: (effort: string) => void;
 }
-
-const styles = stylex.create({
-  // ChatComposer sets `pointer-events: none` while disabled; effort stays
-  // reachable because it applies to the NEXT turn. minWidth:0 lets the flex
-  // row compress at narrow width (labels ellipsize inside Selector).
-  root: {
-    minWidth: 0,
-    pointerEvents: "auto",
-  },
-  trigger: {
-    maxWidth: "100%",
-    minWidth: 0,
-  },
-});
 
 /** "" is the provider's own default — a real choice, so it leads the list. */
 const DEFAULT_ID = "";
@@ -74,7 +59,7 @@ export default function EffortChip({
   ];
 
   return (
-    <div data-slot="effort-chip" {...stylex.props(styles.root)}>
+    <div data-slot="effort-chip" {...stylex.props(chipSelectorChrome.root)}>
       <Selector
         label="Reasoning effort"
         isLabelHidden
@@ -84,7 +69,7 @@ export default function EffortChip({
         value={effort}
         onChange={onEffortSelect}
         placeholder="Default effort"
-        xstyle={styles.trigger}
+        xstyle={chipSelectorChrome.trigger}
       />
     </div>
   );
