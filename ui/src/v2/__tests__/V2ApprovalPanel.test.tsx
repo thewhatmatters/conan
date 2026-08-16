@@ -29,14 +29,20 @@ describe("V2ApprovalContent", () => {
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 
-  it("carries no live region — the gate owns announcement now (WHA-55)", () => {
+  it("does not own the approval announcement — the gate does (WHA-55)", () => {
     const { container } = render(
       <V2ApprovalContent approval={approval} count={1} />,
     );
 
-    // The old panel was inserted WITH aria-live, which is why screen readers
-    // never announced it. Announcement belongs to the always-mounted gate.
-    expect(container.querySelector("[aria-live]")).toBeNull();
+    // The old panel mounted WITH aria-live on the content root, which is why
+    // screen readers never announced it (insert ≠ mutate). The gate owns
+    // announcement now. Astryx ≥0.4 Buttons ship empty polite status regions
+    // as library chrome — those are not our announcement surface.
+    const root = container.firstElementChild;
+    expect(root?.getAttribute("aria-live")).toBeNull();
+    for (const el of container.querySelectorAll("[aria-live]")) {
+      expect((el.textContent ?? "").trim()).toBe("");
+    }
   });
 
   it("uses plan language without widening all other tools", () => {
