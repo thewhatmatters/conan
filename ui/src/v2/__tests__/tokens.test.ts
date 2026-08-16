@@ -127,4 +127,15 @@ describe("v2 tokens.css", () => {
       /\[data-slot=["']composer-controls["']\] button\s*{[^}]*min-width:\s*0/s,
     );
   });
+
+  it("lifts isolation on the chat dock and composer root (WHA-197 probe A)", () => {
+    const css = injectedCss();
+    // Contract only — does not prove the paint bug is fixed (packaged app only).
+    expect(css).toMatch(
+      /\[data-chat-view=["']v2["']\] > div:last-child\s*{[^}]*isolation:\s*auto/s,
+    );
+    expect(css).toMatch(
+      /\[data-slot=["']v2-composer["']\]\s*{[^}]*isolation:\s*auto/s,
+    );
+  });
 });

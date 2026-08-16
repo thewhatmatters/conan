@@ -410,6 +410,20 @@
   display: none;
 }
 
+/* WHA-197 probe A — partial-glyph garble on ChatComposerInput is consistent
+ * with a stale/composited layer, not a missing font (chips stay crisp in the
+ * same frame). Astryx sets isolation:isolate on ChatLayout's dockContainer and
+ * ChatComposer root; the blur scrim is already display:none above. Lift both
+ * isolation contexts so WebKit does not park the contenteditable on its own
+ * composited layer. Diagnostic only — one property family, no text-pipeline
+ * re-anchor. */
+[data-chat-view="v2"] > div:last-child {
+  isolation: auto !important;
+}
+[data-slot="v2-composer"] {
+  isolation: auto !important;
+}
+
 /* Keep the composer controls compressible before the send action. Astryx's
  * footer correctly reserves the send button, but the three trigger wrappers
  * otherwise use their content width as a floor and push that primary action
