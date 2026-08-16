@@ -361,8 +361,9 @@ describe("AppV2 live projects (US-501)", () => {
     expect(screen.getAllByRole("button", { name: "New chat: No messages yet" })).toHaveLength(1);
   });
 
-  // WHA-103 (reworked): there is no kebab any more. Right-click is the gesture,
-  // and it has to work on the ROW, not on some control inside it.
+  // WHA-103 + WHA-199: right-click on the row still opens the ContextMenu; the
+  // hover kebab (click DropdownMenu) is the other path, restored so delete /
+  // rename work when Tauri swallows the right-click gesture (WHA-198).
   it("opens the thread menu from a right-click on the row itself", async () => {
     stubGateway();
     render(<AppV2 />);
@@ -371,14 +372,29 @@ describe("AppV2 live projects (US-501)", () => {
       name: "Analyze my project: Run serverless code...",
     });
     expect(
-      screen.queryByRole("button", { name: "Actions for Analyze my project" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Actions for Analyze my project" }),
+    ).toBeInTheDocument();
 
     fireEvent.contextMenu(row);
 
     expect(
       await screen.findByRole("menu", { name: "Actions for Analyze my project" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the thread menu from the hover kebab (WHA-199)", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    const kebab = await screen.findByRole("button", {
+      name: "Actions for Analyze my project",
+    });
+    fireEvent.click(kebab);
+
+    expect(
+      await screen.findByRole("menu", { name: "Actions for Analyze my project" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
   });
 
   it("keeps the menu keyboard-navigable once right-click opens it", async () => {

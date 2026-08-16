@@ -344,12 +344,36 @@
   animation: conan-status-pulse 1.5s ease-in-out infinite;
 }
 
-/* WHA-87's hover swap is GONE (WHA-103, reworked 2026-08-04). The trailing lane
- * held the timestamp at rest and a kebab on hover; the kebab no longer exists —
- * thread actions are right-click on the row — so the timestamp simply stays.
- * The rules that faded each one in and out are deleted rather than neutralised,
- * because a `data-menu-open` selector with no element to match is a trap for
- * whoever reads this file next. */
+/* WHA-87 hover swap, restored by WHA-199: timestamp at rest, kebab on intent.
+ * The kebab is a click DropdownMenu (project pattern); right-click on the row
+ * still opens the ContextMenu. Both menus pin the kebab visible while open so
+ * the control does not fade out from under its own flyout. */
+[data-slot="thread-actions"] {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+[data-slot="thread-row"]:hover [data-slot="thread-actions"],
+[data-slot="thread-row"]:focus-within [data-slot="thread-actions"],
+[data-slot="thread-actions"][data-menu-open="true"] {
+  opacity: 1;
+}
+
+/* Time at rest, actions on intent: the timestamp fades out under exactly the
+ * conditions that fade the kebab in, so the slot never shows both. It is only
+ * ever hidden VISUALLY — it keeps its box (which is what sizes the lane) and
+ * stays in the a11y tree, so a screen reader still gets the thread's last
+ * activity while a pointer user sees the kebab. */
+[data-slot="thread-timestamp"] {
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+[data-slot="thread-row"]:hover [data-slot="thread-timestamp"],
+[data-slot="thread-row"]:focus-within [data-slot="thread-timestamp"],
+[data-slot="thread-trailing"][data-menu-open="true"] [data-slot="thread-timestamp"] {
+  opacity: 0;
+}
 
 /* Astryx moves pointer focus into portalled menu items, so pointer and keyboard
  * navigation share one visible highlight treatment. Keep this override scoped
@@ -421,6 +445,10 @@
     animation: none;
   }
 
+  [data-slot="thread-actions"],
+  [data-slot="thread-timestamp"] {
+    transition: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------

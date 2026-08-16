@@ -1,13 +1,14 @@
 /**
- * ThreadRow trailing slot + row menu — WHA-87, reworked by WHA-103 (2026-08-04).
+ * ThreadRow trailing slot + row menu — WHA-87 / WHA-103 / WHA-199.
  *
- * The trailing lane used to swap a timestamp for a hover kebab. The kebab is
- * gone: thread actions are RIGHT-CLICK ON THE ROW (Randy's call), so the
- * timestamp simply stays put and the row itself is the menu trigger.
+ * The trailing lane holds ONE slot with TWO occupants: a relative timestamp at
+ * rest, the kebab on hover/focus (WHA-87, restored by WHA-199). The kebab is a
+ * click `DropdownMenu` (project-row pattern). Right-click on the row still opens
+ * a `ContextMenu` (WHA-103) — same items, second gesture.
  *
  * What these tests can honestly assert is the markup contract and the pure
  * logic — what "2d ago" resolves to, that the label carries the absolute
- * datetime, and that the gesture reaches the menu. Paint and layout are not
+ * datetime, and that both gestures reach a menu. Paint and layout are not
  * asserted here: jsdom neither lays out nor paints, so those belong to the
  * browser pass.
  */
@@ -90,7 +91,7 @@ describe("ThreadRow trailing slot", () => {
     expect(container.querySelector('[data-slot="thread-trailing"]')).not.toBeNull();
   });
 
-  it("leaves the timestamp alone in the trailing slot — no kebab beside it", () => {
+  it("puts the kebab in the same slot as the timestamp (WHA-199)", () => {
     const { container } = render(
       <ThreadRow
         title="Analyze"
@@ -101,10 +102,43 @@ describe("ThreadRow trailing slot", () => {
     );
 
     const slot = container.querySelector('[data-slot="thread-trailing"]');
+    const actions = container.querySelector('[data-slot="thread-actions"]');
     const stamp = container.querySelector('[data-slot="thread-timestamp"]');
+    expect(slot?.contains(actions!)).toBe(true);
     expect(slot?.contains(stamp!)).toBe(true);
-    expect(container.querySelector('[data-slot="thread-actions"]')).toBeNull();
-    expect(screen.queryByRole("button", { name: "Actions for Analyze" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the kebab reachable — it is a real button, not a hover-only node", () => {
+    render(
+      <ThreadRow
+        title="Analyze"
+        subtitle="..."
+        lastActivity={NOW - DAY}
+        onNewThread={() => {}}
+      />,
+    );
+
+    const kebab = screen.getByRole("button", { name: "Actions for Analyze" });
+    kebab.focus();
+    expect(document.activeElement).toBe(kebab);
+  });
+
+  it("opens the click DropdownMenu from the kebab (project pattern)", async () => {
+    render(
+      <ThreadRow
+        title="Analyze"
+        subtitle="..."
+        lastActivity={NOW - DAY}
+        onNewThread={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Analyze" }));
+
+    expect(screen.getByRole("menu", { name: "Actions for Analyze" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "New thread" })).toHaveFocus(),
+    );
   });
 
   it("opens the menu on a right-click anywhere on the row", async () => {
@@ -152,6 +186,7 @@ describe("ThreadRow trailing slot", () => {
     fireEvent.contextMenu(screen.getByRole("button", { name: "Analyze: ..." }));
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions for Analyze" })).not.toBeInTheDocument();
   });
 
   /**

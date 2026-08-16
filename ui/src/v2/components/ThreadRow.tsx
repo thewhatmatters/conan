@@ -15,12 +15,23 @@
  * line up across every row regardless of avatar content (Paper's repeated-row
  * rule). The status dot is absolutely positioned OFF the avatar's top-right
  * corner, which is why the avatar is the positioning context.
+ *
+ * MENUS (WHA-199): one action surface, two open gestures.
+ *   1. Click the hover kebab — Astryx `DropdownMenu`, same control the project
+ *      row already uses. Click-triggered, so it does not depend on Tauri's
+ *      right-click path (WHA-198).
+ *   2. Right-click the row (or Shift+F10 / Menu key on the select target) —
+ *      opens the SAME menu. WHA-103's ContextMenu-on-the-row is gone on purpose:
+ *      two mounted menus with the same items double every `role="menu"` query
+ *      and the dead gesture in the packaged app is the ContextMenu one.
  */
 import * as stylex from "@stylexjs/stylex";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
-import { ContextMenu } from "@astryxdesign/core/ContextMenu";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { MoreVertical } from "lucide-react";
 import {
   formatAbsoluteTime,
   formatRelativeTime,
@@ -60,6 +71,8 @@ export interface ThreadRowProps {
    */
   lastActivity?: number;
 }
+
+const ICON = 16;
 
 const styles = stylex.create({
   row: {
@@ -146,18 +159,11 @@ const styles = stylex.create({
     color: "var(--conan-brand-claude)",
     flexShrink: 0,
   },
-  // Astryx's ContextMenu trigger is a plain block that hugs its content, so it
-  // needs an explicit fill or the row stops spanning the rail (the same pattern
-  // the library's Table uses for full-cell menus).
-  trigger: {
-    display: "block",
-    width: "100%",
-  },
-  // ONE OCCUPANT since WHA-103's rework: the timestamp, always visible. It used
-  // to swap with a hover kebab — that kebab is gone (Randy, 2026-08-04: the menu
-  // is right-click only), so nothing takes this lane away any more.
-  // `flexShrink: 0` is the artboard's rule that this lane never compresses —
-  // the title/subtitle truncate instead.
+  // ONE SLOT, TWO OCCUPANTS (WHA-87 restored by WHA-199): timestamp at rest,
+  // kebab on hover/focus. Only the timestamp is in flow; the kebab is taken out
+  // of it and pinned to the slot's trailing edge, so revealing either one cannot
+  // move the row. `flexShrink: 0` is the artboard's rule that this lane never
+  // compresses — the title/subtitle truncate instead.
   trailing: {
     alignItems: "center",
     display: "flex",
@@ -171,10 +177,21 @@ const styles = stylex.create({
     minWidth: "var(--conan-thread-time-lane)",
     position: "relative",
   },
+  // Fades out as the kebab fades in (tokens.css owns the opacity rules so they
+  // can also pin open while the menu is up). Reduced-motion is handled there.
   timestamp: {
     color: "var(--conan-text-muted)",
     fontSize: "var(--conan-text-small)",
     whiteSpace: "nowrap",
+  },
+  // Out of flow so revealing it costs no layout. Anchored to the slot's trailing
+  // edge, which is where the artboard draws it.
+  menuOverlay: {
+    flexShrink: 0,
+    height: "var(--conan-control-height)",
+    insetBlockStart: 0,
+    insetInlineEnd: 0,
+    position: "absolute",
   },
 });
 
@@ -200,15 +217,42 @@ export default function ThreadRow({
   onDelete,
   lastActivity,
 }: ThreadRowProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const hasTimestamp = typeof lastActivity === "number" && Number.isFinite(lastActivity);
+  const hasMenu = Boolean(onNewThread);
 
-  const row = (
+  const openMenu = () => {
+    if (hasMenu) setIsMenuOpen(true);
+  };
+
+  // Right-click anywhere on the row opens the same DropdownMenu the kebab owns.
+  // preventDefault stops the browser's native menu; without it the shell menu
+  // never gets a chance.
+  const handleRowContextMenu = (event: MouseEvent) => {
+    if (!hasMenu) return;
+    event.preventDefault();
+    openMenu();
+  };
+
+  // Shift+F10 / Menu key — the keyboard path WHA-103 got for free from
+  // ContextMenu. Reimplemented here so dropping ContextMenu does not strand
+  // keyboard users.
+  const handleSelectKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!hasMenu) return;
+    if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
+      event.preventDefault();
+      openMenu();
+    }
+  };
+
+  return (
     <HStack
       align="center"
       xstyle={styles.row}
       data-slot="thread-row"
       data-thread-id={id ?? title}
       data-selected={isSelected ? "true" : undefined}
+      onContextMenu={handleRowContextMenu}
     >
       <button
         type="button"
@@ -217,6 +261,7 @@ export default function ThreadRow({
         data-thread-id={id ?? title}
         data-selected={isSelected ? "true" : undefined}
         onClick={onSelect}
+        onKeyDown={handleSelectKeyDown}
         {...stylex.props(styles.selectTarget)}
       >
         <HStack align="start" gap={3} padding={3}>
@@ -245,7 +290,14 @@ export default function ThreadRow({
           </VStack>
         </HStack>
       </button>
-      <HStack xstyle={styles.trailing} data-slot="thread-trailing">
+      {/* `data-menu-open` rides the WRAPPER as well as the kebab: the timestamp
+          has to stay hidden for the menu's whole lifetime, and it sits BEFORE
+          the kebab in the DOM, so a sibling combinator can't reach it. */}
+      <HStack
+        xstyle={styles.trailing}
+        data-slot="thread-trailing"
+        data-menu-open={isMenuOpen ? "true" : undefined}
+      >
         {hasTimestamp ? (
           <time
             dateTime={toDateTimeAttribute(lastActivity)}
@@ -256,33 +308,53 @@ export default function ThreadRow({
             {formatRelativeTime(lastActivity)}
           </time>
         ) : null}
+        {hasMenu ? (
+          <HStack
+            xstyle={styles.menuOverlay}
+            data-slot="thread-actions"
+            data-menu-open={isMenuOpen ? "true" : undefined}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {/* Project-row pattern (ProjectTree.tsx): click DropdownMenu. One
+                menu for both gestures — kebab click and row right-click both
+                drive `isMenuOpen`. */}
+            <DropdownMenu
+              isMenuOpen={isMenuOpen}
+              onOpenChange={setIsMenuOpen}
+              button={{
+                label: `Actions for ${title}`,
+                icon: <MoreVertical size={ICON} aria-hidden />,
+                isIconOnly: true,
+                variant: "ghost",
+                size: "sm",
+              }}
+              hasChevron={false}
+              placement="below"
+              items={[
+                { label: "New thread", onClick: onNewThread },
+                {
+                  label: "Rename thread",
+                  onClick: onRename ?? undefined,
+                  isDisabled: !onRename,
+                },
+                {
+                  label: "Copy Path",
+                  onClick: onCopyPath ?? undefined,
+                  isDisabled: !onCopyPath,
+                },
+                {
+                  label: "Copy Thread ID",
+                  onClick: onCopyId ?? undefined,
+                  isDisabled: !onCopyId,
+                },
+                { type: "divider" },
+                { label: "Delete", onClick: onDelete },
+              ]}
+            />
+          </HStack>
+        ) : null}
       </HStack>
       {isSelected ? <HStack xstyle={styles.indicator} aria-hidden /> : null}
     </HStack>
-  );
-
-  // A row with no handlers is the prop-less placeholder tree (tests/stories) —
-  // it gets no menu rather than a menu of dead entries.
-  if (!onNewThread) return row;
-
-  // WHA-103 (reworked 2026-08-04): the menu is RIGHT-CLICK ON THE ROW. The first
-  // pass wrapped only a kebab button, which meant the row itself ignored the one
-  // gesture the component is named after. Wrapping the row is also what gives
-  // keyboard users Shift+F10 / the Menu key, which Astryx handles for free.
-  return (
-    <ContextMenu
-      label={`Actions for ${title}`}
-      triggerXstyle={styles.trigger}
-      items={[
-        { label: "New thread", onClick: onNewThread },
-        { label: "Rename thread", onClick: onRename ?? undefined, isDisabled: !onRename },
-        { label: "Copy Path", onClick: onCopyPath ?? undefined, isDisabled: !onCopyPath },
-        { label: "Copy Thread ID", onClick: onCopyId ?? undefined, isDisabled: !onCopyId },
-        { type: "divider" },
-        { label: "Delete", onClick: onDelete },
-      ]}
-    >
-      {row}
-    </ContextMenu>
   );
 }
