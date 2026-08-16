@@ -410,6 +410,33 @@
   display: none;
 }
 
+/* WHA-197 — ChatComposerInput contenteditable can paint mid-string as thin
+ * vertical stems while chips/labels a few pixels away stay crisp Figtree.
+ * Measured off Randy's screenshot: light RGB (≈250) is present (not a
+ * dark-on-dark contrast miss), advance ≈ character width, but only 1–2px of
+ * each glyph paints. Font-load races were eliminated for the same reason
+ * (labels already use Figtree successfully in the same frame).
+ *
+ * Astryx's editable styles set font/color via StyleX token vars and use
+ * `word-break: break-word`. Re-anchor the editable's text pipeline on Conan's
+ * resolved tokens and disable features that have caused partial-glyph WebKit
+ * paints on contenteditable in other apps (ligatures + synthesis). */
+[data-slot="rich-input"] [contenteditable="true"] {
+  color: var(--conan-text-primary);
+  caret-color: var(--conan-color-accent);
+  font-family: var(--conan-font-sans);
+  font-weight: var(--conan-weight-normal);
+  font-synthesis: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+  word-spacing: 0;
+  word-break: normal;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
 /* Keep the composer controls compressible before the send action. Astryx's
  * footer correctly reserves the send button, but the three trigger wrappers
  * otherwise use their content width as a floor and push that primary action

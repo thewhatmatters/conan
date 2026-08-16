@@ -127,4 +127,22 @@ describe("v2 tokens.css", () => {
       /\[data-slot=["']composer-controls["']\] button\s*{[^}]*min-width:\s*0/s,
     );
   });
+
+  it("hardens the rich-input contenteditable text pipeline (WHA-197)", () => {
+    const css = injectedCss();
+    // Scoped to the Astryx contenteditable, not the whole composer: chips and
+    // labels already paint correctly and must keep their own typography.
+    expect(css).toMatch(
+      /\[data-slot=["']rich-input["']\] \[contenteditable=["']true["']\]\s*{[^}]*font-family:\s*var\(--conan-font-sans\)/s,
+    );
+    expect(css).toMatch(
+      /\[data-slot=["']rich-input["']\] \[contenteditable=["']true["']\]\s*{[^}]*font-synthesis:\s*none/s,
+    );
+    expect(css).toMatch(
+      /\[data-slot=["']rich-input["']\] \[contenteditable=["']true["']\]\s*{[^}]*font-variant-ligatures:\s*none/s,
+    );
+    expect(css).toMatch(
+      /\[data-slot=["']rich-input["']\] \[contenteditable=["']true["']\]\s*{[^}]*word-break:\s*normal/s,
+    );
+  });
 });
