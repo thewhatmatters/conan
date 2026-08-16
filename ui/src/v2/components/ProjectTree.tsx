@@ -57,9 +57,11 @@ export interface ProjectTreeProps {
    * no projects" look identical in the data and must not look identical on
    * screen — a boot flash of "No projects yet" reads as data loss.
    */
-  emptyState?: "loading" | "empty" | "error";
+  emptyState?: "loading" | "empty" | "error" | "bootError";
   /** Opens the add-project dialog (WHA-74). Omitted → the control is inert. */
   onAddProject?: () => void;
+  /** Retries the WHA-83 boot-time auto-create after a POST failure. */
+  onRetryBoot?: () => void;
 }
 
 const ICON = 16;
@@ -394,6 +396,7 @@ const EMPTY_COPY: Record<NonNullable<ProjectTreeProps["emptyState"]>, string> = 
   loading: "Loading projects…",
   empty: "No projects yet.",
   error: "Couldn't reach the gateway.",
+  bootError: "Couldn't create the first project. Try again.",
 };
 
 export default function ProjectTree({
@@ -402,6 +405,7 @@ export default function ProjectTree({
   onSelectThread,
   emptyState = "empty",
   onAddProject,
+  onRetryBoot,
 }: ProjectTreeProps) {
   // Default selection wash for the artboard placeholder when the parent has
   // not yet set an active thread — keeps the shell looking selected at rest.
@@ -425,6 +429,16 @@ export default function ProjectTree({
                 variant="secondary"
                 size="sm"
                 onClick={onAddProject}
+              />
+            </HStack>
+          ) : null}
+          {emptyState === "bootError" && onRetryBoot ? (
+            <HStack>
+              <Button
+                label="Try again"
+                variant="secondary"
+                size="sm"
+                onClick={onRetryBoot}
               />
             </HStack>
           ) : null}

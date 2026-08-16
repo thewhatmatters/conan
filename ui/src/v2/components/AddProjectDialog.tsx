@@ -54,7 +54,7 @@ export interface AddProjectDialogProps {
   start: string;
   onOpenChange: (isOpen: boolean) => void;
   /** Resolves once the project row exists; the shell then refreshes. */
-  onAdd: (path: string) => Promise<void>;
+  onAdd: (path: string) => Promise<unknown>;
 }
 
 const ICON = 16;

@@ -45,7 +45,7 @@
  *   - no Tailwind classes, no raw hex, no raw px — anything the props can't
  *     express goes through `xstyle` reading `tokens.css` (contract §4.2/§4.3)
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Layout } from "@astryxdesign/core/Layout";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
@@ -68,6 +68,7 @@ import {
 import { useGatewayConfig } from "./lib/useGatewayConfig.ts";
 import {
   useV2Projects,
+  type V2Project,
   type V2ProjectWithThreads,
   type V2SavedThread,
 } from "./lib/useV2Projects.ts";
@@ -180,6 +181,8 @@ export default function AppV2() {
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
+  // WHA-83: recoverable error state when the boot-time auto-create POST fails.
+  const [bootError, setBootError] = useState(false);
   // WHA-70 / US-401 — command palette open state lives at the shell once.
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [openSurfaces, setOpenSurfaces] = useState<
@@ -365,7 +368,7 @@ export default function AppV2() {
   // WHA-74 recovery path. Upsert is idempotent by path (`gateway/index.ts:585`),
   // so re-adding a folder returns its existing row rather than duplicating it.
   const addProject = useCallback(
-    async (path: string) => {
+    async (path: string): Promise<V2Project> => {
       if (!token) throw new Error("No gateway token");
       const response = await fetch(apiBase() + "/api/agent/projects", {
         method: "POST",
@@ -376,10 +379,59 @@ export default function AppV2() {
         body: JSON.stringify({ path }),
       });
       if (!response.ok) throw new Error(`Add failed (${response.status})`);
+      const project = (await response.json()) as V2Project;
       await refresh();
+      return project;
     },
     [refresh, token],
   );
+
+  // WHA-83: a fresh install or preview with no registered project should not
+  // leave the chat stuck at "New chat". Mirror v1 ChatSurface.tsx:417-436:
+  // once on boot, if the project list is empty, auto-create a project from the
+  // gateway's cwd and open a draft in it.
+  const booted = useRef(false);
+  useEffect(() => {
+    if (booted.current || bootError || !config?.cwd || !token || !loaded || error) return;
+    booted.current = true;
+    if (projects.length > 0) return;
+    void addProject(config.cwd)
+      .then((project) => {
+        const id = draftId();
+        setDrafts((current) => [...current, { id, projectId: project.id }]);
+        setActiveThread({
+          key: id,
+          cwd: project.path,
+          projectId: project.id,
+          projectName: project.name,
+          provider: "claude",
+          title: UNTITLED,
+        });
+      })
+      .catch(() => {
+        setBootError(true);
+      });
+  }, [addProject, bootError, config?.cwd, error, loaded, projects.length, token]);
+
+  const retryBoot = useCallback(async () => {
+    if (!config?.cwd || !token) return;
+    setBootError(false);
+    try {
+      const project = await addProject(config.cwd);
+      const id = draftId();
+      setDrafts((current) => [...current, { id, projectId: project.id }]);
+      setActiveThread({
+        key: id,
+        cwd: project.path,
+        projectId: project.id,
+        projectName: project.name,
+        provider: "claude",
+        title: UNTITLED,
+      });
+    } catch {
+      setBootError(true);
+    }
+  }, [addProject, config?.cwd, token]);
 
   const requestRemoveProject = useCallback((target: V2RemoveTarget) => {
     setRemoveError(false);
@@ -530,9 +582,11 @@ export default function AppV2() {
 
   const emptyState: ProjectTreeProps["emptyState"] = error
     ? "error"
-    : loaded
-      ? "empty"
-      : "loading";
+    : bootError
+      ? "bootError"
+      : loaded
+        ? "empty"
+        : "loading";
 
   /**
    * The one moment a draft becomes a real thread (WHA-121).
@@ -710,6 +764,7 @@ export default function AppV2() {
             selectedKey={activeThread?.key ?? null}
             onSelectThread={onSelectThread}
             onAddProject={token ? () => setIsAddingProject(true) : undefined}
+            onRetryBoot={token ? retryBoot : undefined}
             onOpenPalette={openPalette}
           />
         }

@@ -35,6 +35,8 @@ export interface SidebarProps {
   emptyState?: ProjectTreeProps["emptyState"];
   /** Opens the add-project dialog (WHA-74) — the shell owns the dialog. */
   onAddProject?: () => void;
+  /** Retries the WHA-83 boot-time auto-create after a POST failure. */
+  onRetryBoot?: () => void;
   /** Opens the ⌘K command palette (WHA-70) from the sidebar Search field. */
   onOpenPalette?: () => void;
 }
@@ -67,6 +69,7 @@ export default function Sidebar({
   groups,
   emptyState,
   onAddProject,
+  onRetryBoot,
   onOpenPalette,
 }: SidebarProps) {
   return (
@@ -89,6 +92,7 @@ export default function Sidebar({
             selectedKey={selectedKey}
             onSelectThread={onSelectThread}
             onAddProject={onAddProject}
+            onRetryBoot={onRetryBoot}
           />
         </VStack>
         <VStack padding={4} gap={4} xstyle={styles.footer}>

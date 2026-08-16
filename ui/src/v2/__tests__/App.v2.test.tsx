@@ -70,12 +70,14 @@ function stubGateway(
   projects: unknown = PROJECTS,
   patchOk = true,
   deleteOk = true,
+  config = CONFIG,
 ) {
+  const projectList = Array.isArray(projects) ? [...projects] : projects;
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = (data: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
-    if (url.includes("/api/config")) return body(CONFIG);
+    if (url.includes("/api/config")) return body(config);
     if (url.includes("/api/sagan/runs")) {
       const valid = url.includes(encodeURIComponent("/repo/conan"));
       return body({
@@ -87,7 +89,14 @@ function stubGateway(
     // (WHA-74), and an unguarded prefix match would answer it 200 and hide
     // every remove-failure path.
     if (url.includes("/api/agent/projects") && !init?.method) {
-      return body({ projects });
+      return body({ projects: projectList });
+    }
+    if (url.includes("/api/agent/projects") && init?.method === "POST") {
+      const payload = JSON.parse(init.body as string) as { path: string };
+      const name = payload.path.split("/").pop() || payload.path;
+      const project = { id: "p-auto", path: payload.path, name, createdAt: 1, threads: [] };
+      if (Array.isArray(projectList)) projectList.push(project);
+      return body(project);
     }
     if (url.includes("/transcript")) return body({ found: false, items: [] });
     if (init?.method === "PATCH") {
@@ -282,11 +291,85 @@ describe("AppV2 live projects (US-501)", () => {
     ).toBeInTheDocument();
   });
 
-  it("says 'no projects' only once an empty list actually came back", async () => {
-    stubGateway([]);
+  it("auto-creates a project from the gateway cwd when no projects exist", async () => {
+    const fetchMock = stubGateway([]);
     render(<AppV2 />);
 
-    expect(await screen.findByText("No projects yet.")).toBeInTheDocument();
+    // WHA-83: an empty project list + a cwd should not leave the user at
+    // "No projects yet". The shell mirrors v1's boot behavior and auto-creates
+    // a project, then opens a draft in it.
+    expect(await screen.findByRole("button", { name: "Collapse conan" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New chat: No messages yet" }),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/agent/projects"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    const postCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes("/api/agent/projects") &&
+        (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(JSON.parse(String((postCall?.[1] as RequestInit).body))).toEqual({
+      path: CONFIG.cwd,
+    });
+  });
+
+  it("does not auto-create when the initial project GET fails", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = (data: unknown) =>
+        Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
+      if (url.includes("/api/config")) return body(CONFIG);
+      if (url.includes("/api/agent/projects") && !init?.method) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AppV2 />);
+
+    // The existing gateway error state must stay visible; a failed read is not
+    // a confirmed empty store.
+    expect(await screen.findByText("Couldn't reach the gateway.")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("surfaces a recoverable error when the boot POST fails", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = (data: unknown) =>
+        Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
+      if (url.includes("/api/config")) return body(CONFIG);
+      if (url.includes("/api/agent/projects") && !init?.method) {
+        return body({ projects: [] });
+      }
+      if (url.includes("/api/agent/projects") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({}),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AppV2 />);
+
+    // A failed boot POST must not leave the user at a phantom "New chat" row.
+    expect(
+      await screen.findByText("Couldn't create the first project. Try again."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Collapse conan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New chat: No messages yet" })).not.toBeInTheDocument();
   });
 
   it("selecting a thread opens it — the row goes current and the chat follows", async () => {
