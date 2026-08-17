@@ -767,8 +767,13 @@ describe("AppV2 live projects (US-501)", () => {
     const cta = await screen.findByRole("button", { name: "Add your first project" });
     fireEvent.click(cta);
 
-    fireEvent.click(await screen.findByRole("button", { name: "fresh" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Use this folder" }));
+    // Source picker → local folder browser.
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    // Descend into the only directory, then confirm with the header Add button.
+    fireEvent.click(await screen.findByRole("option", { name: "fresh" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
 
     await waitFor(() =>
       expect(
@@ -803,12 +808,15 @@ describe("AppV2 live projects (US-501)", () => {
     render(<AppV2 />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Add project" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Use this folder" }));
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
 
     expect(
       await screen.findByText("Couldn't add that folder as a project. Try again."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Use this folder" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
   });
 
   // Found in WHA-74 browser QA: `crypto.randomUUID` is secure-context only, so
