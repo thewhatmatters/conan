@@ -15,11 +15,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
+import { Banner } from "@astryxdesign/core/Banner";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { AlertTriangle, OctagonAlert, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
@@ -58,16 +59,11 @@ const styles = stylex.create({
   // composer — no negative-margin tuck and no tinted wash. The previous frosted
   // band slid up under the composer's control row and covered the model/effort/
   // permission chips and send button.
+  // Layout only. Astryx Banner brings the status colour, icon and card surface;
+  // hand-rolling those is what produced first a mustard slab and then a bare
+  // row with no background at all (Randy, 2026-08-17).
   callout: {
-    alignItems: "center",
-    // OPAQUE, not glass: at 0.82 the transcript still read through the band and
-    // collided with the warning text (Randy, 2026-08-17). This is the composer's
-    // own raised surface at full opacity — nothing behind it survives.
-    backgroundColor: "var(--conan-color-content)",
-    display: "flex",
-    gap: "var(--conan-space-2)",
-    paddingBlock: "var(--conan-space-3)",
-    paddingInline: "var(--conan-space-4)",
+    marginBlockStart: "var(--conan-space-2)",
   },
   calloutWarning: {
     color: "var(--conan-color-warning)",
@@ -422,23 +418,13 @@ export default function V2Composer({
       sendButton={<ChatSendButton />}
       />
       {contextStatus && (
-        <div
-          role={contextStatus.type === "error" ? "alert" : "status"}
+        <Banner
+          status={contextStatus.type === "error" ? "error" : "warning"}
+          title={contextStatus.message}
+          container="card"
           data-slot="context-pressure-callout"
-          {...stylex.props(
-            styles.callout,
-            contextStatus.type === "error"
-              ? styles.calloutError
-              : styles.calloutWarning,
-          )}
-        >
-          {contextStatus.type === "error" ? (
-            <OctagonAlert size={ACTION_ICON} aria-hidden />
-          ) : (
-            <AlertTriangle size={ACTION_ICON} aria-hidden />
-          )}
-          <span>{contextStatus.message}</span>
-        </div>
+          xstyle={styles.callout}
+        />
       )}
       {contextCompactionMessage ? (
         <Text
