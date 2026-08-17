@@ -735,6 +735,7 @@ export default function AppV2() {
               <ProjectSortMenu
                 projectOrder={projectOrder}
                 threadOrder={threadOrder}
+                projectCount={groups.length}
                 onProjectOrderChange={setProjectOrder}
                 onThreadOrderChange={setThreadOrder}
               />
