@@ -819,6 +819,35 @@ describe("AppV2 live projects (US-501)", () => {
     expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
   });
 
+  it("reopens the command palette when the folder browser back arrow is pressed", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = (data: unknown) =>
+        Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
+      if (url.includes("/api/config")) return body(CONFIG);
+      if (url.includes("/api/fs/list")) {
+        return body({ path: "/repo/conan", parent: null, entries: [] });
+      }
+      if (url.includes("/api/agent/projects")) return body({ projects: PROJECTS });
+      if (url.includes("/transcript")) return body({ found: false, items: [] });
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<AppV2 />);
+    const palette = () => container.querySelector('[data-slot="command-palette"]');
+
+    // Start from the sidebar "Add project" button; back should reopen the palette.
+    fireEvent.click(await screen.findByRole("button", { name: "Add project" }));
+    await screen.findByRole("dialog", { name: "Add project" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await waitFor(() => expect(palette()).toHaveAttribute("open"));
+    expect(
+      screen.queryByRole("dialog", { name: "Add project" }),
+    ).not.toBeInTheDocument();
+  });
+
   // Found in WHA-74 browser QA: `crypto.randomUUID` is secure-context only, so
   // on a plain-http LAN preview it is undefined and New chat threw instead of
   // creating a draft. Pre-existing, but it made the kebab's own New chat item
