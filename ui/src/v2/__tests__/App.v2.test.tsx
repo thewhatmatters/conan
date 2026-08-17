@@ -402,7 +402,29 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(savedRow);
     await screen.findByRole("button", { name: "Sagan" });
 
-    // Open another surface so Sagan's survival is visible (not just "chat alone").
+    // Create a draft thread in the same Sagan project and select it.
+    await newChatInProject("conan");
+    const draftRow = await screen.findByRole("button", { name: "New chat: No messages yet" });
+    fireEvent.click(draftRow);
+
+    // Selecting the draft used to drop projectId and strip Sagan. With
+    // per-thread surfaces (WHA-205) the draft gets its own fresh state, but
+    // Sagan still auto-pins because the draft resolved to the conan project.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+    });
+  });
+
+  it("isolates surface tabs to each thread (WHA-205)", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    // Thread 1: open Browser.
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
     await waitFor(() => {
       fireEvent.click(screen.getByRole("button", { name: "Surface" }));
       expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
@@ -410,14 +432,23 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
     await screen.findByRole("button", { name: "Browser" });
 
-    // Create a draft thread in the same Sagan project and select it.
+    // Thread 2: a new chat in the same project starts fresh (no leaked
+    // Browser). Because conan has .sagan/, Sagan auto-pins for this thread too.
     await newChatInProject("conan");
-    const draftRow = await screen.findByRole("button", { name: "New chat: No messages yet" });
-    fireEvent.click(draftRow);
-
-    // Selecting the draft used to drop projectId and strip Sagan.
+    await screen.findByRole("button", { name: "New chat: No messages yet" });
     await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
       expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sagan" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    // Back to thread 1: Browser is still there.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
       expect(screen.getByRole("button", { name: "Browser" })).toBeInTheDocument();
     });
   });

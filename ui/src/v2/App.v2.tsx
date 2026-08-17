@@ -193,10 +193,21 @@ export default function AppV2() {
   const [isAddingProject, setIsAddingProject] = useState(false);
   // WHA-70 / US-401 — command palette open state lives at the shell once.
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [openSurfaces, setOpenSurfaces] = useState<
-    Array<Exclude<SurfaceId, "chat">>
-  >([]);
-  const [activeSurface, setActiveSurface] = useState<SurfaceId>("chat");
+  // WHA-205 — surface tabs belong to the thread, not the shell. Each thread
+  // keeps its own open set and active surface in memory; the entry is dropped
+  // when the thread is deleted.
+  type ThreadSurfaceState = {
+    open: Array<Exclude<SurfaceId, "chat">>;
+    active: SurfaceId;
+  };
+  const [surfaceStateByThread, setSurfaceStateByThread] = useState<
+    Record<string, ThreadSurfaceState>
+  >({});
+  const threadSurfaceKey = activeThread?.key ?? "";
+  const { open: openSurfaces, active: activeSurface } = useMemo<ThreadSurfaceState>(
+    () => surfaceStateByThread[threadSurfaceKey] ?? { open: [], active: "chat" },
+    [surfaceStateByThread, threadSurfaceKey],
+  );
   // WHA-109: the shell owns what the Browser surface is showing, because the
   // surface and the chat are siblings — the surface produces this, the chat
   // consumes it, and neither can see the other.
@@ -211,9 +222,11 @@ export default function AppV2() {
   );
   const saganAvailable = sagan.available;
   const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
-  // Tracks the last project we auto-pinned Sagan for, so the 7.5s poll does not
-  // re-assert the pin and steal a slot from a surface the user opened manually.
-  const saganPinnedProjectRef = useRef<string | null>(null);
+  // Tracks the last project we auto-pinned Sagan for, keyed by thread, so the
+  // 7.5s poll does not re-assert the pin and steal a slot from a surface the
+  // user opened manually. Each thread gets its own tracker so switching threads
+  // in the same project still triggers the auto-pin for the new thread.
+  const saganPinnedProjectRef = useRef<Record<string, string | null>>({});
 
   const enforceTwoSurfaceSlots = useCallback(
     (next: Array<Exclude<SurfaceId, "chat">>) => {
@@ -227,23 +240,36 @@ export default function AppV2() {
     [],
   );
 
+  const updateThreadSurfaces = useCallback(
+    (updater: (prev: ThreadSurfaceState) => ThreadSurfaceState) => {
+      const key = threadSurfaceKey;
+      setSurfaceStateByThread((current) => ({
+        ...current,
+        [key]: updater(current[key] ?? { open: [], active: "chat" }),
+      }));
+    },
+    [threadSurfaceKey],
+  );
+
   useEffect(() => {
     if (saganAvailable) return;
-    saganPinnedProjectRef.current = null;
-    setOpenSurfaces((current) => current.filter((id) => id !== "sagan"));
-    setActiveSurface((current) => (current === "sagan" ? "chat" : current));
-  }, [saganAvailable]);
+    saganPinnedProjectRef.current[threadSurfaceKey] = null;
+    updateThreadSurfaces((current) => ({
+      open: current.open.filter((id) => id !== "sagan"),
+      active: current.active === "sagan" ? "chat" : current.active,
+    }));
+  }, [saganAvailable, threadSurfaceKey, updateThreadSurfaces]);
 
   useEffect(() => {
     if (!saganAvailable || !sagan.projectPath) return;
-    if (saganPinnedProjectRef.current === sagan.projectPath) return;
-    saganPinnedProjectRef.current = sagan.projectPath;
-    setOpenSurfaces((current) => {
-      if (current.includes("sagan")) return current;
-      return enforceTwoSurfaceSlots([...current, "sagan"]);
+    if (saganPinnedProjectRef.current[threadSurfaceKey] === sagan.projectPath) return;
+    saganPinnedProjectRef.current[threadSurfaceKey] = sagan.projectPath;
+    updateThreadSurfaces((current) => {
+      if (current.open.includes("sagan")) return current;
+      const nextOpen = enforceTwoSurfaceSlots([...current.open, "sagan"]);
+      return { open: nextOpen, active: "sagan" };
     });
-    setActiveSurface("sagan");
-  }, [saganAvailable, sagan.projectPath, enforceTwoSurfaceSlots]);
+  }, [saganAvailable, sagan.projectPath, threadSurfaceKey, enforceTwoSurfaceSlots, updateThreadSurfaces]);
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
     () => [
@@ -264,21 +290,31 @@ export default function AppV2() {
     ],
     [activeSurface, openSurfaces, saganNeedsYou],
   );
-  const openSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
-    if (id === "sagan" && !saganAvailable) return;
-    setOpenSurfaces((current) => {
-      if (current.includes(id)) return current;
-      return enforceTwoSurfaceSlots([...current, id]);
-    });
-    setActiveSurface(id);
-  }, [saganAvailable, enforceTwoSurfaceSlots]);
-  const selectSurface = useCallback((id: SurfaceId) => {
-    setActiveSurface(id);
-  }, []);
-  const closeSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
-    setOpenSurfaces((current) => current.filter((candidate) => candidate !== id));
-    setActiveSurface((current) => (current === id ? "chat" : current));
-  }, []);
+  const openSurface = useCallback(
+    (id: Exclude<SurfaceId, "chat">) => {
+      if (id === "sagan" && !saganAvailable) return;
+      updateThreadSurfaces((current) => {
+        if (current.open.includes(id)) return { ...current, active: id };
+        return { open: enforceTwoSurfaceSlots([...current.open, id]), active: id };
+      });
+    },
+    [saganAvailable, enforceTwoSurfaceSlots, updateThreadSurfaces],
+  );
+  const selectSurface = useCallback(
+    (id: SurfaceId) => {
+      updateThreadSurfaces((current) => ({ ...current, active: id }));
+    },
+    [updateThreadSurfaces],
+  );
+  const closeSurface = useCallback(
+    (id: Exclude<SurfaceId, "chat">) => {
+      updateThreadSurfaces((current) => ({
+        open: current.open.filter((candidate) => candidate !== id),
+        active: current.active === id ? "chat" : current.active,
+      }));
+    },
+    [updateThreadSurfaces],
+  );
 
   // ⌘K / Ctrl+K opens the palette (allowInInputs: true so it works while the
   // composer or sidebar search is focused). Esc is owned by Astryx CommandPalette.
@@ -348,6 +384,12 @@ export default function AppV2() {
       // Deletion is the real end of a thread; navigation is not.
       closeSession(id);
       setActiveThread((current) => (current?.key === id ? null : current));
+      setSurfaceStateByThread((current) => {
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
     },
     [drafts, refresh, token],
   );
@@ -398,6 +440,19 @@ export default function AppV2() {
       setDrafts((current) => current.filter((draft) => draft.projectId !== id));
       // The open thread may have belonged to the project that just went away.
       setActiveThread((current) => (current?.projectId === id ? null : current));
+      // Drop surface state for every thread and draft that belonged to the project.
+      const removedThreadIds = new Set([
+        ...(projects.find((p) => p.id === id)?.threads ?? []).map((t) => t.sessionId),
+        ...drafts.filter((d) => d.projectId === id).map((d) => d.id),
+      ]);
+      setSurfaceStateByThread((current) => {
+        if (removedThreadIds.size === 0) return current;
+        const next = { ...current };
+        for (const threadId of removedThreadIds) {
+          delete next[threadId];
+        }
+        return next;
+      });
       await refresh();
     },
     [drafts, projects, refresh, token],
