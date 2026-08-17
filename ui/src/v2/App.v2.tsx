@@ -221,6 +221,7 @@ export default function AppV2() {
     activeSurface === "sagan",
   );
   const saganAvailable = sagan.available;
+  const saganAutoPin = sagan.autoPin;
   const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
   // Tracks the last project we auto-pinned Sagan for, keyed by thread, so the
   // 7.5s poll does not re-assert the pin and steal a slot from a surface the
@@ -261,7 +262,7 @@ export default function AppV2() {
   }, [saganAvailable, threadSurfaceKey, updateThreadSurfaces]);
 
   useEffect(() => {
-    if (!saganAvailable || !sagan.projectPath) return;
+    if (!saganAutoPin || !sagan.projectPath) return;
     if (saganPinnedProjectRef.current[threadSurfaceKey] === sagan.projectPath) return;
     saganPinnedProjectRef.current[threadSurfaceKey] = sagan.projectPath;
     updateThreadSurfaces((current) => {
@@ -269,7 +270,7 @@ export default function AppV2() {
       const nextOpen = enforceTwoSurfaceSlots([...current.open, "sagan"]);
       return { open: nextOpen, active: "sagan" };
     });
-  }, [saganAvailable, sagan.projectPath, threadSurfaceKey, enforceTwoSurfaceSlots, updateThreadSurfaces]);
+  }, [saganAutoPin, sagan.projectPath, threadSurfaceKey, enforceTwoSurfaceSlots, updateThreadSurfaces]);
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
     () => [

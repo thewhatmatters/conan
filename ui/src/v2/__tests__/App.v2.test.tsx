@@ -77,9 +77,14 @@ function stubGateway(
       Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
     if (url.includes("/api/config")) return body(CONFIG);
     if (url.includes("/api/sagan/runs")) {
-      const valid = url.includes(encodeURIComponent("/repo/conan"));
+      const projectId = decodeURIComponent(url.split("projectId=")[1] ?? "");
+      const valid = projectId.startsWith("/repo/conan");
       return body({
-        project: { sagan: { state: valid ? "valid" : "absent" } },
+        project: {
+          path: projectId,
+          root: "/repo/conan",
+          sagan: { state: valid ? "valid" : "absent" },
+        },
         runs: [],
       });
     }
@@ -412,6 +417,52 @@ describe("AppV2 live projects (US-501)", () => {
     // Sagan still auto-pins because the draft resolved to the conan project.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+    });
+  });
+
+  it("does not auto-pin Sagan for a nested folder that inherits it (WHA-209)", async () => {
+    const nestedProjects = [
+      {
+        id: "p1",
+        path: "/repo/conan/ui",
+        name: "conan-ui",
+        createdAt: 1,
+        threads: [
+          {
+            sessionId: "s-ui",
+            cwd: "/repo/conan/ui",
+            model: "opus",
+            provider: "claude",
+            effort: "think",
+            title: "UI polish",
+            lastMessage: "Tweak spacing",
+            createdAt: 1,
+            lastActivity: 9,
+          },
+        ],
+      },
+    ];
+    stubGateway(nestedProjects);
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "UI polish: Tweak spacing",
+      }),
+    );
+
+    // Sagan is available but should not auto-pin because the project path
+    // (/repo/conan/ui) is deeper than the Sagan root (/repo/conan).
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
+    });
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(
+        within(screen.getByRole("menu", { name: "Surface" })).getByRole("menuitem", {
+          name: "Sagan",
+        }),
+      ).toBeVisible();
     });
   });
 

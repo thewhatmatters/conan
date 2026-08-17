@@ -6,6 +6,8 @@ import type { V2ProjectWithThreads } from "./useV2Projects.ts";
 
 export interface SaganCapabilityResult {
   available: boolean;
+  /** True only when the queried folder IS the Sagan root, not a nested child. */
+  autoPin: boolean;
   projectPath: string | null;
   status: "idle" | "loading" | "ready" | "error";
   data: SaganRunsResult | null;
@@ -88,11 +90,15 @@ export function useSaganCapability(
 
   const current = result?.path === projectPath ? result : null;
   const saganState = current?.data?.project?.sagan.state;
+  const isOwnRoot = current?.data?.project?.root === projectPath;
+  const hasOverlay = saganState != null && saganState !== "absent";
   return {
     // Keep malformed/unsupported overlays reachable so the surface can explain
     // what needs fixing instead of disappearing like an absent project.
-    available:
-      (saganState != null && saganState !== "absent") || current?.status === "error",
+    available: hasOverlay || current?.status === "error",
+    // Auto-pin only promotes tabs for folders that are themselves the Sagan
+    // root. Nested folders can still open Sagan manually and see ancestor runs.
+    autoPin: hasOverlay && isOwnRoot,
     projectPath,
     status: !token || !projectPath ? "idle" : current?.status ?? "loading",
     data: current?.data ?? null,

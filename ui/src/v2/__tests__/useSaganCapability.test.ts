@@ -9,8 +9,8 @@ import type { V2ProjectWithThreads } from "../lib/useV2Projects.ts";
 
 const thread = { projectId: "p1", cwd: "/repo/one" } as ActiveThread;
 const projects = [{ id: "p1", path: "/repo/one", threads: [] }] as unknown as V2ProjectWithThreads[];
-const payload = (count: number) => ({
-  project: { sagan: { state: "valid" } },
+const payload = (count: number, root = "/repo/one") => ({
+  project: { path: "/repo/one", root, sagan: { state: "valid" } },
   runs: Array.from({ length: count }, (_, index) => ({ id: String(index), openDecisions: [] })),
 });
 
@@ -68,5 +68,33 @@ describe("useSaganCapability live refresh", () => {
     expect(signals[0]?.aborted).toBe(true);
     unmount();
     expect(signals[1]?.aborted).toBe(true);
+  });
+
+  it("auto-pins only when the queried folder is the Sagan root", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload(1, "/repo/one"),
+    }));
+    const { result } = renderHook(() => useSaganCapability("tok", thread, projects, false));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.available).toBe(true);
+    expect(result.current.autoPin).toBe(true);
+  });
+
+  it("does not auto-pin a nested folder that inherits Sagan from an ancestor", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload(1, "/repo"),
+    }));
+    const { result } = renderHook(() => useSaganCapability("tok", thread, projects, false));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.available).toBe(true);
+    expect(result.current.autoPin).toBe(false);
   });
 });

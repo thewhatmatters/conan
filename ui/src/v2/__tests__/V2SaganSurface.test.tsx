@@ -44,6 +44,7 @@ const data = (runs: SaganRunSummary[] = []): SaganRunsResult => ({
 
 const result = (patch: Partial<SaganCapabilityResult> = {}): SaganCapabilityResult => ({
   available: true,
+  autoPin: true,
   projectPath: "/repo/sagan",
   status: "ready",
   data: data(),
