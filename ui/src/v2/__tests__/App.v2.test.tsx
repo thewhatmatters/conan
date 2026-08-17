@@ -341,12 +341,87 @@ describe("AppV2 live projects (US-501)", () => {
       expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
       expect(document.querySelector('[data-surface="sagan"]')).toBeNull();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
     expect(
       within(screen.getByRole("menu", { name: "Surface" })).queryByRole("menuitem", {
         name: "Sagan",
       }),
     ).toBeNull();
+  });
+
+  it("auto-pins Sagan and removes its tab close button on Sagan projects", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+
+    const saganTab = await screen.findByRole("button", { name: "Sagan" });
+    expect(saganTab).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Close Sagan tab" })).toBeNull();
+
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    expect(await screen.findByRole("button", { name: "Close Browser tab" })).toBeInTheDocument();
+  });
+
+  it("removes the auto-pinned Sagan tab when switching to a non-Sagan project", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await screen.findByRole("button", { name: "Sagan" });
+
+    await newChatInProject("empty");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
+  it("evicts a non-Sagan surface when opening a third surface", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await screen.findByRole("button", { name: "Sagan" });
+
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    await screen.findByRole("button", { name: "Browser" });
+
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminal" }));
+    await screen.findByRole("button", { name: "Terminal" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    });
   });
 
   it("creates one reusable draft in the selected project", async () => {

@@ -48,7 +48,7 @@ export const SURFACE_OPTIONS: ReadonlyArray<
   { id: "terminal", label: "Terminal", icon: Terminal, isCloseable: true },
   { id: "diff", label: "Diff", icon: Diff, isCloseable: true },
   { id: "files", label: "Files", icon: FileText, isCloseable: true },
-  { id: "sagan", label: "Sagan", icon: Orbit, isCloseable: true },
+  { id: "sagan", label: "Sagan", icon: Orbit, isCloseable: false },
 ];
 
 const DEFAULT_TABS: SurfaceTab[] = [
