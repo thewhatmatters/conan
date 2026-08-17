@@ -104,4 +104,59 @@ describe("V2AssistantContent", () => {
     expect(screen.getByText("json")).toBeInTheDocument();
     expect(container.textContent).not.toContain("```json");
   });
+
+  it("parameterises the data-slot so callers do not claim assistant content", () => {
+    const { container } = render(<V2AssistantContent text="Hi" slot="user-message-content" />);
+
+    expect(container.querySelector('[data-slot="user-message-content"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="assistant-message-content"]')).toBeNull();
+  });
+
+  it("renders GFM tables", () => {
+    const text = "| A | B |\n|---|---|\n| 1 | 2 |";
+    render(<V2AssistantContent text={text} />);
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(table.textContent).toContain("A");
+    expect(table.textContent).toContain("B");
+    expect(table.textContent).toContain("1");
+    expect(table.textContent).toContain("2");
+  });
+
+  it("renders GFM task lists", () => {
+    const text = "- [x] done\n- [ ] todo";
+    const { container } = render(<V2AssistantContent text={text} />);
+
+    const list = screen.getByRole("list");
+    expect(list).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    expect(checkboxes).toHaveLength(2);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((checkboxes[1] as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("renders nested lists", () => {
+    const text = "- outer\n  - inner\n    - deeper";
+    render(<V2AssistantContent text={text} />);
+
+    const lists = screen.getAllByRole("list");
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+  });
+
+  it("renders blockquotes", () => {
+    const text = "> quoted";
+    const { container } = render(<V2AssistantContent text={text} />);
+
+    expect(container.querySelector("blockquote")).toHaveTextContent("quoted");
+  });
+
+  it("autolinks plain URLs with GFM", () => {
+    render(<V2AssistantContent text="See https://example.com/page" />);
+
+    const link = screen.getByRole("link", { name: "https://example.com/page" });
+    expect(link).toHaveAttribute("href", "https://example.com/page");
+  });
 });

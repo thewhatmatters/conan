@@ -135,15 +135,17 @@ const markdownComponents = { code: AssistantCodeBlock };
 export interface V2AssistantContentProps {
   text: string;
   isStreaming?: boolean;
+  slot?: string;
 }
 
 export default function V2AssistantContent({
   text,
   isStreaming = false,
+  slot = "assistant-message-content",
 }: V2AssistantContentProps) {
   return (
     <div
-      data-slot="assistant-message-content"
+      data-slot={slot}
       data-is-streaming={isStreaming ? "true" : "false"}
       {...stylex.props(styles.root)}
     >
