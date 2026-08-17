@@ -14,15 +14,13 @@
  * KEYBOARD MODEL
  * --------------
  *   ↑ / ↓      move focus between rows
- *   →          descend into the focused row
- *   ↵          activate the focused row in the source view; in the browser
- *              view, add the highlighted directory (or go up for the ".." row)
+ *   ↵ / →      activate the focused row (descend, or go up for "..")
  *   Backspace  go to the parent directory
  *   Esc        close the dialog
  *   ⌘+↵        add the currently browsed folder (hidden shortcut, no chrome)
  *
- * Mouse click on a row descends, matching the right-arrow key. The header
- * carries no confirm button; ↵ on a directory row is the select action.
+ * Mouse click on a row descends. The header's quiet "Add" button adds the
+ * folder shown in the path without drilling deeper.
  */
 import {
   useCallback,
@@ -33,6 +31,7 @@ import {
   useState,
 } from "react";
 import * as stylex from "@stylexjs/stylex";
+import { Button } from "@astryxdesign/core/Button";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Kbd } from "@astryxdesign/core/Kbd";
@@ -124,6 +123,24 @@ const styles = stylex.create({
     flexGrow: 1,
     minWidth: 0,
     overflowWrap: "anywhere",
+  },
+  addButton: {
+    backgroundColor: "var(--conan-wash-hover)",
+    borderRadius: "var(--conan-radius-sm)",
+    color: "var(--conan-text-primary)",
+    flexShrink: 0,
+    paddingBlock: "5px",
+    paddingInline: "12px",
+    ":hover": {
+      backgroundColor: "var(--conan-wash-row-selected)",
+    },
+    ":focus-visible": {
+      backgroundColor: "var(--conan-wash-row-selected)",
+    },
+  },
+  addButtonDisabled: {
+    cursor: "not-allowed",
+    opacity: 0.5,
   },
   list: {
     flex: "1 1 auto",
@@ -352,6 +369,10 @@ export default function AddProjectDialog({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      const isConfirmButton =
+        target.tagName === "BUTTON" &&
+        target.getAttribute("data-slot") === "add-project-confirm";
       const item = items[selectedIndex];
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -383,17 +404,9 @@ export default function AddProjectDialog({
         if (view.type === "browser") void confirm(view.listing.path);
         return;
       }
-      if (event.key === "Enter") {
+      if (event.key === "Enter" && !isConfirmButton) {
         event.preventDefault();
-        if (view.type === "source" && item) {
-          activate(item);
-        } else if (view.type === "browser" && item) {
-          if (item.kind === "up") {
-            goBack();
-          } else {
-            void confirm(item.path);
-          }
-        }
+        if (item) activate(item);
       }
     },
     [confirm, goBack, moveSelection, activate, items, selectedIndex, view],
@@ -465,6 +478,18 @@ export default function AddProjectDialog({
           >
             {headerLabel}
           </Text>
+          {view.type === "browser" && (
+            <Button
+              label="Add"
+              variant="secondary"
+              size="sm"
+              onClick={() => void confirm(view.listing.path)}
+              isDisabled={busy}
+              isLoading={busy}
+              xstyle={styles.addButton}
+              data-slot="add-project-confirm"
+            />
+          )}
         </div>
 
         <div

@@ -393,9 +393,9 @@ describe("AddProjectDialog folder browser", () => {
 });
 
 describe("AddProjectDialog confirm", () => {
-  it("adds the highlighted directory and closes when Enter is pressed in the browser", async () => {
+  it("descends into the highlighted directory with Enter", async () => {
     stubFetch();
-    const { onAdd, onOpenChange } = renderDialog();
+    renderDialog();
 
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
@@ -404,7 +404,24 @@ describe("AddProjectDialog confirm", () => {
     await waitFor(() => expect(document.activeElement).toBe(conanRow));
     fireEvent.keyDown(conanRow, { key: "Enter" });
 
-    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo/conan"));
+    expect(await screen.findByText("/repo/conan")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+  });
+
+  it("confirms the browsed folder with the header Add button", async () => {
+    stubFetch();
+    const { onAdd, onOpenChange } = renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    await screen.findByText("/repo");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -442,4 +459,21 @@ describe("AddProjectDialog confirm", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
+  it("renders the Add button with the quiet row-hover tint", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    await screen.findByText("/repo");
+
+    const addButton = screen.getByRole("button", { name: "Add" });
+    expect(addButton).toBeInTheDocument();
+
+    const style = window.getComputedStyle(addButton);
+    // The quiet treatment uses the same background token as a hovered row.
+    // jsdom returns the variable reference rather than the resolved RGB value.
+    expect(style.backgroundColor).toBe("var(--conan-wash-hover)");
+  });
 });
