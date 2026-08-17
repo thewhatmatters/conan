@@ -54,32 +54,21 @@ const styles = stylex.create({
     WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
     backgroundColor: "var(--conan-glass-tint)",
   },
-  // WHA-208 (continued): the Astryx status slot renders OUTSIDE the body that
-  // carries the glass, so the context-pressure band needs its own frosted
-  // surface. It tucks under the composer body the same way Astryx's own status
-  // bar does, with a warning- or error-tinted wash on top of the glass so the
-  // callout stays readable and the transcript behind it stays blurred.
+  // WHA-208: context-pressure notice. Keep this a plain inline line below the
+  // composer — no negative-margin tuck and no tinted wash. The previous frosted
+  // band slid up under the composer's control row and covered the model/effort/
+  // permission chips and send button.
   callout: {
     alignItems: "center",
-    backdropFilter: "blur(var(--conan-glass-blur))",
-    WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
-    borderBottomLeftRadius: "var(--conan-radius-chat)",
-    borderBottomRightRadius: "var(--conan-radius-chat)",
     display: "flex",
     gap: "var(--conan-space-2)",
-    marginBlockStart: "calc(-1 * var(--conan-radius-chat))",
-    paddingBlockStart: "calc(var(--conan-space-3) + var(--conan-radius-chat))",
-    paddingBlockEnd: "var(--conan-space-3)",
+    paddingBlock: "var(--conan-space-3)",
     paddingInline: "var(--conan-space-4)",
-    position: "relative",
-    zIndex: 0,
   },
   calloutWarning: {
-    backgroundColor: `color-mix(in srgb, var(--conan-color-warning) 25%, var(--conan-glass-tint))`,
     color: "var(--conan-color-warning)",
   },
   calloutError: {
-    backgroundColor: `color-mix(in srgb, var(--conan-color-error) 25%, var(--conan-glass-tint))`,
     color: "var(--conan-color-error)",
   },
 });
