@@ -394,3 +394,114 @@ describe("V2Transcript thinking state across turns (WHA-90)", () => {
     expect(container.querySelector('[data-slot="v2-thinking-orb"]')).toBeNull();
   });
 });
+
+describe("V2Transcript user markdown (WHA-52)", () => {
+  it("renders user prose through markdown with the user content slot", () => {
+    const markdownUser: ChatItem = {
+      id: "u-md",
+      role: "user",
+      text: "# Title\n\nThis is **bold** with `inline code`.\n\n- one\n- two\n\nhttps://example.com",
+      ts: Date.UTC(2026, 6, 31, 18, 0),
+    };
+    const { container } = render(<V2Transcript items={[markdownUser]} />);
+
+    expect(container.querySelector('[data-slot="user-message-content"]')).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Title", level: 2 })).toBeInTheDocument();
+    expect(screen.getByText("bold").tagName).toBe("STRONG");
+    expect(screen.getByText("inline code").tagName).toBe("CODE");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "https://example.com" })).toHaveAttribute(
+      "href",
+      "https://example.com",
+    );
+  });
+
+  it("renders GFM tables in a user bubble", () => {
+    const tableUser: ChatItem = {
+      id: "u-table",
+      role: "user",
+      text: "| A | B |\n|---|---|\n| 1 | 2 |",
+      ts: 1,
+    };
+    render(<V2Transcript items={[tableUser]} />);
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(table.textContent).toContain("A");
+    expect(table.textContent).toContain("B");
+    expect(table.textContent).toContain("1");
+    expect(table.textContent).toContain("2");
+  });
+
+  it("renders GFM task lists in a user bubble", () => {
+    const taskUser: ChatItem = {
+      id: "u-tasks",
+      role: "user",
+      text: "- [x] done\n- [ ] todo",
+      ts: 1,
+    };
+    const { container } = render(<V2Transcript items={[taskUser]} />);
+
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    expect(checkboxes).toHaveLength(2);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((checkboxes[1] as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("renders nested lists and blockquotes in a user bubble", () => {
+    const nestedUser: ChatItem = {
+      id: "u-nested",
+      role: "user",
+      text: "> quote\n\n- outer\n  - inner",
+      ts: 1,
+    };
+    const { container } = render(<V2Transcript items={[nestedUser]} />);
+
+    expect(container.querySelector("blockquote")).toHaveTextContent("quote");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("does not turn a bare #tag into a heading", () => {
+    const tagUser: ChatItem = {
+      id: "u-tag",
+      role: "user",
+      text: "Use #hashtag in your answer",
+      ts: 1,
+    };
+    const { container } = render(<V2Transcript items={[tagUser]} />);
+
+    expect(container.querySelector("h2")).toBeNull();
+    expect(screen.getByText("Use #hashtag in your answer")).toBeInTheDocument();
+  });
+
+  it("does not swallow a line that starts with a single asterisk", () => {
+    const starUser: ChatItem = {
+      id: "u-star",
+      role: "user",
+      text: "* important note",
+      ts: 1,
+    };
+    const { container } = render(<V2Transcript items={[starUser]} />);
+
+    // Markdown treats `* ` as a list marker; the text itself must still show.
+    expect(container.querySelector("ul")).not.toBeNull();
+    expect(screen.getByText("important note")).toBeInTheDocument();
+  });
+
+  it("keeps a large pasted file inside the bubble without exploding the layout", () => {
+    const body = "export const x = 1;\n".repeat(200);
+    const fileUser: ChatItem = {
+      id: "u-file",
+      role: "user",
+      text: body,
+      ts: 1,
+    };
+    const { container } = render(<V2Transcript items={[fileUser]} />);
+
+    const content = container.querySelector('[data-slot="user-message-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.textContent).toContain("export const x = 1;");
+    expect(content!.textContent!.length).toBeGreaterThan(2000);
+  });
+});

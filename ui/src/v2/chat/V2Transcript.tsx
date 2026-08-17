@@ -352,7 +352,10 @@ export default function V2Transcript({
                 data-slot="user-message-bubble"
                 metadata={<ChatMessageMetadata timestamp={timestamp(item.ts)} />}
               >
-                <ChatTokenizedText>{item.text}</ChatTokenizedText>
+                <V2AssistantContent
+                  text={item.text}
+                  slot="user-message-content"
+                />
               </ChatMessageBubble>
             </ChatMessage>
           );
