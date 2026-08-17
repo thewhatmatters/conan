@@ -60,8 +60,19 @@ describe("Sidebar", () => {
     expect(search).toHaveAttribute("aria-haspopup", "dialog");
     expect(search).toHaveAttribute("type", "button");
     expect(screen.getByText("Search")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sort projects" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+  });
+
+  // WHA-60 applies the Add-project rule below to Sort as well. The slot shipped
+  // enabled and inert while the story was deferred; now that a real menu exists,
+  // an enabled control with no menu behind it is the same silent no-op.
+  it("disables Sort projects until the shell supplies the menu", () => {
+    const { unmount } = render(<Sidebar />);
+    expect(screen.getByRole("button", { name: "Sort projects" })).toBeDisabled();
+    unmount();
+
+    render(<Sidebar sortMenu={<button type="button">Sort projects</button>} />);
+    expect(screen.getByRole("button", { name: "Sort projects" })).toBeEnabled();
   });
 
   // WHA-74: Add project used to render enabled with no handler, so clicking it
