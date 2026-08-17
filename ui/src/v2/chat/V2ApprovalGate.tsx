@@ -104,6 +104,12 @@ const styles = stylex.create({
     overflowY: "auto",
     width: "100%",
   },
+  // The drawer is a flex item; unwrappable content in the approval panel must
+  // not widen it. min-width: 0 lets the nested width:100% chain shrink.
+  gateBody: {
+    minWidth: 0,
+    width: "100%",
+  },
   actions: {
     paddingBlockStart: "var(--conan-space-2)",
     width: "100%",
@@ -539,7 +545,7 @@ export default function V2ApprovalGate({
       label="User feedback requested"
       count={count}
     >
-      <VStack gap={2} data-slot="v2-approval-gate-body">
+      <VStack gap={2} data-slot="v2-approval-gate-body" xstyle={styles.gateBody}>
         <V2ApprovalContent approval={approval} count={count} />
         <VStack
           ref={groupRef}

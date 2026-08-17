@@ -57,6 +57,13 @@ export function summarizeToolInput(
 }
 
 const styles = stylex.create({
+  content: {
+    // The panel renders inside a flex drawer; unwrappable diff rows must not
+    // widen the flex chain. min-width: 0 lets width: 100% children shrink to
+    // the available space (WHA-214).
+    minWidth: 0,
+    width: "100%",
+  },
   detail: {
     boxSizing: "border-box",
     margin: 0,
@@ -69,6 +76,7 @@ const styles = stylex.create({
   },
   diffWrap: {
     boxSizing: "border-box",
+    minWidth: 0,
     padding: "var(--conan-space-3)",
     width: "100%",
   },
@@ -121,7 +129,7 @@ export default function V2ApprovalContent({
   const summary = isPlan || command || diff ? null : summarizeToolInput(approval.input);
 
   return (
-    <VStack gap={3} data-slot="v2-approval-content">
+    <VStack gap={3} data-slot="v2-approval-content" xstyle={styles.content}>
         <HStack gap={2} align="center" justify="between">
           <VStack gap={1}>
             <Text type="body" weight="medium">
