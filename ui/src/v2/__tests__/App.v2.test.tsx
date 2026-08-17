@@ -771,9 +771,12 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    // Descend into the only directory, then confirm with the header Add button.
+    // Descend into the only directory, then confirm with Enter on the dialog container.
     fireEvent.click(await screen.findByRole("option", { name: "fresh" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter" });
 
     await waitFor(() =>
       expect(
@@ -811,12 +814,13 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await screen.findByText("No folders here.");
+    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter" });
 
     expect(
       await screen.findByText("Couldn't add that folder as a project. Try again."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Add project" })).toBeInTheDocument();
   });
 
   it("reopens the command palette when the folder browser back arrow is pressed", async () => {

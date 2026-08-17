@@ -1,7 +1,7 @@
 /**
- * AddProjectDialog — v2 folder browser (WHA-201).
+ * AddProjectDialog — v2 folder browser (WHA-201 / WHA-202).
  *
- * Paper artboard 7GE-0 "Folder/file browser" plus the 777-0 confirm affordance.
+ * Paper artboard 7GE-0 "Folder/file browser".
  * https://app.paper.design/file/01KYQJ3S5RCDAE0KY87NRFY75F/1-0/7GE-0
  *
  * ENTRY POINT
@@ -14,15 +14,16 @@
  * KEYBOARD MODEL
  * --------------
  *   ↑ / ↓      move focus between rows
- *   ↵          activate the focused row (descend into a directory, go up for "..")
+ *   →          descend into the focused row
+ *   ↵          activate the focused row in the source view; add the currently
+ *              browsed folder in the browser view
  *   Backspace  go to the parent directory
  *   Esc        close the dialog
- *   ⌘+Enter    add the currently-browsed folder as a project (777-0 confirm)
+ *   ⌘+↵        add the currently browsed folder (hidden shortcut, no chrome)
  *
- * The ⌘+Enter shortcut and the header "Add" pill are the *confirm* call site;
- * Enter on a row is the *descend* call site. Keeping them separate means the
- * keyboard model does not have to be rewritten if 777-0 (explicit Add) turns out
- * to be the current design.
+ * Mouse click on a row descends, matching the right-arrow key. The only way to
+ * add the current folder is ↵ (or the hidden ⌘+↵), so the header carries no
+ * confirm button.
  */
 import {
   useCallback,
@@ -33,7 +34,6 @@ import {
   useState,
 } from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Button } from "@astryxdesign/core/Button";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Kbd } from "@astryxdesign/core/Kbd";
@@ -317,10 +317,6 @@ export default function AddProjectDialog({
   const activate = useCallback(
     (item: RowItem) => {
       if (busy) return;
-      if (item.kind === "source") {
-        void browse(item.path);
-        return;
-      }
       void browse(item.path);
     },
     [browse, busy],
@@ -354,6 +350,7 @@ export default function AddProjectDialog({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      const item = items[selectedIndex];
       if (event.key === "ArrowDown") {
         event.preventDefault();
         moveSelection(1);
@@ -364,20 +361,48 @@ export default function AddProjectDialog({
         moveSelection(-1);
         return;
       }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (item) activate(item);
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goBack();
+        return;
+      }
       if (event.key === "Backspace") {
         event.preventDefault();
         goBack();
         return;
       }
-      if (
-        event.key === "Enter" &&
-        (event.metaKey || event.ctrlKey)
-      ) {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        void confirm();
+        if (view.type === "browser") void confirm();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (view.type === "source" && item) {
+          activate(item);
+        } else if (view.type === "browser") {
+          void confirm();
+        }
       }
     },
-    [confirm, goBack, moveSelection],
+    [confirm, goBack, moveSelection, activate, items, selectedIndex, view],
+  );
+
+  const handleRowKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      // Rows are buttons: ↵ would normally synthesise a click and descend.
+      // The dialog's container owns the key model, so suppress the default
+      // button behaviour and let bubbling reach handleKeyDown.
+      if (event.key === "Enter") {
+        event.preventDefault();
+      }
+    },
+    [],
   );
 
   const handleOpenFinder = useCallback(async () => {
@@ -434,19 +459,6 @@ export default function AddProjectDialog({
           >
             {headerLabel}
           </Text>
-          {view.type === "browser" && (
-            <HStack align="center" gap={2}>
-              <Button
-                label="Add"
-                variant="primary"
-                size="sm"
-                onClick={() => void confirm()}
-                isDisabled={busy}
-                isLoading={busy}
-              />
-              <Kbd keys="mod+enter" />
-            </HStack>
-          )}
         </div>
 
         <div
@@ -507,6 +519,7 @@ export default function AddProjectDialog({
                     disabled={busy}
                     onFocus={() => setSelectedIndex(index)}
                     onClick={() => activate(item)}
+                    onKeyDown={handleRowKeyDown}
                     {...stylex.props(
                       styles.row,
                       selected && styles.rowSelected,

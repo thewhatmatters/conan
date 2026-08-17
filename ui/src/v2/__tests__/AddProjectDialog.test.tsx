@@ -1,5 +1,5 @@
 /**
- * AddProjectDialog — v2 folder browser (WHA-201).
+ * AddProjectDialog — v2 folder browser (WHA-201 / WHA-202).
  *
  * Covers the source picker, directory listing, keyboard navigation, and the
  * confirm action wired to `POST /api/agent/projects`.
@@ -35,7 +35,10 @@ function listingFor(path: string): {
     return {
       path: START,
       parent: null,
-      entries: [{ name: "conan", path: `${START}/conan`, isDir: true }],
+      entries: [
+        { name: "conan", path: `${START}/conan`, isDir: true },
+        { name: "fresh", path: `${START}/fresh`, isDir: true },
+      ],
     };
   }
   if (path === `${START}/conan`) {
@@ -45,7 +48,21 @@ function listingFor(path: string): {
       entries: [{ name: "ui", path: `${START}/conan/ui`, isDir: true }],
     };
   }
-  return { path, parent: `${START}/conan`, entries: [] };
+  if (path === `${START}/fresh`) {
+    return {
+      path: `${START}/fresh`,
+      parent: START,
+      entries: [],
+    };
+  }
+  if (path === `${START}/conan/ui`) {
+    return {
+      path: `${START}/conan/ui`,
+      parent: `${START}/conan`,
+      entries: [],
+    };
+  }
+  return { path, parent: START, entries: [] };
 }
 
 function stubFetch(overrides?: {
@@ -113,16 +130,20 @@ function renderDialog(
   return handlers;
 }
 
+function dialogContainer() {
+  return document.querySelector('[data-slot="add-project-dialog"]');
+}
+
 describe("AddProjectDialog source picker", () => {
   it("starts on the source picker with a Local folder option", () => {
     stubFetch();
     renderDialog();
 
     expect(screen.getByRole("dialog", { name: "Add project" })).toHaveAttribute("open");
-    expect(
-      screen.getByRole("option", { name: "Local folder Browse a folder on disk" }),
-    ).toBeInTheDocument();
+    const localRow = screen.getByRole("option", { name: "Local folder Browse a folder on disk" });
+    expect(localRow).toBeInTheDocument();
     expect(screen.getByText("Browse a folder on disk")).toBeInTheDocument();
+    expect(document.activeElement).toBe(localRow);
   });
 
   it("moves to the folder browser when Local folder is activated", async () => {
@@ -135,7 +156,22 @@ describe("AddProjectDialog source picker", () => {
 
     expect(await screen.findByText("Directories")).toBeInTheDocument();
     expect(screen.getByText("/repo")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "conan" })).toBeInTheDocument();
+    const conanRow = screen.getByRole("option", { name: "conan" });
+    expect(conanRow).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+  });
+
+  it("moves to the folder browser when Local folder is focused and Enter is pressed", async () => {
+    stubFetch();
+    renderDialog();
+
+    const localRow = await screen.findByRole("option", { name: "Local folder Browse a folder on disk" });
+    await waitFor(() => expect(document.activeElement).toBe(localRow));
+    fireEvent.keyDown(localRow, { key: "Enter" });
+
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+    expect(screen.getByText("/repo")).toBeInTheDocument();
   });
 
   it("calls onBack when the back arrow is pressed in the source view", () => {
@@ -160,7 +196,7 @@ describe("AddProjectDialog source picker", () => {
 });
 
 describe("AddProjectDialog folder browser", () => {
-  it("descends into a directory on click or Enter", async () => {
+  it("descends into a directory on click", async () => {
     stubFetch();
     renderDialog();
 
@@ -171,6 +207,28 @@ describe("AddProjectDialog folder browser", () => {
 
     expect(await screen.findByText("/repo/conan")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "ui" })).toBeInTheDocument();
+    // The parent directory is the first row; focus must land on a row, not body.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+  });
+
+  it("descends into the focused directory with ArrowRight", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+
+    fireEvent.keyDown(conanRow, { key: "ArrowRight" });
+
+    expect(await screen.findByText("/repo/conan")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
   });
 
   it("moves focus onto the first row of the new list after descending", async () => {
@@ -200,12 +258,41 @@ describe("AddProjectDialog folder browser", () => {
 
     fireEvent.click(screen.getByRole("option", { name: ".." }));
     expect(await screen.findByText("/repo")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: "conan" })),
+    );
 
     fireEvent.click(screen.getByRole("option", { name: "conan" }));
     await screen.findByText("/repo/conan");
 
-    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Backspace" });
+    fireEvent.keyDown(screen.getByRole("option", { name: "ui" }), { key: "Backspace" });
     expect(await screen.findByText("/repo")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: "conan" })),
+    );
+  });
+
+  it("goes up with ArrowLeft", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+
+    fireEvent.keyDown(conanRow, { key: "ArrowRight" });
+    await screen.findByText("/repo/conan");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+
+    fireEvent.keyDown(screen.getByRole("option", { name: ".." }), { key: "ArrowLeft" });
+    expect(await screen.findByText("/repo")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: "conan" })),
+    );
   });
 
   it("returns to the source picker when back is pressed at the root browser", async () => {
@@ -219,10 +306,10 @@ describe("AddProjectDialog folder browser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
-    expect(
-      screen.getByRole("option", { name: "Local folder Browse a folder on disk" }),
-    ).toBeInTheDocument();
+    const localRow = screen.getByRole("option", { name: "Local folder Browse a folder on disk" });
+    expect(localRow).toBeInTheDocument();
     expect(screen.queryByText("Directories")).not.toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(localRow));
   });
 
   it("moves selection with arrow keys", async () => {
@@ -247,30 +334,60 @@ describe("AddProjectDialog folder browser", () => {
     const a = await screen.findByRole("option", { name: "a" });
     const b = await screen.findByRole("option", { name: "b" });
 
+    await waitFor(() => expect(document.activeElement).toBe(a));
     expect(a).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(a, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(b));
     expect(b).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(b, { key: "ArrowUp" });
+    await waitFor(() => expect(document.activeElement).toBe(a));
     expect(a).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("does not leave focus on body after keyboard transitions", async () => {
+    stubFetch();
+    renderDialog();
+
+    const localRow = await screen.findByRole("option", { name: "Local folder Browse a folder on disk" });
+    await waitFor(() => expect(document.activeElement).toBe(localRow));
+
+    fireEvent.keyDown(localRow, { key: "Enter" });
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+
+    fireEvent.keyDown(conanRow, { key: "ArrowDown" });
+    const freshRow = await screen.findByRole("option", { name: "fresh" });
+    await waitFor(() => expect(document.activeElement).toBe(freshRow));
+
+    fireEvent.keyDown(freshRow, { key: "ArrowRight" });
+    await screen.findByText("/repo/fresh");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+
+    fireEvent.keyDown(screen.getByRole("option", { name: ".." }), { key: "Backspace" });
+    expect(await screen.findByText("/repo")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: "conan" })),
+    );
   });
 });
 
 describe("AddProjectDialog confirm", () => {
-  it("calls onAdd with the current path and closes when Add is clicked", async () => {
+  it("calls onAdd with the current path and closes when Enter is pressed in the browser", async () => {
     stubFetch();
     const { onAdd, onOpenChange } = renderDialog();
 
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    fireEvent.click(await screen.findByRole("option", { name: "conan" }));
-    await screen.findByText("/repo/conan");
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+    fireEvent.keyDown(conanRow, { key: "Enter" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
-    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo/conan"));
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -281,8 +398,9 @@ describe("AddProjectDialog confirm", () => {
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    const row = await screen.findByRole("option", { name: "conan" });
-    fireEvent.keyDown(row, { key: "Enter", metaKey: true });
+    const conanRow = await screen.findByRole("option", { name: "conan" });
+    await waitFor(() => expect(document.activeElement).toBe(conanRow));
+    fireEvent.keyDown(conanRow, { key: "Enter", metaKey: true });
 
     await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo"));
   });
@@ -296,7 +414,9 @@ describe("AddProjectDialog confirm", () => {
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await screen.findByText("/repo");
+
+    fireEvent.keyDown(dialogContainer()!, { key: "Enter" });
 
     expect(
       await screen.findByText("Couldn't add that folder as a project. Try again."),
@@ -304,4 +424,5 @@ describe("AddProjectDialog confirm", () => {
     expect(onAdd).toHaveBeenCalledWith("/repo");
     expect(onOpenChange).not.toHaveBeenCalled();
   });
+
 });
