@@ -39,6 +39,7 @@ describe("readViewState", () => {
     expect(readViewState()).toEqual({
       projectOrder: "name",
       threadOrder: "agent",
+      surfaceTabs: {},
     });
   });
 
@@ -52,6 +53,7 @@ describe("readViewState", () => {
     expect(readViewState()).toEqual({
       projectOrder: DEFAULT_VIEW_STATE.projectOrder,
       threadOrder: "name",
+      surfaceTabs: {},
     });
   });
 
@@ -94,6 +96,109 @@ describe("readViewState", () => {
   });
 });
 
+describe("readViewState surface tabs (WHA-210)", () => {
+  it("keeps a valid surface tab entry", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-analyze": { open: ["browser"], active: "browser", browserUrl: "http://localhost:5173" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-analyze": { open: ["browser"], active: "browser", browserUrl: "http://localhost:5173" },
+    });
+  });
+
+  it("filters Terminal out of persisted open surfaces", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-analyze": { open: ["terminal", "browser"], active: "browser" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-analyze": { open: ["browser"], active: "browser", browserUrl: undefined },
+    });
+  });
+
+  it("boots to chat-only when the active surface is not open", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-analyze": { open: ["browser"], active: "files" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-analyze": { open: ["browser"], active: "chat", browserUrl: undefined },
+    });
+  });
+
+  it("boots to chat-only when the active surface is unknown", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-analyze": { open: ["browser"], active: "not-a-surface" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-analyze": { open: ["browser"], active: "chat", browserUrl: undefined },
+    });
+  });
+
+  it("drops entries that have no open surfaces", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-analyze": { open: [], active: "chat" },
+          "s-other": { open: ["browser"], active: "browser" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-other": { open: ["browser"], active: "browser", browserUrl: undefined },
+    });
+  });
+
+  it("ignores a non-object surfaceTabs value", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({ surfaceTabs: ["browser"] }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({});
+  });
+
+  it("ignores corrupt per-thread entries and keeps the rest", () => {
+    localStorage.setItem(
+      V2_VIEW_STATE_KEY,
+      JSON.stringify({
+        surfaceTabs: {
+          "s-bad": "not-an-object",
+          "s-good": { open: ["browser"], active: "browser" },
+        },
+      }),
+    );
+
+    expect(readViewState().surfaceTabs).toEqual({
+      "s-good": { open: ["browser"], active: "browser", browserUrl: undefined },
+    });
+  });
+});
+
 describe("useV2ViewState", () => {
   it("starts from the defaults", () => {
     const { result } = renderHook(() => useV2ViewState());
@@ -132,6 +237,7 @@ describe("useV2ViewState", () => {
     expect(JSON.parse(localStorage.getItem(V2_VIEW_STATE_KEY) ?? "{}")).toEqual({
       projectOrder: "name",
       threadOrder: "agent",
+      surfaceTabs: {},
     });
   });
 

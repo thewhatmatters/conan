@@ -125,6 +125,7 @@ function stubGateway(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 /**
@@ -533,6 +534,113 @@ describe("AppV2 live projects (US-501)", () => {
       expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
       expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    });
+  });
+
+  it("restores open surface tabs across a remount (WHA-210)", async () => {
+    stubGateway();
+    const { unmount } = render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    await screen.findByRole("button", { name: "Browser" });
+
+    unmount();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Browser" })).toBeInTheDocument();
+    });
+  });
+
+  it("does not restore Terminal tabs across a remount (WHA-210)", async () => {
+    stubGateway();
+    const { unmount } = render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminal" }));
+    await screen.findByRole("button", { name: "Terminal" });
+
+    unmount();
+    render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    });
+  });
+
+  it("drops a deleted thread's surface tabs from storage (WHA-210)", async () => {
+    const fetchMock = stubGateway();
+    const { unmount } = render(<AppV2 />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    await screen.findByRole("button", { name: "Browser" });
+
+    // Delete the thread; the storage entry must go with it.
+    fireEvent.contextMenu(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete thread" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/api/agent/threads/s-analyze") &&
+            (init as RequestInit | undefined)?.method === "DELETE",
+        ),
+      ).toBe(true),
+    );
+
+    unmount();
+    render(<AppV2 />);
+
+    // The persisted state was cleaned up, so a new render with the same thread
+    // id does not resurrect the Browser tab.
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
     });
   });
 

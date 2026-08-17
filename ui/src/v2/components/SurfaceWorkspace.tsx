@@ -68,6 +68,7 @@ function SurfaceBody({
   token,
   cwd,
   browserActive,
+  browserUrl,
   onBrowserStateChange,
   sagan,
   onOpenSaganThread,
@@ -77,6 +78,8 @@ function SurfaceBody({
   cwd: string | null;
   /** True when Browser is the surface currently on screen (WHA-109). */
   browserActive: boolean;
+  /** Restored URL for the Browser surface, if any (WHA-210). */
+  browserUrl?: string | null;
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
   sagan?: SaganCapabilityResult;
   onOpenSaganThread?: (id: string) => void;
@@ -87,6 +90,7 @@ function SurfaceBody({
       <V2BrowserSurface
         token={token}
         active={browserActive}
+        initialUrl={browserUrl}
         onStateChange={onBrowserStateChange}
       />
     );
@@ -102,6 +106,7 @@ export default function SurfaceWorkspace({
   openSurfaces,
   token,
   cwd,
+  browserUrl,
   onBrowserStateChange,
   sagan,
   onOpenSaganThread,
@@ -111,6 +116,8 @@ export default function SurfaceWorkspace({
   openSurfaces: Array<Exclude<SurfaceId, "chat">>;
   token: string | null;
   cwd: string | null;
+  /** Restored URL for the Browser surface, if any (WHA-210). */
+  browserUrl?: string | null;
   /** Browser-surface reports headed for the agent socket (WHA-109). */
   onBrowserStateChange?: (state: BrowserSurfaceReport) => void;
   sagan?: SaganCapabilityResult;
@@ -172,6 +179,7 @@ export default function SurfaceWorkspace({
             token={token}
             cwd={cwd}
             browserActive={activeSurface === "browser"}
+            browserUrl={browserUrl}
             onBrowserStateChange={onBrowserStateChange}
             sagan={sagan}
             onOpenSaganThread={onOpenSaganThread}

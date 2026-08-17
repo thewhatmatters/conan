@@ -630,11 +630,14 @@ export function V2BrowserSurface({
   token,
   active = false,
   onStateChange,
+  initialUrl,
 }: {
   token: string | null;
   /** True when Browser is the visible surface — gates the auto-context line. */
   active?: boolean;
   onStateChange?: (state: BrowserSurfaceReport) => void;
+  /** Restored URL from a previous session (WHA-210). */
+  initialUrl?: string | null;
 }) {
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<BrowserView>({ kind: "empty" });
@@ -711,6 +714,19 @@ export function V2BrowserSurface({
     },
     [token],
   );
+
+  // WHA-210 — restore the browser's URL from a previous session, or when a
+  // different thread's browser tab becomes active. Track what we have already
+  // applied so a user navigation inside the page does not get overwritten.
+  const appliedInitialUrl = useRef<string | null>(null);
+  useEffect(() => {
+    if (initialUrl && initialUrl !== appliedInitialUrl.current) {
+      appliedInitialUrl.current = initialUrl;
+      void navigate(initialUrl);
+    } else if (!initialUrl) {
+      appliedInitialUrl.current = null;
+    }
+  }, [initialUrl, navigate]);
 
   // Load-timeout heuristic: if the frame never fires `load`, stop claiming
   // progress. With the probe vetting first this is belt-and-braces; without it

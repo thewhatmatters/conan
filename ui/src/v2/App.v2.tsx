@@ -79,7 +79,11 @@ import type { ProjectGroup, ProjectTreeProps } from "./components/ProjectTree.ts
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 import { pillOf, useV2ThreadStates } from "./lib/useV2ThreadState.ts";
 import { orderProjects, orderThreads } from "./lib/projectOrder.ts";
-import { useV2ViewState } from "./lib/useV2ViewState.ts";
+import {
+  useV2ViewState,
+  type PersistedThreadSurfaces,
+  type RestorableSurfaceId,
+} from "./lib/useV2ViewState.ts";
 import { writeClipboardText } from "./lib/writeClipboardText.ts";
 import { apiBase } from "../lib/gateway.ts";
 import { MessagesSquare } from "lucide-react";
@@ -178,8 +182,10 @@ export default function AppV2() {
   const {
     projectOrder,
     threadOrder,
+    surfaceTabs: persistedSurfaceTabs,
     setProjectOrder,
     setThreadOrder,
+    setSurfaceTabs,
   } = useV2ViewState();
   const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
   const [drafts, setDrafts] = useState<V2Draft[]>([]);
@@ -200,9 +206,103 @@ export default function AppV2() {
     open: Array<Exclude<SurfaceId, "chat">>;
     active: SurfaceId;
   };
+
+  // WHA-210 — surface tabs are restored from localStorage, but Terminal never
+  // survives a restart (the pty is dead) and a corrupt entry boots to chat-only.
+  const runtimeSurfaceState = useCallback(
+    (persisted: PersistedThreadSurfaces): ThreadSurfaceState => {
+      const open = persisted.open.filter((id): id is RestorableSurfaceId =>
+        SURFACE_OPTIONS.some((surface) => surface.id === id),
+      );
+      let active: SurfaceId = persisted.active;
+      if (active !== "chat" && !open.some((id) => id === active)) active = "chat";
+      return { open, active };
+    },
+    [],
+  );
+  const persistableSurfaceState = useCallback(
+    (
+      runtime: ThreadSurfaceState,
+      browserUrl?: string | null,
+    ): PersistedThreadSurfaces => {
+      const open = runtime.open.filter(
+        (id): id is Exclude<SurfaceId, "chat" | "terminal"> => id !== "terminal",
+      );
+      let active: SurfaceId = runtime.active;
+      if (active === "terminal") active = "chat";
+      if (active !== "chat" && !open.includes(active)) active = "chat";
+      return { open, active, browserUrl };
+    },
+    [],
+  );
+
   const [surfaceStateByThread, setSurfaceStateByThread] = useState<
     Record<string, ThreadSurfaceState>
-  >({});
+  >(() => {
+    const initial: Record<string, ThreadSurfaceState> = {};
+    for (const [key, persisted] of Object.entries(persistedSurfaceTabs)) {
+      initial[key] = runtimeSurfaceState(persisted);
+    }
+    return initial;
+  });
+
+  // WHA-210 — live refs so persistence can read the latest state without
+  // regenerating every callback on every render.
+  const surfaceStateByThreadRef = useRef(surfaceStateByThread);
+  useEffect(() => {
+    surfaceStateByThreadRef.current = surfaceStateByThread;
+  }, [surfaceStateByThread]);
+  const persistedSurfaceTabsRef = useRef(persistedSurfaceTabs);
+  useEffect(() => {
+    persistedSurfaceTabsRef.current = persistedSurfaceTabs;
+  }, [persistedSurfaceTabs]);
+  const projectsRef = useRef(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+  const draftsRef = useRef(drafts);
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+  const activeThreadKeyRef = useRef(activeThread?.key ?? "");
+  useEffect(() => {
+    activeThreadKeyRef.current = activeThread?.key ?? "";
+  }, [activeThread?.key]);
+
+  // Seed the per-thread browser URL map from restored state. The live map is
+  // updated by the browser surface's onStateChange and never written until the
+  // surface actually reports a URL.
+  const browserUrlByThread = useRef<Record<string, string | null>>({});
+  for (const [key, persisted] of Object.entries(persistedSurfaceTabs)) {
+    if (
+      !(key in browserUrlByThread.current) &&
+      persisted.browserUrl != null
+    ) {
+      browserUrlByThread.current[key] = persisted.browserUrl;
+    }
+  }
+
+  const persistSurfaceTabs = useCallback(() => {
+    const validKeys = new Set<string>();
+    for (const project of projectsRef.current) {
+      for (const thread of project.threads) validKeys.add(thread.sessionId);
+    }
+    for (const draft of draftsRef.current) validKeys.add(draft.id);
+    const next: Record<string, PersistedThreadSurfaces> = {};
+    for (const [key, runtime] of Object.entries(surfaceStateByThreadRef.current)) {
+      if (!validKeys.has(key)) continue;
+      const persisted = persistableSurfaceState(
+        runtime,
+        browserUrlByThread.current[key],
+      );
+      if (persisted.open.length > 0) next[key] = persisted;
+    }
+    const current = persistedSurfaceTabsRef.current;
+    if (JSON.stringify(next) !== JSON.stringify(current)) {
+      setSurfaceTabs(next);
+    }
+  }, [setSurfaceTabs]);
+
   const threadSurfaceKey = activeThread?.key ?? "";
   const { open: openSurfaces, active: activeSurface } = useMemo<ThreadSurfaceState>(
     () => surfaceStateByThread[threadSurfaceKey] ?? { open: [], active: "chat" },
@@ -212,6 +312,24 @@ export default function AppV2() {
   // surface and the chat are siblings — the surface produces this, the chat
   // consumes it, and neither can see the other.
   const [browserSurface, setBrowserSurface] = useState<BrowserSurfaceReport>();
+
+  const handleBrowserStateChange = useCallback(
+    (state: BrowserSurfaceReport) => {
+      setBrowserSurface(state);
+      const key = activeThreadKeyRef.current;
+      if (key) {
+        browserUrlByThread.current[key] = state.url ?? null;
+        persistSurfaceTabs();
+      }
+    },
+    [setBrowserSurface, persistSurfaceTabs],
+  );
+
+  const browserInitialUrl =
+    browserUrlByThread.current[threadSurfaceKey] ??
+    persistedSurfaceTabs[threadSurfaceKey]?.browserUrl ??
+    null;
+
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const states = useV2ThreadStates();
   const sagan = useSaganCapability(
@@ -244,12 +362,17 @@ export default function AppV2() {
   const updateThreadSurfaces = useCallback(
     (updater: (prev: ThreadSurfaceState) => ThreadSurfaceState) => {
       const key = threadSurfaceKey;
-      setSurfaceStateByThread((current) => ({
-        ...current,
-        [key]: updater(current[key] ?? { open: [], active: "chat" }),
-      }));
+      setSurfaceStateByThread((current) => {
+        const next = {
+          ...current,
+          [key]: updater(current[key] ?? { open: [], active: "chat" }),
+        };
+        surfaceStateByThreadRef.current = next;
+        return next;
+      });
+      persistSurfaceTabs();
     },
-    [threadSurfaceKey],
+    [threadSurfaceKey, persistSurfaceTabs],
   );
 
   useEffect(() => {
@@ -389,10 +512,13 @@ export default function AppV2() {
         if (!(id in current)) return current;
         const next = { ...current };
         delete next[id];
+        surfaceStateByThreadRef.current = next;
         return next;
       });
+      delete browserUrlByThread.current[id];
+      persistSurfaceTabs();
     },
-    [drafts, refresh, token],
+    [drafts, refresh, token, persistSurfaceTabs],
   );
 
   const requestDeleteThread = useCallback((row: ThreadRowProps) => {
@@ -451,12 +577,15 @@ export default function AppV2() {
         const next = { ...current };
         for (const threadId of removedThreadIds) {
           delete next[threadId];
+          delete browserUrlByThread.current[threadId];
         }
+        surfaceStateByThreadRef.current = next;
         return next;
       });
+      persistSurfaceTabs();
       await refresh();
     },
-    [drafts, projects, refresh, token],
+    [drafts, projects, refresh, token, persistSurfaceTabs],
   );
 
   // WHA-74 recovery path. Upsert is idempotent by path (`gateway/index.ts:585`),
@@ -639,6 +768,30 @@ export default function AppV2() {
     : loaded
       ? "empty"
       : "loading";
+
+  // WHA-210 — once the project list has loaded, drop any in-memory or persisted
+  // surface state for threads that no longer exist so the localStorage key does
+  // not grow forever. The guard on `loaded` prevents the initial empty project
+  // list from wiping restored state before the real threads arrive.
+  useEffect(() => {
+    if (!loaded) return;
+    const validKeys = new Set<string>();
+    for (const project of projectsRef.current) {
+      for (const thread of project.threads) validKeys.add(thread.sessionId);
+    }
+    for (const draft of draftsRef.current) validKeys.add(draft.id);
+    let staleInMemory = false;
+    const nextState: Record<string, ThreadSurfaceState> = {};
+    for (const [key, state] of Object.entries(surfaceStateByThreadRef.current)) {
+      if (validKeys.has(key)) nextState[key] = state;
+      else staleInMemory = true;
+    }
+    if (staleInMemory) {
+      surfaceStateByThreadRef.current = nextState;
+      setSurfaceStateByThread(nextState);
+    }
+    persistSurfaceTabs();
+  }, [loaded, projects, drafts, persistSurfaceTabs]);
 
   /**
    * The one moment a draft becomes a real thread (WHA-121).
@@ -861,7 +1014,8 @@ export default function AppV2() {
                 openSurfaces={openSurfaces}
                 token={token}
                 cwd={activeThread?.cwd ?? config?.cwd ?? null}
-                onBrowserStateChange={setBrowserSurface}
+                browserUrl={browserInitialUrl}
+                onBrowserStateChange={handleBrowserStateChange}
                 sagan={sagan}
                 onOpenSaganThread={selectThreadByKey}
               >
