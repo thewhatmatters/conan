@@ -630,13 +630,20 @@ export default function AppV2() {
       const promoted = drafts.find((draft) => draft.id === key)?.sessionId;
       const hit = index.get(promoted ?? key);
       if (!hit) {
-        // A row with no backing saved thread (the prop-less placeholder tree in
-        // tests/stories). Fall back to the app's own cwd so the well still
-        // opens a usable session rather than doing nothing.
+        // WHA-207 — a draft row may not be saved yet, but it still belongs to a
+        // project. Recover projectId/project.path from the drafts list so the
+        // session opens in the right directory and project-scoped surfaces
+        // (Sagan) stay pinned. Only fall back to the app's cwd for genuinely
+        // placeholder rows with no draft.
+        const draft = drafts.find((candidate) => candidate.id === key);
+        const project = draft?.projectId
+          ? projects.find((candidate) => candidate.id === draft.projectId)
+          : undefined;
         setActiveThread({
           key,
-          cwd: config?.cwd ?? "",
-          projectName,
+          cwd: project?.path ?? config?.cwd ?? "",
+          projectId: draft?.projectId ?? project?.id,
+          projectName: project?.name ?? projectName,
           provider: asProviderId(row.provider),
           title: row.title,
         });
@@ -657,7 +664,7 @@ export default function AppV2() {
         effort: thread.effort,
       });
     },
-    [config?.cwd, drafts, index],
+    [config?.cwd, drafts, index, projects],
   );
 
   // WHA-104 — the breadcrumb's thread menu. It reads the SAME group the sidebar

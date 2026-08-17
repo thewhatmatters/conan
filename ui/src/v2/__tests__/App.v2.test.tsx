@@ -392,6 +392,36 @@ describe("AppV2 live projects (US-501)", () => {
     });
   });
 
+  it("keeps Sagan pinned when selecting a draft row in a Sagan project (WHA-207)", async () => {
+    stubGateway();
+    render(<AppV2 />);
+
+    const savedRow = await screen.findByRole("button", {
+      name: "Analyze my project: Run serverless code...",
+    });
+    fireEvent.click(savedRow);
+    await screen.findByRole("button", { name: "Sagan" });
+
+    // Open another surface so Sagan's survival is visible (not just "chat alone").
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    await screen.findByRole("button", { name: "Browser" });
+
+    // Create a draft thread in the same Sagan project and select it.
+    await newChatInProject("conan");
+    const draftRow = await screen.findByRole("button", { name: "New chat: No messages yet" });
+    fireEvent.click(draftRow);
+
+    // Selecting the draft used to drop projectId and strip Sagan.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Browser" })).toBeInTheDocument();
+    });
+  });
+
   it("evicts a non-Sagan surface when opening a third surface", async () => {
     stubGateway();
     render(<AppV2 />);
