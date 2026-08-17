@@ -22,7 +22,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AppV2 from "../App.v2.tsx";
 
-const CONFIG = { token: "tok", cwd: "/repo/conan", port: 3800 };
+// cwdIsProject true = the gateway's cwd has a .git, so the WHA-83 boot
+// auto-create is allowed to fire. The false case has its own test below.
+const CONFIG = { token: "tok", cwd: "/repo/conan", port: 3800, cwdIsProject: true };
 
 beforeAll(() => {
   window.scrollTo = vi.fn();
@@ -70,7 +72,10 @@ function stubGateway(
   projects: unknown = PROJECTS,
   patchOk = true,
   deleteOk = true,
-  config = CONFIG,
+  // A stubbed /api/config *wire body*, not a typed client object — an older
+  // gateway can omit fields (WHA-83's `cwdIsProject`), and the test suite has
+  // to be able to express that.
+  config: Record<string, unknown> = CONFIG,
 ) {
   const projectList = Array.isArray(projects) ? [...projects] : projects;
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -314,6 +319,50 @@ describe("AppV2 live projects (US-501)", () => {
     expect(JSON.parse(String((postCall?.[1] as RequestInit).body))).toEqual({
       path: CONFIG.cwd,
     });
+  });
+
+  it("does not auto-create when the gateway cwd isn't a codebase", async () => {
+    // WHA-83 `smart` (Randy, 2026-08-16). With nothing persisted the gateway
+    // reports ~/.claude as its cwd, and the project name is the basename — so
+    // an ungated auto-create hands a first-run user a project called
+    // ".claude" pointing at their config directory. Fall through to the
+    // ordinary empty state and let them pick instead.
+    const fetchMock = stubGateway([], true, true, {
+      ...CONFIG,
+      cwd: "/home/randy/.claude",
+      cwdIsProject: false,
+    });
+    render(<AppV2 />);
+
+    expect(await screen.findByText("No projects yet.")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).includes("/api/agent/projects") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toBe(false);
+    // Not the boot-failure state either — nothing failed, we chose not to act.
+    expect(
+      screen.queryByText("Couldn't create the first project. Try again."),
+    ).not.toBeInTheDocument();
+    // And the user still has the way forward v1 lacked when WHA-83 was filed.
+    expect(screen.getByRole("button", { name: "Add project" })).toBeInTheDocument();
+  });
+
+  it("treats a gateway that omits cwdIsProject as not-a-codebase", async () => {
+    // An older gateway (or a field rename) must degrade to the safe empty
+    // state, never to inventing a project the user didn't ask for.
+    const { cwdIsProject: _omitted, ...legacyConfig } = CONFIG;
+    const fetchMock = stubGateway([], true, true, legacyConfig);
+    render(<AppV2 />);
+
+    expect(await screen.findByText("No projects yet.")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toBe(false);
   });
 
   it("does not auto-create when the initial project GET fails", async () => {

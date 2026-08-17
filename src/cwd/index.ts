@@ -61,6 +61,27 @@ export function getActiveCwd(): string {
   return active;
 }
 
+/**
+ * Does this directory look like a codebase someone would want as a project?
+ *
+ * WHA-83: on a fresh install nothing is persisted, so `smartDefault()` hands
+ * back ~/.claude (or HOME). Auto-creating a first project from that path gives
+ * a new user a project literally named ".claude" pointing at their Claude Code
+ * config — worse than showing them the empty state. The boot auto-create is
+ * gated on this; false means "let them pick".
+ *
+ * `.git` is a file in a worktree and a directory in a normal clone, so this
+ * tests existence, not type.
+ */
+export function looksLikeProject(dir: string): boolean {
+  if (!isUsableDir(dir)) return false;
+  try {
+    return fs.existsSync(path.join(dir, ".git"));
+  } catch {
+    return false;
+  }
+}
+
 export interface SetCwdResult {
   ok: boolean;
   cwd: string;

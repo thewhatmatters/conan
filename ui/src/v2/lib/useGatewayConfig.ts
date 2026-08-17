@@ -11,6 +11,13 @@ export interface GatewayConfig {
   token: string;
   cwd: string;
   port: number;
+  /**
+   * WHA-83: does `cwd` look like a real codebase (has `.git`)? Gates the
+   * boot-time auto-create so a fresh install never invents a `.claude`
+   * project. Absent on an older gateway → treated as false, i.e. the safe
+   * empty state rather than a wrong project.
+   */
+  cwdIsProject: boolean;
 }
 
 export function useGatewayConfig(): GatewayConfig | null {
@@ -23,15 +30,23 @@ export function useGatewayConfig(): GatewayConfig | null {
     const attempt = () => {
       fetch(apiBase() + "/api/config")
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error("config"))))
-        .then((c: { token?: string; cwd?: string; port?: number }) => {
-          if (cancelled) return;
-          if (!c.token || !c.cwd) return;
-          setConfig({
-            token: c.token,
-            cwd: c.cwd,
-            port: c.port ?? 0,
-          });
-        })
+        .then(
+          (c: {
+            token?: string;
+            cwd?: string;
+            port?: number;
+            cwdIsProject?: boolean;
+          }) => {
+            if (cancelled) return;
+            if (!c.token || !c.cwd) return;
+            setConfig({
+              token: c.token,
+              cwd: c.cwd,
+              port: c.port ?? 0,
+              cwdIsProject: c.cwdIsProject === true,
+            });
+          },
+        )
         .catch(() => {
           if (!cancelled) timer = setTimeout(attempt, 1000);
         });

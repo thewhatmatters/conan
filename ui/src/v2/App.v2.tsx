@@ -390,11 +390,18 @@ export default function AppV2() {
   // leave the chat stuck at "New chat". Mirror v1 ChatSurface.tsx:417-436:
   // once on boot, if the project list is empty, auto-create a project from the
   // gateway's cwd and open a draft in it.
+  //
+  // Gated on `cwdIsProject` (Randy, 2026-08-16). With no persisted choice the
+  // gateway's cwd is ~/.claude (`src/cwd/index.ts` smartDefault), and the
+  // project name is the basename (`src/agent/threads.ts`), so an ungated
+  // auto-create gives a first-run user a project called ".claude" pointing at
+  // their config directory. When the cwd doesn't look like a codebase we fall
+  // through to the ordinary "No projects yet" empty state and let them pick.
   const booted = useRef(false);
   useEffect(() => {
     if (booted.current || bootError || !config?.cwd || !token || !loaded || error) return;
     booted.current = true;
-    if (projects.length > 0) return;
+    if (projects.length > 0 || !config.cwdIsProject) return;
     void addProject(config.cwd)
       .then((project) => {
         const id = draftId();

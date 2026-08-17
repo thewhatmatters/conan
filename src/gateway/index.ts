@@ -30,7 +30,13 @@ import {
   getLastProbeError,
 } from "../usage/probe.js";
 import { startOAuthUsagePoller, getOAuthPlanUtilization } from "../usage/oauthUsage.js";
-import { getActiveCwd, onCwdChange, listEntries, searchFiles } from "../cwd/index.js";
+import {
+  getActiveCwd,
+  looksLikeProject,
+  onCwdChange,
+  listEntries,
+  searchFiles,
+} from "../cwd/index.js";
 import { collectWorkingTreeDiff, PathOutsideRepoError } from "../fs/diff.js";
 import { collectBranches } from "../fs/branches.js";
 import {
@@ -198,7 +204,16 @@ app.get("/api/health", (_req, res) => {
 // cwd is the app-wide active working directory (US-019); it survives a restart
 // so reloads see the chosen directory.
 app.get("/api/config", (_req, res) => {
-  res.json({ token: AUTH_TOKEN, port: PORT, cwd: getActiveCwd(), buyUrl: BUY_URL });
+  const cwd = getActiveCwd();
+  // cwdIsProject (WHA-83): the UI can't stat the filesystem, and the boot-time
+  // auto-create must not fire for ~/.claude or a bare HOME.
+  res.json({
+    token: AUTH_TOKEN,
+    port: PORT,
+    cwd,
+    cwdIsProject: looksLikeProject(cwd),
+    buyUrl: BUY_URL,
+  });
 });
 
 // Build-loop progress (prd.json + progress.txt). Live updates arrive over /ws.

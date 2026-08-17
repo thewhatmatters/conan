@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listEntries, searchFiles } from "./index.js";
+import { listEntries, looksLikeProject, searchFiles } from "./index.js";
 
 /** Build a throwaway directory tree and return its root path. */
 function makeTree(): string {
@@ -134,4 +134,60 @@ test("search on an unreadable root degrades to an error", () => {
   const r = searchFiles("/no/such/conan/dir/" + Date.now(), "x");
   assert.deepEqual(r.hits, []);
   assert.match(r.error ?? "", /cannot read/);
+});
+
+// looksLikeProject() gates WHA-83's boot-time auto-create. With nothing
+// persisted the gateway's cwd is ~/.claude (smartDefault), and a project's
+// name is its basename — so without this gate a first-run user gets a project
+// called ".claude" pointing at their Claude Code config. Randy chose `smart`
+// (2026-08-16): auto-create only when the cwd is actually a codebase.
+
+/** A throwaway dir under a fresh root, built by `build`. */
+function makeDir(build: (dir: string) => void): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "conan-proj-test-"));
+  build(dir);
+  return dir;
+}
+
+test("looksLikeProject accepts a normal clone (.git is a directory)", () => {
+  const dir = makeDir((d) => fs.mkdirSync(path.join(d, ".git")));
+  assert.equal(looksLikeProject(dir), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("looksLikeProject accepts a worktree (.git is a FILE)", () => {
+  // The case a `statSync(...).isDirectory()` check would wrongly reject —
+  // every worktree under conan-worktrees/ has .git as a pointer file.
+  const dir = makeDir((d) =>
+    fs.writeFileSync(path.join(d, ".git"), "gitdir: /elsewhere/.git/worktrees/x\n"),
+  );
+  assert.equal(looksLikeProject(dir), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("looksLikeProject rejects a config dir like ~/.claude", () => {
+  // The exact shape that made the gate necessary: real, readable, full of
+  // files, and not a codebase.
+  const dir = makeDir((d) => {
+    fs.writeFileSync(path.join(d, "settings.json"), "{}");
+    fs.mkdirSync(path.join(d, "projects"));
+  });
+  assert.equal(looksLikeProject(dir), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("looksLikeProject rejects a bare home-like dir with no .git", () => {
+  const dir = makeDir((d) => fs.mkdirSync(path.join(d, "Documents")));
+  assert.equal(looksLikeProject(dir), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("looksLikeProject rejects a nonexistent path", () => {
+  assert.equal(looksLikeProject("/no/such/conan/dir/" + Date.now()), false);
+});
+
+test("looksLikeProject rejects a file, not just a missing path", () => {
+  const dir = makeDir((d) => fs.writeFileSync(path.join(d, "repo"), ""));
+  assert.equal(looksLikeProject(path.join(dir, "repo")), false);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
