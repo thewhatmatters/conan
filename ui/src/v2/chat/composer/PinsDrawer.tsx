@@ -16,6 +16,7 @@
  * pasted image is staged for the same turn, and one "Items" count is the
  * honest read of what rides along.
  */
+import type { StyleXStyles } from "@stylexjs/stylex";
 import { ChatComposerDrawer } from "@astryxdesign/core/Chat";
 import { Token } from "@astryxdesign/core/Token";
 import { Image as ImageIcon } from "lucide-react";
@@ -27,6 +28,9 @@ export interface PinsDrawerProps {
   images?: OutgoingImage[];
   onRemovePin: (path: string) => void;
   onRemoveImage?: (index: number) => void;
+  /** Optional StyleX styles for the drawer's root — used by WHA-208 to extend
+   *  the composer's frosted-glass surface over the attachment row. */
+  xstyle?: StyleXStyles;
 }
 
 const ICON = 12;
@@ -36,6 +40,7 @@ export default function PinsDrawer({
   images = [],
   onRemovePin,
   onRemoveImage,
+  xstyle,
 }: PinsDrawerProps) {
   const count = pins.length + images.length;
   // Nothing staged → no drawer at all. An empty drawer would still paint its
@@ -44,7 +49,7 @@ export default function PinsDrawer({
   if (count === 0) return null;
 
   return (
-    <ChatComposerDrawer count={count} label="Items" data-slot="pins-drawer">
+    <ChatComposerDrawer count={count} label="Items" data-slot="pins-drawer" xstyle={xstyle}>
       {pins.map((pin) => (
         <Token
           key={pin.path}

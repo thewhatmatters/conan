@@ -167,6 +167,7 @@
   --conan-radius-lg: var(--radius-container); /* 12px */
   --conan-radius-pill: 16px; /* RJ-0 literal · 7W-0 Settings */
   --conan-radius-page: 24px; /* RJ-0 literal · 4N-0 top-left */
+  --conan-radius-chat: var(--radius-chat); /* 28px · S5-0 composer shell */
   --conan-radius-window: 16px; /* RJ-0 literal · RK-0 / 4I-0 */
   --conan-radius-full: var(--radius-full);
 

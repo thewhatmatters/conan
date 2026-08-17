@@ -19,7 +19,7 @@ import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { Paperclip } from "lucide-react";
+import { AlertTriangle, OctagonAlert, Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
@@ -53,6 +53,34 @@ const styles = stylex.create({
     backdropFilter: "blur(var(--conan-glass-blur))",
     WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
     backgroundColor: "var(--conan-glass-tint)",
+  },
+  // WHA-208 (continued): the Astryx status slot renders OUTSIDE the body that
+  // carries the glass, so the context-pressure band needs its own frosted
+  // surface. It tucks under the composer body the same way Astryx's own status
+  // bar does, with a warning- or error-tinted wash on top of the glass so the
+  // callout stays readable and the transcript behind it stays blurred.
+  callout: {
+    alignItems: "center",
+    backdropFilter: "blur(var(--conan-glass-blur))",
+    WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
+    borderBottomLeftRadius: "var(--conan-radius-chat)",
+    borderBottomRightRadius: "var(--conan-radius-chat)",
+    display: "flex",
+    gap: "var(--conan-space-2)",
+    marginBlockStart: "calc(-1 * var(--conan-radius-chat))",
+    paddingBlockStart: "calc(var(--conan-space-3) + var(--conan-radius-chat))",
+    paddingBlockEnd: "var(--conan-space-3)",
+    paddingInline: "var(--conan-space-4)",
+    position: "relative",
+    zIndex: 0,
+  },
+  calloutWarning: {
+    backgroundColor: `color-mix(in srgb, var(--conan-color-warning) 25%, var(--conan-glass-tint))`,
+    color: "var(--conan-color-warning)",
+  },
+  calloutError: {
+    backgroundColor: `color-mix(in srgb, var(--conan-color-error) 25%, var(--conan-glass-tint))`,
+    color: "var(--conan-color-error)",
   },
 });
 
@@ -333,6 +361,7 @@ export default function V2Composer({
             images={attachments.images}
             onRemovePin={attachments.removePin}
             onRemoveImage={attachments.removeImage}
+            xstyle={styles.glass}
           />
         </>
       }
@@ -387,8 +416,6 @@ export default function V2Composer({
           isSubmitDisabled={busy}
         />
       }
-      status={contextStatus}
-      statusPosition="bottom"
       sendActions={
         contextStatus && onStartNewThread ? (
           <Button
@@ -401,6 +428,25 @@ export default function V2Composer({
       }
       sendButton={<ChatSendButton />}
       />
+      {contextStatus && (
+        <div
+          role={contextStatus.type === "error" ? "alert" : "status"}
+          data-slot="context-pressure-callout"
+          {...stylex.props(
+            styles.callout,
+            contextStatus.type === "error"
+              ? styles.calloutError
+              : styles.calloutWarning,
+          )}
+        >
+          {contextStatus.type === "error" ? (
+            <OctagonAlert size={ACTION_ICON} aria-hidden />
+          ) : (
+            <AlertTriangle size={ACTION_ICON} aria-hidden />
+          )}
+          <span>{contextStatus.message}</span>
+        </div>
+      )}
       {contextCompactionMessage ? (
         <Text
           type="supporting"
