@@ -355,7 +355,9 @@ export default function V2Composer({
                 ) : (
                   <AlertTriangle size={ACTION_ICON} aria-hidden />
                 )}
-                <span>{contextStatus.message}</span>
+                <Text type="supporting" color="inherit">
+                  {contextStatus.message}
+                </Text>
               </div>
             </ChatComposerDrawer>
           )}
