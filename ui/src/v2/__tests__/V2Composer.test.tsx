@@ -375,14 +375,39 @@ describe("V2Composer", () => {
     );
 
     const glass = container.querySelector(".V2Composer__styles\\.glass");
+    const callout = container.querySelector('[data-slot="context-pressure-callout"]');
     const warning = screen.getByText(/Context is 75% full.*compact when needed/);
     expect(glass).not.toBeNull();
+    expect(callout).not.toBeNull();
     expect(warning).toBeInTheDocument();
 
     const glassStyle = window.getComputedStyle(glass!);
     expect(glassStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 
+    // jsdom does not resolve color-mix, but it does report the backdrop filter
+    // and the warning text color, which is enough to prove the callout is a
+    // non-transparent frosted surface.
+    const calloutStyle = window.getComputedStyle(callout!);
+    expect(calloutStyle.backdropFilter).not.toBe("none");
+    expect(callout!.className).toContain("V2Composer__styles");
+
     const warningStyle = window.getComputedStyle(warning);
     expect(warningStyle.color).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("WHA-208: pins drawer carries its own frosted-glass surface", async () => {
+    const { container } = render(<V2Composer activeThread={thread} send={vi.fn()} />);
+    const chooser = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const image = new File(["image"], "reference.png", { type: "image/png" });
+
+    expect(chooser).not.toBeNull();
+    fireEvent.change(chooser!, { target: { files: [image] } });
+
+    const drawer = await screen.findByRole("button", { name: "Collapse Items" });
+    const drawerRoot = drawer.closest('[data-slot="pins-drawer"]');
+    expect(drawerRoot).not.toBeNull();
+    expect(
+      drawerRoot?.classList.toString().includes("V2Composer__styles.glass"),
+    ).toBe(true);
   });
 });
