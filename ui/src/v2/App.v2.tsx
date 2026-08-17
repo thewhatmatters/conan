@@ -853,6 +853,10 @@ export default function AppV2() {
           start={config?.cwd ?? ""}
           onOpenChange={setIsAddingProject}
           onAdd={addProject}
+          onBack={() => {
+            setIsAddingProject(false);
+            setPaletteOpen(true);
+          }}
         />
       ) : null}
       <V2CommandPalette

@@ -65,6 +65,9 @@ export interface AddProjectDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   /** Resolves once the project row exists; the shell then refreshes. */
   onAdd: (path: string) => Promise<void>;
+  /** Called when the back arrow is pressed in the source view.
+   *  Falls back to closing the dialog if not provided. */
+  onBack?: () => void;
 }
 
 type View = { type: "source" } | { type: "browser"; listing: FsListing };
@@ -220,6 +223,7 @@ export default function AddProjectDialog({
   start,
   onOpenChange,
   onAdd,
+  onBack,
 }: AddProjectDialogProps) {
   const [view, setView] = useState<View>({ type: "source" });
   const [busy, setBusy] = useState(false);
@@ -325,15 +329,19 @@ export default function AddProjectDialog({
   const goBack = useCallback(() => {
     if (busy) return;
     if (view.type === "source") {
-      close();
+      if (onBack) {
+        onBack();
+      } else {
+        close();
+      }
       return;
     }
     if (view.listing.parent) {
       void browse(view.listing.parent);
     } else {
-      close();
+      setView({ type: "source" });
     }
-  }, [busy, close, view, browse]);
+  }, [busy, close, view, browse, onBack]);
 
   const moveSelection = useCallback(
     (delta: number) => {
@@ -387,10 +395,10 @@ export default function AddProjectDialog({
 
   const headerBackLabel =
     view.type === "source"
-      ? "Close"
+      ? "Back"
       : view.type === "browser" && view.listing.parent
         ? "Go to parent folder"
-        : "Close";
+        : "Back";
 
   return (
     <Dialog

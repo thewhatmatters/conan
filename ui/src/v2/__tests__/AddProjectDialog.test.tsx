@@ -137,6 +137,26 @@ describe("AddProjectDialog source picker", () => {
     expect(screen.getByText("/repo")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "conan" })).toBeInTheDocument();
   });
+
+  it("calls onBack when the back arrow is pressed in the source view", () => {
+    stubFetch();
+    const onBack = vi.fn();
+    const { onOpenChange } = renderDialog({ onBack });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("closes when the back arrow is pressed in the source view and onBack is omitted", () => {
+    stubFetch();
+    const { onOpenChange } = renderDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
 
 describe("AddProjectDialog folder browser", () => {
@@ -186,6 +206,23 @@ describe("AddProjectDialog folder browser", () => {
 
     fireEvent.keyDown(screen.getByRole("listbox"), { key: "Backspace" });
     expect(await screen.findByText("/repo")).toBeInTheDocument();
+  });
+
+  it("returns to the source picker when back is pressed at the root browser", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    expect(await screen.findByText("/repo")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(
+      screen.getByRole("option", { name: "Local folder Browse a folder on disk" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Directories")).not.toBeInTheDocument();
   });
 
   it("moves selection with arrow keys", async () => {
