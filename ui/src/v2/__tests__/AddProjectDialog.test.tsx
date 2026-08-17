@@ -153,6 +153,21 @@ describe("AddProjectDialog folder browser", () => {
     expect(screen.getByRole("option", { name: "ui" })).toBeInTheDocument();
   });
 
+  it("moves focus onto the first row of the new list after descending", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "conan" }));
+    await screen.findByText("/repo/conan");
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
+    );
+  });
+
   it("navigates up with the .. row or Backspace", async () => {
     stubFetch();
     renderDialog();

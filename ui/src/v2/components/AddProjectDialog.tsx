@@ -256,13 +256,14 @@ export default function AddProjectDialog({
   // Reset selection whenever the available rows change.
   useEffect(() => {
     setSelectedIndex(0);
-    rowRefs.current = items.map(() => null);
   }, [items]);
 
   // Move focus to the selected row so keyboard navigation stays visible.
+  // `items` is a dependency so that entering a directory (which keeps the
+  // selected index at 0) still moves focus onto the first row of the new list.
   useEffect(() => {
     rowRefs.current[selectedIndex]?.focus();
-  }, [selectedIndex]);
+  }, [selectedIndex, items]);
 
   const browse = useCallback(
     async (target: string) => {
