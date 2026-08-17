@@ -74,6 +74,12 @@ const styles = stylex.create({
 export interface ProjectSortMenuProps {
   projectOrder: ProjectOrder;
   threadOrder: ThreadOrder;
+  /**
+   * How many projects the sidebar is showing. Below two there is nothing for a
+   * project order to rearrange, so that half of the menu is not drawn — Randy,
+   * 2026-08-17. The thread group stays: a single project still has threads.
+   */
+  projectCount: number;
   onProjectOrderChange?: (order: ProjectOrder) => void;
   onThreadOrderChange?: (order: ThreadOrder) => void;
 }
@@ -128,6 +134,7 @@ function OrderItem({
 export default function ProjectSortMenu({
   projectOrder,
   threadOrder,
+  projectCount,
   onProjectOrderChange,
   onThreadOrderChange,
 }: ProjectSortMenuProps) {
@@ -137,12 +144,16 @@ export default function ProjectSortMenu({
   // screen reader would read seven interchangeable options.
   const projectTitleId = useId();
   const threadTitleId = useId();
+  const showProjectGroup = projectCount > 1;
 
   return (
     <HStack align="center" xstyle={styles.slot} data-slot="project-sort">
       <DropdownMenu
         button={{
-          label: "Sort projects",
+          // The trigger's name follows what the menu actually offers. Leaving
+          // it "Sort projects" over a thread-only menu is a lie a sighted user
+          // never sees and a screen-reader user hits immediately.
+          label: showProjectGroup ? "Sort projects" : "Sort threads",
           icon: <ArrowDownWideNarrow size={ICON} aria-hidden />,
           isIconOnly: true,
           variant: "ghost",
@@ -152,19 +163,23 @@ export default function ProjectSortMenu({
         placement="below"
         xstyle={styles.menu}
       >
-        <Text id={projectTitleId} size="sm" xstyle={styles.groupTitle}>
-          Order Projects By
-        </Text>
-        <div role="group" aria-labelledby={projectTitleId}>
-          {PROJECT_ORDERS.map((order) => (
-            <OrderItem
-              key={order}
-              label={PROJECT_ORDER_LABELS[order]}
-              isSelected={order === projectOrder}
-              onSelect={() => onProjectOrderChange?.(order)}
-            />
-          ))}
-        </div>
+        {showProjectGroup && (
+          <>
+            <Text id={projectTitleId} size="sm" xstyle={styles.groupTitle}>
+              Order Projects By
+            </Text>
+            <div role="group" aria-labelledby={projectTitleId}>
+              {PROJECT_ORDERS.map((order) => (
+                <OrderItem
+                  key={order}
+                  label={PROJECT_ORDER_LABELS[order]}
+                  isSelected={order === projectOrder}
+                  onSelect={() => onProjectOrderChange?.(order)}
+                />
+              ))}
+            </div>
+          </>
+        )}
         <Text id={threadTitleId} size="sm" xstyle={styles.groupTitle}>
           Order Threads By
         </Text>

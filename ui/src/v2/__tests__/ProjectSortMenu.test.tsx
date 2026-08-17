@@ -20,19 +20,81 @@ import ProjectSortMenu from "../components/ProjectSortMenu.tsx";
 
 function open(props: Partial<React.ComponentProps<typeof ProjectSortMenu>> = {}) {
   const view = render(
-    <ProjectSortMenu projectOrder="lastActivity" threadOrder="lastActivity" {...props} />,
+    <ProjectSortMenu
+      projectOrder="lastActivity"
+      threadOrder="lastActivity"
+      projectCount={2}
+      {...props}
+    />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Sort projects" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: (props.projectCount ?? 2) > 1 ? "Sort projects" : "Sort threads",
+    }),
+  );
   return view;
 }
 
 describe("ProjectSortMenu", () => {
   it("mounts in the section header's action lane", () => {
     const { container } = render(
-      <ProjectSortMenu projectOrder="lastActivity" threadOrder="lastActivity" />,
+      <ProjectSortMenu
+        projectOrder="lastActivity"
+        threadOrder="lastActivity"
+        projectCount={2}
+      />,
     );
 
     expect(container.querySelector('[data-slot="project-sort"]')).not.toBeNull();
+  });
+
+  // Randy, 2026-08-17: one project has nothing to order against.
+  it.each([0, 1])(
+    "drops the project group — and the rows in it — with %i project(s)",
+    (projectCount) => {
+      open({ projectCount });
+
+      expect(
+        screen.queryByRole("group", { name: "Order Projects By" }),
+      ).toBeNull();
+      expect(screen.queryByText("Order Projects By")).toBeNull();
+      // The rows themselves are gone, not merely unlabelled: four options
+      // remain, and they are the thread set.
+      expect(
+        screen.getAllByRole("menuitemradio").map((row) => row.textContent?.trim()),
+      ).toEqual(["Agent", "Last Activity", "Name", "Recently Added"]);
+    },
+  );
+
+  it("keeps ordering threads when the project group is gone", () => {
+    const onThreadOrderChange = vi.fn();
+    open({ projectCount: 1, onThreadOrderChange });
+
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Name" }));
+
+    expect(onThreadOrderChange).toHaveBeenCalledWith("name");
+  });
+
+  it("names the trigger for what the menu offers", () => {
+    const { unmount } = render(
+      <ProjectSortMenu
+        projectOrder="lastActivity"
+        threadOrder="lastActivity"
+        projectCount={1}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Sort threads" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sort projects" })).toBeNull();
+    unmount();
+
+    render(
+      <ProjectSortMenu
+        projectOrder="lastActivity"
+        threadOrder="lastActivity"
+        projectCount={2}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Sort projects" })).toBeInTheDocument();
   });
 
   it("draws both of 73D-0's groups, named by their visible titles", () => {
