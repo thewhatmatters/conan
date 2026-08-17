@@ -62,6 +62,19 @@ export default defineConfig({
       "/ws": { target: `ws://127.0.0.1:${GATEWAY_PORT}`, ws: true },
     },
   },
+  // `vite preview` serves the real `dist/` bundle, which is what per-story QA is
+  // supposed to exercise — but it does NOT inherit `server.proxy`, so without
+  // this the built app's relative `/api` + `/ws` calls 404 and the only
+  // browser-verifiable target is the dev server running from source. Same
+  // targets as `server` above, driven by the same env overrides.
+  preview: {
+    port: UI_PORT,
+    strictPort: true,
+    proxy: {
+      "/api": `http://127.0.0.1:${GATEWAY_PORT}`,
+      "/ws": { target: `ws://127.0.0.1:${GATEWAY_PORT}`, ws: true },
+    },
+  },
   build: {
     outDir: "dist",
   },

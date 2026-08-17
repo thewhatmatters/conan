@@ -55,6 +55,7 @@ import Sidebar from "./Sidebar.tsx";
 import Toolbar from "./Toolbar.tsx";
 import RenameThreadDialog from "./components/RenameThreadDialog.tsx";
 import AddProjectDialog from "./components/AddProjectDialog.tsx";
+import ProjectSortMenu from "./components/ProjectSortMenu.tsx";
 import V2CommandPalette from "./command/CommandPalette.tsx";
 import V2ChatView from "./chat/V2ChatView.tsx";
 import type { V2ChatViewProps } from "./chat/V2ChatView.tsx";
@@ -77,6 +78,8 @@ import { closeSession } from "../chat/sessionStore.ts";
 import type { ProjectGroup, ProjectTreeProps } from "./components/ProjectTree.tsx";
 import type { ThreadRowProps } from "./components/ThreadRow.tsx";
 import { pillOf, useV2ThreadStates } from "./lib/useV2ThreadState.ts";
+import { orderProjects, orderThreads } from "./lib/projectOrder.ts";
+import { useV2ViewState } from "./lib/useV2ViewState.ts";
 import { writeClipboardText } from "./lib/writeClipboardText.ts";
 import { apiBase } from "../lib/gateway.ts";
 import { MessagesSquare } from "lucide-react";
@@ -170,6 +173,14 @@ export default function AppV2() {
   const config = useGatewayConfig();
   const token = config?.token ?? null;
   const { projects, loaded, error, refresh } = useV2Projects(token);
+  // WHA-60. Persisted across reloads; the shell owns it so both the menu and
+  // the `groups` build below read one source.
+  const {
+    projectOrder,
+    threadOrder,
+    setProjectOrder,
+    setThreadOrder,
+  } = useV2ViewState();
   const [activeThread, setActiveThread] = useState<ActiveThread | null>(null);
   const [drafts, setDrafts] = useState<V2Draft[]>([]);
   const [renameTarget, setRenameTarget] = useState<ThreadRowProps | null>(null);
@@ -426,9 +437,13 @@ export default function AppV2() {
     [refresh, renameTarget?.id, token],
   );
 
-  // Presentational shape for the sidebar. Groups open by default: the gateway
-  // already returns projects newest-activity-first, so the top of the tree is
-  // the work you were last in. (Sort/group controls are US-504.)
+  // Presentational shape for the sidebar. Groups open by default.
+  //
+  // WHA-60: ordering is applied HERE, on the domain rows, before they collapse
+  // into the view model — `ThreadRowProps` carries no `createdAt`, so a sort
+  // done downstream could not honour "Recently Added" without re-deriving it.
+  // The gateway's own ordering is left alone and simply re-sorted over; the
+  // stored preference is authoritative, not the wire order.
   /** Sessions a draft already owns — their saved rows must not list twice. */
   const promotedSessionIds = useMemo(
     () =>
@@ -442,7 +457,7 @@ export default function AppV2() {
 
   const groups: ProjectGroup[] = useMemo(
     () =>
-      projects.map((p) => ({
+      orderProjects(projects, projectOrder).map((p) => ({
         id: p.id,
         name: p.name,
         isExpanded: true,
@@ -478,7 +493,10 @@ export default function AppV2() {
                 onDelete: () => requestDeleteThread(row),
               };
             }),
-          ...p.threads
+          // Drafts stay pinned above, unsorted: a draft is the thread you are
+          // typing into right now, and a Name sort that buries it under the
+          // saved rows loses the thing the user is looking at.
+          ...orderThreads(p.threads, threadOrder)
             .filter((thread) => !promotedSessionIds.has(thread.sessionId))
             .map((thread): ThreadRowProps => {
             const row: ThreadRowProps = {
@@ -504,11 +522,13 @@ export default function AppV2() {
       copyText,
       drafts,
       newThreadIn,
+      projectOrder,
       projects,
       promotedSessionIds,
       requestDeleteThread,
       requestRemoveProject,
       states,
+      threadOrder,
     ],
   );
 
@@ -711,6 +731,14 @@ export default function AppV2() {
             onSelectThread={onSelectThread}
             onAddProject={token ? () => setIsAddingProject(true) : undefined}
             onOpenPalette={openPalette}
+            sortMenu={
+              <ProjectSortMenu
+                projectOrder={projectOrder}
+                threadOrder={threadOrder}
+                onProjectOrderChange={setProjectOrder}
+                onThreadOrderChange={setThreadOrder}
+              />
+            }
           />
         }
         xstyle={styles.shell}

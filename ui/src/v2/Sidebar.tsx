@@ -16,6 +16,7 @@
  * off — adding one would read as a seam the design doesn't want.
  */
 import * as stylex from "@stylexjs/stylex";
+import type { ReactNode } from "react";
 import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -37,6 +38,9 @@ export interface SidebarProps {
   onAddProject?: () => void;
   /** Opens the ⌘K command palette (WHA-70) from the sidebar Search field. */
   onOpenPalette?: () => void;
+  /** The project section's sort control (WHA-60) — the shell owns the view
+   *  state, so the menu arrives as a node rather than being built here. */
+  sortMenu?: ReactNode;
 }
 
 const styles = stylex.create({
@@ -68,6 +72,7 @@ export default function Sidebar({
   emptyState,
   onAddProject,
   onOpenPalette,
+  sortMenu,
 }: SidebarProps) {
   return (
     <LayoutPanel
@@ -89,6 +94,7 @@ export default function Sidebar({
             selectedKey={selectedKey}
             onSelectThread={onSelectThread}
             onAddProject={onAddProject}
+            sortMenu={sortMenu}
           />
         </VStack>
         <VStack padding={4} gap={4} xstyle={styles.footer}>

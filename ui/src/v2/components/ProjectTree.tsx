@@ -18,7 +18,7 @@
  * actions and the group rows on one right-hand lane.
  */
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -60,6 +60,9 @@ export interface ProjectTreeProps {
   emptyState?: "loading" | "empty" | "error";
   /** Opens the add-project dialog (WHA-74). Omitted → the control is inert. */
   onAddProject?: () => void;
+  /** The section header's sort control (WHA-60). Omitted → an inert icon, so
+   *  the header keeps its two-slot lane either way. */
+  sortMenu?: ReactNode;
 }
 
 const ICON = 16;
@@ -219,7 +222,13 @@ const PLACEHOLDER_GROUPS: ProjectGroup[] = [
   { name: ".claude", isExpanded: false },
 ];
 
-function SectionHeader({ onAddProject }: { onAddProject?: () => void }) {
+function SectionHeader({
+  onAddProject,
+  sortMenu,
+}: {
+  onAddProject?: () => void;
+  sortMenu?: ReactNode;
+}) {
   return (
     <HStack align="center" xstyle={styles.controlRow}>
       <HStack align="center" xstyle={styles.sectionLabel}>
@@ -227,15 +236,20 @@ function SectionHeader({ onAddProject }: { onAddProject?: () => void }) {
           Projects
         </Text>
       </HStack>
-      {/* Sort is still inert — US-504 owns it and is deferred. Left as-is
-          rather than half-wired, so it doesn't read as shipped. */}
-      <button
-        type="button"
-        aria-label="Sort projects"
-        {...stylex.props(styles.actionSlot)}
-      >
-        <ArrowDownWideNarrow size={ICON} aria-hidden />
-      </button>
+      {/* WHA-60 fills this slot with `ProjectSortMenu`. It stays a prop rather
+          than an import so the tree keeps owning no view state — and so a
+          prop-less render still draws RJ-0's two-slot lane instead of
+          collapsing it. */}
+      {sortMenu ?? (
+        <button
+          type="button"
+          aria-label="Sort projects"
+          disabled
+          {...stylex.props(styles.actionSlot)}
+        >
+          <ArrowDownWideNarrow size={ICON} aria-hidden />
+        </button>
+      )}
       <button
         type="button"
         aria-label="Add project"
@@ -402,6 +416,7 @@ export default function ProjectTree({
   onSelectThread,
   emptyState = "empty",
   onAddProject,
+  sortMenu,
 }: ProjectTreeProps) {
   // Default selection wash for the artboard placeholder when the parent has
   // not yet set an active thread — keeps the shell looking selected at rest.
@@ -410,7 +425,7 @@ export default function ProjectTree({
 
   return (
     <VStack gap={0} data-slot="project-tree">
-      <SectionHeader onAddProject={onAddProject} />
+      <SectionHeader onAddProject={onAddProject} sortMenu={sortMenu} />
       {groups.length === 0 ? (
         <VStack gap={2} xstyle={styles.emptyLine} data-slot="project-tree-empty">
           <Text type="supporting" color="secondary">
