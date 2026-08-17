@@ -34,6 +34,7 @@ import {
   MoreVertical,
 } from "lucide-react";
 import ThreadRow, { type ThreadRowProps } from "./ThreadRow.tsx";
+import { controlStyles } from "../lib/controlStyles.ts";
 
 export interface ProjectGroup {
   /** Stable project id (US-501). Falls back to `name` when absent. */
@@ -91,25 +92,9 @@ const styles = stylex.create({
       "--project-actions-opacity": 1,
     },
   },
-  // The fixed trailing lane. Present in every row; sometimes invisible.
-  actionSlot: {
-    alignItems: "center",
-    appearance: "none",
-    backgroundColor: "transparent",
-    borderStyle: "none",
-    borderRadius: "var(--conan-radius-xs)",
-    color: "var(--conan-icon-muted)",
-    cursor: "pointer",
-    display: "flex",
-    flexShrink: 0,
-    height: "var(--conan-control-height)",
-    justifyContent: "center",
-    padding: 0,
-    width: "var(--conan-control-height)",
-  },
-  actionSlotHidden: {
-    opacity: 0,
-  },
+  // The header's two action controls used to carry their own colour and radius
+  // here, which is how they drifted from the Astryx-driven sort trigger beside
+  // them. Both now ride `controlStyles.iconButton` (WHA-203).
   // The kebab occupies the same trailing lane the compose icon used to, and
   // still rides the header's hover/focus reveal. An OPEN menu pins it visible:
   // the pointer has to leave the row to reach the flyout, and a control that
@@ -245,7 +230,11 @@ function SectionHeader({
           type="button"
           aria-label="Sort projects"
           disabled
-          {...stylex.props(styles.actionSlot)}
+          data-slot="control"
+          {...stylex.props(
+            controlStyles.iconButton,
+            controlStyles.iconButtonDisabled,
+          )}
         >
           <ArrowDownWideNarrow size={ICON} aria-hidden />
         </button>
@@ -255,7 +244,11 @@ function SectionHeader({
         aria-label="Add project"
         onClick={onAddProject}
         disabled={!onAddProject}
-        {...stylex.props(styles.actionSlot)}
+        data-slot="control"
+        {...stylex.props(
+          controlStyles.iconButton,
+          !onAddProject && controlStyles.iconButtonDisabled,
+        )}
       >
         <FolderPlus size={ICON} aria-hidden />
       </button>

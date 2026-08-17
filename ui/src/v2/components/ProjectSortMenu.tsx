@@ -20,7 +20,7 @@
  * announces `role="menuitemradio"` + `aria-checked` while showing the artboard's
  * mark. See `Breadcrumb.tsx` for the original of this pattern.
  */
-import { useId, type PointerEvent } from "react";
+import { useId, useState, type PointerEvent } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Text } from "@astryxdesign/core/Text";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -38,6 +38,7 @@ import {
   type ProjectOrder,
   type ThreadOrder,
 } from "../lib/projectOrder.ts";
+import { controlStyles } from "../lib/controlStyles.ts";
 
 const ICON = 16;
 
@@ -145,6 +146,16 @@ export default function ProjectSortMenu({
   const projectTitleId = useId();
   const threadTitleId = useId();
   const showProjectGroup = projectCount > 1;
+  // WHA-203: the trigger holds its hover treatment while the menu is open. The
+  // pointer has to leave it to reach the flyout, and Astryx's ghost button
+  // drops straight back to rest — which reads as the control going dead under
+  // its own menu.
+  //
+  // The menu is CONTROLLED for this. Astryx does not call `onOpenChange` in
+  // uncontrolled mode (verified against 0.4.3: the menu opens, the callback
+  // never fires), so passing the handler alone would leave the pin silently
+  // dead — which is exactly how it first shipped.
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <HStack align="center" xstyle={styles.slot} data-slot="project-sort">
@@ -158,9 +169,19 @@ export default function ProjectSortMenu({
           isIconOnly: true,
           variant: "ghost",
           size: "sm",
+          // Astryx's ghost rests at icon-primary in a 28px 10px-radius box;
+          // the lane beside it is 32px at radius-sm and rests muted. One model
+          // wins, and it is ours (WHA-203).
+          xstyle: [
+            controlStyles.iconButton,
+            isOpen && controlStyles.iconButtonOpen,
+          ],
+          "data-slot": "control",
         }}
         hasChevron={false}
         placement="below"
+        isMenuOpen={isOpen}
+        onOpenChange={setIsOpen}
         xstyle={styles.menu}
       >
         {showProjectGroup && (
