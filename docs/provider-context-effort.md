@@ -1,8 +1,8 @@
 # Provider context and reasoning-effort facts
 
 Verified on 2026-07-24 with Claude Code 2.1.219, Codex CLI 0.144.6, and
-Grok 0.2.111. The live probes ran from throwaway directories with the prompt
-`Reply with exactly: ok`.
+Grok 0.2.111; re-checked on 2026-08-17 with Codex CLI 0.147.0. The live probes
+ran from throwaway directories with the prompt `Reply with exactly: ok`.
 
 ## Context windows
 
