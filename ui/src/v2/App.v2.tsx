@@ -45,7 +45,7 @@
  *   - no Tailwind classes, no raw hex, no raw px — anything the props can't
  *     express goes through `xstyle` reading `tokens.css` (contract §4.2/§4.3)
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Layout } from "@astryxdesign/core/Layout";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
@@ -211,12 +211,39 @@ export default function AppV2() {
   );
   const saganAvailable = sagan.available;
   const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
+  // Tracks the last project we auto-pinned Sagan for, so the 7.5s poll does not
+  // re-assert the pin and steal a slot from a surface the user opened manually.
+  const saganPinnedProjectRef = useRef<string | null>(null);
+
+  const enforceTwoSurfaceSlots = useCallback(
+    (next: Array<Exclude<SurfaceId, "chat">>) => {
+      if (next.length <= 2) return next;
+      // Sagan is never evicted; drop the first non-Sagan surface.
+      const dropIndex = next.findIndex((id) => id !== "sagan");
+      if (dropIndex === -1) return next.slice(0, 2);
+      next.splice(dropIndex, 1);
+      return next;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (saganAvailable) return;
+    saganPinnedProjectRef.current = null;
     setOpenSurfaces((current) => current.filter((id) => id !== "sagan"));
     setActiveSurface((current) => (current === "sagan" ? "chat" : current));
   }, [saganAvailable]);
+
+  useEffect(() => {
+    if (!saganAvailable || !sagan.projectPath) return;
+    if (saganPinnedProjectRef.current === sagan.projectPath) return;
+    saganPinnedProjectRef.current = sagan.projectPath;
+    setOpenSurfaces((current) => {
+      if (current.includes("sagan")) return current;
+      return enforceTwoSurfaceSlots([...current, "sagan"]);
+    });
+    setActiveSurface("sagan");
+  }, [saganAvailable, sagan.projectPath, enforceTwoSurfaceSlots]);
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
     () => [
@@ -239,9 +266,12 @@ export default function AppV2() {
   );
   const openSurface = useCallback((id: Exclude<SurfaceId, "chat">) => {
     if (id === "sagan" && !saganAvailable) return;
-    setOpenSurfaces((current) => (current.includes(id) ? current : [...current, id]));
+    setOpenSurfaces((current) => {
+      if (current.includes(id)) return current;
+      return enforceTwoSurfaceSlots([...current, id]);
+    });
     setActiveSurface(id);
-  }, [saganAvailable]);
+  }, [saganAvailable, enforceTwoSurfaceSlots]);
   const selectSurface = useCallback((id: SurfaceId) => {
     setActiveSurface(id);
   }, []);
