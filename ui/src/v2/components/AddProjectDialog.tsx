@@ -15,15 +15,14 @@
  * --------------
  *   ↑ / ↓      move focus between rows
  *   →          descend into the focused row
- *   ↵          activate the focused row in the source view; add the currently
- *              browsed folder in the browser view
+ *   ↵          activate the focused row in the source view; in the browser
+ *              view, add the highlighted directory (or go up for the ".." row)
  *   Backspace  go to the parent directory
  *   Esc        close the dialog
  *   ⌘+↵        add the currently browsed folder (hidden shortcut, no chrome)
  *
- * Mouse click on a row descends, matching the right-arrow key. The only way to
- * add the current folder is ↵ (or the hidden ⌘+↵), so the header carries no
- * confirm button.
+ * Mouse click on a row descends, matching the right-arrow key. The header
+ * carries no confirm button; ↵ on a directory row is the select action.
  */
 import {
   useCallback,
@@ -300,19 +299,22 @@ export default function AddProjectDialog({
     if (!busy) onOpenChange(false);
   }, [busy, onOpenChange]);
 
-  const confirm = useCallback(async () => {
-    if (busy || view.type !== "browser") return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onAdd(view.listing.path);
-      onOpenChange(false);
-    } catch {
-      setError("Couldn't add that folder as a project. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, onAdd, onOpenChange, view]);
+  const confirm = useCallback(
+    async (path: string) => {
+      if (busy || view.type !== "browser") return;
+      setBusy(true);
+      setError(null);
+      try {
+        await onAdd(path);
+        onOpenChange(false);
+      } catch {
+        setError("Couldn't add that folder as a project. Try again.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, onAdd, onOpenChange, view],
+  );
 
   const activate = useCallback(
     (item: RowItem) => {
@@ -378,15 +380,19 @@ export default function AddProjectDialog({
       }
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        if (view.type === "browser") void confirm();
+        if (view.type === "browser") void confirm(view.listing.path);
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
         if (view.type === "source" && item) {
           activate(item);
-        } else if (view.type === "browser") {
-          void confirm();
+        } else if (view.type === "browser" && item) {
+          if (item.kind === "up") {
+            goBack();
+          } else {
+            void confirm(item.path);
+          }
         }
       }
     },

@@ -771,12 +771,12 @@ describe("AppV2 live projects (US-501)", () => {
     fireEvent.click(
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
-    // Descend into the only directory, then confirm with Enter on the dialog container.
+    // Descend into the only directory, then confirm the current folder with ⌘+Enter.
     fireEvent.click(await screen.findByRole("option", { name: "fresh" }));
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole("option", { name: ".." })),
     );
-    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter" });
+    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter", metaKey: true });
 
     await waitFor(() =>
       expect(
@@ -815,7 +815,7 @@ describe("AppV2 live projects (US-501)", () => {
       await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
     );
     await screen.findByText("No folders here.");
-    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter" });
+    fireEvent.keyDown(document.querySelector('[data-slot="add-project-dialog"]')!, { key: "Enter", metaKey: true });
 
     expect(
       await screen.findByText("Couldn't add that folder as a project. Try again."),

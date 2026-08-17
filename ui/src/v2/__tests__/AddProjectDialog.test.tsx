@@ -295,6 +295,23 @@ describe("AddProjectDialog folder browser", () => {
     );
   });
 
+  it("goes up when Enter is pressed on the .. row", async () => {
+    stubFetch();
+    renderDialog();
+
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Local folder Browse a folder on disk" }),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "conan" }));
+    await screen.findByText("/repo/conan");
+
+    fireEvent.keyDown(screen.getByRole("option", { name: ".." }), { key: "Enter" });
+    expect(await screen.findByText("/repo")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("option", { name: "conan" })),
+    );
+  });
+
   it("returns to the source picker when back is pressed at the root browser", async () => {
     stubFetch();
     renderDialog();
@@ -376,7 +393,7 @@ describe("AddProjectDialog folder browser", () => {
 });
 
 describe("AddProjectDialog confirm", () => {
-  it("calls onAdd with the current path and closes when Enter is pressed in the browser", async () => {
+  it("adds the highlighted directory and closes when Enter is pressed in the browser", async () => {
     stubFetch();
     const { onAdd, onOpenChange } = renderDialog();
 
@@ -387,7 +404,7 @@ describe("AddProjectDialog confirm", () => {
     await waitFor(() => expect(document.activeElement).toBe(conanRow));
     fireEvent.keyDown(conanRow, { key: "Enter" });
 
-    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo"));
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("/repo/conan"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -416,7 +433,7 @@ describe("AddProjectDialog confirm", () => {
     );
     await screen.findByText("/repo");
 
-    fireEvent.keyDown(dialogContainer()!, { key: "Enter" });
+    fireEvent.keyDown(dialogContainer()!, { key: "Enter", metaKey: true });
 
     expect(
       await screen.findByText("Couldn't add that folder as a project. Try again."),
