@@ -566,6 +566,36 @@ describe("AppV2 live projects (US-501)", () => {
     });
   });
 
+  it("restores surface tabs for a draft thread across a remount (WHA-210)", async () => {
+    stubGateway();
+    const { unmount } = render(<AppV2 />);
+
+    // Create the project's one reusable draft and open the Files surface.
+    await newChatInProject("conan");
+    const draftRow = await screen.findByRole("button", {
+      name: "New chat: No messages yet",
+    });
+    fireEvent.click(draftRow);
+
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Surface" }));
+      expect(screen.getByRole("menu", { name: "Surface" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    await screen.findByRole("button", { name: "Files" });
+
+    unmount();
+    render(<AppV2 />);
+
+    // After a restart the draft has a brand-new id, but surface state is keyed
+    // by projectId, so the Files tab comes back on the new draft.
+    await newChatInProject("conan");
+    await screen.findByRole("button", { name: "New chat: No messages yet" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Files" })).toBeInTheDocument();
+    });
+  });
+
   it("does not restore Terminal tabs across a remount (WHA-210)", async () => {
     stubGateway();
     const { unmount } = render(<AppV2 />);

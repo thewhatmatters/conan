@@ -129,6 +129,21 @@ const styles = stylex.create({
 const UNTITLED = "New chat";
 const NO_PREVIEW = "No messages yet";
 
+/** Stable key for surface-tab state. Saved threads use their session id. An
+ *  unsent draft is keyed by its project id instead, because `draftId()` mints
+ *  a new `draft-${uuid}` on every boot — a per-draft key would never restore. */
+function surfaceKeyFor(thread: ActiveThread | null): string {
+  if (!thread) return "";
+  if (
+    !thread.sessionId &&
+    thread.projectId &&
+    thread.key.startsWith("draft-")
+  ) {
+    return thread.projectId;
+  }
+  return thread.key;
+}
+
 interface V2Draft {
   id: string;
   projectId: string;
@@ -264,10 +279,10 @@ export default function AppV2() {
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
-  const activeThreadKeyRef = useRef(activeThread?.key ?? "");
+  const surfaceKeyRef = useRef(surfaceKeyFor(activeThread));
   useEffect(() => {
-    activeThreadKeyRef.current = activeThread?.key ?? "";
-  }, [activeThread?.key]);
+    surfaceKeyRef.current = surfaceKeyFor(activeThread);
+  }, [activeThread]);
 
   // Seed the per-thread browser URL map from restored state. The live map is
   // updated by the browser surface's onStateChange and never written until the
@@ -285,6 +300,7 @@ export default function AppV2() {
   const persistSurfaceTabs = useCallback(() => {
     const validKeys = new Set<string>();
     for (const project of projectsRef.current) {
+      validKeys.add(project.id);
       for (const thread of project.threads) validKeys.add(thread.sessionId);
     }
     for (const draft of draftsRef.current) validKeys.add(draft.id);
@@ -303,10 +319,10 @@ export default function AppV2() {
     }
   }, [setSurfaceTabs]);
 
-  const threadSurfaceKey = activeThread?.key ?? "";
+  const surfaceKey = useMemo(() => surfaceKeyFor(activeThread), [activeThread]);
   const { open: openSurfaces, active: activeSurface } = useMemo<ThreadSurfaceState>(
-    () => surfaceStateByThread[threadSurfaceKey] ?? { open: [], active: "chat" },
-    [surfaceStateByThread, threadSurfaceKey],
+    () => surfaceStateByThread[surfaceKey] ?? { open: [], active: "chat" },
+    [surfaceStateByThread, surfaceKey],
   );
   // WHA-109: the shell owns what the Browser surface is showing, because the
   // surface and the chat are siblings — the surface produces this, the chat
@@ -316,7 +332,7 @@ export default function AppV2() {
   const handleBrowserStateChange = useCallback(
     (state: BrowserSurfaceReport) => {
       setBrowserSurface(state);
-      const key = activeThreadKeyRef.current;
+      const key = surfaceKeyRef.current;
       if (key) {
         browserUrlByThread.current[key] = state.url ?? null;
         persistSurfaceTabs();
@@ -326,8 +342,8 @@ export default function AppV2() {
   );
 
   const browserInitialUrl =
-    browserUrlByThread.current[threadSurfaceKey] ??
-    persistedSurfaceTabs[threadSurfaceKey]?.browserUrl ??
+    browserUrlByThread.current[surfaceKey] ??
+    persistedSurfaceTabs[surfaceKey]?.browserUrl ??
     null;
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
@@ -361,7 +377,7 @@ export default function AppV2() {
 
   const updateThreadSurfaces = useCallback(
     (updater: (prev: ThreadSurfaceState) => ThreadSurfaceState) => {
-      const key = threadSurfaceKey;
+      const key = surfaceKey;
       setSurfaceStateByThread((current) => {
         const next = {
           ...current,
@@ -372,28 +388,28 @@ export default function AppV2() {
       });
       persistSurfaceTabs();
     },
-    [threadSurfaceKey, persistSurfaceTabs],
+    [surfaceKey, persistSurfaceTabs],
   );
 
   useEffect(() => {
     if (saganAvailable) return;
-    saganPinnedProjectRef.current[threadSurfaceKey] = null;
+    saganPinnedProjectRef.current[surfaceKey] = null;
     updateThreadSurfaces((current) => ({
       open: current.open.filter((id) => id !== "sagan"),
       active: current.active === "sagan" ? "chat" : current.active,
     }));
-  }, [saganAvailable, threadSurfaceKey, updateThreadSurfaces]);
+  }, [saganAvailable, surfaceKey, updateThreadSurfaces]);
 
   useEffect(() => {
     if (!saganAutoPin || !sagan.projectPath) return;
-    if (saganPinnedProjectRef.current[threadSurfaceKey] === sagan.projectPath) return;
-    saganPinnedProjectRef.current[threadSurfaceKey] = sagan.projectPath;
+    if (saganPinnedProjectRef.current[surfaceKey] === sagan.projectPath) return;
+    saganPinnedProjectRef.current[surfaceKey] = sagan.projectPath;
     updateThreadSurfaces((current) => {
       if (current.open.includes("sagan")) return current;
       const nextOpen = enforceTwoSurfaceSlots([...current.open, "sagan"]);
       return { open: nextOpen, active: "sagan" };
     });
-  }, [saganAutoPin, sagan.projectPath, threadSurfaceKey, enforceTwoSurfaceSlots, updateThreadSurfaces]);
+  }, [saganAutoPin, sagan.projectPath, surfaceKey, enforceTwoSurfaceSlots, updateThreadSurfaces]);
 
   const surfaceTabs = useMemo<SurfaceTab[]>(
     () => [
@@ -508,14 +524,19 @@ export default function AppV2() {
       // Deletion is the real end of a thread; navigation is not.
       closeSession(id);
       setActiveThread((current) => (current?.key === id ? null : current));
+      const draftProjectId = draft?.projectId;
       setSurfaceStateByThread((current) => {
-        if (!(id in current)) return current;
+        const hasId = id in current;
+        const hasProjectId = draftProjectId ? draftProjectId in current : false;
+        if (!hasId && !hasProjectId) return current;
         const next = { ...current };
-        delete next[id];
+        if (hasId) delete next[id];
+        if (hasProjectId && draftProjectId) delete next[draftProjectId];
         surfaceStateByThreadRef.current = next;
         return next;
       });
       delete browserUrlByThread.current[id];
+      if (draftProjectId) delete browserUrlByThread.current[draftProjectId];
       persistSurfaceTabs();
     },
     [drafts, refresh, token, persistSurfaceTabs],
@@ -573,12 +594,14 @@ export default function AppV2() {
         ...drafts.filter((d) => d.projectId === id).map((d) => d.id),
       ]);
       setSurfaceStateByThread((current) => {
-        if (removedThreadIds.size === 0) return current;
+        if (removedThreadIds.size === 0 && !(id in current)) return current;
         const next = { ...current };
         for (const threadId of removedThreadIds) {
           delete next[threadId];
           delete browserUrlByThread.current[threadId];
         }
+        delete next[id];
+        delete browserUrlByThread.current[id];
         surfaceStateByThreadRef.current = next;
         return next;
       });
@@ -777,6 +800,7 @@ export default function AppV2() {
     if (!loaded) return;
     const validKeys = new Set<string>();
     for (const project of projectsRef.current) {
+      validKeys.add(project.id);
       for (const thread of project.threads) validKeys.add(thread.sessionId);
     }
     for (const draft of draftsRef.current) validKeys.add(draft.id);
