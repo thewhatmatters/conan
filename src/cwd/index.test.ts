@@ -186,6 +186,19 @@ test("looksLikeProject rejects a nonexistent path", () => {
   assert.equal(looksLikeProject("/no/such/conan/dir/" + Date.now()), false);
 });
 
+test("looksLikeProject rejects ~/.claude even when it is a git repo", () => {
+  // Caught by live QA, not by the temp-dir tests above: a version-controlled
+  // ~/.claude is common (this machine's has a remote), so a bare `.git` test
+  // reported it as a codebase and would still have auto-created the exact
+  // ".claude" project the gate exists to prevent. Asserts against the REAL
+  // home directory — that is the whole point.
+  const home = os.homedir();
+  assert.equal(looksLikeProject(path.join(home, ".claude")), false);
+  assert.equal(looksLikeProject(home), false);
+  // A trailing slash resolves to the same directory and must not slip past.
+  assert.equal(looksLikeProject(path.join(home, ".claude") + "/"), false);
+});
+
 test("looksLikeProject rejects a file, not just a missing path", () => {
   const dir = makeDir((d) => fs.writeFileSync(path.join(d, "repo"), ""));
   assert.equal(looksLikeProject(path.join(dir, "repo")), false);

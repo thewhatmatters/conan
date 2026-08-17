@@ -76,6 +76,15 @@ export function getActiveCwd(): string {
 export function looksLikeProject(dir: string): boolean {
   if (!isUsableDir(dir)) return false;
   try {
+    const resolved = path.resolve(dir);
+    // The two paths `smartDefault()` invents when the user has never chosen
+    // anything. Landing on one means nobody picked it, which is exactly the
+    // case this gate exists for — and `.git` does NOT rule them out: a
+    // version-controlled ~/.claude is common (this machine's has a remote),
+    // so testing the marker alone still auto-created a ".claude" project.
+    // Caught in live QA; the temp-dir unit tests could never have seen it.
+    if (resolved === path.resolve(HOME)) return false;
+    if (resolved === path.resolve(path.join(HOME, ".claude"))) return false;
     return fs.existsSync(path.join(dir, ".git"));
   } catch {
     return false;
