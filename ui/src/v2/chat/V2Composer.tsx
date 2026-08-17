@@ -60,6 +60,10 @@ const styles = stylex.create({
   // permission chips and send button.
   callout: {
     alignItems: "center",
+    // OPAQUE, not glass: at 0.82 the transcript still read through the band and
+    // collided with the warning text (Randy, 2026-08-17). This is the composer's
+    // own raised surface at full opacity — nothing behind it survives.
+    backgroundColor: "var(--conan-color-content)",
     display: "flex",
     gap: "var(--conan-space-2)",
     paddingBlock: "var(--conan-space-3)",
