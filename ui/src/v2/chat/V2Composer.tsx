@@ -67,6 +67,12 @@ const styles = stylex.create({
     display: "flex",
     gap: "var(--conan-space-2)",
   },
+  // Two-line warnings read as a block, not as spaced-out prose (Randy,
+  // 2026-08-17). --conan-leading-subtitle is the tight value the row subtitles
+  // already use; nothing invented here.
+  calloutText: {
+    lineHeight: "var(--conan-leading-subtitle)",
+  },
   calloutWarning: {
     color: "var(--conan-color-warning)",
   },
@@ -355,7 +361,7 @@ export default function V2Composer({
                 ) : (
                   <AlertTriangle size={ACTION_ICON} aria-hidden />
                 )}
-                <Text type="supporting" color="inherit">
+                <Text type="supporting" color="inherit" xstyle={styles.calloutText}>
                   {contextStatus.message}
                 </Text>
               </div>
