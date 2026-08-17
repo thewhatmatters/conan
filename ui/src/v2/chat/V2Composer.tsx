@@ -15,12 +15,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Banner } from "@astryxdesign/core/Banner";
+import { ChatComposerDrawer } from "@astryxdesign/core/Chat";
 import { ChatComposer, ChatSendButton } from "@astryxdesign/core/Chat";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { Paperclip } from "lucide-react";
+import { AlertTriangle, OctagonAlert, Paperclip } from "lucide-react";
 import type { AgentOpts } from "../lib/useV2Chat.ts";
 import type { AgentCapabilities } from "../../hooks/useProviders.ts";
 import type {
@@ -59,11 +59,13 @@ const styles = stylex.create({
   // composer — no negative-margin tuck and no tinted wash. The previous frosted
   // band slid up under the composer's control row and covered the model/effort/
   // permission chips and send button.
-  // Layout only. Astryx Banner brings the status colour, icon and card surface;
-  // hand-rolling those is what produced first a mustard slab and then a bare
-  // row with no background at all (Randy, 2026-08-17).
+  // Layout only: ChatComposerDrawer paints the surface, exactly as it does for
+  // the approval gate and the pin drawer. Hand-rolling that surface produced a
+  // mustard slab, then a bare row, then a detached Banner (Randy, 2026-08-17).
   callout: {
-    marginBlockStart: "var(--conan-space-2)",
+    alignItems: "center",
+    display: "flex",
+    gap: "var(--conan-space-2)",
   },
   calloutWarning: {
     color: "var(--conan-color-warning)",
@@ -345,6 +347,18 @@ export default function V2Composer({
         // PinsDrawer returns null when empty, so the common case is unchanged.
         <>
           {gate?.({ text: value, clear: () => setValue("") })}
+          {contextStatus && (
+            <ChatComposerDrawer data-slot="context-pressure-callout">
+              <div {...stylex.props(styles.callout, contextStatus.type === "error" ? styles.calloutError : styles.calloutWarning)}>
+                {contextStatus.type === "error" ? (
+                  <OctagonAlert size={ACTION_ICON} aria-hidden />
+                ) : (
+                  <AlertTriangle size={ACTION_ICON} aria-hidden />
+                )}
+                <span>{contextStatus.message}</span>
+              </div>
+            </ChatComposerDrawer>
+          )}
           <PinsDrawer
             pins={attachments.pins}
             images={attachments.images}
@@ -417,15 +431,6 @@ export default function V2Composer({
       }
       sendButton={<ChatSendButton />}
       />
-      {contextStatus && (
-        <Banner
-          status={contextStatus.type === "error" ? "error" : "warning"}
-          title={contextStatus.message}
-          container="card"
-          data-slot="context-pressure-callout"
-          xstyle={styles.callout}
-        />
-      )}
       {contextCompactionMessage ? (
         <Text
           type="supporting"

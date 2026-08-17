@@ -351,7 +351,7 @@ describe("V2Composer", () => {
     expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("keeps the context pressure warning readable over the glass backdrop", () => {
+  it("renders the context pressure warning inside the composer's drawer", () => {
     const { container } = render(
       <V2Composer
         activeThread={thread}
@@ -384,12 +384,18 @@ describe("V2Composer", () => {
     const glassStyle = window.getComputedStyle(glass!);
     expect(glassStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 
-    // jsdom does not resolve color-mix, but it does report the backdrop filter
-    // and the warning text color, which is enough to prove the callout is a
-    // non-transparent frosted surface.
-    const calloutStyle = window.getComputedStyle(callout!);
-    expect(calloutStyle.backdropFilter).not.toBe("none");
-    expect(callout!.className).toContain("V2Composer__styles");
+    // The callout no longer paints its own surface: it is a ChatComposerDrawer,
+    // the same slot the approval gate and the pin drawer use, so the composer
+    // owns the background. Assert the STRUCTURE — three hand-rolled surfaces
+    // were tried and rejected before this (Randy, 2026-08-17), and a
+    // background-colour assertion would have passed on the worst of them.
+    // Inside the composer, and ABOVE the input — that is what "drawer" means.
+    const input = container.querySelector('[data-slot="rich-input"]');
+    expect(callout!.closest('[data-slot="v2-composer"]')).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(
+      callout!.compareDocumentPosition(input!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     const warningStyle = window.getComputedStyle(warning);
     expect(warningStyle.color).not.toBe("rgba(0, 0, 0, 0)");
