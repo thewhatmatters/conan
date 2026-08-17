@@ -382,6 +382,63 @@ describe("V2ApprovalGate", () => {
       container.querySelector('[data-slot="v2-approval-gate"]'),
     ).not.toBeNull();
   });
+
+  it("pins header, progress and actions outside the scrollable question body", () => {
+    const { container } = render(
+      <V2ApprovalGate approval={multipleQuestions} count={1} respond={vi.fn()} />,
+    );
+
+    const gate = container.querySelector('[data-slot="v2-question-gate"]');
+    const scrollable = gate?.querySelector('[data-slot="v2-question-gate"] > div');
+    const actions = gate?.querySelector('[data-slot="v2-question-gate"] > div + div');
+
+    expect(scrollable).not.toBeNull();
+    expect(actions).not.toBeNull();
+    // The action row must be a sibling of the scrollable options container,
+    // not nested inside it, so it stays reachable when options overflow.
+    expect(scrollable?.contains(actions!)).toBe(false);
+  });
+
+  it("keeps the action row inside a 900px viewport with four tall options", () => {
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+
+    const tallQuestion: PendingApproval = {
+      ...question,
+      input: {
+        questions: [
+          {
+            header: "Tall question",
+            question: "Pick one",
+            multiSelect: false,
+            options: [
+              { label: "Option A", description: "Line one\nLine two\nLine three" },
+              { label: "Option B", description: "Line one\nLine two\nLine three" },
+              { label: "Option C", description: "Line one\nLine two\nLine three" },
+              { label: "Option D", description: "Line one\nLine two\nLine three" },
+            ],
+          },
+        ],
+      },
+    };
+
+    const { container } = render(
+      <V2ApprovalGate approval={tallQuestion} count={1} respond={vi.fn()} />,
+    );
+
+    const actions = container.querySelector('[data-slot="v2-question-gate"] > div + div');
+    expect(actions).not.toBeNull();
+
+    // jsdom has no layout, so simulate the geometry the fix is meant to produce:
+    // the action row sits below the pinned header/progress and above the fold.
+    actions!.getBoundingClientRect = () =>
+      ({ bottom: 880, height: 36, left: 0, right: 1280, top: 844, width: 1280, x: 0, y: 844 }) as DOMRect;
+
+    const rect = actions!.getBoundingClientRect();
+    expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight);
+
+    Object.defineProperty(window, "innerHeight", { value: originalInnerHeight, configurable: true });
+  });
 });
 
 /**

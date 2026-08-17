@@ -99,6 +99,11 @@ const styles = stylex.create({
   },
   error: { color: "var(--conan-color-error)" },
   questionGate: { width: "100%" },
+  questionScroll: {
+    maxHeight: "min(60dvh, 560px)",
+    overflowY: "auto",
+    width: "100%",
+  },
   actions: {
     paddingBlockStart: "var(--conan-space-2)",
     width: "100%",
@@ -212,6 +217,7 @@ export default function V2ApprovalGate({
   guidance = "",
 }: V2ApprovalGateProps) {
   const groupRef = useRef<HTMLDivElement>(null);
+  const questionScrollRef = useRef<HTMLDivElement>(null);
   const firstOptionRef = useRef<HTMLButtonElement>(null);
   const options = optionsFor(approval);
   const questions = useMemo(
@@ -228,7 +234,17 @@ export default function V2ApprovalGate({
   // user's focus on a button that now decides a different request.
   useEffect(() => {
     const node = groupRef.current?.querySelector("input, button");
-    if (node instanceof HTMLElement) node.focus();
+    if (node instanceof HTMLElement) {
+      node.focus();
+      node.scrollIntoView({ block: "nearest" });
+    }
+  }, [approval.id, currentStep]);
+
+  // Bring the top of the question card into view whenever the gate or step
+  // changes, rather than leaving a previous scroll position mid-card.
+  useEffect(() => {
+    const node = questionScrollRef.current;
+    if (node) node.scrollTop = 0;
   }, [approval.id, currentStep]);
 
   useEffect(() => {
@@ -298,14 +314,22 @@ export default function V2ApprovalGate({
         const inputs = groupRef.current?.querySelectorAll<HTMLInputElement>(
           `input[name="question-${approval.id}-${currentStep}"]`,
         );
-        inputs?.[shortcut - 1]?.focus();
+        const input = inputs?.[shortcut - 1];
+        if (input) {
+          input.focus();
+          input.scrollIntoView({ block: "nearest" });
+        }
       } else if (shortcut === question.options.length + 1 && shortcut <= 9) {
         event.preventDefault();
         chooseOther();
         const inputs = groupRef.current?.querySelectorAll<HTMLInputElement>(
           `input[name="question-${approval.id}-${currentStep}"]`,
         );
-        inputs?.[shortcut - 1]?.focus();
+        const input = inputs?.[shortcut - 1];
+        if (input) {
+          input.focus();
+          input.scrollIntoView({ block: "nearest" });
+        }
       }
     };
     const submit = () => {
@@ -350,70 +374,72 @@ export default function V2ApprovalGate({
               />
             </VStack>
           ) : null}
-          <fieldset key={question.question} {...stylex.props(styles.question)}>
-            <VStack gap={2}>
-              <legend>
-                <Text type="body" weight="medium" xstyle={styles.wrappedCopy}>
-                  {question.header || question.question}
-                </Text>
-              </legend>
-              {question.header ? (
-                <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
-                  {question.question}
-                </Text>
-              ) : null}
-              <VStack gap={3}>
-                {question.options.map((option, optionIndex) => {
-                const selected = answers[currentStep]?.includes(option.label) ?? false;
-                return (
-                  <label key={option.label} {...stylex.props(styles.optionLabel)}>
+          <div ref={questionScrollRef} {...stylex.props(styles.questionScroll)}>
+            <fieldset key={question.question} {...stylex.props(styles.question)}>
+              <VStack gap={2}>
+                <legend>
+                  <Text type="body" weight="medium" xstyle={styles.wrappedCopy}>
+                    {question.header || question.question}
+                  </Text>
+                </legend>
+                {question.header ? (
+                  <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
+                    {question.question}
+                  </Text>
+                ) : null}
+                <VStack gap={3}>
+                  {question.options.map((option, optionIndex) => {
+                  const selected = answers[currentStep]?.includes(option.label) ?? false;
+                  return (
+                    <label key={option.label} {...stylex.props(styles.optionLabel)}>
+                      <input
+                        type={question.multiSelect ? "checkbox" : "radio"}
+                        name={`question-${approval.id}-${currentStep}`}
+                        checked={selected}
+                        onChange={() => chooseOption(option)}
+                        {...stylex.props(styles.optionInput)}
+                      />
+                      <VStack gap={0} xstyle={styles.optionCopy}>
+                        <Text type="body" xstyle={styles.wrappedCopy}>{option.label}</Text>
+                        {option.description ? (
+                          <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
+                            {option.description}
+                          </Text>
+                        ) : null}
+                      </VStack>
+                      {optionIndex < 9 ? <Kbd keys={String(optionIndex + 1)} xstyle={styles.optionShortcut} /> : null}
+                    </label>
+                  );
+                  })}
+                  <label {...stylex.props(styles.optionLabel)}>
                     <input
                       type={question.multiSelect ? "checkbox" : "radio"}
                       name={`question-${approval.id}-${currentStep}`}
-                      checked={selected}
-                      onChange={() => chooseOption(option)}
+                      checked={Boolean(other[currentStep])}
+                      onChange={chooseOther}
                       {...stylex.props(styles.optionInput)}
                     />
                     <VStack gap={0} xstyle={styles.optionCopy}>
-                      <Text type="body" xstyle={styles.wrappedCopy}>{option.label}</Text>
-                      {option.description ? (
-                        <Text type="supporting" color="secondary" xstyle={styles.wrappedCopy}>
-                          {option.description}
-                        </Text>
-                      ) : null}
+                      <input
+                        aria-label={`Other answer for ${question.header || question.question}`}
+                        placeholder="Type something"
+                        value={other[currentStep] ?? ""}
+                        onChange={(event) => {
+                          setStepError(false);
+                          setOther((current) => ({ ...current, [currentStep]: event.target.value }));
+                          if (!question.multiSelect) setAnswers((current) => ({ ...current, [currentStep]: [] }));
+                        }}
+                        {...stylex.props(styles.otherInput)}
+                      />
                     </VStack>
-                    {optionIndex < 9 ? <Kbd keys={String(optionIndex + 1)} xstyle={styles.optionShortcut} /> : null}
+                    {question.options.length < 9 ? (
+                      <Kbd keys={String(question.options.length + 1)} xstyle={styles.optionShortcut} />
+                    ) : null}
                   </label>
-                );
-                })}
-                <label {...stylex.props(styles.optionLabel)}>
-                  <input
-                    type={question.multiSelect ? "checkbox" : "radio"}
-                    name={`question-${approval.id}-${currentStep}`}
-                    checked={Boolean(other[currentStep])}
-                    onChange={chooseOther}
-                    {...stylex.props(styles.optionInput)}
-                  />
-                  <VStack gap={0} xstyle={styles.optionCopy}>
-                    <input
-                      aria-label={`Other answer for ${question.header || question.question}`}
-                      placeholder="Type something"
-                      value={other[currentStep] ?? ""}
-                      onChange={(event) => {
-                        setStepError(false);
-                        setOther((current) => ({ ...current, [currentStep]: event.target.value }));
-                        if (!question.multiSelect) setAnswers((current) => ({ ...current, [currentStep]: [] }));
-                      }}
-                      {...stylex.props(styles.otherInput)}
-                    />
-                  </VStack>
-                  {question.options.length < 9 ? (
-                    <Kbd keys={String(question.options.length + 1)} xstyle={styles.optionShortcut} />
-                  ) : null}
-                </label>
+                </VStack>
               </VStack>
-            </VStack>
-          </fieldset>
+            </fieldset>
+          </div>
           {stepError ? <Text type="supporting" xstyle={styles.error}>Choose an answer before continuing.</Text> : null}
           <HStack gap={3} xstyle={styles.actions}>
             <Button
