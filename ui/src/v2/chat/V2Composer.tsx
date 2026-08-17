@@ -46,6 +46,14 @@ const styles = stylex.create({
   fileInput: {
     display: "none",
   },
+  // WHA-208: frosted glass backdrop so transcript text scrolled behind the
+  // composer does not bleed through and compete with the input. Uses the same
+  // tokens as the surface pane header so the treatment stays consistent.
+  glass: {
+    backdropFilter: "blur(var(--conan-glass-blur))",
+    WebkitBackdropFilter: "blur(var(--conan-glass-blur))",
+    backgroundColor: "var(--conan-glass-tint)",
+  },
 });
 
 const ACTION_ICON = 16;
@@ -304,6 +312,7 @@ export default function V2Composer({
     <>
       <ChatComposer
       data-slot="v2-composer"
+      xstyle={styles.glass}
       value={value}
       onChange={setValue}
       onSubmit={handleSubmit}

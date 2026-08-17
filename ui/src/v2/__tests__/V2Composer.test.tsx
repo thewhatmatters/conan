@@ -335,4 +335,54 @@ describe("V2Composer", () => {
       screen.getByRole("combobox", { name: /Permission mode/i }),
     ).toHaveTextContent("Supervised");
   });
+
+  it("WHA-208: applies a frosted-glass backdrop so transcript text does not bleed through", () => {
+    const { container } = render(
+      <V2Composer activeThread={thread} send={vi.fn()} />,
+    );
+    // ChatComposer applies xstyle to an inner wrapper; the readable stylex class
+    // is the only stable hook to that node in jsdom.
+    const glass = container.querySelector(".V2Composer__styles\\.glass");
+    expect(glass).not.toBeNull();
+
+    // jsdom does not resolve CSS variables or compute backdrop-filter, but it
+    // DOES report that a non-transparent background token is applied.
+    const style = window.getComputedStyle(glass!);
+    expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("keeps the context pressure warning readable over the glass backdrop", () => {
+    const { container } = render(
+      <V2Composer
+        activeThread={thread}
+        send={vi.fn()}
+        contextTokens={150_000}
+        sessionCapabilities={{
+          imageInput: false,
+          streamingDeltas: true,
+          interactiveApproval: true,
+          livePermissionSwitch: true,
+          costUsd: true,
+          reasoningText: false,
+          resume: true,
+          contextWindowTokens: 200_000,
+          modelSelection: true,
+          models: [],
+          permissionModes: [],
+          effortModes: [],
+        }}
+      />,
+    );
+
+    const glass = container.querySelector(".V2Composer__styles\\.glass");
+    const warning = screen.getByText(/Context is 75% full.*compact when needed/);
+    expect(glass).not.toBeNull();
+    expect(warning).toBeInTheDocument();
+
+    const glassStyle = window.getComputedStyle(glass!);
+    expect(glassStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+
+    const warningStyle = window.getComputedStyle(warning);
+    expect(warningStyle.color).not.toBe("rgba(0, 0, 0, 0)");
+  });
 });
