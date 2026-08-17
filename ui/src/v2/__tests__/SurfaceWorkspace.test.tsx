@@ -66,7 +66,7 @@ describe("SurfaceWorkspace", () => {
     ).toBeVisible();
   });
 
-  it("renders only the active surface in the side pane", () => {
+  it("renders all open surfaces in the side pane but only shows the active one", () => {
     render(
       <SurfaceWorkspace
         activeSurface="terminal"
@@ -78,8 +78,13 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
 
-    expect(document.querySelector('[data-surface="terminal"]')).toBeVisible();
-    expect(document.querySelector('[data-surface="browser"]')).toBeNull();
+    const terminal = document.querySelector('[data-surface="terminal"]') as HTMLElement;
+    const browser = document.querySelector('[data-surface="browser"]') as HTMLElement;
+    expect(terminal).toBeVisible();
+    expect(browser).toBeInTheDocument();
+    expect(browser).not.toBeVisible();
+    expect(browser).toHaveAttribute("aria-hidden", "true");
+    expect(terminal).not.toHaveAttribute("aria-hidden", "true");
   });
 
   it("keeps Sagan mounted across thread changes", async () => {
@@ -207,7 +212,12 @@ describe("SurfaceWorkspace", () => {
     );
 
     expect(screen.getByText("Terminal")).toBeVisible();
-    expect(screen.queryByText("Browser")).toBeNull();
+    // Browser surface body is hidden, not unmounted, so its label may still be
+    // in the document but outside the visible header.
+    const browserLabel = screen.queryByText("Browser");
+    if (browserLabel) {
+      expect(browserLabel).not.toBeVisible();
+    }
   });
 
   it("drags the splitter to update the surface pane basis", () => {
@@ -246,5 +256,31 @@ describe("SurfaceWorkspace", () => {
 
     setPointerCapture.mockRestore();
     releasePointerCapture.mockRestore();
+  });
+
+  it("exposes separator semantics and keyboard arrow resize on the splitter", () => {
+    render(
+      <SurfaceWorkspace
+        activeSurface="browser"
+        openSurfaces={["browser", "terminal"]}
+        token={null}
+        cwd={null}
+      >
+        <div>Chat body</div>
+      </SurfaceWorkspace>,
+    );
+
+    const splitter = document.querySelector('[data-slot="surface-splitter"]') as HTMLElement;
+    const root = document.querySelector('[data-slot="surface-workspace"]') as HTMLElement;
+    expect(splitter).not.toBeNull();
+    expect(splitter).toHaveAttribute("role", "separator");
+    expect(splitter).toHaveAttribute("aria-orientation", "vertical");
+    expect(splitter).toHaveAttribute("aria-valuemin", "0");
+    expect(splitter).toHaveAttribute("aria-valuemax", "60");
+    expect(splitter).toHaveAttribute("aria-valuenow");
+
+    fireEvent.keyDown(splitter, { key: "ArrowRight" });
+    const basis = root.style.getPropertyValue("--surface-basis");
+    expect(Number.parseFloat(basis)).toBeGreaterThan(40);
   });
 });

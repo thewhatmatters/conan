@@ -1,4 +1,12 @@
-import { type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -17,6 +25,7 @@ import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
 
 const NARROW_BREAKPOINT_PX = 960;
 const SURFACE_BASIS_VAR = "--surface-basis";
+const STEP_PX = 20;
 
 const styles = stylex.create({
   root: {
@@ -110,6 +119,9 @@ const styles = stylex.create({
     overflow: "clip",
     position: "relative",
   },
+  surfaceBodyHidden: {
+    display: "none",
+  },
   surfaceLabel: {
     alignItems: "center",
     columnGap: "var(--conan-space-2)",
@@ -149,52 +161,25 @@ function SurfaceBody({
   return <V2DiffSurface token={token} cwd={cwd} />;
 }
 
-function handleSplitterPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-  event.preventDefault();
-  const target = event.currentTarget;
-  const surfacePane = target.nextElementSibling as HTMLElement | null;
-  const rootEl = target.parentElement as HTMLElement | null;
-  if (!surfacePane || !rootEl) return;
-  const root = rootEl;
+function readBasisPercent(root: HTMLElement): number {
+  const raw = root.style.getPropertyValue(SURFACE_BASIS_VAR);
+  if (!raw) return 40;
+  const num = Number.parseFloat(raw);
+  return Number.isFinite(num) ? num : 40;
+}
 
-  const startRect = surfacePane.getBoundingClientRect();
-  const rootRect = root.getBoundingClientRect();
-  const startClientX = event.clientX;
-  const startClientY = event.clientY;
-  const isRow = getComputedStyle(rootEl).flexDirection === "row";
+function clampBasis(value: number): number {
+  return Math.min(60, Math.max(0, value));
+}
 
-  if ("setPointerCapture" in target) {
-    target.setPointerCapture(event.pointerId);
-  }
-
-  function onMove(moveEvent: PointerEvent) {
-    const delta = isRow
-      ? moveEvent.clientX - startClientX
-      : moveEvent.clientY - startClientY;
-    const startSize = isRow ? startRect.width : startRect.height;
-    const total = isRow ? rootRect.width : rootRect.height;
-    const basis = ((startSize + delta) / total) * 100;
-    root.style.setProperty(SURFACE_BASIS_VAR, `${Math.max(0, basis)}%`);
-  }
-
-  function onUp(upEvent: PointerEvent) {
-    target.removeEventListener("pointermove", onMove);
-    if ("releasePointerCapture" in target) {
-      try {
-        target.releasePointerCapture(upEvent.pointerId);
-      } catch {
-        // capture may already be released
-      }
-    }
-  }
-
-  target.addEventListener("pointermove", onMove);
-  target.addEventListener("pointerup", onUp, { once: true });
+function setBasis(root: HTMLElement, percent: number) {
+  root.style.setProperty(SURFACE_BASIS_VAR, `${clampBasis(percent)}%`);
 }
 
 export default function SurfaceWorkspace({
   children,
   activeSurface,
+  openSurfaces,
   token,
   cwd,
   onBrowserStateChange,
@@ -215,6 +200,114 @@ export default function SurfaceWorkspace({
   const activeOption = SURFACE_OPTIONS.find((surface) => surface.id === activeSurface);
   const ActiveIcon = activeOption?.icon;
   const surfaceOpen = !chatActive && activeOption != null;
+  const [basis, setBasisState] = useState(40);
+  const [isRow, setIsRow] = useState(true);
+
+  useEffect(() => {
+    function updateOrientation() {
+      const root = document.querySelector('[data-slot="surface-workspace"]');
+      if (root instanceof HTMLElement) {
+        setIsRow(getComputedStyle(root).flexDirection === "row");
+      }
+    }
+    updateOrientation();
+    window.addEventListener("resize", updateOrientation);
+    return () => window.removeEventListener("resize", updateOrientation);
+  }, []);
+
+  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const target = event.currentTarget;
+    const surfacePane = target.nextElementSibling as HTMLElement | null;
+    const rootEl = target.parentElement as HTMLElement | null;
+    if (!surfacePane || !rootEl) return;
+    const root = rootEl;
+
+    const startRect = surfacePane.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    function readRootIsRow() {
+      return getComputedStyle(root).flexDirection === "row";
+    }
+
+    if ("setPointerCapture" in target) {
+      target.setPointerCapture(event.pointerId);
+    }
+
+    function onMove(moveEvent: PointerEvent) {
+      const moveIsRow = readRootIsRow();
+      const delta = moveIsRow
+        ? moveEvent.clientX - startClientX
+        : moveEvent.clientY - startClientY;
+      const startSize = moveIsRow ? startRect.width : startRect.height;
+      const total = moveIsRow ? rootRect.width : rootRect.height;
+      const nextBasis = ((startSize + delta) / total) * 100;
+      setBasis(root, nextBasis);
+      setBasisState(clampBasis(nextBasis));
+    }
+
+    function onUp(upEvent: PointerEvent) {
+      target.removeEventListener("pointermove", onMove);
+      if ("releasePointerCapture" in target) {
+        try {
+          target.releasePointerCapture(upEvent.pointerId);
+        } catch {
+          // capture may already be released
+        }
+      }
+    }
+
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp, { once: true });
+  }, []);
+
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const rootEl = event.currentTarget.parentElement as HTMLElement | null;
+    if (!rootEl) return;
+    const root = rootEl;
+    const growKeys = isRow ? ["ArrowRight", "ArrowDown"] : ["ArrowDown", "ArrowRight"];
+    const shrinkKeys = isRow ? ["ArrowLeft", "ArrowUp"] : ["ArrowUp", "ArrowLeft"];
+
+    if (!growKeys.includes(event.key) && !shrinkKeys.includes(event.key)) return;
+
+    event.preventDefault();
+    const delta = growKeys.includes(event.key) ? STEP_PX : -STEP_PX;
+    const rect = root.getBoundingClientRect();
+    const total = isRow ? rect.width : rect.height;
+    if (total === 0) return;
+    const current = readBasisPercent(root);
+    const nextBasis = current + (delta / total) * 100;
+    setBasis(root, nextBasis);
+    setBasisState(clampBasis(nextBasis));
+  }, [isRow]);
+
+  const surfaceBodies = useMemo(() => {
+    return openSurfaces.map((id) => {
+      const isActive = id === activeSurface;
+      return (
+        <HStack
+          key={id}
+          gap={0}
+          xstyle={[styles.surfaceBody, !isActive && styles.surfaceBodyHidden]}
+          data-slot="surface-body"
+          data-surface={id}
+          aria-hidden={!isActive}
+        >
+          <SurfaceBody
+            id={id}
+            token={token}
+            cwd={cwd}
+            browserActive={id === "browser" && isActive}
+            onBrowserStateChange={onBrowserStateChange}
+            sagan={sagan}
+            onOpenSaganThread={onOpenSaganThread}
+          />
+        </HStack>
+      );
+    });
+  }, [openSurfaces, activeSurface, token, cwd, onBrowserStateChange, sagan, onOpenSaganThread]);
 
   return (
     <HStack
@@ -233,9 +326,16 @@ export default function SurfaceWorkspace({
       {surfaceOpen ? (
         <button
           type="button"
+          role="separator"
           aria-label="Resize surface pane"
+          aria-orientation={isRow ? "vertical" : "horizontal"}
+          aria-valuemin={0}
+          aria-valuemax={60}
+          aria-valuenow={Math.round(basis)}
+          aria-valuetext={`${Math.round(basis)} percent`}
           {...stylex.props(styles.splitter)}
-          onPointerDown={handleSplitterPointerDown}
+          onPointerDown={handlePointerDown}
+          onKeyDown={handleKeyDown}
           data-slot="surface-splitter"
         />
       ) : null}
@@ -270,21 +370,7 @@ export default function SurfaceWorkspace({
             />
             <HStack xstyle={styles.paneHeaderRule} aria-hidden data-slot="surface-pane-header-rule" />
           </HStack>
-          <HStack
-            gap={0}
-            xstyle={styles.surfaceBody}
-            data-slot="surface-body"
-          >
-            <SurfaceBody
-              id={activeSurface}
-              token={token}
-              cwd={cwd}
-              browserActive={activeSurface === "browser"}
-              onBrowserStateChange={onBrowserStateChange}
-              sagan={sagan}
-              onOpenSaganThread={onOpenSaganThread}
-            />
-          </HStack>
+          {surfaceBodies}
         </VStack>
       ) : null}
     </HStack>
