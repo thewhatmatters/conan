@@ -421,6 +421,72 @@ describe("AppV2 live projects (US-501)", () => {
     });
   });
 
+  it("keeps the surface the user left a thread on when switching back (WHA-221)", async () => {
+    // Randy: "if I click a thread that has sagan configured as a surface it
+    // automatically defaults to the sagan surface view, but the last thing I
+    // had open in that thread was chat."
+    //
+    // Cause: switching threads points the capability probe at a new project.
+    // Until that fetch lands, `available` is false with `status: "loading"` —
+    // and the clear effect treated that unknown as "Sagan is gone", dropping
+    // the tab and resetting the pin tracker. The auto-pin that followed then
+    // ran as if this were a first visit and took `active` for itself.
+    stubGateway();
+    render(<AppV2 />);
+
+    const saganRow = await screen.findByRole("button", {
+      name: "Analyze my project: Run serverless code...",
+    });
+    fireEvent.click(saganRow);
+    // First visit auto-pins Sagan AND focuses it — that part is intended.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sagan" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    // The user chooses Chat for this thread.
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    // Away to a thread in a project with no Sagan overlay…
+    await newChatInProject("empty");
+    const draftRow = await screen.findByRole("button", {
+      name: "New chat: No messages yet",
+    });
+    fireEvent.click(draftRow);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
+    });
+
+    // …and back. The Sagan tab must return, but Chat must still be the
+    // selected surface: the thread is being reopened, not opened.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sagan" })).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Sagan" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+  });
+
   it("does not auto-pin Sagan for a nested folder that inherits it (WHA-209)", async () => {
     const nestedProjects = [
       {
