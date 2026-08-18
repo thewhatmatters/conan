@@ -176,8 +176,16 @@ export default function V2Composer({
   const [providerId, setProviderId] = useState<string>(threadProvider);
   // A reopened thread starts on the config it was SAVED with (US-501), so a
   // continued conversation doesn't silently switch model mid-thread.
+  // Codex never reports its resolved model in-stream, so "Default model" has
+  // no verifiable denominator. Default fresh Codex threads to the verified
+  // gpt-5.5 entry instead (272k, docs/provider-context-effort.md); the CLI's
+  // own default stays selectable and honestly shows counts only (WHA-215).
+  const defaultModelFor = useCallback(
+    (id: string) => (id === "codex" ? "gpt-5.5" : undefined),
+    [],
+  );
   const [model, setModel] = useState<string | undefined>(
-    activeThread?.model ?? undefined,
+    activeThread?.model ?? defaultModelFor(threadProvider),
   );
   const [effort, setEffort] = useState(activeThread?.effort ?? "");
   // Pre-launch selection only — once the session reports a live mode the
@@ -188,7 +196,7 @@ export default function V2Composer({
   const threadEffort = activeThread?.effort ?? "";
   useEffect(() => {
     setProviderId(threadProvider);
-    setModel(threadModel);
+    setModel(threadModel ?? defaultModelFor(threadProvider));
     setEffort(threadEffort);
     setPermission("");
     // Only the SELECTION changing resets the config — the provider/model/effort
@@ -391,7 +399,16 @@ export default function V2Composer({
             locked={locked}
             onSelect={(nextProvider, nextModel) => {
               setProviderId(nextProvider);
-              setModel(nextModel);
+              // A bare provider switch with no explicit model pick should land
+              // on that provider's safe default — for Codex that is gpt-5.5.
+              // An explicit "Default model" pick within the same provider stays
+              // undefined so the CLI's own default remains selectable.
+              setModel(
+                nextModel ??
+                  (nextProvider !== providerId
+                    ? defaultModelFor(nextProvider)
+                    : undefined),
+              );
               // Effort ids are per-provider vocabulary — carrying one across a
               // provider switch would send a mode the new driver never defined.
               if (nextProvider !== providerId) setEffort("");

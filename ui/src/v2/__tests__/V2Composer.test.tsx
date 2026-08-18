@@ -30,6 +30,22 @@ vi.mock("../lib/useV2Providers.ts", async (importOriginal) => {
           ],
         },
       },
+      {
+        id: "codex",
+        name: "Codex CLI",
+        installed: true,
+        capabilities: {
+          imageInput: false,
+          models: [
+            { value: null, label: "Default model" },
+            { value: "gpt-5.5", label: "gpt-5.5" },
+          ],
+          effortModes: [{ id: "high", label: "High" }],
+          permissionModes: [
+            { id: "default", label: "Supervised", description: "Ask first" },
+          ],
+        },
+      },
     ],
   };
 });
@@ -98,6 +114,30 @@ describe("V2Composer", () => {
       [],
     );
     expect(textbox.textContent).toBe("");
+  });
+
+  it("WHA-215: defaults a fresh Codex thread to gpt-5.5 so the context meter has a denominator", () => {
+    const send = vi.fn();
+    const codexThread: ActiveThread = {
+      key: "codex-fresh",
+      cwd: "/tmp/conan-v2-p2a",
+      provider: "codex",
+      title: "Codex task",
+    };
+    render(<V2Composer activeThread={codexThread} send={send} />);
+
+    typeAndSubmit("use codex");
+
+    expect(send).toHaveBeenCalledWith(
+      "use codex",
+      expect.objectContaining({
+        cwd: "/tmp/conan-v2-p2a",
+        provider: "codex",
+        model: "gpt-5.5",
+      }),
+      [],
+      [],
+    );
   });
 
   it("does not send when there is no active thread", () => {
