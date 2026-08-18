@@ -324,6 +324,31 @@
   width: var(--conan-space-2);
 }
 
+/* The approval gate rises out of Astryx's ChatComposerDrawer, whose content area
+ * is a grid item in an IMPLICIT `auto` column. An `auto` track takes its base
+ * size from its content's MAX-content width, so one unwrappable line — a long
+ * Bash command, a fenced block in a plan — sizes the track to that line and the
+ * whole gate renders wider than the composer it rises out of.
+ *
+ * WHA-214 gave our own subtree `min-width: 0`; that cannot reach a track above
+ * it. Measured in a live browser: `min-width: 0` / `flex: 1 1 0` / `width: 0;
+ * min-width: 100%` on the gate body AND on the bash view all left it at 1143px
+ * inside a 450px composer. Constraining the track is what fixes it (418px).
+ *
+ * Scoped through `:has()` on our own slots rather than by child index, so it
+ * survives an Astryx class-name change and simply stops applying if the drawer's
+ * shape changes — it never leaks to another drawer. Remove it when Astryx sizes
+ * the drawer's own track. */
+[data-slot="v2-approval-gate"] :has(> [data-slot^="v2-approval-gate-body"]),
+[data-slot="v2-approval-gate"] :has(> [data-slot^="v2-question-gate"]) {
+  min-width: 0;
+}
+
+[data-slot="v2-approval-gate"] :has(> * > [data-slot^="v2-approval-gate-body"]),
+[data-slot="v2-approval-gate"] :has(> * > [data-slot^="v2-question-gate"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @keyframes conan-status-pulse {
   50% {
     opacity: 0.45;
