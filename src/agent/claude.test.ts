@@ -209,7 +209,10 @@ test("result clears streamed state; a later un-streamed message falls back whole
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "result");
   const result = events[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>;
-  assert.equal(result.contextTokens, 200);
+  // No `assistant` frame carried a usage block, so there is no context
+  // position to report. The result frame's own usage must NOT be substituted:
+  // it is the turn's total spend across iterations, not a position (WHA-219).
+  assert.equal(result.contextTokens, null);
   assert.deepEqual(result.tokens, {
     input: 120,
     cachedInput: 80,
@@ -396,6 +399,24 @@ test("claudeModeFor floors unknown mode ids to default (US-009)", () => {
 
 test("result counts cache_creation_input_tokens toward context window, matching the transcript path", () => {
   const p = new ClaudeStreamParser();
+  // The position comes from the assistant frame, which is the same row the
+  // transcript reader below picks up — that is what makes the two agree.
+  p.push(
+    j({
+      type: "assistant",
+      message: {
+        id: "msg_ctx",
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        usage: {
+          input_tokens: 120,
+          cache_read_input_tokens: 80,
+          cache_creation_input_tokens: 50,
+          output_tokens: 7,
+        },
+      },
+    }),
+  );
   const events = p.push(
     j({
       type: "result",
@@ -450,4 +471,85 @@ test("result counts cache_creation_input_tokens toward context window, matching 
     }
     rmSync(projectsDir, { recursive: true, force: true });
   }
+});
+
+test("context position is the last assistant frame, not the turn's iteration sum (WHA-219)", () => {
+  // Captured shape: a five-tool turn re-reads the whole prompt on every model
+  // iteration, so `result.usage` sums the same context five times. Randy's
+  // meter sat at "Context is 100% full" through compaction and new threads
+  // because Conan was showing that sum. Numbers below are the real ratio
+  // measured against claude 2.1.218: 309,174 reported vs 51,736 actual.
+  const p = new ClaudeStreamParser();
+  const iteration = (id: string, cacheRead: number) =>
+    j({
+      type: "assistant",
+      message: {
+        id,
+        role: "assistant",
+        content: [{ type: "tool_use", id: `t-${id}`, name: "Bash", input: { command: "echo 1" } }],
+        usage: {
+          input_tokens: 2,
+          cache_read_input_tokens: cacheRead,
+          cache_creation_input_tokens: 81,
+          output_tokens: 40,
+        },
+      },
+    });
+  // Five iterations, each replaying a context that barely grows.
+  for (const [i, cacheRead] of [51_500, 51_560, 51_600, 51_620, 51_653].entries()) {
+    p.push(iteration(`msg_${i}`, cacheRead));
+  }
+  const events = p.push(
+    j({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      total_cost_usd: 0.5,
+      duration_ms: 9000,
+      num_turns: 5,
+      result: "done",
+      usage: {
+        input_tokens: 12,
+        cache_read_input_tokens: 287_324,
+        cache_creation_input_tokens: 21_838,
+        output_tokens: 200,
+      },
+    }),
+  );
+  const result = events[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>;
+  // The position going into the next turn: 2 + 51,653 + 81.
+  assert.equal(result.contextTokens, 51_736);
+  // And emphatically not the turn's aggregate, which is what saturated the meter.
+  assert.notEqual(result.contextTokens, 309_174);
+  // The turn's SPEND is still reported from the result frame — that number is
+  // correct for cost display and must not be "fixed" alongside the position.
+  assert.equal(result.tokens?.input, 12);
+  assert.equal(result.tokens?.cachedInput, 287_324);
+});
+
+test("a turn with no assistant usage reports no position rather than repeating the last (WHA-219)", () => {
+  const p = new ClaudeStreamParser();
+  p.push(
+    j({
+      type: "assistant",
+      message: {
+        id: "msg_a",
+        role: "assistant",
+        content: [{ type: "text", text: "hi" }],
+        usage: { input_tokens: 2, cache_read_input_tokens: 40_000, output_tokens: 5 },
+      },
+    }),
+  );
+  const first = p.push(j({ type: "result", subtype: "success", is_error: false, result: "hi", usage: { input_tokens: 2, cache_read_input_tokens: 40_000, output_tokens: 5 } }));
+  assert.equal(
+    (first[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>).contextTokens,
+    40_002,
+  );
+  // Next turn dies before any assistant frame (interrupt, spawn error). Its
+  // result must not re-assert the previous turn's position as current.
+  const second = p.push(j({ type: "result", subtype: "error_during_execution", is_error: true, result: null, usage: {} }));
+  assert.equal(
+    (second[0] as Extract<import("./driver.js").AgentEvent, { kind: "result" }>).contextTokens,
+    null,
+  );
 });

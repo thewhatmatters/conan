@@ -629,6 +629,12 @@ function inputTarget(input: unknown): string | null {
 export class ClaudeStreamParser {
   private streamed = new Map<string, { text: boolean; thinking: boolean }>();
   private currentMessageId: string | null = null;
+  /** Context position from the most recent `assistant` frame of this turn.
+   *  The `result` frame's usage is the SUM over every model iteration in the
+   *  turn — each tool call replays the whole prompt through `cache_read`, so a
+   *  five-tool turn counts the same context five times. A single assistant
+   *  message's usage is the real position going into the next turn (WHA-219). */
+  private lastAssistantContextTokens: number | null = null;
 
   /** Record that a modality streamed a delta for the in-flight message. */
   private markStreamed(kind: "text" | "thinking"): void {
@@ -762,6 +768,19 @@ export class ClaudeStreamParser {
       // that modality actually streamed deltas. Thinking that never streamed
       // (whole-frame only) must still emit — that was the D2 bug.
       const streamed = id != null ? this.streamed.get(id) : undefined;
+      // Every assistant frame of a turn carries the prompt it was invoked with.
+      // Keep the latest — that is the position the next turn starts from.
+      const assistantUsage = record(
+        record(msg.message)?.usage,
+      );
+      if (assistantUsage) {
+        const position = sumReported(
+          num(assistantUsage.input_tokens),
+          num(assistantUsage.cache_read_input_tokens),
+          num(assistantUsage.cache_creation_input_tokens),
+        );
+        if (position != null) this.lastAssistantContextTokens = position;
+      }
       const out: AgentEvent[] = [];
       for (const block of messageContent(msg.message)) {
         if (block.type === "text" && typeof block.text === "string") {
@@ -804,7 +823,10 @@ export class ClaudeStreamParser {
       const usage = record(msg.usage);
       const input = usage ? num(usage.input_tokens) : null;
       const cachedInput = usage ? num(usage.cache_read_input_tokens) : null;
-      const cacheCreationInput = usage ? num(usage.cache_creation_input_tokens) : null;
+      const contextTokens = this.lastAssistantContextTokens;
+      // A turn that reported no assistant usage (an error, an interrupt) must
+      // not re-report the previous turn's position as if it were fresh.
+      this.lastAssistantContextTokens = null;
       return [
         {
           kind: "result",
@@ -813,7 +835,10 @@ export class ClaudeStreamParser {
           durationMs: num(msg.duration_ms),
           numTurns: num(msg.num_turns),
           text: str(msg.result),
-          contextTokens: sumReported(input, cachedInput, cacheCreationInput),
+          // NOT sumReported(input, …) from this frame: that is the turn's
+          // total spend across iterations, which is the right number for
+          // `tokens` below and a ~6x overcount for the context meter.
+          contextTokens,
           tokens: {
             input,
             cachedInput,
