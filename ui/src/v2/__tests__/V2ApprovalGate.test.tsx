@@ -14,7 +14,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import V2ApprovalGate, { optionsFor } from "../chat/V2ApprovalGate.tsx";
+import V2ApprovalGate, { optionListCap, optionsFor } from "../chat/V2ApprovalGate.tsx";
 import type { PendingApproval } from "../lib/useV2Chat.ts";
 
 const approval: PendingApproval = {
@@ -71,6 +71,37 @@ const multipleQuestions: PendingApproval = {
     ],
   },
 };
+
+describe("optionListCap", () => {
+  // Measured off a real 900px-tall window with a real four-option gate, before
+  // the fix: the well had 771px, the dock wanted 898, and the list was capped
+  // at 540 by `min(60dvh, 560px)` — a cap taken from the WINDOW, which is 129px
+  // taller than the well. 358px of that dock is chrome, so the list may have
+  // 413 and no more.
+  it("gives the list the well minus the dock's chrome", () => {
+    expect(optionListCap({ wellHeight: 771, dockHeight: 898, listHeight: 540 })).toBe(413);
+  });
+
+  // The failure this ticket is about: the old cap fitted the window, so the
+  // dock overflowed the well by exactly the chrome above it and the header was
+  // clipped. Any cap that ignores the chrome reproduces it.
+  it("keeps the whole dock inside the well", () => {
+    const cap = optionListCap({ wellHeight: 771, dockHeight: 898, listHeight: 540 });
+    expect(898 - 540 + cap).toBeLessThanOrEqual(771);
+  });
+
+  // A composer that grows — a wrapped branch chip, a context callout — takes
+  // its space from the list, not from the header or the buttons.
+  it("shrinks the list when the composer grows", () => {
+    const roomy = optionListCap({ wellHeight: 771, dockHeight: 898, listHeight: 540 });
+    const cramped = optionListCap({ wellHeight: 771, dockHeight: 958, listHeight: 540 });
+    expect(cramped).toBeLessThan(roomy);
+  });
+
+  it("never collapses the list below its floor", () => {
+    expect(optionListCap({ wellHeight: 300, dockHeight: 898, listHeight: 540 })).toBe(160);
+  });
+});
 
 describe("optionsFor", () => {
   it("offers all four decisions for a tool call", () => {
