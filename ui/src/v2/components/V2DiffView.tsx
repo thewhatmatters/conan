@@ -27,6 +27,12 @@ export const PREVIEW_ROWS = 12;
 export const MAX_DIFF_ROWS = 600;
 
 const styles = stylex.create({
+  root: {
+    // The diff sits inside a Card that may be a flex item; without this,
+    // white-space:pre rows widen the card instead of scrolling (WHA-214).
+    minWidth: 0,
+    width: "100%",
+  },
   scroller: {
     boxSizing: "border-box",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -109,7 +115,7 @@ export default function V2DiffView({ diff }: { diff: FileDiff }) {
   // Degraded — binary or oversized content: counts only, no rows to render.
   if (diff.lines === null) {
     return (
-      <VStack gap={1} width="100%" data-slot="v2-diff">
+      <VStack gap={1} width="100%" data-slot="v2-diff" xstyle={styles.root}>
         {header}
         <div {...stylex.props(styles.note)}>
           {diff.degraded === "binary"
@@ -126,7 +132,7 @@ export default function V2DiffView({ diff }: { diff: FileDiff }) {
   const hiddenBeyondCap = diff.lines.length - capped.length;
 
   return (
-    <VStack gap={1} width="100%" data-slot="v2-diff">
+    <VStack gap={1} width="100%" data-slot="v2-diff" xstyle={styles.root}>
       {header}
       <div {...stylex.props(styles.scroller)}>
         {shown.map((l, i) =>
