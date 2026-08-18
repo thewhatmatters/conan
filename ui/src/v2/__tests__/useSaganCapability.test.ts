@@ -97,4 +97,27 @@ describe("useSaganCapability live refresh", () => {
     expect(result.current.available).toBe(true);
     expect(result.current.autoPin).toBe(false);
   });
+
+  it("re-probes on window focus even when the surface is closed", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => payload(1) })
+      .mockResolvedValueOnce({ ok: true, json: async () => payload(2) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSaganCapability("tok", thread, projects, false));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.data?.runs).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.data?.runs).toHaveLength(2);
+  });
 });

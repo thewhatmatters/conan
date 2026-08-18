@@ -19,7 +19,7 @@
  * every region.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AppV2 from "../App.v2.tsx";
 
 const CONFIG = { token: "tok", cwd: "/repo/conan", port: 3800 };
@@ -464,6 +464,68 @@ describe("AppV2 live projects (US-501)", () => {
           name: "Sagan",
         }),
       ).toBeVisible();
+    });
+  });
+
+  it("WHA-216: re-probes Sagan on window focus and auto-pins the tab when it appears", async () => {
+    let saganCallCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = (data: unknown) =>
+        Promise.resolve({ ok: true, status: 200, json: async () => data } as Response);
+      if (url.includes("/api/config")) return body(CONFIG);
+      if (url.includes("/api/sagan/runs")) {
+        saganCallCount++;
+        const projectId = decodeURIComponent(url.split("projectId=")[1] ?? "");
+        const validRoot = projectId.startsWith("/repo/conan");
+        // First probe sees no Sagan; the focus re-probe sees it.
+        return body({
+          project: {
+            path: projectId,
+            root: "/repo/conan",
+            sagan: { state: validRoot && saganCallCount > 1 ? "valid" : "absent" },
+          },
+          runs: [],
+        });
+      }
+      if (url.includes("/api/agent/projects") && !init?.method) {
+        return body({ projects: PROJECTS });
+      }
+      if (url.includes("/transcript")) return body({ found: false, items: [] });
+      if (init?.method === "PATCH") return body({ ok: true });
+      if (init?.method === "DELETE") return body({ ok: true });
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AppV2 />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Analyze my project: Run serverless code...",
+      }),
+    );
+
+    // Wait for the initial probe to settle; Sagan is absent so no tab pins.
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Sagan" })).toBeNull();
+    });
+    expect(saganCallCount).toBeGreaterThanOrEqual(1);
+
+    // Focus re-probes. The second fetch now reports a valid Sagan root.
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const saganTab = screen.queryByRole("button", { name: "Sagan" });
+      expect(saganTab).toBeInTheDocument();
+      expect(saganTab).toHaveAttribute("aria-pressed", "true");
     });
   });
 
