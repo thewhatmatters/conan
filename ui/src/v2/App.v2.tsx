@@ -356,6 +356,9 @@ export default function AppV2() {
   );
   const saganAvailable = sagan.available;
   const saganAutoPin = sagan.autoPin;
+  /** Whether the probe has actually answered for the CURRENT project. While it
+   *  is "loading"/"idle" the absence of Sagan is unknown, not established. */
+  const saganStatus = sagan.status;
   const saganNeedsYou = sagan.data?.runs.filter((run) => run.openDecisions.length > 0).length ?? 0;
   // Tracks the last project we auto-pinned Sagan for, keyed by thread, so the
   // 7.5s poll does not re-assert the pin and steal a slot from a surface the
@@ -393,12 +396,19 @@ export default function AppV2() {
 
   useEffect(() => {
     if (saganAvailable) return;
+    // "Not answered yet" is NOT "absent" (WHA-221). Switching threads points the
+    // probe at a new project, and until its fetch lands `available` is false
+    // with `status: "loading"`. Clearing on that reported Sagan gone, dropped
+    // the tab, and reset the pin tracker — so the auto-pin below then ran as if
+    // this were a first visit and took `active` for itself, throwing away the
+    // surface the user had actually left the thread on.
+    if (saganStatus === "loading" || saganStatus === "idle") return;
     saganPinnedProjectRef.current[surfaceKey] = null;
     updateThreadSurfaces((current) => ({
       open: current.open.filter((id) => id !== "sagan"),
       active: current.active === "sagan" ? "chat" : current.active,
     }));
-  }, [saganAvailable, surfaceKey, updateThreadSurfaces]);
+  }, [saganAvailable, saganStatus, surfaceKey, updateThreadSurfaces]);
 
   useEffect(() => {
     if (!saganAutoPin || !sagan.projectPath) return;
