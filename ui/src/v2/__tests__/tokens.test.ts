@@ -56,10 +56,12 @@ describe("v2 tokens.css", () => {
     }
   });
 
-  it("gives transcript and composer separate readable measures", () => {
+  it("puts the transcript and the composer on one shared measure", () => {
     const css = injectedCss();
     expect(css).toContain("--conan-chat-measure: 800px");
-    expect(css).toContain("--conan-composer-measure: 450px");
+    // The composer's separate ceiling is gone on purpose. Re-declaring one is
+    // how the input drifts back to being narrower than the messages above it.
+    expect(css).not.toContain("--conan-composer-measure");
   });
 
   it("removes the glass scrim behind the solid composer", () => {
