@@ -33,6 +33,7 @@ import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 import SaganInspector from "./SaganInspector.tsx";
 import { SaganLanePanel, SaganOverviewSection } from "./SaganOverviewChrome.tsx";
+import { SaganOverviewHeader } from "./SaganOverviewHeader.tsx";
 import SaganPipeline, { SAGAN_PIPELINE_MIN_WIDTH } from "./SaganPipeline.tsx";
 import SaganToolbar, { type SaganTab } from "./SaganToolbar.tsx";
 import {
@@ -644,6 +645,7 @@ export function V2SaganSurface({
             </Text>
           ) : null}
           {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
+          <SaganOverviewHeader runs={data.runs} />
           <SaganLanePanel runs={data.runs} />
           {SAGAN_SECTIONS.map((section) => {
             const rows = grouped.get(section)!;

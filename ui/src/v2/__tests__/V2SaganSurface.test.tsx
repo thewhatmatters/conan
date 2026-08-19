@@ -152,8 +152,96 @@ describe("V2SaganSurface overview", () => {
     expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
     expect(outsideOverflowMeasurement(screen.getAllByText(/^Updated /))).toBeVisible();
     for (const label of ["Needs you", "Running now", "Up next", "Blocked", "Recently completed"]) {
-      expect(screen.getByText(label)).toBeVisible();
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(label)[0]).toBeVisible();
     }
+  });
+
+  it("renders WHA-226 headline + three tiles at zero, without Median/Shipped/duplicate Refresh", () => {
+    renderSurface(result());
+    const header = document.querySelector('[data-slot="sagan-overview-header"]');
+    expect(header).not.toBeNull();
+    expect(header).toHaveAttribute("data-decision-count", "0");
+    expect(screen.getByText("Nothing needs you right now.")).toBeVisible();
+
+    const tiles = [...document.querySelectorAll('[data-slot="sagan-overview-tile"]')];
+    expect(tiles.map((el) => el.getAttribute("data-tile"))).toEqual([
+      "needs-you",
+      "running",
+      "blocked",
+    ]);
+    expect(tiles.every((el) => el.getAttribute("data-count") === "0")).toBe(true);
+    expect(screen.getByText("Nothing waiting")).toBeVisible();
+    expect(screen.getByText("0 build · 0 verify")).toBeVisible();
+    expect(screen.getByText("Nothing blocked")).toBeVisible();
+
+    expect(screen.queryByText(/Median gate wait/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Shipped 24h/i)).not.toBeInTheDocument();
+    // Refresh lives only in the WHA-231 toolbar — one control, not a body duplicate.
+    const toolbar = screen.getByRole("toolbar", { name: "Sagan views and status" });
+    expect(within(toolbar).getAllByRole("button", { name: "Refresh Sagan runs" }).length).toBeGreaterThan(0);
+    const bodyRefresh = [...document.querySelectorAll('[data-sagan-pane="overview"] button')].filter(
+      (btn) => btn.getAttribute("aria-label") === "Refresh Sagan runs",
+    );
+    expect(bodyRefresh).toHaveLength(0);
+  });
+
+  it("keeps tile counts bound to section lengths when a run moves (WHA-226 AC1)", () => {
+    const needsYou = run({
+      id: "MOVE",
+      ticket: "MOVE",
+      openDecisions: [{ gate: "promote", state: "awaiting", evidenceSha: null, round: 1 }],
+    });
+    const { rerender } = renderSurface(result({ data: data([needsYou]) }));
+    const tile = (id: string) => document.querySelector(`[data-slot="sagan-overview-tile"][data-tile="${id}"]`);
+    expect(tile("needs-you")).toHaveAttribute("data-count", "1");
+    expect(tile("running")).toHaveAttribute("data-count", "0");
+    expect(screen.getByText("1 decision is waiting on you")).toBeVisible();
+
+    const section = (name: string) =>
+      document.querySelector(`[data-sagan-section="${name}"] [data-slot="sagan-section-count"]`);
+    expect(section("Needs you")?.textContent).toBe("1");
+    expect(section("Running now")?.textContent).toBe("0");
+
+    // Clear the gate → same run recounts into Running now; tile + section move together.
+    const running = run({
+      id: "MOVE",
+      ticket: "MOVE",
+      lane: "frontend",
+      phase: "building",
+      openDecisions: [],
+      needsYou: false,
+      verdict: null,
+    });
+    rerender(<V2SaganSurface token="tok" cwd="/repo/sagan" result={result({ data: data([running]) })} />);
+    expect(tile("needs-you")).toHaveAttribute("data-count", "0");
+    expect(tile("running")).toHaveAttribute("data-count", "1");
+    expect(section("Needs you")?.textContent).toBe("0");
+    expect(section("Running now")?.textContent).toBe("1");
+    expect(screen.getByText("Nothing needs you right now.")).toBeVisible();
+  });
+
+  it("pins headline decisions vs Needs-you runs when one run holds two gates (WHA-226 AC2a)", () => {
+    renderSurface(
+      result({
+        data: data([
+          run({
+            id: "TWO",
+            ticket: "TWO",
+            openDecisions: [
+              { gate: "promote", state: "awaiting", evidenceSha: null, round: 2 },
+              { gate: "art-direction-approval", state: "awaiting", evidenceSha: null, round: 1 },
+            ],
+          }),
+        ]),
+      }),
+    );
+    const header = document.querySelector('[data-slot="sagan-overview-header"]');
+    expect(header).toHaveAttribute("data-decision-count", "2");
+    expect(screen.getByText("2 decisions are waiting on you")).toBeVisible();
+    expect(
+      document.querySelector('[data-slot="sagan-overview-tile"][data-tile="needs-you"]'),
+    ).toHaveAttribute("data-count", "1");
   });
 
   it("keeps stale data visible with a non-blocking refresh error", () => {
@@ -806,9 +894,14 @@ describe("Sagan inspector decision gates (WHA-145)", () => {
  * verdict that still stops.
  */
 describe("Sagan overview sections (WHA-169)", () => {
-  // The section title's own row is the first match; a run's state label can
-  // carry the same word further down the list.
-  const section = (title: string) => screen.getAllByText(title)[0]!.closest("div")!.parentElement!;
+  // Prefer the section chrome's data attribute — WHA-226's summary tiles reuse
+  // the same labels ("Needs you" / "Blocked"), so getAllByText(title)[0] is no
+  // longer the section header.
+  const section = (title: string) => {
+    const el = document.querySelector(`[data-sagan-section="${title}"]`);
+    if (!el) throw new Error(`No overview section for ${title}`);
+    return el;
+  };
 
   const board = () =>
     data([
