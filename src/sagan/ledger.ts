@@ -11,9 +11,12 @@
 //
 // Two properties of the real file drive the whole design:
 //
-//   1. `ts` is a DAY-granular string ("2026-08-06") and is missing entirely on
-//      some events. It cannot order anything. FILE ORDER is the only ordering,
-//      which is exactly what the decision resolver below depends on.
+//   1. `ts` is a DAY-granular string ("2026-08-06") on older events; current
+//      fleet events use `timestamp` and are full ISO-8601 instants. The reader
+//      keeps the raw value, classifies it as `exact | day | none`, and exposes
+//      the ISO instant only when it is real. FILE ORDER stays the only ordering
+//      — the resolver does not depend on timestamps — but durations are now
+//      honest instead of invented from a calendar date (WHA-225).
 //
 //   2. Field names and even field TYPES vary by event type. `findings` is a
 //      count on `critique.verdict` and an array of strings on `decision.made`;
@@ -33,6 +36,12 @@ const KNOWN_EVENTS = new Set([
   "decision.needed",
   "decision.made",
 ]);
+
+/** How precise an event's timestamp is. `exact` means a full ISO-8601 instant;
+ *  `day` means a calendar-date string only; `none` means the event carried no
+ *  timestamp at all. The UI reads this to decide whether it may print a
+ *  duration (WHA-225). */
+export type TimestampKind = "exact" | "day" | "none";
 
 export interface OpenDecision {
   gate: string;
@@ -84,7 +93,12 @@ export interface DecisionEvent {
   evidenceSha: string | null;
   round: number | null;
   by: string | null;
+  /** Raw timestamp as it appeared in the ledger (`ts` or `timestamp`). */
   ts: string | null;
+  /** ISO-8601 timestamp only; null for day-granular or missing timestamps. */
+  isoTs: string | null;
+  /** Classification of this event's timestamp: exact instant, day-only, or absent. */
+  tsKind: TimestampKind;
 }
 
 export interface TicketProjection {
@@ -106,9 +120,17 @@ export interface TicketProjection {
    *  Needs-you queue reads. They answer different questions. */
   decisionHistory: DecisionEvent[];
   evidence: EvidenceRef[];
-  /** First and last `ts` seen. Day-granular strings; may be null. */
+  /** First and last raw timestamp seen (`ts` or `timestamp`). Day-granular
+   *  strings; may be null. Kept verbatim so the UI can fall back to the ledger
+   *  value when an exact instant is not available. */
   firstTs: string | null;
   lastTs: string | null;
+  /** Classification of `firstTs` / `lastTs`. */
+  firstTsKind: TimestampKind;
+  lastTsKind: TimestampKind;
+  /** First and last ISO-8601 timestamp seen; null when no ISO timestamp exists. */
+  firstIsoTs: string | null;
+  lastIsoTs: string | null;
   eventCount: number;
 }
 
@@ -118,6 +140,10 @@ export interface LedgerProjection {
   /** Lines that were not usable, by reason. Surfaced rather than swallowed so a
    *  half-written ledger is visible instead of silently short. */
   skipped: { unparseable: number; unknownType: number; noTicket: number };
+  /** Events where `ts` and `timestamp` were both ISO-8601 instants but differed.
+   *  Kept separate from `skipped` because the event IS used — `timestamp` wins —
+   *  but the caller may want to warn that two fields disagreed. */
+  timestampMismatch: number;
 }
 
 /** One ledger line, verbatim. Field names and types vary by `event` (see the
@@ -133,6 +159,69 @@ export interface RawEvent {
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+
+/** True when `value` is an ISO-8601 timestamp with a time component.
+ *
+ *  Day-granular strings like "2026-08-06" are deliberately NOT accepted — the
+ *  whole point of the ISO-8601 contract is to avoid inventing a time of day.
+ *  Offsets (`+00:00`) and the UTC suffix (`Z`) are both allowed. */
+export function isIsoTimestamp(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/.test(value);
+}
+
+/** Parsed timestamp plus the classification the UI needs to decide what it can
+ *  render (WHA-225). */
+export interface TimestampClassification {
+  /** The raw timestamp string we would show; prefers `ts` then `timestamp`. */
+  ts: string | null;
+  /** ISO-8601 instant when the event carried one; null otherwise. */
+  isoTs: string | null;
+  /** Why `isoTs` is null, or `exact` when it is not. */
+  tsKind: TimestampKind;
+  /** Both `ts` and `timestamp` were present, parsed as full instants, and differed. */
+  disagreement: boolean;
+}
+
+/** Classify an event's timestamp fields.
+ *
+ *  Old ledgers use `ts`; current fleet events use `timestamp`. `timestamp` is
+ *  treated as authoritative: when it is a full ISO-8601 instant it wins over
+ *  any `ts` value, and the raw `ts` field returned here is the SAME raw value
+ *  so `ts` and `tsKind` never disagree. If both fields are ISO instants and
+ *  they differ, we still pick `timestamp` but flag the mismatch so the caller
+ *  can surface it instead of silently asserting one value. */
+export function classifyTimestamp(e: RawEvent): TimestampClassification {
+  const ts = str(e.ts);
+  const timestamp = str(e.timestamp);
+  const tsIso = ts && isIsoTimestamp(ts) ? ts : null;
+  const timestampIso = timestamp && isIsoTimestamp(timestamp) ? timestamp : null;
+
+  let isoTs: string | null = null;
+  let rawTs: string | null = null;
+  let disagreement = false;
+
+  if (timestampIso) {
+    // `timestamp` is authoritative when it is a full instant.
+    isoTs = timestampIso;
+    rawTs = timestamp;
+    if (tsIso && tsIso !== timestampIso) disagreement = true;
+  } else if (tsIso) {
+    isoTs = tsIso;
+    rawTs = ts;
+  } else if (timestamp) {
+    rawTs = timestamp;
+  } else if (ts) {
+    rawTs = ts;
+  }
+
+  const tsKind: TimestampKind = isoTs ? "exact" : rawTs ? "day" : "none";
+  return { ts: rawTs, isoTs, tsKind, disagreement };
+}
+
+/** Pick the best ISO-8601 timestamp available for an event. */
+export function isoTimestampOf(e: RawEvent): string | null {
+  return classifyTimestamp(e).isoTs;
+}
 
 /**
  * Parse ledger text into events, in file order.
@@ -177,6 +266,7 @@ export function parseLedger(text: string): {
  */
 export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjection {
   const skipped = { unparseable, unknownType: 0, noTicket: 0 };
+  let timestampMismatch = 0;
   /** Per ticket, per gate: the last decision event seen, in file order. */
   const gates = new Map<string, Map<string, RawEvent>>();
   const byTicket = new Map<string, TicketProjection>();
@@ -196,6 +286,10 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
         evidence: [],
         firstTs: null,
         lastTs: null,
+        firstTsKind: "none",
+        lastTsKind: "none",
+        firstIsoTs: null,
+        lastIsoTs: null,
         eventCount: 0,
       };
       byTicket.set(id, t);
@@ -217,13 +311,20 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
     t.eventCount += 1;
 
     // Early Sagan ledgers used `ts`; current fleet events use the more explicit
-    // `timestamp`. Treat them as one field so a mixed ledger still has an
-    // honest range instead of making current runs look undated.
-    const ts = str(e.ts) ?? str(e.timestamp);
-    if (ts) {
-      if (!t.firstTs) t.firstTs = ts;
-      t.lastTs = ts;
+    // `timestamp`. Classify the timestamp so the UI knows whether it can show a
+    // duration, and prefer `timestamp` when both fields are present (WHA-225).
+    const classified = classifyTimestamp(e);
+    if (classified.ts) {
+      if (!t.firstTs) t.firstTs = classified.ts;
+      t.lastTs = classified.ts;
+      t.lastTsKind = classified.tsKind;
+      if (t.firstTsKind === "none") t.firstTsKind = classified.tsKind;
     }
+    if (classified.isoTs) {
+      if (!t.firstIsoTs) t.firstIsoTs = classified.isoTs;
+      t.lastIsoTs = classified.isoTs;
+    }
+    if (classified.disagreement) timestampMismatch += 1;
     // `round` rides on several event types; the highest seen is the run's round.
     const round = num(e.round);
     if (round !== null && (t.round === null || round > t.round)) t.round = round;
@@ -270,7 +371,9 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
           evidenceSha: str(e.evidence_sha),
           round: num(e.round),
           by: str(e.by),
-          ts,
+          ts: classified.ts,
+          isoTs: classified.isoTs,
+          tsKind: classified.tsKind,
         });
         break;
       }
@@ -305,7 +408,7 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
     }
   }
 
-  return { tickets: [...byTicket.values()], skipped };
+  return { tickets: [...byTicket.values()], skipped, timestampMismatch };
 }
 
 /** Read + parse a ledger file. Missing/unreadable file → zero events, not a

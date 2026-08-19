@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseLedger, projectLedger, readLedger, needsYou } from "./ledger.js";
+import { classifyTimestamp, isoTimestampOf, parseLedger, projectLedger, readLedger, needsYou } from "./ledger.js";
 
 const lines = (...rows: unknown[]): string =>
   rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
@@ -246,4 +246,100 @@ test("readLedger replays a real file from disk", () => {
   const file = path.join(dir, "events.jsonl");
   fs.writeFileSync(file, REAL_SHAPE);
   assert.deepEqual(needsYou(readLedger(file)).map((t) => t.ticket), ["WHA-130"]);
+});
+
+test("WHA-225: a full ISO-8601 timestamp is classified exact", () => {
+  const c = classifyTimestamp({ event: "lane.updated", ts: "2026-08-08T16:58:52Z" });
+  assert.equal(c.ts, "2026-08-08T16:58:52Z");
+  assert.equal(c.isoTs, "2026-08-08T16:58:52Z");
+  assert.equal(c.tsKind, "exact");
+  assert.equal(c.disagreement, false);
+});
+
+test("WHA-225: a day-granular timestamp is classified day with no instant", () => {
+  const c = classifyTimestamp({ event: "lane.updated", ts: "2026-08-06" });
+  assert.equal(c.ts, "2026-08-06");
+  assert.equal(c.isoTs, null);
+  assert.equal(c.tsKind, "day");
+});
+
+test("WHA-225: missing both timestamp fields is classified none", () => {
+  const c = classifyTimestamp({ event: "evidence.recorded" });
+  assert.equal(c.ts, null);
+  assert.equal(c.isoTs, null);
+  assert.equal(c.tsKind, "none");
+});
+
+test("WHA-225: a day `ts` does not shadow a precise `timestamp`", () => {
+  const c = classifyTimestamp({
+    event: "lane.updated",
+    ts: "2026-08-10",
+    timestamp: "2026-08-08T16:58:52Z",
+  });
+  assert.equal(c.isoTs, "2026-08-08T16:58:52Z");
+  assert.equal(c.tsKind, "exact");
+  assert.equal(c.disagreement, false, "a day-granular `ts` does not parse as ISO, so there is no disagreement");
+});
+
+test("WHA-225: the raw `ts` field follows the field that won so it never disagrees with `tsKind`", () => {
+  const c = classifyTimestamp({
+    event: "lane.updated",
+    ts: "2026-08-10",
+    timestamp: "2026-08-10T20:38:00Z",
+  });
+  assert.equal(c.ts, "2026-08-10T20:38:00Z");
+  assert.equal(c.isoTs, "2026-08-10T20:38:00Z");
+  assert.equal(c.tsKind, "exact");
+});
+
+test("WHA-225: disagreeing ISO `ts` and `timestamp` prefer `timestamp` and count the mismatch", () => {
+  const c = classifyTimestamp({
+    event: "lane.updated",
+    ts: "2026-08-10T10:00:00Z",
+    timestamp: "2026-08-08T16:58:52Z",
+  });
+  assert.equal(c.isoTs, "2026-08-08T16:58:52Z");
+  assert.equal(c.disagreement, true);
+
+  const p = projectLedger([
+    { event: "lane.updated", ticket: "X-8", ts: "2026-08-10T10:00:00Z", timestamp: "2026-08-08T16:58:52Z" },
+  ]);
+  assert.equal(p.timestampMismatch, 1);
+  const t = p.tickets[0]!;
+  assert.equal(t.firstIsoTs, "2026-08-08T16:58:52Z");
+  assert.equal(t.lastIsoTs, "2026-08-08T16:58:52Z");
+});
+
+test("WHA-225: projection tracks first/last ISO timestamps separately from raw strings", () => {
+  const p = projectLedger([
+    { event: "lane.updated", ticket: "X-9", ts: "2026-08-06" },
+    { event: "lane.updated", ticket: "X-9", timestamp: "2026-08-08T16:58:52Z" },
+    { event: "lane.updated", ticket: "X-9", ts: "2026-08-10" },
+  ]);
+  const t = p.tickets[0]!;
+  assert.equal(t.firstTs, "2026-08-06");
+  assert.equal(t.lastTs, "2026-08-10");
+  assert.equal(t.firstTsKind, "day");
+  assert.equal(t.lastTsKind, "day");
+  assert.equal(t.firstIsoTs, "2026-08-08T16:58:52Z");
+  assert.equal(t.lastIsoTs, "2026-08-08T16:58:52Z");
+});
+
+test("WHA-225: decision history carries timestamp classification", () => {
+  const p = projectLedger([
+    { event: "decision.needed", ticket: "X-10", gate: "promote", state: "awaiting-randy", ts: "2026-08-06" },
+    { event: "decision.made", ticket: "X-10", gate: "promote", decision: "approve", by: "randy", timestamp: "2026-08-08T16:58:52Z" },
+  ]);
+  const t = p.tickets[0]!;
+  assert.equal(t.decisionHistory[0]!.tsKind, "day");
+  assert.equal(t.decisionHistory[0]!.isoTs, null);
+  assert.equal(t.decisionHistory[1]!.tsKind, "exact");
+  assert.equal(t.decisionHistory[1]!.isoTs, "2026-08-08T16:58:52Z");
+});
+
+test("WHA-225: isoTimestampOf helper returns the preferred instant", () => {
+  assert.equal(
+    isoTimestampOf({ event: "lane.updated", ts: "2026-08-10", timestamp: "2026-08-08T16:58:52Z" }),
+    "2026-08-08T16:58:52Z",
+  );
 });

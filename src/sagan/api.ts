@@ -37,6 +37,7 @@ import path from "node:path";
 import { findRepoRoot, getChatProject } from "../agent/threads.js";
 import { detectSagan, type SaganCapability } from "./detect.js";
 import {
+  classifyTimestamp,
   projectLedger,
   readLedgerEvents,
   type DecisionEvent,
@@ -45,6 +46,7 @@ import {
   type RawEvent,
   type ResolvedDecision,
   type TicketProjection,
+  type TimestampKind,
 } from "./ledger.js";
 
 /** Ledger path relative to the repo root, per the Sagan standard. */
@@ -52,7 +54,6 @@ export const LEDGER_RELATIVE = path.join(".sagan", "ledger", "events.jsonl");
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
-const timestampOf = (e: RawEvent): string | null => str(e.ts) ?? str(e.timestamp);
 /** `flags`/`not_verified`/`artifacts` are arrays of strings — except when they
  *  are a single string (`artifacts` is both in the reference ledger). */
 const strings = (v: unknown): string[] => {
@@ -92,6 +93,10 @@ export interface SaganLaneEntry {
   sha: string | null;
   flags: string[];
   ts: string | null;
+  /** ISO-8601 instant when the event carried one; null otherwise. */
+  isoTs: string | null;
+  /** Classification of this event's timestamp. */
+  tsKind: TimestampKind;
 }
 
 /** One `critique.verdict`. `findings` is a COUNT here (it is a string array on
@@ -108,6 +113,10 @@ export interface SaganVerdictEntry {
   /** `NEEDS_EVIDENCE` verdicts say what would settle them. */
   evidenceNeeded: string | null;
   ts: string | null;
+  /** ISO-8601 instant when the event carried one; null otherwise. */
+  isoTs: string | null;
+  /** Classification of this event's timestamp. */
+  tsKind: TimestampKind;
 }
 
 /** One `evidence.recorded`. Two shapes appear in the reference ledger — a
@@ -129,6 +138,10 @@ export interface SaganEvidenceEntry {
   deltaOf: string | null;
   note: string | null;
   ts: string | null;
+  /** ISO-8601 instant when the event carried one; null otherwise. */
+  isoTs: string | null;
+  /** Classification of this event's timestamp. */
+  tsKind: TimestampKind;
 }
 
 /** One ledger line for this ticket, verbatim under `data`. The inspector's
@@ -138,6 +151,10 @@ export interface SaganHistoryEntry {
   index: number;
   event: string;
   ts: string | null;
+  /** ISO-8601 instant when the event carried one; null otherwise. */
+  isoTs: string | null;
+  /** Classification of this event's timestamp. */
+  tsKind: TimestampKind;
   data: Record<string, unknown>;
 }
 
@@ -179,6 +196,9 @@ export interface SaganRunSummary {
   /** First and last `ts` seen. Day-granular strings; may be null. */
   firstTs: string | null;
   lastTs: string | null;
+  /** First and last ISO-8601 timestamp seen; null when no exact instant exists. */
+  firstIsoTs: string | null;
+  lastIsoTs: string | null;
   eventCount: number;
 }
 
@@ -222,6 +242,9 @@ export interface SaganRunsResult {
    *  half-written or newer-than-Conan ledger is visible instead of silently
    *  short. */
   skipped: LedgerProjection["skipped"];
+  /** Events where `ts` and `timestamp` were both ISO instants but differed.
+   *  Kept separate from `skipped` because the event IS used — `timestamp` wins. */
+  timestampMismatch: number;
   /** The composed ledger path resolves OUTSIDE the repo root (a symlinked
    *  `.sagan/`). Nothing was read; surfaced so the empty list is explicable. */
   ledgerOutsideRoot: boolean;
@@ -360,6 +383,8 @@ const summarize = (t: TicketProjection, events: RawEvent[]): SaganRunSummary => 
     evidenceCount,
     firstTs: t.firstTs,
     lastTs: t.lastTs,
+    firstIsoTs: t.firstIsoTs,
+    lastIsoTs: t.lastIsoTs,
     eventCount: t.eventCount,
   };
 };
@@ -455,6 +480,7 @@ export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult 
       ledgerPath: null,
       runs: [],
       skipped: { unparseable: 0, unknownType: 0, noTicket: 0 },
+      timestampMismatch: 0,
       ledgerOutsideRoot: false,
       reason: "no project resolved for that projectId",
     };
@@ -475,6 +501,7 @@ export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult 
     ledgerPath,
     runs,
     skipped: projection.skipped,
+    timestampMismatch: projection.timestampMismatch,
     ledgerOutsideRoot,
     reason: null,
   };
@@ -501,10 +528,13 @@ export function getSaganRun(
   const history: SaganHistoryEntry[] = [];
 
   for (const { index, event: e } of lines) {
+    const classified = classifyTimestamp(e);
     history.push({
       index,
       event: e.event,
-      ts: timestampOf(e),
+      ts: classified.ts,
+      isoTs: classified.isoTs,
+      tsKind: classified.tsKind,
       data: e as Record<string, unknown>,
     });
     switch (e.event) {
@@ -518,7 +548,9 @@ export function getSaganRun(
           artifact: str(e.artifact),
           sha: str(e.sha) ?? str(e.artifact_sha),
           flags: strings(e.flags),
-          ts: timestampOf(e),
+          ts: classified.ts,
+          isoTs: classified.isoTs,
+          tsKind: classified.tsKind,
         });
         break;
       case "critique.verdict":
@@ -532,7 +564,9 @@ export function getSaganRun(
           high: num(e.high),
           artifactSha: str(e.artifact_sha) ?? str(e.sha),
           evidenceNeeded: str(e.evidence_needed),
-          ts: timestampOf(e),
+          ts: classified.ts,
+          isoTs: classified.isoTs,
+          tsKind: classified.tsKind,
         });
         break;
       case "evidence.recorded":
@@ -547,7 +581,9 @@ export function getSaganRun(
           artifacts: strings(e.artifacts),
           deltaOf: str(e.delta_of),
           note: str(e.note) ?? str(e.for),
-          ts: timestampOf(e),
+          ts: classified.ts,
+          isoTs: classified.isoTs,
+          tsKind: classified.tsKind,
         });
         break;
       default:
