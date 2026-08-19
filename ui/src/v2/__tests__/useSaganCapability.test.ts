@@ -20,6 +20,34 @@ afterEach(() => {
 });
 
 describe("useSaganCapability live refresh", () => {
+  it("exposes an interruptible manual refresh with honest pending state", async () => {
+    let release: (() => void) | undefined;
+    const second = new Promise<void>((resolve) => { release = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => payload(1) })
+      .mockImplementationOnce(async () => {
+        await second;
+        return { ok: true, json: async () => payload(2) };
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSaganCapability("tok", thread, projects, false));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let refreshPromise: Promise<void> | undefined;
+    act(() => { refreshPromise = result.current.refresh(); });
+    expect(result.current.refreshing).toBe(true);
+    await act(async () => {
+      release?.();
+      await refreshPromise;
+    });
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.data?.runs).toHaveLength(2);
+  });
+
   it("polls only while visible and preserves data through a failed refresh", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
