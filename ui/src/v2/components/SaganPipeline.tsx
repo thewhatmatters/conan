@@ -324,7 +324,7 @@ function PipelineNode({
       onClick={(event) => onSelect(run, event.currentTarget)}
       data-sagan-ticket={run.ticket}
       data-sagan-node-state={state}
-      aria-label={`${run.ticket}, ${stage.label}, ${spec.label}`}
+      aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${stage.label}, ${spec.label}`}
       {...stylex.props(styles.node, NODE_SHAPES[state])}
     >
       <HStack align="center" justify="between" gap={2} xstyle={styles.nodeHead}>
@@ -342,6 +342,9 @@ function PipelineNode({
       <Text color="secondary" type="supporting" xstyle={styles.nodeMeta}>
         {run.agent?.name ?? "Unassigned"} · {run.agent?.role ?? "no role"}
       </Text>
+      {run.title ? (
+        <Text color="secondary" type="supporting" xstyle={styles.nodeMeta}>{run.title}</Text>
+      ) : null}
     </button>
   );
 }

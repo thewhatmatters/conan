@@ -337,13 +337,14 @@ function SaganRow({
       onClick={(event) => onSelect(run, event.currentTarget)}
       data-sagan-ticket={run.ticket}
       {...stylex.props(styles.saganRow)}
-      aria-label={`${run.ticket}, ${state.label}${verdictNote}`}
+      aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${state.label}${verdictNote}`}
     >
       <VStack gap={0.5} xstyle={styles.saganCell}>
         <Text weight="semibold">{run.ticket}</Text>
         <Text color="secondary" type="supporting">
           {run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}{verdictNote}
         </Text>
+        {run.title ? <Text>{run.title}</Text> : null}
       </VStack>
       <VStack gap={0.5} xstyle={styles.saganCell}>
         <Text>{run.agent?.name ?? "Unassigned"}</Text>
