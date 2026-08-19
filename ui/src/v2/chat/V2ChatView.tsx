@@ -77,12 +77,12 @@ const styles = stylex.create({
     height: "100%",
     minHeight: 0,
   },
-  // The composer is intentionally narrower than the transcript: it is an
-  // action surface, not a reading column. The dock still spans the whole well
-  // and this remains fluid below its ceiling on narrow panes.
+  // The composer rides the SAME measure as the transcript, so its edges line
+  // up with the message text above it. The dock still spans the whole well and
+  // this remains fluid below the ceiling on narrow panes.
   measure: {
     marginInline: "auto",
-    maxWidth: "var(--conan-composer-measure)",
+    maxWidth: "var(--conan-chat-measure)",
     paddingBlockEnd: "calc(var(--conan-space-4) + var(--conan-space-1))",
     width: "100%",
   },
