@@ -133,7 +133,7 @@ export default function SurfaceWorkspace({
       xstyle={styles.root}
       data-slot="surface-workspace"
     >
-      {!chatActive && activeOption ? (
+      {!chatActive && activeOption && activeSurface !== "sagan" ? (
         <>
           <HStack
             align="center"
