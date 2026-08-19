@@ -9,7 +9,7 @@ import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { LayoutList, RefreshCw, Workflow } from "lucide-react";
 
-export type SaganTab = "overview" | "pipeline";
+export type SaganTab = "overview" | "pipeline" | "inspector";
 
 const styles = stylex.create({
   shell: {
@@ -62,7 +62,7 @@ export interface SaganToolbarProps {
   error: string | null;
   refreshing: boolean;
   onRefresh: () => Promise<void>;
-  /** Stable insertion point for WHA-233. It intentionally renders nothing today. */
+  /** Third tab rendered by the Sagan surface (Inspector). Added in WHA-233. */
   inspectorTab?: ReactNode;
 }
 
@@ -90,7 +90,7 @@ export default function SaganToolbar({
 
   const handleTabKeys = (event: KeyboardEvent<HTMLElement>) => {
     const value = (event.target as HTMLElement).dataset.tabValue;
-    if (event.key === "ArrowRight" && value === "pipeline") {
+    if (event.key === "ArrowRight" && value === "inspector") {
       event.preventDefault();
       focusVisible('button[aria-label="More Sagan toolbar options"], button[aria-label="Refresh Sagan runs"]');
     } else if (event.key === "ArrowLeft" && value === "overview") {
@@ -111,10 +111,10 @@ export default function SaganToolbar({
       event.preventDefault();
       const more = toolbarRef.current?.querySelector<HTMLElement>('button[aria-label="More Sagan toolbar options"]');
       if (more && more.getClientRects().length > 0 && !more.closest('[aria-hidden="true"]')) more.focus();
-      else focusVisible('button[data-tab-value="pipeline"]');
+      else focusVisible('button[data-tab-value="inspector"]');
     } else if (event.key === "ArrowLeft" && label === "More Sagan toolbar options") {
       event.preventDefault();
-      focusVisible('button[data-tab-value="pipeline"]');
+      focusVisible('button[data-tab-value="inspector"]');
     }
   };
 
