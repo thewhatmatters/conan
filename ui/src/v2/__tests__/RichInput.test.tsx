@@ -2,7 +2,7 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatComposer } from "@astryxdesign/core/Chat";
-import RichInput from "../chat/composer/RichInput.tsx";
+import RichInput, { insertLineBreak } from "../chat/composer/RichInput.tsx";
 
 function Harness({
   onFiles = vi.fn(),
@@ -36,6 +36,71 @@ function typeAtCaret(input: HTMLElement, text: string) {
   selection.addRange(range);
   fireEvent.input(input);
 }
+
+// WHA-211. These cover the MANUAL path only: jsdom has no `execCommand`, so
+// the branch that ships in a browser cannot run here. The shipped path is
+// checked by reading the outgoing socket frame in a real engine — the DOM
+// shape and the wire string are recorded in the commit message.
+describe("insertLineBreak (fallback path)", () => {
+  function fieldWithCaretAfter(text: string): HTMLElement {
+    const field = document.createElement("div");
+    field.setAttribute("contenteditable", "true");
+    document.body.appendChild(field);
+    const node = document.createTextNode(text);
+    field.appendChild(node);
+    const range = document.createRange();
+    range.setStart(node, text.length);
+    range.collapse(true);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return field;
+  }
+
+  it("breaks the line with a <br>, never a block element", () => {
+    const field = fieldWithCaretAfter("| a | b |");
+    expect(insertLineBreak()).toBe(true);
+    // A <div> here is the bug: Astryx's serializer maps <br> to a newline and
+    // walks straight through blocks, so a block break never reaches the agent.
+    expect(field.querySelector("div")).toBeNull();
+    expect(field.querySelectorAll("br").length).toBeGreaterThan(0);
+    field.remove();
+  });
+
+  it("pads a trailing break so the caret can reach the new line", () => {
+    const field = fieldWithCaretAfter("first");
+    insertLineBreak();
+    // A single trailing <br> is not rendered by any engine; without the pad
+    // the user presses Shift+Enter and the caret does not move.
+    expect(field.querySelectorAll("br").length).toBe(2);
+    field.remove();
+  });
+
+  it("does not pad a break in the middle of a line", () => {
+    const field = document.createElement("div");
+    field.setAttribute("contenteditable", "true");
+    document.body.appendChild(field);
+    const head = document.createTextNode("head");
+    const tail = document.createTextNode("tail");
+    field.append(head, tail);
+    const range = document.createRange();
+    range.setStart(head, 4);
+    range.collapse(true);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    insertLineBreak();
+    expect(field.querySelectorAll("br").length).toBe(1);
+    expect(field.textContent).toBe("headtail");
+    field.remove();
+  });
+
+  it("reports failure when there is no caret to break at", () => {
+    window.getSelection()!.removeAllRanges();
+    expect(insertLineBreak()).toBe(false);
+  });
+});
 
 describe("RichInput file intake", () => {
   it("routes pasted files to attachment staging", () => {
