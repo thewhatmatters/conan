@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   CircleCheck,
   CircleHelp,
+  ChevronDown,
   ExternalLink,
   Folder,
   LayoutList,
@@ -263,18 +264,56 @@ const styles = stylex.create({
       ":active": "var(--conan-wash-pressed)",
     },
     border: 0,
-    borderRadius: "var(--conan-radius-md)",
     color: "inherit",
     cursor: "pointer",
-    display: "grid",
+    display: "flex",
+    flexWrap: "wrap",
     gap: "var(--conan-space-3)",
-    gridTemplateColumns: "minmax(8rem, 1.4fr) minmax(7rem, 1fr) minmax(7rem, 1fr) auto",
     outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
     outlineOffset: "2px",
     padding: "var(--conan-space-3)",
     textAlign: "start",
     width: "100%",
   },
+  saganRowShell: {
+    backgroundColor: "transparent",
+    borderRadius: "var(--conan-radius-md)",
+    overflow: "hidden",
+    width: "100%",
+  },
+  saganRowExpanded: {
+    backgroundColor: "var(--conan-wash-raised)",
+  },
+  saganIdentity: { flexBasis: "16rem", flexGrow: 2, minWidth: "10rem" },
+  saganAgent: { flexBasis: "9rem", flexGrow: 1, minWidth: "7rem" },
+  saganState: { flexBasis: "9rem", flexGrow: 1, minWidth: "7rem" },
+  saganTime: { flexShrink: 0, marginInlineStart: "auto" },
+  saganTicketLine: { flexWrap: "wrap", minWidth: 0 },
+  saganTitle: { minWidth: 0, overflowWrap: "anywhere" },
+  saganDisclosure: {
+    color: "var(--conan-icon-muted)",
+    flexShrink: 0,
+    transition: {
+      default: "transform var(--conan-duration-fast) var(--conan-ease)",
+      "@media (prefers-reduced-motion: reduce)": "none",
+    },
+  },
+  saganDisclosureOpen: { transform: "rotate(180deg)" },
+  saganRowDetails: {
+    alignItems: "stretch",
+    borderTop: "var(--conan-border-width) solid var(--conan-color-border)",
+    paddingBlock: "var(--conan-space-3)",
+    paddingInline: "var(--conan-space-4)",
+  },
+  saganNarrative: { maxWidth: "68ch" },
+  saganMetadata: { flexWrap: "wrap" },
+  saganMetadataItem: {
+    backgroundColor: "var(--conan-color-content)",
+    borderRadius: "var(--conan-radius-full)",
+    paddingBlock: "var(--conan-space-1)",
+    paddingInline: "var(--conan-space-2)",
+  },
+  saganDetailsAction: { alignSelf: "flex-start" },
   saganCell: { minWidth: 0 },
   saganDuration: { justifySelf: "end", whiteSpace: "nowrap" },
   saganEmpty: {
@@ -297,12 +336,18 @@ function CenterState({ children }: { children: string }) {
 }
 
 function durationOf(run: SaganRunSummary): string {
-  if (!run.firstTs) return "Duration unknown";
-  const start = Date.parse(run.firstTs);
-  const end = run.lastTs ? Date.parse(run.lastTs) : start;
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return "Duration unknown";
-  const days = Math.max(0, Math.round((end - start) / 86_400_000));
-  return days === 0 ? "<1 day" : `${days} day${days === 1 ? "" : "s"}`;
+  if (!run.firstIsoTs || !run.lastIsoTs) return "—";
+  const start = Date.parse(run.firstIsoTs);
+  const end = Date.parse(run.lastIsoTs);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "—";
+  const minutes = Math.max(0, Math.floor((end - start) / 60_000));
+  if (minutes < 1) return "<1m";
+  const days = Math.floor(minutes / 1_440);
+  const hours = Math.floor((minutes % 1_440) / 60);
+  const remainder = minutes % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return remainder > 0 ? `${hours}h ${remainder}m` : `${hours}h`;
+  return `${minutes}m`;
 }
 
 const SECTION_STATE = {
@@ -322,6 +367,7 @@ function SaganRow({
   section: SaganSection;
   onSelect: (run: SaganRunSummary, trigger: HTMLButtonElement) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const state = SECTION_STATE[section];
   const StateIcon = state.icon;
   // WHA-169 AC3 — an in-flight row keeps showing its last verdict. `REVISE` and
@@ -331,31 +377,81 @@ function SaganRow({
   // no new control — and the ledger's own casing, the same string the inspector
   // prints, so nothing acquires a second display name.
   const verdictNote = section === "Running now" && run.verdict ? ` · ${run.verdict}` : "";
+  const detailsId = `sagan-run-${run.ticket.replace(/[^A-Za-z0-9_-]/g, "-")}-details`;
+  const narrative = [
+    run.agent ? `${run.agent.name} (${run.agent.role})` : null,
+    run.lane || run.phase ? `${run.phase ?? "No phase"} in ${run.lane ?? "an unassigned lane"}` : null,
+    run.verdict ? `Latest verdict: ${run.verdict}` : null,
+  ].filter((clause): clause is string => clause != null).join(". ");
   return (
-    <button
-      type="button"
-      onClick={(event) => onSelect(run, event.currentTarget)}
-      data-sagan-ticket={run.ticket}
-      {...stylex.props(styles.saganRow)}
-      aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${state.label}${verdictNote}`}
+    <VStack
+      gap={0}
+      xstyle={[styles.saganRowShell, expanded && styles.saganRowExpanded]}
+      data-sagan-row-expanded={expanded ? "true" : "false"}
     >
-      <VStack gap={0.5} xstyle={styles.saganCell}>
-        <Text weight="semibold">{run.ticket}</Text>
-        <Text color="secondary" type="supporting">
-          {run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}{verdictNote}
-        </Text>
-        {run.title ? <Text>{run.title}</Text> : null}
-      </VStack>
-      <VStack gap={0.5} xstyle={styles.saganCell}>
-        <Text>{run.agent?.name ?? "Unassigned"}</Text>
-        <Text color="secondary" type="supporting">{run.agent?.role ?? "No role"}</Text>
-      </VStack>
-      <HStack align="center" gap={2} xstyle={styles.saganCell}>
-        <StateIcon size={16} aria-hidden />
-        <Text>{state.label}</Text>
-      </HStack>
-      <Text color="secondary" type="supporting" xstyle={styles.saganDuration}>{durationOf(run)}</Text>
-    </button>
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        data-sagan-ticket={run.ticket}
+        {...stylex.props(styles.saganRow)}
+        aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${state.label}${verdictNote}`}
+        aria-expanded={expanded}
+        aria-controls={expanded ? detailsId : undefined}
+      >
+        <VStack gap={0.5} xstyle={[styles.saganCell, styles.saganIdentity]}>
+          <HStack align="start" gap={2} xstyle={styles.saganTicketLine}>
+            <Text weight="semibold">{run.ticket}</Text>
+            {run.title ? <Text xstyle={styles.saganTitle}>{run.title}</Text> : null}
+          </HStack>
+          <Text color="secondary" type="supporting">
+            {run.lane ?? "Unassigned lane"} · {run.phase ?? "No phase"}{verdictNote}
+          </Text>
+        </VStack>
+        <VStack gap={0.5} xstyle={[styles.saganCell, styles.saganAgent]}>
+          <Text>{run.agent?.name ?? "Unassigned"}</Text>
+          <Text color="secondary" type="supporting">{run.agent?.role ?? "No role"}</Text>
+        </VStack>
+        <HStack align="center" gap={2} xstyle={[styles.saganCell, styles.saganState]}>
+          <StateIcon size={16} aria-hidden />
+          <Text>{state.label}</Text>
+        </HStack>
+        <HStack align="center" justify="end" gap={2} xstyle={styles.saganTime}>
+          <Text color="secondary" type="supporting" xstyle={styles.saganDuration}>{durationOf(run)}</Text>
+          <ChevronDown
+            size={16}
+            aria-hidden
+            {...stylex.props([styles.saganDisclosure, expanded && styles.saganDisclosureOpen])}
+          />
+        </HStack>
+      </button>
+      {expanded ? (
+        <VStack
+          id={detailsId}
+          role="region"
+          aria-label={`${run.ticket} run context`}
+          gap={3}
+          xstyle={styles.saganRowDetails}
+          data-slot="sagan-row-details"
+        >
+          {narrative ? <Text color="secondary" xstyle={styles.saganNarrative}>{narrative}.</Text> : null}
+          <HStack gap={2} xstyle={styles.saganMetadata}>
+            {run.round != null ? <Text type="supporting" xstyle={styles.saganMetadataItem}>Round {run.round}</Text> : null}
+            <Text type="supporting" xstyle={styles.saganMetadataItem}>
+              {run.eventCount} event{run.eventCount === 1 ? "" : "s"}
+            </Text>
+            <Text type="supporting" xstyle={styles.saganMetadataItem}>
+              {run.evidenceCount} evidence record{run.evidenceCount === 1 ? "" : "s"}
+            </Text>
+          </HStack>
+          <Button
+            label="View run details"
+            variant="secondary"
+            clickAction={(event) => onSelect(run, event.currentTarget)}
+            xstyle={styles.saganDetailsAction}
+          />
+        </VStack>
+      ) : null}
+    </VStack>
   );
 }
 
