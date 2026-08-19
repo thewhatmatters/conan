@@ -21,7 +21,7 @@
  * in the input. The letter keys only fire while focus is inside the gate, which
  * is where focus lands when the gate opens.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChatComposerDrawer } from "@astryxdesign/core/Chat";
 import { Badge } from "@astryxdesign/core/Badge";
@@ -99,6 +99,9 @@ const styles = stylex.create({
   },
   error: { color: "var(--conan-color-error)" },
   questionGate: { width: "100%" },
+  // The cap here is a PRE-MEASUREMENT FALLBACK only — `useQuestionListCap`
+  // overwrites it inline on the first layout pass. It exists so the list does
+  // not flash at full height before that runs.
   questionScroll: {
     maxHeight: "min(60dvh, 560px)",
     overflowY: "auto",
@@ -127,6 +130,80 @@ const styles = stylex.create({
     width: "100%",
   },
 });
+
+/**
+ * Never leave less than this much option list, however cramped the window. A
+ * gate with no visible options is worse than one the user has to scroll.
+ */
+const MIN_OPTION_LIST_HEIGHT = 160;
+
+/**
+ * How tall the option list may be, given the well and the dock around it.
+ *
+ * Pure on purpose: the geometry it derives cannot be tested in jsdom (there is
+ * no layout there, and a previous mocked-rect test was deleted for proving
+ * nothing), but the ARITHMETIC can be, and it is the part with the bug in it.
+ *
+ * `dockHeight - listHeight` is the dock's chrome — the composer, this gate's
+ * header and its action row, everything that is not the scrolling list. Both
+ * numbers move together when the cap changes, so the result is stable and
+ * settles in one pass instead of oscillating.
+ */
+export function optionListCap({
+  wellHeight,
+  dockHeight,
+  listHeight,
+}: {
+  wellHeight: number;
+  dockHeight: number;
+  listHeight: number;
+}): number {
+  const chrome = dockHeight - listHeight;
+  return Math.round(Math.max(MIN_OPTION_LIST_HEIGHT, wellHeight - chrome));
+}
+
+/**
+ * Cap the scrolling option list at the space the chat well actually has left.
+ *
+ * The gate rides a `position: sticky` dock that Astryx pins to the BOTTOM of
+ * the chat scrollport. A dock taller than that scrollport does not scroll —
+ * its top is clipped. That is the WHA-213 report exactly: with four long
+ * options the buttons stayed visible while "The agent needs your input"
+ * disappeared behind the surface toolbar.
+ *
+ * The cap has to mean "the well, minus whatever the rest of this dock needs" —
+ * the composer, this gate's header, its action row — and CSS cannot say that.
+ * `dvh` measures the window, not the well (129px of chrome sit above it), and
+ * a percentage needs a definite-height ancestor, which a sticky auto-height
+ * dock is not. Three static CSS candidates were injected into a real gate in a
+ * real browser and measured; all three left the header clipped at -46px or
+ * worse. This measures instead, and re-measures whenever the well or the dock
+ * changes size — a composer that grows a line takes the space from the list.
+ */
+function useQuestionListCap(scrollRef: React.RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const well = scroller.closest<HTMLElement>('[data-chat-view="v2"]');
+    const dock = well?.lastElementChild;
+    if (!well || !(dock instanceof HTMLElement)) return;
+
+    const apply = () => {
+      const next = `${optionListCap({
+        wellHeight: well.getBoundingClientRect().height,
+        dockHeight: dock.getBoundingClientRect().height,
+        listHeight: scroller.getBoundingClientRect().height,
+      })}px`;
+      if (scroller.style.maxHeight !== next) scroller.style.maxHeight = next;
+    };
+
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(well);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [scrollRef]);
+}
 
 interface AskOption { label: string; description?: string }
 interface AskQuestion { question: string; header?: string; multiSelect: boolean; options: AskOption[] }
@@ -252,6 +329,8 @@ export default function V2ApprovalGate({
     const node = questionScrollRef.current;
     if (node) node.scrollTop = 0;
   }, [approval.id, currentStep]);
+
+  useQuestionListCap(questionScrollRef);
 
   useEffect(() => {
     setAnswers({});
