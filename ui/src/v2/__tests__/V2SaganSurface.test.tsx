@@ -162,14 +162,18 @@ describe("V2SaganSurface overview", () => {
     expect(screen.getAllByRole("status").find((status) => status.textContent?.includes("Retrying"))).toBeVisible();
   });
 
-  it("uses the fixed Astryx toolbar contract without advertising Inspector or Actions", () => {
+  it("uses the fixed Astryx toolbar contract with a disabled Inspector tab and no Actions", () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     renderSurface(result({ refresh }));
 
     const toolbar = screen.getByRole("toolbar", { name: "Sagan views and status" });
     expect(within(toolbar).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     expect(within(toolbar).getByRole("button", { name: "Pipeline" })).toBeVisible();
-    expect(within(toolbar).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+    const inspector = within(toolbar).getByRole("button", { name: "Inspector" });
+    expect(inspector).toBeVisible();
+    expect(inspector).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(inspector);
+    expect(within(toolbar).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     expect(within(toolbar).queryByRole("button", { name: /Actions/ })).not.toBeInTheDocument();
 
     const refreshButton = outsideOverflowMeasurement(
@@ -178,6 +182,38 @@ describe("V2SaganSurface overview", () => {
     expect(refreshButton).toBeVisible();
     fireEvent.click(refreshButton);
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("selects the Inspector tab when a run is opened and keeps the other tabs", async () => {
+    mockDetail(detail());
+    renderSurface(result({ data: data([run({})]) }));
+
+    const toolbar = screen.getByRole("toolbar", { name: "Sagan views and status" });
+    expect(within(toolbar).getByRole("button", { name: "Inspector" })).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ }));
+    fireEvent.click(screen.getByRole("button", { name: "View run details" }));
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+
+    expect(within(toolbar).getByRole("button", { name: "Inspector" })).toHaveAttribute("aria-current", "page");
+    expect(within(toolbar).getByRole("button", { name: "Overview" })).not.toHaveAttribute("aria-current", "page");
+    expect(within(toolbar).getByRole("button", { name: "Pipeline" })).toBeVisible();
+  });
+
+  it("preserves selection across Inspector -> Pipeline -> Inspector", async () => {
+    mockDetail(detail());
+    renderSurface(result({ data: data([run({})]) }));
+
+    fireEvent.click(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ }));
+    fireEvent.click(screen.getByRole("button", { name: "View run details" }));
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pipeline" }));
+    expect(screen.queryByLabelText("Run inspector")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+    expect(screen.getByText("Ship the ledger inspector")).toBeVisible();
   });
 
   it("disables and announces Refresh while an update is pending", () => {

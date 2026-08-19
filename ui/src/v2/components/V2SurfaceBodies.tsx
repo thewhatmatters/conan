@@ -19,7 +19,9 @@ import {
   PlayCircle,
   RefreshCw,
   RotateCcw,
+  Search,
 } from "lucide-react";
+import { Tab } from "@astryxdesign/core/TabList";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
 import type { BrowserSurfaceReport } from "../../hooks/useAgentChat.ts";
@@ -251,6 +253,10 @@ const styles = stylex.create({
     width: "100%",
   },
   saganInspectorSlot: { flexGrow: 1, minHeight: 0, overflow: "clip" },
+  saganDisabledTab: {
+    cursor: "not-allowed",
+    opacity: 0.5,
+  },
   saganCenter: { flexGrow: 1, minHeight: 0 },
   saganSection: { alignItems: "stretch", width: "100%" },
   saganSectionTitle: { color: "var(--conan-text-primary)" },
@@ -490,6 +496,7 @@ export function V2SaganSurface({
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const tabAtSelectionRef = useRef<SaganTab>("overview");
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -544,15 +551,18 @@ export function V2SaganSurface({
 
   const selectRun = useCallback((selected: SaganRunSummary, trigger: HTMLButtonElement) => {
     triggerRef.current = trigger;
+    tabAtSelectionRef.current = tab;
     setDetailStatus("loading");
     setSelectedTicket(selected.id);
-  }, []);
+    setTab("inspector");
+  }, [tab]);
 
   const closeInspector = useCallback(() => {
     const ticket = selectedTicket;
     setSelectedTicket(null);
     setDetail(null);
     setDetailStatus("idle");
+    setTab(tabAtSelectionRef.current);
     requestAnimationFrame(() => {
       const nextTrigger = [...document.querySelectorAll<HTMLButtonElement>("[data-sagan-ticket]")]
         .find((candidate) => candidate.dataset.saganTicket === ticket);
@@ -561,37 +571,34 @@ export function V2SaganSurface({
   }, [selectedTicket]);
 
   const toolbarNeedsYouCount = result?.data?.runs.filter((run) => sectionFor(run) === "Needs you").length ?? 0;
+  const handleTabChange = useCallback((value: SaganTab) => {
+    if (value === "inspector" && selectedTicket == null) return;
+    setTab(value);
+  }, [selectedTicket]);
   const shell = (content: ReactNode) => (
     <VStack gap={0} xstyle={styles.saganShell} data-slot="sagan-surface-shell">
       <SaganToolbar
         tab={tab}
-        onTabChange={setTab}
+        onTabChange={handleTabChange}
         needsYouCount={toolbarNeedsYouCount}
         updatedAt={result?.updatedAt ?? null}
         error={result?.error ?? null}
         refreshing={result?.refreshing ?? false}
         onRefresh={result?.refresh ?? (async () => {})}
+        inspectorTab={(
+          <Tab
+            value="inspector"
+            label="Inspector"
+            icon={<Search size={16} aria-hidden />}
+            aria-disabled={selectedTicket == null ? "true" : undefined}
+            xstyle={selectedTicket == null ? styles.saganDisabledTab : undefined}
+          />
+        )}
       />
       {content}
     </VStack>
   );
 
-  if (selectedTicket) {
-    return shell(
-      <VStack gap={0} xstyle={styles.saganInspectorSlot}>
-        <SaganInspector
-          run={detail}
-          loading={detailStatus === "loading"}
-          error={detailStatus === "error" ? "Run details could not be loaded." : null}
-          onClose={closeInspector}
-          onOpenOwningTarget={onOpenOwningThread}
-          token={token}
-          cwd={cwd}
-          onDecisionMade={() => setDetailRefreshKey((k) => k + 1)}
-        />
-      </VStack>
-    );
-  }
   if (!result || result.status === "idle" || result.status === "loading") {
     return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">Loading Sagan overview…</Text></VStack>);
   }
@@ -608,6 +615,23 @@ export function V2SaganSurface({
   for (const run of data.runs) grouped.get(sectionFor(run))!.push(run);
   const needsYouCount = grouped.get("Needs you")!.length;
   const showPipeline = tab === "pipeline" && !narrow;
+
+  if (tab === "inspector") {
+    return shell(
+      <VStack gap={0} xstyle={styles.saganInspectorSlot} data-sagan-pane="inspector">
+        <SaganInspector
+          run={detail}
+          loading={detailStatus === "loading"}
+          error={detailStatus === "error" ? "Run details could not be loaded." : null}
+          onClose={closeInspector}
+          onOpenOwningTarget={onOpenOwningThread}
+          token={token}
+          cwd={cwd}
+          onDecisionMade={() => setDetailRefreshKey((k) => k + 1)}
+        />
+      </VStack>,
+    );
+  }
 
   return shell(
     <VStack

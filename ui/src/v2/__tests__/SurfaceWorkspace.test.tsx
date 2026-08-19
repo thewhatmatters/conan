@@ -1,7 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SurfaceWorkspace from "../components/SurfaceWorkspace.tsx";
 import type { SaganCapabilityResult } from "../lib/useSaganCapability.ts";
+import type { SaganRunDetail, SaganRunSummary } from "../../../../src/sagan/api.ts";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("SurfaceWorkspace", () => {
   beforeEach(() => {
@@ -123,6 +126,110 @@ describe("SurfaceWorkspace", () => {
       </SurfaceWorkspace>,
     );
     expect(document.querySelector('[data-surface="sagan"]')).toBe(surface);
+  });
+
+  it("does not remount the chat view while Sagan tabs switch", async () => {
+    let mountCount = 0;
+    function ChatSpy() {
+      mountCount++;
+      return <div data-chat-spy>Chat body</div>;
+    }
+
+    const saganRun: SaganRunSummary = {
+      id: "WHA-130",
+      ticket: "WHA-130",
+      lane: "critique",
+      phase: "dispatched",
+      round: 1,
+      verdict: "APPROVED",
+      agent: null,
+      openDecisions: [{ gate: "promote", state: "awaiting-randy", evidenceSha: null, round: 1 }],
+      needsYou: true,
+      laneCount: 1,
+      verdictCount: 1,
+      evidenceCount: 0,
+      firstTs: null,
+      lastTs: null,
+      firstIsoTs: null,
+      lastIsoTs: null,
+      eventCount: 1,
+      title: null,
+      statusNote: null,
+      completion: { state: "open", source: null, conflict: null },
+    };
+
+    const saganDetail: SaganRunDetail = {
+      ...saganRun,
+      context: {
+        objective: "Inspect a run",
+        provider: "claude",
+        containment: "prompt-gated",
+        attemptId: "attempt-1",
+        owningTarget: null,
+      },
+      lanes: [],
+      verdicts: [],
+      evidence: [],
+      resolvedDecisions: [],
+      decisionHistory: [],
+      history: [],
+    };
+
+    const sagan = {
+      available: true,
+      autoPin: true,
+      projectPath: "/repo/sagan",
+      status: "ready" as const,
+      data: {
+        project: {
+          id: "/repo/sagan",
+          name: "sagan",
+          path: "/repo/sagan",
+          root: "/repo/sagan",
+          source: "path",
+          sagan: { state: "valid", root: "/repo/sagan", manifestPath: "/repo/sagan/.sagan/sagan.yaml", version: null },
+        },
+        ledgerPath: "/repo/sagan/.sagan/ledger/events.jsonl",
+        runs: [saganRun],
+        skipped: { unparseable: 0, unknownType: 0, noTicket: 0 },
+        timestampMismatch: 0,
+        ledgerOutsideRoot: false,
+        reason: null,
+      },
+      error: null,
+      updatedAt: Date.now(),
+      refreshing: false,
+      refresh: vi.fn().mockResolvedValue(undefined),
+    } satisfies SaganCapabilityResult;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ run: saganDetail }),
+      }),
+    );
+
+    render(
+      <SurfaceWorkspace activeSurface="sagan" openSurfaces={["sagan"]} token="tok" cwd="/repo/sagan" sagan={sagan}>
+        <ChatSpy />
+      </SurfaceWorkspace>,
+    );
+
+    expect(mountCount).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ }));
+    fireEvent.click(screen.getByRole("button", { name: "View run details" }));
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+    expect(mountCount).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pipeline" }));
+    await waitFor(() => expect(screen.queryByLabelText("Run inspector")).not.toBeInTheDocument());
+    expect(mountCount).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    expect(await screen.findByLabelText("Run inspector")).toBeVisible();
+    expect(mountCount).toBe(1);
   });
 
   it("renders no workspace toolbar when Chat is the active surface", () => {
