@@ -84,11 +84,23 @@ function stubGateway() {
 }
 
 async function newChat() {
-  const trigger = await screen.findByRole("button", { name: "Actions for one" });
+  // The kebab only exists after mocked /api/agent/projects resolves and the
+  // row commits. findBy* defaults to 1s — fine alone, marginal when the rest
+  // of the UI suite contends for the event loop (WHA-235).
+  const trigger = await screen.findByRole(
+    "button",
+    { name: "Actions for one" },
+    { timeout: 5_000 },
+  );
+  // Wait until the menu controller has mounted closed, then click once.
+  // Re-clicking inside waitFor (the old helper) can toggle the menu shut when
+  // aria-expanded has not flushed yet — the loop oscillates instead of converging.
   await waitFor(() => {
-    if (trigger.getAttribute("aria-expanded") === "true") return;
-    fireEvent.click(trigger);
-    throw new Error("menu did not open");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+  fireEvent.click(trigger);
+  await waitFor(() => {
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
   const menu = within(screen.getByRole("menu", { name: "Actions for one" }));
   fireEvent.click(menu.getByRole("menuitem", { name: "New chat" }));
