@@ -32,6 +32,7 @@ const summary = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   lastIsoTs: null,
   eventCount: 1,
   title: null,
+  statusNote: null,
   ...patch,
 });
 
