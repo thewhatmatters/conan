@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../../lib/gateway.ts";
 import type { SaganRunsResult } from "../../../../src/sagan/api.ts";
 import type { ActiveThread } from "./types.ts";
@@ -13,6 +13,8 @@ export interface SaganCapabilityResult {
   data: SaganRunsResult | null;
   error: string | null;
   updatedAt: number | null;
+  refreshing: boolean;
+  refresh: () => Promise<void>;
 }
 
 export const SAGAN_POLL_INTERVAL_MS = 7_500;
@@ -38,6 +40,7 @@ export function useSaganCapability(
     updatedAt: number | null;
   } | null>(null);
   const requestedKeyRef = useRef<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   // Holds the latest refresh closure so a window-focus re-probe can run against
   // the current token/projectPath even when the Sagan surface is closed.
   const refreshRef = useRef<() => Promise<void>>(async () => {});
@@ -48,15 +51,18 @@ export function useSaganCapability(
   useEffect(() => {
     if (!token || !projectPath) {
       refreshRef.current = async () => {};
+      setRefreshing(false);
       return;
     }
     const requestKey = `${token}\0${projectPath}`;
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
     const refresh = async () => {
+      if (timeout) clearTimeout(timeout);
       inFlightRef.current?.abort();
       const controller = new AbortController();
       inFlightRef.current = controller;
+      setRefreshing(true);
       try {
         const response = await fetch(
           apiBase() + `/api/sagan/runs?projectId=${encodeURIComponent(projectPath)}`,
@@ -84,6 +90,7 @@ export function useSaganCapability(
         }));
       } finally {
         if (inFlightRef.current === controller) inFlightRef.current = null;
+        if (!controller.signal.aborted) setRefreshing(false);
         if (visible && !controller.signal.aborted) {
           timeout = setTimeout(refresh, SAGAN_POLL_INTERVAL_MS);
         }
@@ -117,6 +124,7 @@ export function useSaganCapability(
   }, []);
 
   const current = result?.path === projectPath ? result : null;
+  const refresh = useCallback(() => refreshRef.current(), []);
   const saganState = current?.data?.project?.sagan.state;
   const isOwnRoot = current?.data?.project?.root === projectPath;
   const hasOverlay = saganState != null && saganState !== "absent";
@@ -132,5 +140,7 @@ export function useSaganCapability(
     data: current?.data ?? null,
     error: current?.error ?? null,
     updatedAt: current?.updatedAt ?? null,
+    refreshing,
+    refresh,
   };
 }

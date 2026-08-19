@@ -68,11 +68,19 @@ const result = (patch: Partial<SaganCapabilityResult> = {}): SaganCapabilityResu
   data: data(),
   error: null,
   updatedAt: Date.parse("2026-08-08T15:04:05Z"),
+  refreshing: false,
+  refresh: vi.fn().mockResolvedValue(undefined),
   ...patch,
 });
 
 const renderSurface = (value: SaganCapabilityResult) =>
   render(<V2SaganSurface token="tok" cwd="/repo/sagan" result={value} />);
+
+function outsideOverflowMeasurement<T extends HTMLElement>(elements: T[]): T {
+  const element = elements.find((candidate) => !candidate.closest('[aria-hidden="true"]'));
+  if (!element) throw new Error("No rendered toolbar element found outside OverflowList measurement");
+  return element;
+}
 
 const detail = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null): SaganRunDetail => ({
   ...run({}),
@@ -142,7 +150,7 @@ describe("V2SaganSurface overview", () => {
   it("renders an empty overview with every section", () => {
     renderSurface(result());
     expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
-    expect(screen.getByText(/^Updated /)).toBeVisible();
+    expect(outsideOverflowMeasurement(screen.getAllByText(/^Updated /))).toBeVisible();
     for (const label of ["Needs you", "Running now", "Up next", "Blocked", "Recently completed"]) {
       expect(screen.getByText(label)).toBeVisible();
     }
@@ -151,12 +159,43 @@ describe("V2SaganSurface overview", () => {
   it("keeps stale data visible with a non-blocking refresh error", () => {
     renderSurface(result({ error: "Sagan runs could not be refreshed. Retrying…" }));
     expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("Retrying");
+    expect(screen.getAllByRole("status").find((status) => status.textContent?.includes("Retrying"))).toBeVisible();
+  });
+
+  it("uses the fixed Astryx toolbar contract without advertising Inspector or Actions", () => {
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    renderSurface(result({ refresh }));
+
+    const toolbar = screen.getByRole("toolbar", { name: "Sagan views and status" });
+    expect(within(toolbar).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    expect(within(toolbar).getByRole("button", { name: "Pipeline" })).toBeVisible();
+    expect(within(toolbar).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: /Actions/ })).not.toBeInTheDocument();
+
+    const refreshButton = outsideOverflowMeasurement(
+      within(toolbar).getAllByRole("button", { name: "Refresh Sagan runs" }),
+    );
+    expect(refreshButton).toBeVisible();
+    fireEvent.click(refreshButton);
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("disables and announces Refresh while an update is pending", () => {
+    renderSurface(result({ refreshing: true }));
+    const toolbar = screen.getByRole("toolbar", { name: "Sagan views and status" });
+    const refreshButton = outsideOverflowMeasurement(
+      within(toolbar).getAllByRole("button", { name: "Refresh Sagan runs" }),
+    );
+    expect(refreshButton).toHaveAttribute("aria-disabled", "true");
+    expect(refreshButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getAllByRole("status").find((status) => status.textContent === "Refreshing Sagan runs")).toBeVisible();
   });
 
   it("renders a fetch error", () => {
     renderSurface(result({ status: "error", data: null, error: "Sagan runs could not be loaded." }));
-    expect(screen.getByText("Sagan runs could not be loaded.")).toBeVisible();
+    expect(screen.getAllByText("Sagan runs could not be loaded.").find(
+      (element) => !element.closest('[data-slot="sagan-toolbar"]') && !element.closest('[aria-hidden="true"]'),
+    )).toBeVisible();
   });
 
   it("renders malformed configuration details", () => {
@@ -248,7 +287,7 @@ describe("V2SaganSurface overview", () => {
     fireEvent.click(screen.getByRole("button", { name: "View run details" }));
     expect(await screen.findByLabelText("Run inspector")).toBeVisible();
     expect(await screen.findByText("Ship the ledger inspector")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Overview" })).toHaveFocus();
+    expect(screen.getAllByRole("button", { name: "Overview" }).find((button) => button.closest('[aria-label="Run inspector"]'))).toHaveFocus();
     expect(screen.getByText("prompt-gated")).toBeVisible();
     expect(screen.getByText("attempt-3")).toBeVisible();
     expect(screen.getByText("evidence/inspector.png")).toBeVisible();
@@ -257,7 +296,7 @@ describe("V2SaganSurface overview", () => {
     expect(screen.queryByRole("button", { name: "Open owning thread/session" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveFocus());
-    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByRole("button", { name: "Overview" }).find((button) => button.hasAttribute("aria-current"))).toHaveAttribute("aria-current", "page");
   });
 
   it("shows the owning-session action only for a real ledger target", async () => {
@@ -536,7 +575,7 @@ describe("V2SaganSurface pipeline tab", () => {
     renderSurface(result({ data: board() }));
     openPipeline();
     expect(screen.queryByRole("group", { name: /^Stage 1 of 4/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Too narrow for the pipeline board");
+    expect(screen.getAllByRole("status").find((status) => status.textContent?.includes("Too narrow"))).toHaveTextContent("Too narrow for the pipeline board");
     for (const label of ["Needs you", "Running now", "Up next", "Blocked", "Recently completed"]) {
       // "Blocked" is both a section title and a row's state label here.
       expect(screen.getAllByText(label)[0]).toBeVisible();

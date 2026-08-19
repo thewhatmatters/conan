@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -15,13 +14,11 @@ import {
   ChevronDown,
   ExternalLink,
   Folder,
-  LayoutList,
   ListTodo,
   OctagonAlert,
   PlayCircle,
   RefreshCw,
   RotateCcw,
-  Workflow,
 } from "lucide-react";
 import TerminalEngine from "../../components/Terminal.tsx";
 import { apiBase, isTauri } from "../../lib/gateway.ts";
@@ -34,6 +31,7 @@ import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 import SaganInspector from "./SaganInspector.tsx";
 import SaganPipeline, { SAGAN_PIPELINE_MIN_WIDTH } from "./SaganPipeline.tsx";
+import SaganToolbar, { type SaganTab } from "./SaganToolbar.tsx";
 import {
   buildFileTree,
   rollupFileStatus,
@@ -237,16 +235,23 @@ const styles = stylex.create({
   },
   saganOverview: {
     alignItems: "stretch",
+    flexGrow: 1,
+    minHeight: 0,
+    overflow: "auto",
     paddingBlockEnd: "var(--conan-space-6)",
-    paddingBlockStart: "calc(var(--conan-secondary-bar-height) + var(--conan-space-4))",
+    paddingBlockStart: "var(--conan-space-4)",
     paddingInline: "var(--conan-space-5)",
   },
-  saganHeader: {
-    borderBottom: "var(--conan-border-width) solid var(--conan-color-border)",
-    paddingBlockEnd: "var(--conan-space-4)",
+  saganShell: {
+    backgroundColor: "var(--conan-color-content)",
+    color: "var(--conan-text-primary)",
+    height: "100%",
+    minHeight: 0,
+    minWidth: 0,
     width: "100%",
   },
-  saganHeaderStatus: { alignItems: "flex-end" },
+  saganInspectorSlot: { flexGrow: 1, minHeight: 0, overflow: "clip" },
+  saganCenter: { flexGrow: 1, minHeight: 0 },
   saganSection: { alignItems: "stretch", width: "100%" },
   saganSectionTitle: { color: "var(--conan-text-primary)" },
   saganCount: {
@@ -322,7 +327,6 @@ const styles = stylex.create({
     color: "var(--conan-text-muted)",
     padding: "var(--conan-space-3)",
   },
-  saganTabs: { flexShrink: 0 },
   // WHA-144 — the narrow-width note above the Overview list the Pipeline tab
   // falls back to, so the swap is explained rather than looking like a bug.
   saganFallbackNote: { color: "var(--conan-text-muted)" },
@@ -468,10 +472,6 @@ function SaganRow({
   );
 }
 
-/** The Sagan surface's internal views. The SurfaceId stays `sagan` — these are
- *  tabs INSIDE the one surface, and both drive the same inspector (AC5). */
-type SaganTab = "overview" | "pipeline";
-
 export function V2SaganSurface({
   token,
   cwd,
@@ -560,64 +560,62 @@ export function V2SaganSurface({
     });
   }, [selectedTicket]);
 
-  if (selectedTicket) {
-    return (
-      <SaganInspector
-        run={detail}
-        loading={detailStatus === "loading"}
-        error={detailStatus === "error" ? "Run details could not be loaded." : null}
-        onClose={closeInspector}
-        onOpenOwningTarget={onOpenOwningThread}
-        token={token}
-        cwd={cwd}
-        onDecisionMade={() => setDetailRefreshKey((k) => k + 1)}
+  const toolbarNeedsYouCount = result?.data?.runs.filter((run) => sectionFor(run) === "Needs you").length ?? 0;
+  const shell = (content: ReactNode) => (
+    <VStack gap={0} xstyle={styles.saganShell} data-slot="sagan-surface-shell">
+      <SaganToolbar
+        tab={tab}
+        onTabChange={setTab}
+        needsYouCount={toolbarNeedsYouCount}
+        updatedAt={result?.updatedAt ?? null}
+        error={result?.error ?? null}
+        refreshing={result?.refreshing ?? false}
+        onRefresh={result?.refresh ?? (async () => {})}
       />
+      {content}
+    </VStack>
+  );
+
+  if (selectedTicket) {
+    return shell(
+      <VStack gap={0} xstyle={styles.saganInspectorSlot}>
+        <SaganInspector
+          run={detail}
+          loading={detailStatus === "loading"}
+          error={detailStatus === "error" ? "Run details could not be loaded." : null}
+          onClose={closeInspector}
+          onOpenOwningTarget={onOpenOwningThread}
+          token={token}
+          cwd={cwd}
+          onDecisionMade={() => setDetailRefreshKey((k) => k + 1)}
+        />
+      </VStack>
     );
   }
   if (!result || result.status === "idle" || result.status === "loading") {
-    return <CenterState>Loading Sagan overview…</CenterState>;
+    return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">Loading Sagan overview…</Text></VStack>);
   }
-  if (result.status === "error") return <CenterState>{result.error ?? "Sagan runs could not be loaded."}</CenterState>;
+  if (result.status === "error") return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">{result.error ?? "Sagan runs could not be loaded."}</Text></VStack>);
   const data = result.data;
   const capability = data?.project?.sagan;
-  if (!data || !Array.isArray(data.runs)) return <CenterState>Sagan returned malformed run data.</CenterState>;
+  if (!data || !Array.isArray(data.runs)) return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">Sagan returned malformed run data.</Text></VStack>);
   if (capability?.state === "invalid" || capability?.state === "unsupported-version") {
-    return <CenterState>{capability.reason ?? "The Sagan configuration is malformed."}</CenterState>;
+    return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">{capability.reason ?? "The Sagan configuration is malformed."}</Text></VStack>);
   }
-  if (capability?.state !== "valid") return <CenterState>Sagan is unavailable for this project.</CenterState>;
+  if (capability?.state !== "valid") return shell(<VStack align="center" justify="center" xstyle={styles.saganCenter}><Text color="secondary">Sagan is unavailable for this project.</Text></VStack>);
 
   const grouped = new Map<SaganSection, SaganRunSummary[]>(SAGAN_SECTIONS.map((section) => [section, []]));
   for (const run of data.runs) grouped.get(sectionFor(run))!.push(run);
   const needsYouCount = grouped.get("Needs you")!.length;
   const showPipeline = tab === "pipeline" && !narrow;
 
-  return (
+  return shell(
     <VStack
       ref={rootRef}
       gap={5}
-      xstyle={[styles.body, styles.saganOverview]}
+      xstyle={styles.saganOverview}
       data-sagan-pane={showPipeline ? "pipeline" : "overview"}
     >
-      <HStack align="center" justify="between" gap={3} xstyle={styles.saganHeader}>
-        <TabList
-          value={tab}
-          onChange={(value) => setTab(value as SaganTab)}
-          aria-label="Sagan views"
-          xstyle={styles.saganTabs}
-        >
-          <Tab value="overview" label="Overview" icon={<LayoutList size={16} aria-hidden />} />
-          <Tab value="pipeline" label="Pipeline" icon={<Workflow size={16} aria-hidden />} />
-        </TabList>
-        <VStack gap={0.5} xstyle={styles.saganHeaderStatus}>
-          <Text color="secondary">{needsYouCount} needs you</Text>
-          {result.updatedAt ? (
-            <Text color="secondary" type="supporting">
-              Updated {new Date(result.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
-            </Text>
-          ) : null}
-          {result.error ? <Text color="secondary" type="supporting" role="status">{result.error}</Text> : null}
-        </VStack>
-      </HStack>
       {showPipeline ? (
         <SaganPipeline runs={data.runs} onSelect={selectRun} />
       ) : (
