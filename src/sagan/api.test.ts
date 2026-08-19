@@ -22,6 +22,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -142,6 +143,41 @@ function saganRepo(name: string, ledger?: string): { root: string; nested: strin
   return { root, nested };
 }
 
+/** Initialize a real git repo in `root` so merge-detection tests can exercise
+ *  `ticketMergedInGit`. The `.git` directory created by `saganRepo` is empty;
+ *  this reinitializes it and sets a commit author. */
+function initGitRepo(root: string) {
+  execFileSync("git", ["init", "-b", "main"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: root, stdio: "ignore" });
+  fs.writeFileSync(path.join(root, "main.txt"), "main");
+  execFileSync("git", ["add", "main.txt"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: root, stdio: "ignore" });
+}
+
+/** Create a merge commit in `root` whose history mentions `ticket`. The branch
+ *  name and merge subject both include the ticket id in different cases so the
+ *  test exercises the `-i` flag in `ticketMergedInGit`. */
+function mergeTicket(root: string, ticket: string) {
+  const branch = `work/${ticket.toLowerCase()}`;
+  execFileSync("git", ["checkout", "-b", branch], { cwd: root, stdio: "ignore" });
+  fs.writeFileSync(path.join(root, `${ticket.toLowerCase()}.txt`), ticket);
+  execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", `feat(sagan/${ticket.toLowerCase()}): implement ${ticket}`], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["checkout", "main"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["merge", "--no-ff", branch, "-m", `Merge pull request #1 for ${ticket.toUpperCase()}`], { cwd: root, stdio: "ignore" });
+}
+
+/** Write a ticket file with the observed `.sagan/tickets/<ticket>.md` format
+ *  (`- **status:** <value>`) and a heading. */
+function writeTicketFile(root: string, ticket: string, status: string) {
+  fs.mkdirSync(path.join(root, ".sagan", "tickets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".sagan", "tickets", `${ticket}.md`),
+    `# ${ticket}\n\n- **status:** ${status}\n`,
+  );
+}
+
 /** Adopt a folder as a Conan project and resolve it the way the routes do. */
 function projectFor(dir: string) {
   const row = upsertChatProject(dir);
@@ -150,9 +186,9 @@ function projectFor(dir: string) {
   return project;
 }
 
-test("AC1: lists every ticket in the project's ledger, most recent first", () => {
+test("AC1: lists every ticket in the project's ledger, most recent first", async () => {
   const { root } = saganRepo("list", REFERENCE);
-  const result = listSaganRuns(projectFor(root));
+  const result = await listSaganRuns(projectFor(root));
 
   assert.deepEqual(
     result.runs.map((r) => r.id),
@@ -166,9 +202,9 @@ test("AC1: lists every ticket in the project's ledger, most recent first", () =>
   for (const run of result.runs) assert.equal(run.id, run.ticket);
 });
 
-test("AC1: a summary carries what Overview draws a row from", () => {
+test("AC1: a summary carries what Overview draws a row from", async () => {
   const { root } = saganRepo("summary", REFERENCE);
-  const runs = listSaganRuns(projectFor(root)).runs;
+  const runs = (await listSaganRuns(projectFor(root))).runs;
   const wha130 = runs.find((r) => r.id === "WHA-130");
   assert.ok(wha130);
   assert.equal(wha130.lane, "critique");
@@ -190,9 +226,9 @@ test("AC1: a summary carries what Overview draws a row from", () => {
   assert.deepEqual(t001?.agent, { name: "verify-claude", role: "verifier" });
 });
 
-test("GOLDEN: needsYou is the reopened gate, not the answered one", () => {
+test("GOLDEN: needsYou is the reopened gate, not the answered one", async () => {
   const { root } = saganRepo("needsyou", REFERENCE);
-  const runs = listSaganRuns(projectFor(root)).runs;
+  const runs = (await listSaganRuns(projectFor(root))).runs;
   assert.deepEqual(
     runs.filter((r) => r.needsYou).map((r) => r.id),
     ["WHA-130"],
@@ -205,9 +241,9 @@ test("GOLDEN: needsYou is the reopened gate, not the answered one", () => {
   assert.equal(wha130.openDecisions[0]!.evidenceSha, "9be4459");
 });
 
-test("AC2: the detail keeps every lane, phase and verdict in file order", () => {
+test("AC2: the detail keeps every lane, phase and verdict in file order", async () => {
   const { root } = saganRepo("detail", REFERENCE);
-  const result = getSaganRun(projectFor(root), "WHA-130");
+  const result = await getSaganRun(projectFor(root), "WHA-130");
   assert.ok(result);
   const run = result.run;
 
@@ -239,9 +275,9 @@ test("AC2: the detail keeps every lane, phase and verdict in file order", () => 
   assert.ok(run.lanes.every((l, i) => i === 0 || l.index > run.lanes[i - 1]!.index));
 });
 
-test("AC2: evidence refs keep both recorded shapes whole", () => {
+test("AC2: evidence refs keep both recorded shapes whole", async () => {
   const { root } = saganRepo("evidence", REFERENCE);
-  const wha130 = getSaganRun(projectFor(root), "WHA-130")!.run;
+  const wha130 = (await getSaganRun(projectFor(root), "WHA-130"))!.run;
 
   const [produced, first, delta] = wha130.evidence;
   // Producer shape: artifacts as a STRING in the real file.
@@ -259,15 +295,15 @@ test("AC2: evidence refs keep both recorded shapes whole", () => {
   assert.equal(delta!.deltaOf, "1aca52d");
 
   // …and the array form on WHA-131, which the string branch must not mangle.
-  const wha131 = getSaganRun(projectFor(root), "WHA-131")!.run;
+  const wha131 = (await getSaganRun(projectFor(root), "WHA-131"))!.run;
   assert.equal(wha131.evidence[0]!.artifacts.length, 2);
   assert.equal(wha131.evidence[0]!.note, "AC5 grid-overlay + ink-alignment judgment");
   assert.equal(wha131.verdicts[0]!.evidenceNeeded, "grid-overlay-on renders");
 });
 
-test("AC2: decision history says WHY the run is on round 3", () => {
+test("AC2: decision history says WHY the run is on round 3", async () => {
   const { root } = saganRepo("decisions", REFERENCE);
-  const run = getSaganRun(projectFor(root), "WHA-130")!.run;
+  const run = (await getSaganRun(projectFor(root), "WHA-130"))!.run;
   assert.deepEqual(
     run.decisionHistory.map((d) => [d.kind, d.decision]),
     [["needed", null], ["made", "revise"], ["needed", null]],
@@ -281,9 +317,9 @@ test("AC2: decision history says WHY the run is on round 3", () => {
   assert.equal(run.needsYou, true);
 });
 
-test("AC5: history is every ledger line for the ticket, verbatim", () => {
+test("AC5: history is every ledger line for the ticket, verbatim", async () => {
   const { root } = saganRepo("history", REFERENCE);
-  const run = getSaganRun(projectFor(root), "T-001")!.run;
+  const run = (await getSaganRun(projectFor(root), "T-001"))!.run;
   assert.deepEqual(
     run.history.map((h) => h.event),
     [
@@ -304,7 +340,7 @@ test("AC5: history is every ledger line for the ticket, verbatim", () => {
   assert.ok(run.history.every((h) => h.data.ticket === "T-001"));
 });
 
-test("WHA-143: detail normalizes inspector context and current timestamps", () => {
+test("WHA-143: detail normalizes inspector context and current timestamps", async () => {
   const { root } = saganRepo("inspector", lines(
     { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "dispatched",
       builder: "Booker", attempt_id: "attempt-7", session_id: "session-42",
@@ -318,7 +354,7 @@ test("WHA-143: detail normalizes inspector context and current timestamps", () =
     "# WHA-143 — C3: Inspector from ledger timeline\n",
   );
 
-  const run = getSaganRun(projectFor(root), "WHA-143")!.run;
+  const run = (await getSaganRun(projectFor(root), "WHA-143"))!.run;
   assert.equal(run.context.objective, "C3: Inspector from ledger timeline");
   assert.equal(run.context.provider, "claude");
   assert.equal(run.context.containment, "prompt-gated");
@@ -334,22 +370,22 @@ test("WHA-143: detail normalizes inspector context and current timestamps", () =
   assert.equal(run.history[1]!.tsKind, "exact");
 });
 
-test("WHA-143: owning target stays absent when the ledger has no real id", () => {
+test("WHA-143: owning target stays absent when the ledger has no real id", async () => {
   const { root } = saganRepo("no-owner", lines(
     { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "building",
       builder: "Booker", timestamp: "2026-08-08T15:07:46Z" },
   ));
-  assert.equal(getSaganRun(projectFor(root), "WHA-143")!.run.context.owningTarget, null);
+  assert.equal((await getSaganRun(projectFor(root), "WHA-143"))!.run.context.owningTarget, null);
 });
 
-test("WHA-225: list exposes ISO timestamps and counts timestamp mismatches", () => {
+test("WHA-225: list exposes ISO timestamps and counts timestamp mismatches", async () => {
   const { root } = saganRepo("iso-ts", lines(
     { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "dispatched",
       ts: "2026-08-10T12:00:00Z", timestamp: "2026-08-08T15:07:46Z" },
     { event: "lane.updated", ticket: "WHA-143", lane: "verify", phase: "verifying",
       timestamp: "2026-08-08T16:00:00Z" },
   ));
-  const result = listSaganRuns(projectFor(root));
+  const result = await listSaganRuns(projectFor(root));
   const run = result.runs[0]!;
   // `timestamp` wins on the first event, so firstTs follows the authoritative field.
   assert.equal(run.firstTs, "2026-08-08T15:07:46Z");
@@ -359,14 +395,14 @@ test("WHA-225: list exposes ISO timestamps and counts timestamp mismatches", () 
   assert.equal(result.timestampMismatch, 1);
 });
 
-test("WHA-230: summaries carry the ticket-file title", () => {
+test("WHA-230: summaries carry the ticket-file title", async () => {
   const { root } = saganRepo("titles", REFERENCE);
   fs.mkdirSync(path.join(root, ".sagan", "tickets"), { recursive: true });
   fs.writeFileSync(
     path.join(root, ".sagan", "tickets", "WHA-130.md"),
     "# WHA-130 — The reopened promote gate\n",
   );
-  const runs = listSaganRuns(projectFor(root)).runs;
+  const runs = (await listSaganRuns(projectFor(root))).runs;
   const wha130 = runs.find((r) => r.id === "WHA-130");
   assert.equal(wha130?.title, "The reopened promote gate");
   // Prefix-stripped, not the raw heading.
@@ -375,7 +411,7 @@ test("WHA-230: summaries carry the ticket-file title", () => {
   assert.equal(t001?.title, null, "no ticket file means no title");
 });
 
-test("WHA-230: detail objective falls back to the ticket-file title", () => {
+test("WHA-230: detail objective falls back to the ticket-file title", async () => {
   const { root } = saganRepo("title-fallback", lines(
     { event: "lane.updated", ticket: "WHA-230", lane: "frontend", phase: "dispatched",
       builder: "Booker", timestamp: "2026-08-08T15:07:46Z" },
@@ -385,12 +421,12 @@ test("WHA-230: detail objective falls back to the ticket-file title", () => {
     path.join(root, ".sagan", "tickets", "WHA-230.md"),
     "# WHA-230 — Title from ticket file\n",
   );
-  const run = getSaganRun(projectFor(root), "WHA-230")!.run;
+  const run = (await getSaganRun(projectFor(root), "WHA-230"))!.run;
   assert.equal(run.title, "Title from ticket file");
   assert.equal(run.context.objective, "Title from ticket file");
 });
 
-test("WHA-232: statusNote is the latest lane/verdict note, never invented", () => {
+test("WHA-232: statusNote is the latest lane/verdict note, never invented", async () => {
   const { root } = saganRepo("status-note", lines(
     { event: "lane.updated", ticket: "WHA-232", lane: "frontend", phase: "built",
       builder: "Booker", note: "first lane note", timestamp: "2026-08-08T15:00:00Z" },
@@ -401,23 +437,23 @@ test("WHA-232: statusNote is the latest lane/verdict note, never invented", () =
     { event: "lane.updated", ticket: "T-BARE", lane: "frontend", phase: "building",
       builder: "Booker", timestamp: "2026-08-08T15:00:00Z" },
   ));
-  const runs = listSaganRuns(projectFor(root)).runs;
+  const runs = (await listSaganRuns(projectFor(root))).runs;
   const noted = runs.find((r) => r.id === "WHA-232");
   const bare = runs.find((r) => r.id === "T-BARE");
   assert.equal(noted?.statusNote, "latest verdict note");
   assert.equal(bare?.statusNote, null);
-  const detail = getSaganRun(projectFor(root), "WHA-232")!.run;
+  const detail = (await getSaganRun(projectFor(root), "WHA-232"))!.run;
   assert.equal(detail.lanes[0]?.note, "first lane note");
   assert.equal(detail.verdicts[0]?.note, "latest verdict note");
 });
 
-test("AC4: an unknown ticket id is 404 material, not a throw", () => {
+test("AC4: an unknown ticket id is 404 material, not a throw", async () => {
   const { root } = saganRepo("unknown-ticket", REFERENCE);
-  assert.equal(getSaganRun(projectFor(root), "WHA-999"), null);
-  assert.equal(getSaganRun(projectFor(root), ""), null);
+  assert.equal(await getSaganRun(projectFor(root), "WHA-999"), null);
+  assert.equal(await getSaganRun(projectFor(root), ""), null);
 });
 
-test("AC3: a ticket id shaped like a path is a miss, never a read", () => {
+test("AC3: a ticket id shaped like a path is a miss, never a read", async () => {
   const { root } = saganRepo("traversal", REFERENCE);
   const project = projectFor(root);
   for (const id of [
@@ -426,13 +462,13 @@ test("AC3: a ticket id shaped like a path is a miss, never a read", () => {
     "/etc/passwd",
     "WHA-130/../T-001",
   ]) {
-    assert.equal(getSaganRun(project, id), null, `${id} must not resolve`);
+    assert.equal(await getSaganRun(project, id), null, `${id} must not resolve`);
   }
   // The id only ever meets strings read out of the file.
-  assert.equal(getSaganRun(project, "WHA-130")?.run.id, "WHA-130");
+  assert.equal((await getSaganRun(project, "WHA-130"))?.run.id, "WHA-130");
 });
 
-test("AC3: one project never sees another project's ledger", () => {
+test("AC3: one project never sees another project's ledger", async () => {
   const a = saganRepo("scope-a", REFERENCE);
   const b = saganRepo(
     "scope-b",
@@ -445,66 +481,66 @@ test("AC3: one project never sees another project's ledger", () => {
   const projectB = projectFor(b.root);
 
   assert.notEqual(projectA.id, projectB.id);
-  assert.deepEqual(listSaganRuns(projectB).runs.map((r) => r.id), ["OTHER-1"]);
+  assert.deepEqual((await listSaganRuns(projectB)).runs.map((r) => r.id), ["OTHER-1"]);
   assert.equal(
-    listSaganRuns(projectA).runs.some((r) => r.id === "OTHER-1"),
+    (await listSaganRuns(projectA)).runs.some((r) => r.id === "OTHER-1"),
     false,
   );
   // B's ticket is unreachable through A's id, and vice versa.
-  assert.equal(getSaganRun(projectA, "OTHER-1"), null);
-  assert.equal(getSaganRun(projectB, "WHA-130"), null);
+  assert.equal(await getSaganRun(projectA, "OTHER-1"), null);
+  assert.equal(await getSaganRun(projectB, "WHA-130"), null);
 });
 
-test("AC4: an unknown project id resolves to null — never a fallback project", () => {
+test("AC4: an unknown project id resolves to null — never a fallback project", async () => {
   const { root } = saganRepo("fallback", REFERENCE);
   projectFor(root); // a real project exists; the bad id must still miss
   assert.equal(resolveSaganProject("not-a-project-id"), null);
   assert.equal(resolveSaganProject(""), null);
 });
 
-test("a nested project folder reads the repo root's ledger", () => {
+test("a nested project folder reads the repo root's ledger", async () => {
   const { root, nested } = saganRepo("nested", REFERENCE);
   const project = projectFor(nested);
   assert.equal(project.path, nested);
   assert.equal(project.root, root, "the ledger lives at the repo root, not the cwd");
-  assert.equal(listSaganRuns(project).runs.length, 3);
+  assert.equal((await listSaganRuns(project)).runs.length, 3);
 });
 
-test("AC4: a Sagan project with no ledger yet is an empty list, not an error", () => {
+test("AC4: a Sagan project with no ledger yet is an empty list, not an error", async () => {
   const { root } = saganRepo("no-ledger");
-  const result = listSaganRuns(projectFor(root));
+  const result = await listSaganRuns(projectFor(root));
   assert.deepEqual(result.runs, []);
   assert.equal(result.project?.sagan.state, "valid");
   assert.deepEqual(result.skipped, { unparseable: 0, unknownType: 0, noTicket: 0 });
   assert.equal(result.timestampMismatch, 0);
 });
 
-test("AC4: a non-Sagan project answers empty plus the reason", () => {
+test("AC4: a non-Sagan project answers empty plus the reason", async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "conan-sagan-api-plain-"));
   fs.mkdirSync(path.join(base, ".git"), { recursive: true });
-  const result = listSaganRuns(projectFor(base));
+  const result = await listSaganRuns(projectFor(base));
   assert.deepEqual(result.runs, []);
   assert.equal(result.project?.sagan.state, "absent");
 });
 
-test("a half-written ledger still lists, with the damage counted", () => {
+test("a half-written ledger still lists, with the damage counted", async () => {
   const { root } = saganRepo("torn", REFERENCE + '{"event":"lane.updated","tick');
-  const result = listSaganRuns(projectFor(root));
+  const result = await listSaganRuns(projectFor(root));
   assert.equal(result.runs.length, 3, "a torn final line must not blank the surface");
   assert.equal(result.skipped.unparseable, 1);
 });
 
-test("an event type this build has never seen is counted, not fatal", () => {
+test("an event type this build has never seen is counted, not fatal", async () => {
   const { root } = saganRepo(
     "future",
     REFERENCE +
       lines({ event: "gate.escalated", ticket: "WHA-130", to: "randy", ts: "2026-08-07" }),
   );
-  const result = listSaganRuns(projectFor(root));
+  const result = await listSaganRuns(projectFor(root));
   assert.equal(result.skipped.unknownType, 1);
   assert.equal(result.runs.length, 3);
   // …and the inspector still shows the line, because history drops nothing.
-  const run = getSaganRun(projectFor(root), "WHA-130")!.run;
+  const run = (await getSaganRun(projectFor(root), "WHA-130"))!.run;
   assert.equal(run.history.at(-1)!.event, "gate.escalated");
 });
 
@@ -513,7 +549,7 @@ test("an event type this build has never seen is counted, not fatal", () => {
 // nothing more, so every test below is really asking the same question: does
 // this string get to name a folder the routes will read?
 
-test("a projectId that is an absolute repo path lists that repo's runs", () => {
+test("a projectId that is an absolute repo path lists that repo's runs", async () => {
   const { root } = saganRepo("path-root", REFERENCE);
   const project = resolveSaganProject(root);
   assert.ok(project);
@@ -521,23 +557,23 @@ test("a projectId that is an absolute repo path lists that repo's runs", () => {
   assert.equal(project.root, root);
   assert.equal(project.path, root);
   assert.deepEqual(
-    listSaganRuns(project).runs.map((r) => r.id),
+    (await listSaganRuns(project)).runs.map((r) => r.id),
     ["WHA-130", "WHA-131", "T-001"],
   );
   // …and the detail route reaches the same ledger through the same id.
-  assert.equal(getSaganRun(project, "WHA-130")?.run.round, 3);
+  assert.equal((await getSaganRun(project, "WHA-130"))?.run.round, 3);
 });
 
-test("a path inside the repo resolves to the repo root's ledger", () => {
+test("a path inside the repo resolves to the repo root's ledger", async () => {
   const { root, nested } = saganRepo("path-nested", REFERENCE);
   const project = resolveSaganProject(nested);
   assert.ok(project);
   assert.equal(project.path, nested);
   assert.equal(project.root, root, "the ledger lives at the repo root, not the cwd");
-  assert.equal(listSaganRuns(project).runs.length, 3);
+  assert.equal((await listSaganRuns(project)).runs.length, 3);
 });
 
-test("a path with `..` segments is judged as the folder it actually names", () => {
+test("a path with `..` segments is judged as the folder it actually names", async () => {
   const { root, nested } = saganRepo("path-dotdot", REFERENCE);
   // `repo/packages/api/../..` IS the root — normalised, then accepted on its
   // own merits, not refused for its shape.
@@ -548,7 +584,7 @@ test("a path with `..` segments is judged as the folder it actually names", () =
   assert.equal(resolveSaganProject(path.join(root, "..", "..", "..", "..", "..")), null);
 });
 
-test("a path that is not a project is a miss, not a read", () => {
+test("a path that is not a project is a miss, not a read", async () => {
   const { root } = saganRepo("path-reject", REFERENCE);
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), "conan-sagan-api-outside-"));
   fs.writeFileSync(path.join(outside, "secrets.txt"), "nope");
@@ -567,8 +603,8 @@ test("a path that is not a project is a miss, not a read", () => {
   }
 });
 
-test("AC4: an id that resolves to nothing is an empty list, never a throw", () => {
-  const result = listSaganRuns(resolveSaganProject("/no/such/project"));
+test("AC4: an id that resolves to nothing is an empty list, never a throw", async () => {
+  const result = await listSaganRuns(resolveSaganProject("/no/such/project"));
   assert.deepEqual(result.runs, []);
   assert.equal(result.project, null);
   assert.equal(result.ledgerPath, null);
@@ -577,7 +613,7 @@ test("AC4: an id that resolves to nothing is an empty list, never a throw", () =
   assert.equal(result.timestampMismatch, 0);
 });
 
-test("AC3: two repo paths never see each other's runs", () => {
+test("AC3: two repo paths never see each other's runs", async () => {
   const a = saganRepo("path-scope-a", REFERENCE);
   const b = saganRepo(
     "path-scope-b",
@@ -588,12 +624,12 @@ test("AC3: two repo paths never see each other's runs", () => {
   );
   const projectA = resolveSaganProject(a.root)!;
   const projectB = resolveSaganProject(b.root)!;
-  assert.deepEqual(listSaganRuns(projectB).runs.map((r) => r.id), ["OTHER-1"]);
-  assert.equal(listSaganRuns(projectA).runs.some((r) => r.id === "OTHER-1"), false);
-  assert.equal(getSaganRun(projectA, "OTHER-1"), null);
+  assert.deepEqual((await listSaganRuns(projectB)).runs.map((r) => r.id), ["OTHER-1"]);
+  assert.equal((await listSaganRuns(projectA)).runs.some((r) => r.id === "OTHER-1"), false);
+  assert.equal(await getSaganRun(projectA, "OTHER-1"), null);
 });
 
-test("AC3: a ledger symlinked out of the root is refused, not followed", () => {
+test("AC3: a ledger symlinked out of the root is refused, not followed", async () => {
   const inside = saganRepo("symlink-inside", REFERENCE);
   const { root } = saganRepo("symlink-host");
   // The composed path is textually contained — `root/.sagan/ledger/…` — but
@@ -606,13 +642,13 @@ test("AC3: a ledger symlinked out of the root is refused, not followed", () => {
   assert.ok(fs.existsSync(saganLedgerPath(root)), "the symlink does resolve to a real file");
 
   const project = resolveSaganProject(root)!;
-  const result = listSaganRuns(project);
+  const result = await listSaganRuns(project);
   assert.deepEqual(result.runs, [], "nothing outside the root is read");
   assert.equal(result.ledgerOutsideRoot, true, "…and the empty list says so");
-  assert.equal(getSaganRun(project, "WHA-130"), null);
+  assert.equal(await getSaganRun(project, "WHA-130"), null);
 });
 
-test("ledgerWithinRoot: a real in-root ledger reads, a missing one is fine", () => {
+test("ledgerWithinRoot: a real in-root ledger reads, a missing one is fine", async () => {
   const withLedger = saganRepo("within-yes", REFERENCE);
   assert.equal(ledgerWithinRoot(withLedger.root), true);
   const noLedger = saganRepo("within-none");
@@ -624,7 +660,7 @@ test("ledgerWithinRoot: a real in-root ledger reads, a missing one is fine", () 
   assert.equal(ledgerWithinRoot(path.join(noLedger.root, "no-such-root")), false);
 });
 
-test("a project row id still resolves, and reports which door it came through", () => {
+test("a project row id still resolves, and reports which door it came through", async () => {
   const { root } = saganRepo("row-still-works", REFERENCE);
   const byRow = projectFor(root);
   assert.equal(byRow.source, "project-row");
@@ -633,8 +669,8 @@ test("a project row id still resolves, and reports which door it came through", 
   // Different ids, same folder, same runs — the id is a door, not a scope.
   assert.notEqual(byRow.id, byPath.id);
   assert.deepEqual(
-    listSaganRuns(byRow).runs.map((r) => r.id),
-    listSaganRuns(byPath).runs.map((r) => r.id),
+    (await listSaganRuns(byRow)).runs.map((r) => r.id),
+    (await listSaganRuns(byPath)).runs.map((r) => r.id),
   );
 });
 
@@ -712,4 +748,69 @@ test("WHA-145: appendDecisionMade refuses to write to a closed gate", async () =
     }),
     /no open decision\.needed event/,
   );
+});
+
+// ─── WHA-167: reconcile ledger, git, and ticket-file completion ─────────────
+
+const OPEN_RUN_LEDGER = lines(
+  { event: "lane.updated", ticket: "WHA-167", lane: "frontend", phase: "building", ts: "2026-08-18" },
+);
+
+test("WHA-167: terminal lane event makes completion done with ledger source", async () => {
+  const { root } = saganRepo("terminal-ledger", lines(
+    { event: "lane.updated", ticket: "WHA-167", lane: "done", phase: "merged", ts: "2026-08-18" },
+  ));
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "done");
+  assert.equal(run.completion.source, "ledger");
+  assert.equal(run.completion.conflict, null);
+});
+
+test("WHA-167: run.completed event makes completion done with ledger source", async () => {
+  const { root } = saganRepo("run-completed", lines(
+    { event: "run.completed", ticket: "WHA-167", ts: "2026-08-18" },
+  ));
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "done");
+  assert.equal(run.completion.source, "ledger");
+});
+
+test("WHA-167: git merge plus ticket status done = done with git source", async () => {
+  const { root } = saganRepo("git-done", OPEN_RUN_LEDGER);
+  initGitRepo(root);
+  mergeTicket(root, "WHA-167");
+  writeTicketFile(root, "WHA-167", "done");
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "done");
+  assert.equal(run.completion.source, "git");
+  assert.equal(run.completion.conflict, null);
+});
+
+test("WHA-167: git merged but ticket file disagrees = unknown with conflict", async () => {
+  const { root } = saganRepo("git-discrepancy", OPEN_RUN_LEDGER);
+  initGitRepo(root);
+  mergeTicket(root, "WHA-167");
+  writeTicketFile(root, "WHA-167", "ready-for-qa");
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "unknown");
+  assert.equal(run.completion.source, "git");
+  assert.deepEqual(run.completion.conflict, { git: true, ticketFile: "ready-for-qa" });
+});
+
+test("WHA-167: ticket file says done without git merge = unknown", async () => {
+  const { root } = saganRepo("ticket-done-only", OPEN_RUN_LEDGER);
+  initGitRepo(root);
+  writeTicketFile(root, "WHA-167", "done");
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "unknown");
+  assert.equal(run.completion.source, null);
+  assert.deepEqual(run.completion.conflict, { git: false, ticketFile: "done" });
+});
+
+test("WHA-167: no terminal, git, or done ticket = open", async () => {
+  const { root } = saganRepo("open", OPEN_RUN_LEDGER);
+  const run = (await listSaganRuns(projectFor(root))).runs[0]!;
+  assert.equal(run.completion.state, "open");
+  assert.equal(run.completion.source, null);
+  assert.equal(run.completion.conflict, null);
 });

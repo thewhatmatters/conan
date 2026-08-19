@@ -18,11 +18,6 @@ export const SAGAN_SECTIONS: SaganSection[] = [
   "Recently completed",
 ];
 
-/** A run's position is terminal — it landed. Matched exactly, never by
- *  substring, so `done-ish` lanes are not swept into a finished bucket. */
-const TERMINAL_LANES = ["done", "merged"];
-const TERMINAL_PHASES = ["done", "merged", "complete", "completed"];
-
 /** The queued vocabulary, matched exactly for the same reason. Shared, term
  *  for term, with the Pipeline tab's `queued` node state. */
 const QUEUED_LANES = ["queued", "queue", "backlog"];
@@ -72,7 +67,13 @@ export function sectionFor(run: SaganRunSummary): SaganSection {
   const phase = run.phase?.toLowerCase() ?? "";
   const verdict = run.verdict?.toUpperCase() ?? "";
   if (run.openDecisions.length > 0) return "Needs you";
-  if (TERMINAL_LANES.includes(lane) || TERMINAL_PHASES.includes(phase)) return "Recently completed";
+  // `done` and `unknown` both leave Running now for Recently completed: `done`
+  // is a confident close, `unknown` is a disagreement that still needs
+  // visibility. The row UI renders the `conflict` marker so `unknown` is
+  // distinguishable from a genuine close (WHA-167 AC3).
+  if (run.completion?.state === "done" || run.completion?.state === "unknown") {
+    return "Recently completed";
+  }
   if (verdict === "ESCALATE" || lane.includes("block") || phase.includes("block")) return "Blocked";
   if (QUEUED_LANES.includes(lane) || QUEUED_PHASES.includes(phase)) return "Up next";
   return "Running now";

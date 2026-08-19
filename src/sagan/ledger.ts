@@ -30,6 +30,7 @@ import path from "node:path";
  *  not fatal — the standard is v0 and will grow types before Conan learns them. */
 const KNOWN_EVENTS = new Set([
   "run.started",
+  "run.completed",
   "lane.updated",
   "critique.verdict",
   "evidence.recorded",
@@ -131,6 +132,9 @@ export interface TicketProjection {
   /** First and last ISO-8601 timestamp seen; null when no ISO timestamp exists. */
   firstIsoTs: string | null;
   lastIsoTs: string | null;
+  /** True when the ledger itself says the run finished: a terminal lane/phase
+   *  event or an explicit `run.completed` event. */
+  completed: boolean;
   eventCount: number;
 }
 
@@ -159,6 +163,11 @@ export interface RawEvent {
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+
+const TERMINAL_LANES = new Set(["done", "merged"]);
+const TERMINAL_PHASES = new Set(["done", "merged", "complete", "completed"]);
+const isTerminalPosition = (lane: string | null, phase: string | null): boolean =>
+  TERMINAL_LANES.has(lane?.toLowerCase() ?? "") || TERMINAL_PHASES.has(phase?.toLowerCase() ?? "");
 
 /** True when `value` is an ISO-8601 timestamp with a time component.
  *
@@ -290,6 +299,7 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
         lastTsKind: "none",
         firstIsoTs: null,
         lastIsoTs: null,
+        completed: false,
         eventCount: 0,
       };
       byTicket.set(id, t);
@@ -330,11 +340,19 @@ export function projectLedger(events: RawEvent[], unparseable = 0): LedgerProjec
     if (round !== null && (t.round === null || round > t.round)) t.round = round;
 
     switch (e.event) {
+      case "run.completed":
+        // An explicit finish signal from the runner. The event may carry a
+        // `result`; the position update below is enough for the projection.
+        t.completed = true;
+        t.lane = str(e.lane) ?? t.lane ?? "done";
+        t.phase = str(e.phase) ?? t.phase ?? "merged";
+        break;
       case "lane.updated":
         // Lanes are open-ended strings — the reference ledger has a `design`
         // lane with no file under `.sagan/roles/`. Never an enum.
         t.lane = str(e.lane) ?? t.lane;
         t.phase = str(e.phase) ?? t.phase;
+        if (isTerminalPosition(t.lane, t.phase)) t.completed = true;
         break;
       case "critique.verdict":
         t.verdict = str(e.verdict) ?? t.verdict;

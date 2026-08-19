@@ -8,6 +8,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
+  AlertCircle,
   ArrowLeft,
   CircleCheck,
   CircleHelp,
@@ -369,7 +370,15 @@ function SaganRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const state = SECTION_STATE[section];
-  const StateIcon = state.icon;
+  // WHA-167 — a reconciled `unknown` completion is still visible in the
+  // "Recently completed" section, but its state label and icon are distinct
+  // from a confident close so the disagreement is not mistaken for a real close.
+  const conflict = run.completion?.state === "unknown" ? run.completion.conflict : null;
+  const stateLabel = conflict ? "Disputed" : state.label;
+  const StateIcon = conflict ? AlertCircle : state.icon;
+  const conflictNote = conflict
+    ? ` — git ${conflict.git ? "merged" : "not merged"}; ticket file status: ${conflict.ticketFile}`
+    : "";
   // WHA-169 AC3 — an in-flight row keeps showing its last verdict. `REVISE` and
   // `NEEDS_EVIDENCE` moved out of Blocked and into Running now; the point was
   // to stop calling live work stopped, not to hide that a critic sent it back.
@@ -378,10 +387,14 @@ function SaganRow({
   // prints, so nothing acquires a second display name.
   const verdictNote = section === "Running now" && run.verdict ? ` · ${run.verdict}` : "";
   const detailsId = `sagan-run-${run.ticket.replace(/[^A-Za-z0-9_-]/g, "-")}-details`;
+  const conflictText = conflict
+    ? `Disagreement: git ${conflict.git ? "says merged" : "does not show merged"}; ticket file status is ${conflict.ticketFile}.`
+    : null;
   const narrative = [
     run.agent ? `${run.agent.name} (${run.agent.role})` : null,
     run.lane || run.phase ? `${run.phase ?? "No phase"} in ${run.lane ?? "an unassigned lane"}` : null,
     run.verdict ? `Latest verdict: ${run.verdict}` : null,
+    conflictText,
   ].filter((clause): clause is string => clause != null).join(". ");
   return (
     <VStack
@@ -394,7 +407,7 @@ function SaganRow({
         onClick={() => setExpanded((value) => !value)}
         data-sagan-ticket={run.ticket}
         {...stylex.props(styles.saganRow)}
-        aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${state.label}${verdictNote}`}
+        aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${stateLabel}${verdictNote}${conflictNote}`}
         aria-expanded={expanded}
         aria-controls={expanded ? detailsId : undefined}
       >
@@ -413,7 +426,7 @@ function SaganRow({
         </VStack>
         <HStack align="center" gap={2} xstyle={[styles.saganCell, styles.saganState]}>
           <StateIcon size={16} aria-hidden />
-          <Text>{state.label}</Text>
+          <Text>{stateLabel}</Text>
         </HStack>
         <HStack align="center" justify="end" gap={2} xstyle={styles.saganTime}>
           <Text color="secondary" type="supporting" xstyle={styles.saganDuration}>{durationOf(run)}</Text>

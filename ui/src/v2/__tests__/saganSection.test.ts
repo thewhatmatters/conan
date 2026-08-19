@@ -13,28 +13,41 @@ import type { SaganRunSummary } from "../../../../src/sagan/api.ts";
  * `projectLedger()`, so this file fails if the rule regresses against the
  * actual board rather than against a convenient fiction.
  */
-const summary = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
-  id: "T-000",
-  ticket: "T-000",
-  lane: null,
-  phase: null,
-  round: 1,
-  verdict: null,
-  agent: null,
-  openDecisions: [],
-  needsYou: false,
-  laneCount: 1,
-  verdictCount: 0,
-  evidenceCount: 0,
-  firstTs: "2026-08-10",
-  lastTs: "2026-08-10",
-  firstIsoTs: null,
-  lastIsoTs: null,
-  eventCount: 1,
-  title: null,
-  statusNote: null,
-  ...patch,
-});
+const TERMINAL_LANES = ["done", "merged"];
+const TERMINAL_PHASES = ["done", "merged", "complete", "completed"];
+const isTerminalPosition = (lane: string | null, phase: string | null): boolean =>
+  TERMINAL_LANES.includes(lane?.toLowerCase() ?? "") || TERMINAL_PHASES.includes(phase?.toLowerCase() ?? "");
+
+const summary = (patch: Partial<SaganRunSummary>): SaganRunSummary => {
+  const lane = patch.lane ?? null;
+  const phase = patch.phase ?? null;
+  const terminal = isTerminalPosition(lane, phase);
+  return {
+    id: "T-000",
+    ticket: "T-000",
+    lane,
+    phase,
+    round: 1,
+    verdict: null,
+    agent: null,
+    openDecisions: [],
+    needsYou: false,
+    laneCount: 1,
+    verdictCount: 0,
+    evidenceCount: 0,
+    firstTs: "2026-08-10",
+    lastTs: "2026-08-10",
+    firstIsoTs: null,
+    lastIsoTs: null,
+    eventCount: 1,
+    title: null,
+    statusNote: null,
+    completion: terminal
+      ? { state: "done", source: "ledger", conflict: null }
+      : { state: "open", source: null, conflict: null },
+    ...patch,
+  };
+};
 
 /** A live lane per verdict — the station that verdict actually hands work to —
  *  and the one terminal lane the ledger ever writes, `done · merged`. */
@@ -99,6 +112,11 @@ describe("sectionFor — verdict against lane (WHA-169)", () => {
   it("reads lane, phase and verdict case-insensitively", () => {
     expect(sectionFor(summary({ lane: "DONE", phase: "MERGED" }))).toBe("Recently completed");
     expect(sectionFor(summary({ verdict: "escalate", lane: "critique", phase: "critique" }))).toBe("Blocked");
+  });
+
+  it("files unknown completion under Recently completed with a disagreement marker (WHA-167)", () => {
+    expect(sectionFor(summary({ completion: { state: "unknown", source: "git", conflict: { git: true, ticketFile: "ready-for-qa" } } }))).toBe("Recently completed");
+    expect(sectionFor(summary({ completion: { state: "unknown", source: null, conflict: { git: false, ticketFile: "done" } } }))).toBe("Recently completed");
   });
 });
 
