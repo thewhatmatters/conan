@@ -359,6 +359,37 @@ test("WHA-225: list exposes ISO timestamps and counts timestamp mismatches", () 
   assert.equal(result.timestampMismatch, 1);
 });
 
+test("WHA-230: summaries carry the ticket-file title", () => {
+  const { root } = saganRepo("titles", REFERENCE);
+  fs.mkdirSync(path.join(root, ".sagan", "tickets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".sagan", "tickets", "WHA-130.md"),
+    "# WHA-130 — The reopened promote gate\n",
+  );
+  const runs = listSaganRuns(projectFor(root)).runs;
+  const wha130 = runs.find((r) => r.id === "WHA-130");
+  assert.equal(wha130?.title, "The reopened promote gate");
+  // Prefix-stripped, not the raw heading.
+  assert.ok(!wha130?.title?.includes("WHA-130"));
+  const t001 = runs.find((r) => r.id === "T-001");
+  assert.equal(t001?.title, null, "no ticket file means no title");
+});
+
+test("WHA-230: detail objective falls back to the ticket-file title", () => {
+  const { root } = saganRepo("title-fallback", lines(
+    { event: "lane.updated", ticket: "WHA-230", lane: "frontend", phase: "dispatched",
+      builder: "Booker", timestamp: "2026-08-08T15:07:46Z" },
+  ));
+  fs.mkdirSync(path.join(root, ".sagan", "tickets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".sagan", "tickets", "WHA-230.md"),
+    "# WHA-230 — Title from ticket file\n",
+  );
+  const run = getSaganRun(projectFor(root), "WHA-230")!.run;
+  assert.equal(run.title, "Title from ticket file");
+  assert.equal(run.context.objective, "Title from ticket file");
+});
+
 test("AC4: an unknown ticket id is 404 material, not a throw", () => {
   const { root } = saganRepo("unknown-ticket", REFERENCE);
   assert.equal(getSaganRun(projectFor(root), "WHA-999"), null);

@@ -200,6 +200,9 @@ export interface SaganRunSummary {
   firstIsoTs: string | null;
   lastIsoTs: string | null;
   eventCount: number;
+  /** Human-readable title from `.sagan/tickets/<ticket>.md`, or null when the
+   *  file or heading is missing. */
+  title: string | null;
 }
 
 /** A run in full — the inspector's (C3) and pipeline's (C4) whole payload. */
@@ -356,7 +359,7 @@ export function ledgerWithinRoot(root: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
-const summarize = (t: TicketProjection, events: RawEvent[]): SaganRunSummary => {
+const summarize = (t: TicketProjection, events: RawEvent[], root: string): SaganRunSummary => {
   let laneCount = 0;
   let verdictCount = 0;
   let evidenceCount = 0;
@@ -386,6 +389,7 @@ const summarize = (t: TicketProjection, events: RawEvent[]): SaganRunSummary => 
     firstIsoTs: t.firstIsoTs,
     lastIsoTs: t.lastIsoTs,
     eventCount: t.eventCount,
+    title: readTicketTitle(root, t.ticket),
   };
 };
 
@@ -429,7 +433,10 @@ const firstString = (events: RawEvent[], keys: string[]): string | null => {
   return null;
 };
 
-function ticketObjective(root: string, ticketId: string): string | null {
+/** Read the first Markdown heading from `.sagan/tickets/<ticketId>.md` and
+ *  return the title text with the ticket-id prefix removed. Null when the file
+ *  or heading is missing, or when the id is not a plain ticket identifier. */
+function readTicketTitle(root: string, ticketId: string): string | null {
   if (!/^[A-Za-z0-9._-]+$/.test(ticketId)) return null;
   const ticketsDir = path.join(root, ".sagan", "tickets");
   const candidate = path.join(ticketsDir, `${ticketId}.md`);
@@ -492,7 +499,7 @@ export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult 
     if (id) lastLine.set(id, index);
   }
   const runs = projection.tickets
-    .map((t) => summarize(t, linesFor(indexed, t.ticket).map((l) => l.event)))
+    .map((t) => summarize(t, linesFor(indexed, t.ticket).map((l) => l.event), project.root))
     // `ts` is day-granular and often absent, so recency is the last ledger LINE
     // the ticket appears on — the same ordering rule the projection folds on.
     .sort((a, b) => (lastLine.get(b.ticket) ?? -1) - (lastLine.get(a.ticket) ?? -1));
@@ -601,18 +608,16 @@ export function getSaganRun(
   const threadId = firstString(events, ["thread_id"]);
   const sessionId = firstString(events, ["session_id"]);
   const nostrEventId = firstString(events, ["nostr_event_id"]);
+  const run = summarize(t, lines.map((l) => l.event), project.root);
   return {
     project,
     ledgerPath,
     run: {
-      ...summarize(
-        t,
-        lines.map((l) => l.event),
-      ),
+      ...run,
       context: {
         objective:
           firstString(events, ["objective", "title", "task", "prompt"]) ??
-          ticketObjective(project.root, ticketId),
+          run.title,
         provider: firstString(events, ["provider"]) ?? assignment.provider,
         containment: firstString(events, ["containment", "permission_mode", "sandbox"]) ?? assignment.containment,
         attemptId: firstString(events, ["attempt_id", "attempt", "run_id"]),

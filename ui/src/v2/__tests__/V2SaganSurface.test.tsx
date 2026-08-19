@@ -25,6 +25,7 @@ const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   firstIsoTs: null,
   lastIsoTs: null,
   eventCount: 12,
+  title: null,
   ...patch,
 });
 
@@ -166,6 +167,12 @@ describe("V2SaganSurface overview", () => {
     expect(needsYou).toHaveTextContent("WHA-130");
     expect(needsYou).not.toHaveTextContent("T-001");
     expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveTextContent("critic-claude-freshcriticAwaiting decision2 days");
+  });
+
+  it("renders a ticket title on the Overview row when present", () => {
+    renderSurface(result({ data: data([run({ title: "Auth session refresh" })]) }));
+    const row = screen.getByRole("button", { name: /WHA-130, Auth session refresh, Awaiting decision/ });
+    expect(row).toHaveTextContent("Auth session refresh");
   });
 
   it("opens a read-only in-surface inspector and returns focus on Escape", async () => {
@@ -369,6 +376,13 @@ describe("V2SaganSurface pipeline tab", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" })).toHaveFocus(),
     );
+  });
+
+  it("renders a ticket title on a pipeline node when present", () => {
+    renderSurface(result({ data: data([run({ title: "Auth session refresh" })]) }));
+    openPipeline();
+    const node = screen.getByRole("button", { name: /WHA-130, Auth session refresh, Promote Gate, Awaiting decision/ });
+    expect(node).toHaveTextContent("Auth session refresh");
   });
 
   it("falls back to the Overview list at narrow widths instead of a mini-map", () => {
