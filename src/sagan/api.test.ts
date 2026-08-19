@@ -390,6 +390,27 @@ test("WHA-230: detail objective falls back to the ticket-file title", () => {
   assert.equal(run.context.objective, "Title from ticket file");
 });
 
+test("WHA-232: statusNote is the latest lane/verdict note, never invented", () => {
+  const { root } = saganRepo("status-note", lines(
+    { event: "lane.updated", ticket: "WHA-232", lane: "frontend", phase: "built",
+      builder: "Booker", note: "first lane note", timestamp: "2026-08-08T15:00:00Z" },
+    { event: "critique.verdict", ticket: "WHA-232", round: 1, critic: "critic",
+      verdict: "REVISE", notes: "latest verdict note", timestamp: "2026-08-08T16:00:00Z" },
+    { event: "evidence.recorded", ticket: "WHA-232", sha: "abc",
+      note: "evidence notes are not Status", timestamp: "2026-08-08T17:00:00Z" },
+    { event: "lane.updated", ticket: "T-BARE", lane: "frontend", phase: "building",
+      builder: "Booker", timestamp: "2026-08-08T15:00:00Z" },
+  ));
+  const runs = listSaganRuns(projectFor(root)).runs;
+  const noted = runs.find((r) => r.id === "WHA-232");
+  const bare = runs.find((r) => r.id === "T-BARE");
+  assert.equal(noted?.statusNote, "latest verdict note");
+  assert.equal(bare?.statusNote, null);
+  const detail = getSaganRun(projectFor(root), "WHA-232")!.run;
+  assert.equal(detail.lanes[0]?.note, "first lane note");
+  assert.equal(detail.verdicts[0]?.note, "latest verdict note");
+});
+
 test("AC4: an unknown ticket id is 404 material, not a throw", () => {
   const { root } = saganRepo("unknown-ticket", REFERENCE);
   assert.equal(getSaganRun(projectFor(root), "WHA-999"), null);

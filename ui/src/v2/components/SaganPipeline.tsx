@@ -1,5 +1,6 @@
 /**
- * WHA-144 (C4) — the fixed 4-stage pipeline board.
+ * WHA-144 (C4) + WHA-232 — the fixed 4-stage pipeline board and denser node
+ * card chrome.
  *
  * A HORIZONTAL LAYERED BOARD, not a physics graph (AC1). Sagan's loop is fixed
  * by `.sagan/sagan.yaml` — `rules.ship_requires: [critic_approved,
@@ -9,11 +10,10 @@
  * a stage's x position IS its place in the loop, so the board reads the same way
  * twice and a screenshot of it means something.
  *
- * NODES ARE TASKS (AC2). One card per `SaganRunSummary` — the ticket id is the
- * card's title, and the agent + role it was dispatched to is supporting text
- * under it. The ledger names agents under a key that IS their role
- * (`builder`/`critic`/`verifier`, see `src/sagan/api.ts`), so the role is read,
- * never guessed.
+ * NODES ARE TASKS (AC2). One card per `SaganRunSummary`. WHA-232 densifies the
+ * card to match artboard `51440d38…`: ticket id, optional two-line title, a
+ * Status sub-block (from recorded notes / attention kind), attention glyph for
+ * `approval`|`blocked`, and a footer role token — no invented durations.
  */
 import * as stylex from "@stylexjs/stylex";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -27,6 +27,7 @@ import {
   CircleX,
   GitMerge,
   Hammer,
+  Info,
   ListTodo,
   OctagonAlert,
   PlayCircle,
@@ -164,6 +165,32 @@ const NODE_STATES = {
   skipped: { icon: CircleSlash, label: "Skipped" },
 } satisfies Record<SaganNodeState, { icon: LucideIcon; label: string }>;
 
+const roleLabel = (run: SaganRunSummary): string | null => {
+  const role = run.agent?.role;
+  if (!role) return null;
+  return role.charAt(0).toUpperCase() + role.slice(1);
+};
+
+/**
+ * Status sub-block copy (WHA-232).
+ *
+ * - Attention states (`approval`|`blocked`) always show the kind label so the
+ *   shared Info glyph is not the only distinguisher.
+ * - Any state may also show a recorded `statusNote` from lane/verdict events.
+ * - Non-attention states with no note omit the block entirely (never an empty
+ *   Status shell).
+ */
+export function statusBlockFor(
+  run: SaganRunSummary,
+  state: SaganNodeState,
+): { kind: string; note: string | null } | null {
+  const kind = NODE_STATES[state].label;
+  const note = run.statusNote;
+  if (state === "approval" || state === "blocked") return { kind, note };
+  if (note) return { kind, note };
+  return null;
+}
+
 const styles = stylex.create({
   root: { alignItems: "stretch", width: "100%" },
   legend: { color: "var(--conan-text-muted)", flexWrap: "wrap" },
@@ -177,7 +204,10 @@ const styles = stylex.create({
   legendLineDashed: { borderTopStyle: "dashed" },
   board: {
     alignItems: "stretch",
+    // Columns scroll internally; the board itself does not become a second
+    // vertical scroller (WHA-232 column chrome).
     overflowX: "auto",
+    overflowY: "hidden",
     paddingBlockEnd: "var(--conan-space-2)",
     width: "100%",
   },
@@ -188,10 +218,19 @@ const styles = stylex.create({
     flexBasis: 0,
     flexGrow: 1,
     flexShrink: 0,
+    maxHeight: "32rem",
     minWidth: "13rem",
+    overflowY: "auto",
     padding: "var(--conan-space-2)",
   },
-  columnHeader: { alignItems: "center" },
+  columnHeader: {
+    alignItems: "center",
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    backgroundColor: "var(--conan-wash-raised)",
+    paddingBlockEnd: "var(--conan-space-1)",
+  },
   step: {
     backgroundColor: "var(--conan-color-content)",
     borderRadius: "var(--conan-radius-full)",
@@ -246,10 +285,11 @@ const styles = stylex.create({
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
-    gap: "var(--conan-space-1)",
+    gap: "var(--conan-space-2)",
+    opacity: { default: 1, ":disabled": 0.5 },
     outline: { default: null, ":focus-visible": "2px solid var(--conan-color-accent)" },
     outlineOffset: "2px",
-    padding: "var(--conan-space-2)",
+    padding: "var(--conan-space-3)",
     textAlign: "start",
     width: "100%",
   },
@@ -286,14 +326,51 @@ const styles = stylex.create({
     borderRadius: "var(--conan-radius-md)",
     color: "var(--conan-text-muted)",
   },
-  nodeHead: { alignItems: "center" },
+  nodeHead: { alignItems: "flex-start", width: "100%" },
   nodeTicket: { minWidth: 0, overflowWrap: "anywhere" },
-  nodeState: { alignItems: "center" },
+  nodeGlyph: {
+    color: "var(--conan-color-warning)",
+    flexShrink: 0,
+    lineHeight: 0,
+  },
+  // Two-line clamp; reserving the block height keeps sibling cards from jumping
+  // when a title wraps (WHA-232 AC5).
+  nodeTitle: {
+    display: "-webkit-box",
+    overflow: "hidden",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 2,
+    minHeight: "2.5em",
+    overflowWrap: "anywhere",
+  },
+  statusBlock: {
+    alignItems: "stretch",
+    backgroundColor: "var(--conan-wash-raised)",
+    borderRadius: "var(--conan-radius-sm)",
+    paddingBlock: "var(--conan-space-2)",
+    paddingInline: "var(--conan-space-2)",
+    width: "100%",
+  },
+  statusLabel: {
+    color: "var(--conan-text-muted)",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  statusRow: { alignItems: "flex-start" },
   // The pulse itself lives in `tokens.css`, keyed off `data-sagan-node-state`,
   // alongside the sidebar's status pulse and its `prefers-reduced-motion`
   // override (AC6). One place turns motion off for the whole shell.
   nodeActivity: { alignItems: "center", display: "inline-flex", flexShrink: 0 },
-  nodeMeta: { minWidth: 0, overflowWrap: "anywhere" },
+  nodeFooter: { alignItems: "center", flexWrap: "wrap" },
+  // Non-interactive role chip — a Token inside the card <button> would nest
+  // interactive elements. Visual weight matches Astryx Token `sm`.
+  roleChip: {
+    backgroundColor: "var(--conan-wash-raised)",
+    borderRadius: "var(--conan-radius-sm)",
+    color: "var(--conan-text-muted)",
+    paddingBlock: "var(--conan-space-hair)",
+    paddingInline: "var(--conan-space-2)",
+  },
 });
 
 const NODE_SHAPES = {
@@ -318,6 +395,11 @@ function PipelineNode({
   const state = nodeStateFor(run);
   const spec = NODE_STATES[state];
   const StateIcon = spec.icon;
+  const needsAttention = state === "approval" || state === "blocked";
+  const status = statusBlockFor(run, state);
+  const role = roleLabel(run);
+  const statusBody = status?.note ?? status?.kind ?? null;
+
   return (
     <button
       type="button"
@@ -327,23 +409,50 @@ function PipelineNode({
       aria-label={`${run.ticket}${run.title ? `, ${run.title}` : ""}, ${stage.label}, ${spec.label}`}
       {...stylex.props(styles.node, NODE_SHAPES[state])}
     >
-      <HStack align="center" justify="between" gap={2} xstyle={styles.nodeHead}>
-        <Text weight="semibold" xstyle={styles.nodeTicket}>{run.ticket}</Text>
-        {run.round != null ? (
-          <Text color="secondary" type="supporting" hasTabularNumbers>Round {run.round}</Text>
+      <HStack align="start" justify="between" gap={2} xstyle={styles.nodeHead}>
+        <HStack align="center" gap={1} xstyle={styles.nodeTicket}>
+          {state === "running" ? (
+            <span data-slot="sagan-node-activity" {...stylex.props(styles.nodeActivity)}>
+              <StateIcon size={14} aria-hidden />
+            </span>
+          ) : null}
+          <Text weight="semibold" xstyle={styles.nodeTicket}>{run.ticket}</Text>
+        </HStack>
+        {needsAttention ? (
+          <span
+            data-slot="sagan-node-attention"
+            title={spec.label}
+            {...stylex.props(styles.nodeGlyph)}
+          >
+            <Info size={16} aria-hidden />
+          </span>
         ) : null}
       </HStack>
-      <HStack align="center" gap={1} xstyle={styles.nodeState}>
-        <span data-slot="sagan-node-activity" {...stylex.props(styles.nodeActivity)}>
-          <StateIcon size={14} aria-hidden />
-        </span>
-        <Text type="supporting">{spec.label}</Text>
-      </HStack>
-      <Text color="secondary" type="supporting" xstyle={styles.nodeMeta}>
-        {run.agent?.name ?? "Unassigned"} · {run.agent?.role ?? "no role"}
-      </Text>
       {run.title ? (
-        <Text color="secondary" type="supporting" xstyle={styles.nodeMeta}>{run.title}</Text>
+        <Text color="secondary" xstyle={styles.nodeTitle}>{run.title}</Text>
+      ) : null}
+      {status && statusBody ? (
+        <VStack gap={1} xstyle={styles.statusBlock} data-slot="sagan-node-status">
+          <Text type="supporting" xstyle={styles.statusLabel}>Status</Text>
+          <HStack align="start" gap={2} xstyle={styles.statusRow}>
+            <span data-slot="sagan-node-status-icon" {...stylex.props(styles.nodeActivity)}>
+              <StateIcon size={14} aria-hidden />
+            </span>
+            <VStack gap={0.5} xstyle={styles.nodeTicket}>
+              <Text type="supporting">{status.kind}</Text>
+              {status.note && status.note !== status.kind ? (
+                <Text color="secondary" type="supporting" xstyle={styles.nodeTicket}>
+                  {status.note}
+                </Text>
+              ) : null}
+            </VStack>
+          </HStack>
+        </VStack>
+      ) : null}
+      {role ? (
+        <HStack align="center" gap={2} xstyle={styles.nodeFooter} data-slot="sagan-node-footer">
+          <Text type="supporting" xstyle={styles.roleChip}>{role}</Text>
+        </HStack>
       ) : null}
     </button>
   );

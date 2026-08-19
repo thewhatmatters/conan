@@ -26,6 +26,7 @@ const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   lastIsoTs: "2026-08-07T10:00:00Z",
   eventCount: 12,
   title: null,
+  statusNote: null,
   ...patch,
 });
 
@@ -69,7 +70,7 @@ const detail = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null):
     attemptId: "attempt-3",
     owningTarget,
   },
-  lanes: [{ index: 0, lane: "frontend", phase: "built", round: 3, agent: { name: "Booker", role: "builder" }, artifact: "dist/report.html", sha: "abc123", flags: [], ts: "2026-08-05T10:00:00Z", isoTs: "2026-08-05T10:00:00Z", tsKind: "exact" }],
+  lanes: [{ index: 0, lane: "frontend", phase: "built", round: 3, agent: { name: "Booker", role: "builder" }, artifact: "dist/report.html", sha: "abc123", flags: [], note: null, ts: "2026-08-05T10:00:00Z", isoTs: "2026-08-05T10:00:00Z", tsKind: "exact" }],
   verdicts: [],
   evidence: [{ index: 1, sha: "abc123", verifier: "Barkley", producer: null, overall: "PASS", checks: 5, notVerified: [], artifacts: ["evidence/inspector.png"], deltaOf: null, note: null, ts: "2026-08-07T11:00:00Z", isoTs: "2026-08-07T11:00:00Z", tsKind: "exact" }],
   resolvedDecisions: [],
@@ -376,7 +377,7 @@ describe("V2SaganSurface pipeline tab", () => {
     expect(screen.getByText("Rework — dashed")).toBeVisible();
   });
 
-  it("files each run into its stage with the agent as secondary metadata", () => {
+  it("files each run into its stage with role token footer chrome", () => {
     renderSurface(result({ data: board() }));
     openPipeline();
     expect(within(stageColumn(1, "Build")).getByRole("button", { name: /^T-BUILD,/ })).toBeVisible();
@@ -385,33 +386,114 @@ describe("V2SaganSurface pipeline tab", () => {
     const promote = stageColumn(4, "Promote Gate");
     expect(within(promote).getByRole("button", { name: /^T-DONE,/ })).toBeVisible();
     expect(within(promote).getByRole("button", { name: /^WHA-130,/ })).toBeVisible();
-    // The node is the TASK; who it went to reads under the ticket id.
-    expect(screen.getByRole("button", { name: "T-CRIT, Critique, Blocked" }))
-      .toHaveTextContent("T-CRITRound 3Blockedcritic-claude-fresh · critic");
-    expect(screen.getByRole("button", { name: /^T-DONE,/ })).toHaveTextContent("Unassigned · no role");
+    // Role token from the recorded agent.role — no invented duration.
+    expect(screen.getByRole("button", { name: "T-CRIT, Critique, Blocked" })).toHaveTextContent("Critic");
+    expect(screen.getByRole("button", { name: "T-VERIFY, Verify, Running" })).toHaveTextContent("Verifier");
+    // No agent → no footer token (traces to a recorded field only).
+    expect(within(screen.getByRole("button", { name: /^T-DONE,/ })).queryByText(/Unassigned|no role/i)).toBeNull();
   });
 
-  it("gives every state its own icon, shape hook and label", () => {
+  it("gives every state its own shape hook, attention glyph, and Status kind", () => {
     renderSurface(result({ data: board() }));
     openPipeline();
-    const states: Array<[string, string]> = [
-      ["T-BUILD, Build, Running", "running"],
-      ["T-CRIT, Critique, Blocked", "blocked"],
-      ["T-VERIFY, Verify, Running", "running"],
-      ["T-DONE, Promote Gate, Complete", "complete"],
-      ["WHA-130, Promote Gate, Awaiting decision", "approval"],
+    const states: Array<[string, string, boolean]> = [
+      ["T-BUILD, Build, Running", "running", false],
+      ["T-CRIT, Critique, Blocked", "blocked", true],
+      ["T-VERIFY, Verify, Running", "running", false],
+      ["T-DONE, Promote Gate, Complete", "complete", false],
+      ["WHA-130, Promote Gate, Awaiting decision", "approval", true],
     ];
-    for (const [name, state] of states) {
+    for (const [name, state, attention] of states) {
       const node = screen.getByRole("button", { name });
       expect(node).toHaveAttribute("data-sagan-node-state", state);
-      // The label is text, not just an aria-label — icon + shape + words.
-      expect(node).toHaveTextContent(name.split(", ").at(-1)!);
+      if (attention) {
+        // Attention glyph is shared; Status row carries which kind.
+        expect(node.querySelector('[data-slot="sagan-node-attention"]')).not.toBeNull();
+        expect(node).toHaveTextContent(name.split(", ").at(-1)!);
+        expect(node.querySelector('[data-slot="sagan-node-status"]')).not.toBeNull();
+      } else {
+        expect(node.querySelector('[data-slot="sagan-node-attention"]')).toBeNull();
+      }
     }
     // Only the running node carries the activity element the pulse is keyed to;
     // `tokens.css` turns that one animation off under prefers-reduced-motion.
     expect(
       document.querySelectorAll('[data-sagan-node-state="running"] [data-slot="sagan-node-activity"]'),
     ).toHaveLength(2);
+  });
+
+  it("renders all seven node states distinctly without inventing a Collapsible", () => {
+    // AC2 — greyscale-legible shape hooks for every state; AC4 — selection, not disclosure.
+    renderSurface(result({
+      data: data([
+        bare({ id: "T-Q", ticket: "T-Q", lane: "queued", phase: null }),
+        bare({ id: "T-R", ticket: "T-R", lane: "frontend", phase: "building" }),
+        bare({ id: "T-C", ticket: "T-C", lane: "done", phase: "merged" }),
+        run({ id: "T-A", ticket: "T-A" }),
+        bare({ id: "T-B", ticket: "T-B", lane: "critique", phase: "dispatched", verdict: "REVISE" }),
+        bare({ id: "T-F", ticket: "T-F", lane: "critique", phase: "dispatched", verdict: "ESCALATE" }),
+        bare({ id: "T-S", ticket: "T-S", lane: "verify", phase: "skipped" }),
+      ]),
+    }));
+    openPipeline();
+    const expected: Array<[string, string]> = [
+      ["T-Q, Build, Queued", "queued"],
+      ["T-R, Build, Running", "running"],
+      ["T-C, Promote Gate, Complete", "complete"],
+      ["T-A, Promote Gate, Awaiting decision", "approval"],
+      ["T-B, Critique, Blocked", "blocked"],
+      ["T-F, Critique, Failed", "failed"],
+      ["T-S, Verify, Skipped", "skipped"],
+    ];
+    const seen = new Set<string>();
+    for (const [name, state] of expected) {
+      const node = screen.getByRole("button", { name });
+      expect(node).toHaveAttribute("data-sagan-node-state", state);
+      expect(node.getAttribute("aria-expanded")).toBeNull();
+      seen.add(state);
+    }
+    expect(seen.size).toBe(7);
+  });
+
+  it("shows a per-column empty state when a stage has no tasks", () => {
+    renderSurface(result({
+      data: data([bare({ id: "T-ONLY", ticket: "T-ONLY", lane: "frontend", phase: "building" })]),
+    }));
+    openPipeline();
+    expect(within(stageColumn(1, "Build")).getByRole("button", { name: /^T-ONLY,/ })).toBeVisible();
+    for (const [step, label] of [[2, "Critique"], [3, "Verify"], [4, "Promote Gate"]] as const) {
+      expect(within(stageColumn(step, label)).getByText("No tasks")).toBeVisible();
+    }
+  });
+
+  it("omits Status when there is no note on a non-attention card, and shows a recorded note when present", () => {
+    renderSurface(result({
+      data: data([
+        bare({ id: "T-PLAIN", ticket: "T-PLAIN", lane: "frontend", phase: "building", statusNote: null }),
+        bare({
+          id: "T-NOTE",
+          ticket: "T-NOTE",
+          lane: "frontend",
+          phase: "building",
+          statusNote: "waiting on design tokens",
+        }),
+      ]),
+    }));
+    openPipeline();
+    expect(
+      screen.getByRole("button", { name: "T-PLAIN, Build, Running" })
+        .querySelector('[data-slot="sagan-node-status"]'),
+    ).toBeNull();
+    const noted = screen.getByRole("button", { name: "T-NOTE, Build, Running" });
+    expect(noted.querySelector('[data-slot="sagan-node-status"]')).not.toBeNull();
+    expect(noted).toHaveTextContent("waiting on design tokens");
+  });
+
+  it("does not invent a title placeholder when the ticket file is missing", () => {
+    renderSurface(result({ data: data([run({ title: null })]) }));
+    openPipeline();
+    const node = screen.getByRole("button", { name: "WHA-130, Promote Gate, Awaiting decision" });
+    expect(node.textContent).not.toMatch(/placeholder|description|untitled/i);
   });
 
   it("opens the same inspector Overview does when a node is selected", async () => {

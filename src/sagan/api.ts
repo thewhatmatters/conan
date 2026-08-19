@@ -79,6 +79,15 @@ const agentOf = (e: RawEvent): SaganAgentRef | null => {
   return null;
 };
 
+/** `note` or `notes` on a ledger event — string, or a string array joined. */
+const noteOf = (e: RawEvent): string | null => {
+  const single = str(e.note) ?? str(e.notes);
+  if (single) return single;
+  if (!Array.isArray(e.notes)) return null;
+  const parts = e.notes.filter((x): x is string => typeof x === "string" && x.length > 0);
+  return parts.length > 0 ? parts.join("; ") : null;
+};
+
 /** One `lane.updated`. Lanes and phases are open strings, never an enum. */
 export interface SaganLaneEntry {
   /** Ledger line number (0-based), the only stable ordering. */
@@ -92,6 +101,8 @@ export interface SaganLaneEntry {
   /** `sha` or `artifact_sha` — the same fact under two names in the real file. */
   sha: string | null;
   flags: string[];
+  /** Freeform `note`/`notes` when the event carried one. */
+  note: string | null;
   ts: string | null;
   /** ISO-8601 instant when the event carried one; null otherwise. */
   isoTs: string | null;
@@ -112,6 +123,8 @@ export interface SaganVerdictEntry {
   artifactSha: string | null;
   /** `NEEDS_EVIDENCE` verdicts say what would settle them. */
   evidenceNeeded: string | null;
+  /** Freeform `note`/`notes` when the event carried one. */
+  note: string | null;
   ts: string | null;
   /** ISO-8601 instant when the event carried one; null otherwise. */
   isoTs: string | null;
@@ -203,6 +216,10 @@ export interface SaganRunSummary {
   /** Human-readable title from `.sagan/tickets/<ticket>.md`, or null when the
    *  file or heading is missing. */
   title: string | null;
+  /** Latest `note`/`notes` from a `lane.updated` or `critique.verdict` for this
+   *  ticket (file order, last wins). Null when neither event carried one —
+   *  the pipeline Status block stays absent rather than empty. */
+  statusNote: string | null;
 }
 
 /** A run in full — the inspector's (C3) and pipeline's (C4) whole payload. */
@@ -364,12 +381,16 @@ const summarize = (t: TicketProjection, events: RawEvent[], root: string): Sagan
   let verdictCount = 0;
   let evidenceCount = 0;
   let agent: SaganAgentRef | null = null;
+  let statusNote: string | null = null;
   for (const e of events) {
     if (e.event === "lane.updated") {
       laneCount += 1;
       agent = agentOf(e) ?? agent;
-    } else if (e.event === "critique.verdict") verdictCount += 1;
-    else if (e.event === "evidence.recorded") evidenceCount += 1;
+      statusNote = noteOf(e) ?? statusNote;
+    } else if (e.event === "critique.verdict") {
+      verdictCount += 1;
+      statusNote = noteOf(e) ?? statusNote;
+    } else if (e.event === "evidence.recorded") evidenceCount += 1;
   }
   return {
     id: t.ticket,
@@ -390,6 +411,7 @@ const summarize = (t: TicketProjection, events: RawEvent[], root: string): Sagan
     lastIsoTs: t.lastIsoTs,
     eventCount: t.eventCount,
     title: readTicketTitle(root, t.ticket),
+    statusNote,
   };
 };
 
@@ -555,6 +577,7 @@ export function getSaganRun(
           artifact: str(e.artifact),
           sha: str(e.sha) ?? str(e.artifact_sha),
           flags: strings(e.flags),
+          note: noteOf(e),
           ts: classified.ts,
           isoTs: classified.isoTs,
           tsKind: classified.tsKind,
@@ -571,6 +594,7 @@ export function getSaganRun(
           high: num(e.high),
           artifactSha: str(e.artifact_sha) ?? str(e.sha),
           evidenceNeeded: str(e.evidence_needed),
+          note: noteOf(e),
           ts: classified.ts,
           isoTs: classified.isoTs,
           tsKind: classified.tsKind,
