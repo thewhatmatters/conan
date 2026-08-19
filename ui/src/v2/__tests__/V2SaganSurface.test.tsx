@@ -22,8 +22,8 @@ const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   evidenceCount: 2,
   firstTs: "2026-08-05",
   lastTs: "2026-08-07",
-  firstIsoTs: null,
-  lastIsoTs: null,
+  firstIsoTs: "2026-08-05T10:00:00Z",
+  lastIsoTs: "2026-08-07T10:00:00Z",
   eventCount: 12,
   title: null,
   ...patch,
@@ -166,22 +166,72 @@ describe("V2SaganSurface overview", () => {
     const needsYou = screen.getByText("Needs you").closest("div")!.parentElement!;
     expect(needsYou).toHaveTextContent("WHA-130");
     expect(needsYou).not.toHaveTextContent("T-001");
-    expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveTextContent("critic-claude-freshcriticAwaiting decision2 days");
+    expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveTextContent("critic-claude-freshcriticAwaiting decision2d");
   });
 
-  it("renders a ticket title on the Overview row when present", () => {
-    renderSurface(result({ data: data([run({ title: "Auth session refresh" })]) }));
-    const row = screen.getByRole("button", { name: /WHA-130, Auth session refresh, Awaiting decision/ });
-    expect(row).toHaveTextContent("Auth session refresh");
+  it("places the optional run title after the ticket id and keeps the id-only fallback", () => {
+    const titled = run({ id: "WHA-227", ticket: "WHA-227", title: "Run row hierarchy" });
+    renderSurface(result({ data: data([titled, run({ id: "T-001", ticket: "T-001" })]) }));
+
+    expect(screen.getByRole("button", { name: /WHA-227, Run row hierarchy, Awaiting decision/ }))
+      .toHaveTextContent("WHA-227Run row hierarchy");
+    expect(screen.getByRole("button", { name: /^T-001, Awaiting decision/ })).toBeVisible();
   });
 
-  it("opens a read-only in-surface inspector and returns focus on Escape", async () => {
+  it("expands recorded run context without inventing missing fields", () => {
+    renderSurface(result({ data: data([run({})]) }));
+    const row = screen.getByRole("button", { name: /WHA-130, Awaiting decision/ });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(row).not.toHaveAttribute("aria-controls");
+    expect(screen.queryByRole("region", { name: "WHA-130 run context" })).not.toBeInTheDocument();
+
+    fireEvent.click(row);
+
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).toHaveAttribute("aria-controls", "sagan-run-WHA-130-details");
+    expect(screen.getByRole("region", { name: "WHA-130 run context" })).toBeVisible();
+    expect(screen.getByText("critic-claude-fresh (critic). dispatched in critique. Latest verdict: APPROVED.")).toBeVisible();
+    expect(screen.getByText("Round 3")).toBeVisible();
+    expect(screen.getByText("12 events")).toBeVisible();
+    expect(screen.getByText("2 evidence records")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View run details" })).toBeVisible();
+
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "View run details" })).not.toBeInTheDocument();
+  });
+
+  it("omits missing assignment and execution clauses and refuses day-only duration guesses", () => {
+    renderSurface(result({ data: data([run({
+      agent: null,
+      lane: null,
+      phase: null,
+      round: null,
+      verdict: null,
+      eventCount: 0,
+      evidenceCount: 0,
+      firstIsoTs: null,
+      lastIsoTs: null,
+    })]) }));
+
+    const row = screen.getByRole("button", { name: /WHA-130, Awaiting decision/ });
+    expect(row).toHaveTextContent("—");
+    fireEvent.click(row);
+    const context = screen.getByRole("region", { name: "WHA-130 run context" });
+    expect(within(context).queryByText(/No agent|No lane|No phase/)).not.toBeInTheDocument();
+    expect(within(context).queryByText(/^Round /)).not.toBeInTheDocument();
+    expect(within(context).getByText("0 events")).toBeVisible();
+    expect(within(context).getByText("0 evidence records")).toBeVisible();
+  });
+
+  it("opens a read-only in-surface inspector from an expanded row and returns focus on Escape", async () => {
     mockDetail(detail());
     renderSurface(result({ data: data([run({})]) }));
     const row = screen.getByRole("button", { name: /WHA-130, Awaiting decision/ });
     row.focus();
     expect(row).toHaveFocus();
     fireEvent.click(row);
+    fireEvent.click(screen.getByRole("button", { name: "View run details" }));
     expect(await screen.findByLabelText("Run inspector")).toBeVisible();
     expect(await screen.findByText("Ship the ledger inspector")).toBeVisible();
     expect(screen.getByRole("button", { name: "Overview" })).toHaveFocus();
@@ -208,6 +258,7 @@ describe("V2SaganSurface overview", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ }));
+    fireEvent.click(screen.getByRole("button", { name: "View run details" }));
     const action = await screen.findByRole("button", { name: "Open owning thread/session" });
     fireEvent.click(action);
     expect(onOpen).toHaveBeenCalledWith("session-42");
