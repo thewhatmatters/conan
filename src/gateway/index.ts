@@ -792,21 +792,21 @@ app.get("/api/agent/threads/:sessionId/transcript", (req, res) => {
 // 404: a list route that has nothing to list is not an error. A blank/absent
 // `projectId` is still a 400 — a malformed request is a different thing from a
 // project that isn't there.
-app.get("/api/sagan/runs", (req, res) => {
+app.get("/api/sagan/runs", async (req, res) => {
   if (!authed(req, res)) return;
   const projectId = req.query.projectId;
   if (typeof projectId !== "string" || !projectId.trim()) {
     res.status(400).json({ error: "projectId required" });
     return;
   }
-  res.json(listSaganRuns(resolveSaganProject(projectId)));
+  res.json(await listSaganRuns(resolveSaganProject(projectId)));
 });
 
 // One run in full — lanes, verdicts, evidence, decisions, and the whole ledger
 // history for the ticket, which is everything Overview/Inspector/Pipeline need
 // (AC5). The `:id` is a ticket id from the ledger; it is compared to strings
 // read out of the file and never joined onto a path.
-app.get("/api/sagan/runs/:id", (req, res) => {
+app.get("/api/sagan/runs/:id", async (req, res) => {
   if (!authed(req, res)) return;
   const projectId = req.query.projectId;
   if (typeof projectId !== "string" || !projectId.trim()) {
@@ -818,7 +818,7 @@ app.get("/api/sagan/runs/:id", (req, res) => {
     res.status(404).json({ error: `unknown project: ${projectId}` });
     return;
   }
-  const result = getSaganRun(project, req.params.id);
+  const result = await getSaganRun(project, req.params.id);
   if (!result) {
     res.status(404).json({ error: `unknown run: ${req.params.id}` });
     return;

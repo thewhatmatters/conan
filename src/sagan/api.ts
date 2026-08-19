@@ -35,6 +35,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { findRepoRoot, getChatProject } from "../agent/threads.js";
+import { ticketsMergedInGit } from "../git/index.js";
 import { detectSagan, type SaganCapability } from "./detect.js";
 import {
   classifyTimestamp,
@@ -185,6 +186,16 @@ export interface SaganRunContext {
   owningTarget: SaganOwningTarget | null;
 }
 
+/** Completion state reconciled from the ledger, git history, and the ticket
+ *  file. `done` means the records agree the run finished; `unknown` means they
+ *  disagree and the UI must not claim a confident close (WHA-167). */
+export interface SaganRunCompletion {
+  state: "open" | "done" | "unknown";
+  source: "ledger" | "git" | null;
+  /** Present when git and the ticket file disagreed. */
+  conflict: { git: boolean; ticketFile: string } | null;
+}
+
 /** A run in the list. Ticket id IS the run id in Sagan v0. */
 export interface SaganRunSummary {
   /** The route key for `/api/sagan/runs/:id`. Same value as `ticket`. */
@@ -220,6 +231,9 @@ export interface SaganRunSummary {
    *  ticket (file order, last wins). Null when neither event carried one —
    *  the pipeline Status block stays absent rather than empty. */
   statusNote: string | null;
+  /** Reconciled completion state: ledger first, git corroboration, unknown on
+   *  disagreement (WHA-167). */
+  completion: SaganRunCompletion;
 }
 
 /** A run in full — the inspector's (C3) and pipeline's (C4) whole payload. */
@@ -376,7 +390,12 @@ export function ledgerWithinRoot(root: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
-const summarize = (t: TicketProjection, events: RawEvent[], root: string): SaganRunSummary => {
+const summarize = (
+  t: TicketProjection,
+  events: RawEvent[],
+  root: string,
+  mergedTickets: Set<string>,
+): SaganRunSummary => {
   let laneCount = 0;
   let verdictCount = 0;
   let evidenceCount = 0;
@@ -412,6 +431,7 @@ const summarize = (t: TicketProjection, events: RawEvent[], root: string): Sagan
     eventCount: t.eventCount,
     title: readTicketTitle(root, t.ticket),
     statusNote,
+    completion: resolveCompletion(t, root, mergedTickets),
   };
 };
 
@@ -475,6 +495,58 @@ function readTicketTitle(root: string, ticketId: string): string | null {
   }
 }
 
+/** Read the `status:` frontmatter value from `.sagan/tickets/<ticketId>.md`.
+ *  Null when the file is missing or has no status line. */
+function readTicketStatus(root: string, ticketId: string): string | null {
+  if (!/^[A-Za-z0-9._-]+$/.test(ticketId)) return null;
+  const ticketsDir = path.join(root, ".sagan", "tickets");
+  const candidate = path.join(ticketsDir, `${ticketId}.md`);
+  try {
+    const realDir = fs.realpathSync(ticketsDir);
+    const realFile = fs.realpathSync(candidate);
+    const rel = path.relative(realDir, realFile);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+    const text = fs.readFileSync(realFile, "utf8");
+    const status = text.match(/^[-*]\s*(?:\*\*)?status(?:\*\*)?:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/im)?.[1]?.trim();
+    return status ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Reconcile the ledger, git history, and ticket-file status into a completion
+ *  state. Ledger is authoritative; git is primary corroboration; disagreement
+ *  is surfaced as `unknown` rather than guessed into `done` (WHA-167). */
+function resolveCompletion(
+  t: TicketProjection,
+  root: string,
+  mergedTickets: Set<string>,
+): SaganRunCompletion {
+  if (t.completed) {
+    return { state: "done", source: "ledger", conflict: null };
+  }
+  const gitMerged = mergedTickets.has(t.ticket);
+  const ticketStatus = readTicketStatus(root, t.ticket);
+  if (gitMerged) {
+    if (ticketStatus === "done") {
+      return { state: "done", source: "git", conflict: null };
+    }
+    return {
+      state: "unknown",
+      source: "git",
+      conflict: { git: true, ticketFile: ticketStatus ?? "missing" },
+    };
+  }
+  if (ticketStatus === "done") {
+    return {
+      state: "unknown",
+      source: null,
+      conflict: { git: false, ticketFile: "done" },
+    };
+  }
+  return { state: "open", source: null, conflict: null };
+}
+
 function manifestAssignment(root: string, lane: string | null): {
   provider: string | null;
   containment: string | null;
@@ -502,7 +574,9 @@ function manifestAssignment(root: string, lane: string | null): {
  * `sagan` for the first three, `reason` for the last (AC4 — never a 500, and
  * never a bare empty list the surface cannot explain).
  */
-export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult {
+export async function listSaganRuns(
+  project: SaganProjectRef | null,
+): Promise<SaganRunsResult> {
   if (!project) {
     return {
       project: null,
@@ -520,8 +594,14 @@ export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult 
     const id = str(event.ticket);
     if (id) lastLine.set(id, index);
   }
+  const mergedTickets = await ticketsMergedInGit(
+    project.root,
+    projection.tickets.map((t) => t.ticket),
+  );
   const runs = projection.tickets
-    .map((t) => summarize(t, linesFor(indexed, t.ticket).map((l) => l.event), project.root))
+    .map((t) =>
+      summarize(t, linesFor(indexed, t.ticket).map((l) => l.event), project.root, mergedTickets),
+    )
     // `ts` is day-granular and often absent, so recency is the last ledger LINE
     // the ticket appears on — the same ordering rule the projection folds on.
     .sort((a, b) => (lastLine.get(b.ticket) ?? -1) - (lastLine.get(a.ticket) ?? -1));
@@ -541,15 +621,18 @@ export function listSaganRuns(project: SaganProjectRef | null): SaganRunsResult 
  * answers 404). The id is matched against ticket strings read out of the file;
  * it is never joined onto a path.
  */
-export function getSaganRun(
+export async function getSaganRun(
   project: SaganProjectRef,
   ticketId: string,
-): SaganRunResult | null {
+): Promise<SaganRunResult | null> {
   const { ledgerPath, indexed, projection } = replay(project.root);
   const t = projection.tickets.find((x) => x.ticket === ticketId);
   if (!t) return null;
 
-  const lines = linesFor(indexed, ticketId);
+  const [mergedTickets, lines] = await Promise.all([
+    ticketsMergedInGit(project.root, [ticketId]),
+    Promise.resolve(linesFor(indexed, ticketId)),
+  ]);
   const events = lines.map(({ event }) => event);
   const lanes: SaganLaneEntry[] = [];
   const verdicts: SaganVerdictEntry[] = [];
@@ -632,7 +715,7 @@ export function getSaganRun(
   const threadId = firstString(events, ["thread_id"]);
   const sessionId = firstString(events, ["session_id"]);
   const nostrEventId = firstString(events, ["nostr_event_id"]);
-  const run = summarize(t, lines.map((l) => l.event), project.root);
+  const run = summarize(t, lines.map((l) => l.event), project.root, mergedTickets);
   return {
     project,
     ledgerPath,

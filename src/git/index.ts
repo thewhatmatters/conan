@@ -65,6 +65,33 @@ function validateDirectory(cwd: string): string | null {
   return null;
 }
 
+/** All ticket ids from `ticketIds` that appear in at least one merge commit
+ *  in the repo's history. Case-insensitive whole-word match; git missing or
+ *  not a repo degrades to an empty set. One `git log` call is issued per
+ *  request, then matched in memory, so reconciliation cost is linear in
+ *  history rather than runs × history (WHA-167). */
+export async function ticketsMergedInGit(cwd: string, ticketIds: string[]): Promise<Set<string>> {
+  if (ticketIds.length === 0) return new Set();
+  try {
+    const { stdout } = await runCommand(
+      "git",
+      ["log", "-i", "--merges", "--format=%H%x00%B"],
+      cwd,
+      GIT_TIMEOUT_MS,
+    );
+    const merged = new Set<string>();
+    for (const id of ticketIds) {
+      const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`\\b${escaped}\\b`, "i").test(stdout)) {
+        merged.add(id);
+      }
+    }
+    return merged;
+  } catch {
+    return new Set();
+  }
+}
+
 export async function ensureGitWorkTree(cwd: string): Promise<string | null> {
   const dirError = validateDirectory(cwd);
   if (dirError) return dirError;

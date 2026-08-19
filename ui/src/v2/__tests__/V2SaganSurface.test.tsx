@@ -7,28 +7,41 @@ import type { SaganRunDetail, SaganRunSummary, SaganRunsResult } from "../../../
 
 afterEach(() => cleanup());
 
-const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
-  id: "WHA-130",
-  ticket: "WHA-130",
-  lane: "critique",
-  phase: "dispatched",
-  round: 3,
-  verdict: "APPROVED",
-  agent: { name: "critic-claude-fresh", role: "critic" },
-  openDecisions: [{ gate: "promote", state: "awaiting-randy", evidenceSha: "9be4459", round: 3 }],
-  needsYou: true,
-  laneCount: 3,
-  verdictCount: 3,
-  evidenceCount: 2,
-  firstTs: "2026-08-05",
-  lastTs: "2026-08-07",
-  firstIsoTs: "2026-08-05T10:00:00Z",
-  lastIsoTs: "2026-08-07T10:00:00Z",
-  eventCount: 12,
-  title: null,
-  statusNote: null,
-  ...patch,
-});
+const TERMINAL_LANES = ["done", "merged"];
+const TERMINAL_PHASES = ["done", "merged", "complete", "completed"];
+const isTerminalPosition = (lane: string | null, phase: string | null): boolean =>
+  TERMINAL_LANES.includes(lane?.toLowerCase() ?? "") || TERMINAL_PHASES.includes(phase?.toLowerCase() ?? "");
+
+const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => {
+  const lane = patch.lane ?? "critique";
+  const phase = patch.phase ?? "dispatched";
+  const terminal = isTerminalPosition(lane, phase);
+  return {
+    id: "WHA-130",
+    ticket: "WHA-130",
+    lane,
+    phase,
+    round: 3,
+    verdict: "APPROVED",
+    agent: { name: "critic-claude-fresh", role: "critic" },
+    openDecisions: [{ gate: "promote", state: "awaiting-randy", evidenceSha: "9be4459", round: 3 }],
+    needsYou: true,
+    laneCount: 3,
+    verdictCount: 3,
+    evidenceCount: 2,
+    firstTs: "2026-08-05",
+    lastTs: "2026-08-07",
+    firstIsoTs: "2026-08-05T10:00:00Z",
+    lastIsoTs: "2026-08-07T10:00:00Z",
+    eventCount: 12,
+    title: null,
+    statusNote: null,
+    completion: terminal
+      ? { state: "done", source: "ledger", conflict: null }
+      : { state: "open", source: null, conflict: null },
+    ...patch,
+  };
+};
 
 const data = (runs: SaganRunSummary[] = []): SaganRunsResult => ({
   project: {
@@ -672,5 +685,24 @@ describe("Sagan overview sections (WHA-169)", () => {
     renderSurface(result({ data: board() }));
     expect(screen.getByRole("button", { name: "T-ESC, Blocked" })).not.toHaveTextContent("ESCALATE");
     expect(screen.getByRole("button", { name: "WHA-140, Completed" })).not.toHaveTextContent("REVISE");
+  });
+
+  it("files an unknown completion under Recently completed with a disputed marker (WHA-167 AC3)", () => {
+    renderSurface(result({ data: data([
+      bare({
+        id: "WHA-143",
+        ticket: "WHA-143",
+        lane: "frontend",
+        phase: "building",
+        completion: { state: "unknown", source: "git", conflict: { git: true, ticketFile: "ready-for-qa" } },
+      }),
+    ]) }));
+    expect(section("Recently completed")).toHaveTextContent("WHA-143");
+    expect(section("Running now")).not.toHaveTextContent("WHA-143");
+    const row = screen.getByRole("button", { name: /WHA-143, Disputed/ });
+    expect(row).toBeVisible();
+    fireEvent.click(row);
+    expect(screen.getByText(/git says merged/)).toBeVisible();
+    expect(screen.getByText(/ticket file status is ready-for-qa/)).toBeVisible();
   });
 });
