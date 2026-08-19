@@ -252,7 +252,7 @@ describe("V2SaganSurface overview", () => {
       run({}),
       run({ id: "T-001", ticket: "T-001", openDecisions: [], needsYou: false, lane: "done", phase: "completed" }),
     ]) }));
-    const needsYou = screen.getByText("Needs you").closest("div")!.parentElement!;
+    const needsYou = screen.getByTestId("sagan-section-Needs you").closest("[data-sagan-section]")!;
     expect(needsYou).toHaveTextContent("WHA-130");
     expect(needsYou).not.toHaveTextContent("T-001");
     expect(screen.getByRole("button", { name: /WHA-130, Awaiting decision/ })).toHaveTextContent("critic-claude-freshcriticAwaiting decision2d");
@@ -351,6 +351,101 @@ describe("V2SaganSurface overview", () => {
     const action = await screen.findByRole("button", { name: "Open owning thread/session" });
     fireEvent.click(action);
     expect(onOpen).toHaveBeenCalledWith("session-42");
+  });
+});
+
+describe("V2SaganSurface overview chrome (WHA-229)", () => {
+  it("renders a synthesised lane bar and keeps lane counts summing to the run total", () => {
+    renderSurface(result({
+      data: data([
+        run({ id: "A", ticket: "A", lane: "frontend", openDecisions: [], needsYou: false }),
+        run({ id: "B", ticket: "B", lane: "persona-test", openDecisions: [], needsYou: false }),
+        run({ id: "C", ticket: "C", lane: "persona-test", openDecisions: [], needsYou: false }),
+      ]),
+    }));
+    const panel = screen.getByLabelText("Lane distribution");
+    expect(within(panel).getByText("Persona-Test")).toBeVisible();
+    expect(within(panel).getByText("Frontend")).toBeVisible();
+    expect(within(panel).getByText("Total")).toBeVisible();
+    // Value labels are the raw counts next to each ProgressBar.
+    expect(within(panel).getAllByText("2").length).toBeGreaterThanOrEqual(1);
+    expect(within(panel).getAllByText("3").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("omits the lane panel entirely when there are zero runs (no chart of zeros)", () => {
+    renderSurface(result());
+    expect(screen.queryByLabelText("Lane distribution")).not.toBeInTheDocument();
+    expect(screen.getByText("No Sagan runs yet.")).toBeVisible();
+  });
+
+  it("orders Needs you rows oldest-first in the DOM, not by input order (AC3)", () => {
+    // Deliberately wrong input order: newer run first.
+    renderSurface(result({
+      data: data([
+        run({
+          id: "WHA-NEW",
+          ticket: "WHA-NEW",
+          firstIsoTs: "2026-08-10T12:00:00Z",
+          lastIsoTs: "2026-08-10T12:00:00Z",
+          openDecisions: [{ gate: "promote", state: "awaiting-randy", evidenceSha: null, round: 1 }],
+          needsYou: true,
+        }),
+        run({
+          id: "WHA-OLD",
+          ticket: "WHA-OLD",
+          firstIsoTs: "2026-08-01T12:00:00Z",
+          lastIsoTs: "2026-08-02T12:00:00Z",
+          openDecisions: [{ gate: "promote", state: "awaiting-randy", evidenceSha: null, round: 1 }],
+          needsYou: true,
+        }),
+      ]),
+    }));
+    const section = screen.getByTestId("sagan-section-Needs you").closest(
+      "[data-sagan-section]",
+    ) as HTMLElement;
+    expect(section).toHaveAttribute("data-sagan-ordering", "OLDEST FIRST");
+    const tickets = within(section)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("data-sagan-ticket"))
+      .filter((id): id is string => Boolean(id));
+    expect(tickets).toEqual(["WHA-OLD", "WHA-NEW"]);
+  });
+
+  it("keeps a collapsed section collapsed across a poll refresh (AC4)", () => {
+    const first = result({ data: data([run({})]) });
+    const { rerender } = render(<V2SaganSurface token="tok" cwd="/repo/sagan" result={first} />);
+    const trigger = (screen.getByTestId("sagan-section-Needs you").querySelector("button[aria-expanded]")
+      ?? screen.getByRole("button", { name: /Needs you/ })) as HTMLElement;
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    // Simulate a poll refresh: new result object, same surface instance.
+    rerender(<V2SaganSurface token="tok" cwd="/repo/sagan" result={result({
+      data: data([run({ id: "WHA-130", ticket: "WHA-130", lastIsoTs: "2026-08-08T10:00:00Z" })]),
+      updatedAt: Date.parse("2026-08-08T16:00:00Z"),
+    })} />);
+    const after = (screen.getByTestId("sagan-section-Needs you").querySelector("button[aria-expanded]")
+      ?? screen.getByRole("button", { name: /Needs you/ })) as HTMLElement;
+    expect(after).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("toggles a section from the keyboard (AC4)", () => {
+    renderSurface(result({ data: data([run({})]) }));
+    const trigger = screen.getByTestId("sagan-section-Needs you").querySelector(
+      "button[aria-expanded]",
+    ) as HTMLButtonElement | null;
+    expect(trigger).toBeTruthy();
+    trigger!.focus();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    // Native <button> activation: Enter synthesizes a click in the browser.
+    // jsdom does not, so fire the click the key would produce.
+    fireEvent.keyDown(trigger!, { key: "Enter" });
+    fireEvent.click(trigger!);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(trigger!, { key: " " });
+    fireEvent.click(trigger!);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 });
 

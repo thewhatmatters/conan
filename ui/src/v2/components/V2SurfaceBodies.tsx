@@ -32,6 +32,7 @@ import { useNativeBrowser } from "../lib/useNativeBrowser.ts";
 import { parseUnifiedPatch } from "../../lib/diff.ts";
 import V2DiffView from "./V2DiffView.tsx";
 import SaganInspector from "./SaganInspector.tsx";
+import { SaganLanePanel, SaganOverviewSection } from "./SaganOverviewChrome.tsx";
 import SaganPipeline, { SAGAN_PIPELINE_MIN_WIDTH } from "./SaganPipeline.tsx";
 import SaganToolbar, { type SaganTab } from "./SaganToolbar.tsx";
 import {
@@ -258,15 +259,8 @@ const styles = stylex.create({
     opacity: 0.5,
   },
   saganCenter: { flexGrow: 1, minHeight: 0 },
-  saganSection: { alignItems: "stretch", width: "100%" },
-  saganSectionTitle: { color: "var(--conan-text-primary)" },
-  saganCount: {
-    backgroundColor: "var(--conan-wash-raised)",
-    borderRadius: "var(--conan-radius-full)",
-    minWidth: "var(--conan-icon-size)",
-    paddingInline: "var(--conan-space-2)",
-    textAlign: "center",
-  },
+  // Section chrome styles live in SaganOverviewChrome.tsx (WHA-229) so this
+  // styles object stays a single contiguous block for Nash's WHA-233 keys.
   saganRow: {
     alignItems: "center",
     appearance: "none",
@@ -328,11 +322,6 @@ const styles = stylex.create({
   saganDetailsAction: { alignSelf: "flex-start" },
   saganCell: { minWidth: 0 },
   saganDuration: { justifySelf: "end", whiteSpace: "nowrap" },
-  saganEmpty: {
-    borderRadius: "var(--conan-radius-md)",
-    color: "var(--conan-text-muted)",
-    padding: "var(--conan-space-3)",
-  },
   // WHA-144 — the narrow-width note above the Overview list the Pipeline tab
   // falls back to, so the swap is explained rather than looking like a bug.
   saganFallbackNote: { color: "var(--conan-text-muted)" },
@@ -495,6 +484,11 @@ export function V2SaganSurface({
   const [detail, setDetail] = useState<SaganRunDetail | null>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+  // WHA-229 AC4 — collapse state lives on the surface, not on the poll result,
+  // so a refresh that replaces `data.runs` cannot reset open/closed sections.
+  const [sectionOpen, setSectionOpen] = useState<Record<SaganSection, boolean>>(() =>
+    Object.fromEntries(SAGAN_SECTIONS.map((section) => [section, true])) as Record<SaganSection, boolean>,
+  );
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const tabAtSelectionRef = useRef<SaganTab>("overview");
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -613,7 +607,6 @@ export function V2SaganSurface({
 
   const grouped = new Map<SaganSection, SaganRunSummary[]>(SAGAN_SECTIONS.map((section) => [section, []]));
   for (const run of data.runs) grouped.get(sectionFor(run))!.push(run);
-  const needsYouCount = grouped.get("Needs you")!.length;
   const showPipeline = tab === "pipeline" && !narrow;
 
   if (tab === "inspector") {
@@ -651,20 +644,20 @@ export function V2SaganSurface({
             </Text>
           ) : null}
           {data.runs.length === 0 ? <Text color="secondary">No Sagan runs yet.</Text> : null}
+          <SaganLanePanel runs={data.runs} />
           {SAGAN_SECTIONS.map((section) => {
             const rows = grouped.get(section)!;
             return (
-              <VStack key={section} gap={2} xstyle={styles.saganSection}>
-                <HStack align="center" gap={2}>
-                  <Text weight="semibold" xstyle={styles.saganSectionTitle}>{section}</Text>
-                  {section === "Needs you" ? <Text type="supporting" xstyle={styles.saganCount}>{needsYouCount}</Text> : null}
-                </HStack>
-                {rows.length > 0 ? rows.map((run) => (
+              <SaganOverviewSection
+                key={section}
+                section={section}
+                rows={rows}
+                isOpen={sectionOpen[section]}
+                onOpenChange={(open) => setSectionOpen((prev) => ({ ...prev, [section]: open }))}
+                renderRow={(run) => (
                   <SaganRow key={run.id} run={run} section={section} onSelect={selectRun} />
-                )) : (
-                  <Text type="supporting" xstyle={styles.saganEmpty}>No runs in this section.</Text>
                 )}
-              </VStack>
+              />
             );
           })}
         </>
