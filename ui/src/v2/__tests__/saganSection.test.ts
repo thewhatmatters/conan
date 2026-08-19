@@ -28,6 +28,8 @@ const summary = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   evidenceCount: 0,
   firstTs: "2026-08-10",
   lastTs: "2026-08-10",
+  firstIsoTs: null,
+  lastIsoTs: null,
   eventCount: 1,
   ...patch,
 });

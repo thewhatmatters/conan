@@ -22,6 +22,8 @@ const run = (patch: Partial<SaganRunSummary>): SaganRunSummary => ({
   evidenceCount: 2,
   firstTs: "2026-08-05",
   lastTs: "2026-08-07",
+  firstIsoTs: null,
+  lastIsoTs: null,
   eventCount: 12,
   ...patch,
 });
@@ -38,6 +40,7 @@ const data = (runs: SaganRunSummary[] = []): SaganRunsResult => ({
   ledgerPath: "/repo/sagan/.sagan/ledger/events.jsonl",
   runs,
   skipped: { unparseable: 0, unknownType: 0, noTicket: 0 },
+  timestampMismatch: 0,
   ledgerOutsideRoot: false,
   reason: null,
 });
@@ -65,14 +68,14 @@ const detail = (owningTarget: SaganRunDetail["context"]["owningTarget"] = null):
     attemptId: "attempt-3",
     owningTarget,
   },
-  lanes: [{ index: 0, lane: "frontend", phase: "built", round: 3, agent: { name: "Booker", role: "builder" }, artifact: "dist/report.html", sha: "abc123", flags: [], ts: "2026-08-05T10:00:00Z" }],
+  lanes: [{ index: 0, lane: "frontend", phase: "built", round: 3, agent: { name: "Booker", role: "builder" }, artifact: "dist/report.html", sha: "abc123", flags: [], ts: "2026-08-05T10:00:00Z", isoTs: "2026-08-05T10:00:00Z", tsKind: "exact" }],
   verdicts: [],
-  evidence: [{ index: 1, sha: "abc123", verifier: "Barkley", producer: null, overall: "PASS", checks: 5, notVerified: [], artifacts: ["evidence/inspector.png"], deltaOf: null, note: null, ts: "2026-08-07T11:00:00Z" }],
+  evidence: [{ index: 1, sha: "abc123", verifier: "Barkley", producer: null, overall: "PASS", checks: 5, notVerified: [], artifacts: ["evidence/inspector.png"], deltaOf: null, note: null, ts: "2026-08-07T11:00:00Z", isoTs: "2026-08-07T11:00:00Z", tsKind: "exact" }],
   resolvedDecisions: [],
   decisionHistory: [],
   history: [
-    { index: 0, event: "lane.updated", ts: "2026-08-05T10:00:00Z", data: { event: "lane.updated", ticket: "WHA-130", lane: "frontend", output: "Built inspector" } },
-    { index: 1, event: "evidence.recorded", ts: "2026-08-07T11:00:00Z", data: { event: "evidence.recorded", ticket: "WHA-130", overall: "PASS" } },
+    { index: 0, event: "lane.updated", ts: "2026-08-05T10:00:00Z", isoTs: "2026-08-05T10:00:00Z", tsKind: "exact", data: { event: "lane.updated", ticket: "WHA-130", lane: "frontend", output: "Built inspector" } },
+    { index: 1, event: "evidence.recorded", ts: "2026-08-07T11:00:00Z", isoTs: "2026-08-07T11:00:00Z", tsKind: "exact", data: { event: "evidence.recorded", ticket: "WHA-130", overall: "PASS" } },
   ],
 });
 
@@ -91,6 +94,8 @@ const detailWithOpenDecisions = (owningTarget: SaganRunDetail["context"]["owning
       round: 3,
       by: null,
       ts: "2026-08-07T11:00:00Z",
+      isoTs: "2026-08-07T11:00:00Z",
+      tsKind: "exact",
     },
   ],
 });

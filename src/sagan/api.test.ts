@@ -178,6 +178,8 @@ test("AC1: a summary carries what Overview draws a row from", () => {
   assert.deepEqual(wha130.agent, { name: "critic-claude-fresh", role: "critic" });
   assert.equal(wha130.firstTs, "2026-08-06");
   assert.equal(wha130.lastTs, "2026-08-06");
+  assert.equal(wha130.firstIsoTs, null);
+  assert.equal(wha130.lastIsoTs, null);
   assert.equal(wha130.laneCount, 4);
   assert.equal(wha130.verdictCount, 3);
   assert.equal(wha130.evidenceCount, 3);
@@ -324,7 +326,12 @@ test("WHA-143: detail normalizes inspector context and current timestamps", () =
   assert.deepEqual(run.context.owningTarget, { kind: "session", id: "session-42" });
   assert.equal(run.firstTs, "2026-08-08T15:07:46Z");
   assert.equal(run.lastTs, "2026-08-08T16:00:00Z");
+  assert.equal(run.firstIsoTs, "2026-08-08T15:07:46Z");
+  assert.equal(run.lastIsoTs, "2026-08-08T16:00:00Z");
   assert.equal(run.history[0]!.ts, "2026-08-08T15:07:46Z");
+  assert.equal(run.history[0]!.isoTs, "2026-08-08T15:07:46Z");
+  assert.equal(run.history[0]!.tsKind, "exact");
+  assert.equal(run.history[1]!.tsKind, "exact");
 });
 
 test("WHA-143: owning target stays absent when the ledger has no real id", () => {
@@ -333,6 +340,23 @@ test("WHA-143: owning target stays absent when the ledger has no real id", () =>
       builder: "Booker", timestamp: "2026-08-08T15:07:46Z" },
   ));
   assert.equal(getSaganRun(projectFor(root), "WHA-143")!.run.context.owningTarget, null);
+});
+
+test("WHA-225: list exposes ISO timestamps and counts timestamp mismatches", () => {
+  const { root } = saganRepo("iso-ts", lines(
+    { event: "lane.updated", ticket: "WHA-143", lane: "frontend", phase: "dispatched",
+      ts: "2026-08-10T12:00:00Z", timestamp: "2026-08-08T15:07:46Z" },
+    { event: "lane.updated", ticket: "WHA-143", lane: "verify", phase: "verifying",
+      timestamp: "2026-08-08T16:00:00Z" },
+  ));
+  const result = listSaganRuns(projectFor(root));
+  const run = result.runs[0]!;
+  // `timestamp` wins on the first event, so firstTs follows the authoritative field.
+  assert.equal(run.firstTs, "2026-08-08T15:07:46Z");
+  assert.equal(run.lastTs, "2026-08-08T16:00:00Z");
+  assert.equal(run.firstIsoTs, "2026-08-08T15:07:46Z");
+  assert.equal(run.lastIsoTs, "2026-08-08T16:00:00Z");
+  assert.equal(result.timestampMismatch, 1);
 });
 
 test("AC4: an unknown ticket id is 404 material, not a throw", () => {
@@ -400,6 +424,7 @@ test("AC4: a Sagan project with no ledger yet is an empty list, not an error", (
   assert.deepEqual(result.runs, []);
   assert.equal(result.project?.sagan.state, "valid");
   assert.deepEqual(result.skipped, { unparseable: 0, unknownType: 0, noTicket: 0 });
+  assert.equal(result.timestampMismatch, 0);
 });
 
 test("AC4: a non-Sagan project answers empty plus the reason", () => {
@@ -497,6 +522,7 @@ test("AC4: an id that resolves to nothing is an empty list, never a throw", () =
   assert.equal(result.ledgerPath, null);
   assert.ok(result.reason, "the empty list says why");
   assert.deepEqual(result.skipped, { unparseable: 0, unknownType: 0, noTicket: 0 });
+  assert.equal(result.timestampMismatch, 0);
 });
 
 test("AC3: two repo paths never see each other's runs", () => {
